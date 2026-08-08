@@ -1,0 +1,149 @@
+"""Asynchronous client for the public ZMDLogs ranking API."""
+
+import re
+from typing import Any
+
+import httpx
+
+from .models import (
+    BossRanking,
+    HotBossCard,
+    ModelValidationError,
+    parse_boss_ranking,
+    parse_hot_bosses,
+)
+
+DEFAULT_API_BASE_URL = "https://zmdlogs.com"
+DEFAULT_REQUEST_TIMEOUT_MS = 10_000
+_BOSS_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
+
+
+class ZmdLogsClientError(Exception):
+    """Base exception for safe, expected client failures."""
+
+
+class InvalidBossSlugError(ZmdLogsClientError):
+    """Raised before a request when a boss slug is unsafe or malformed."""
+
+
+class ZmdLogsAPIError(ZmdLogsClientError):
+    """An error response returned by ZMDLogs."""
+
+    def __init__(self, status_code: int, code: str, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+
+
+class ZmdLogsProtocolError(ZmdLogsClientError):
+    """Raised when a successful response violates the public API contract."""
+
+
+def is_valid_boss_slug(value: str) -> bool:
+    """Return whether ``value`` is safe to place in the ranking path."""
+
+    return isinstance(value, str) and _BOSS_SLUG_PATTERN.fullmatch(value) is not None
+
+
+class ZmdLogsClient:
+    """Fetch and adapt the two public APIs used by the MVP."""
+
+    def __init__(
+        self,
+        api_base_url: str = DEFAULT_API_BASE_URL,
+        request_timeout_ms: int = DEFAULT_REQUEST_TIMEOUT_MS,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        base_url = _validate_base_url(api_base_url)
+        timeout_seconds = _validate_timeout(request_timeout_ms) / 1000
+        self._client = httpx.AsyncClient(
+            base_url=base_url,
+            timeout=timeout_seconds,
+            transport=transport,
+            headers={"Accept": "application/json", "User-Agent": "ZmdBot"},
+        )
+
+    async def list_hot_bosses(self) -> tuple[HotBossCard, ...]:
+        """Return every card from ``GET /api/home/hot-bosses`` in API order."""
+
+        payload = await self._get_json("api/home/hot-bosses")
+        try:
+            return parse_hot_bosses(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError("hot-bosses response is invalid") from exc
+
+    async def get_boss_rankings(self, boss_slug: str) -> BossRanking:
+        """Return one complete DPS ranking without sending a metric parameter."""
+
+        if not is_valid_boss_slug(boss_slug):
+            raise InvalidBossSlugError("invalid boss slug")
+
+        payload = await self._get_json(f"api/bosses/{boss_slug}/rankings")
+        try:
+            return parse_boss_ranking(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError("boss ranking response is invalid") from exc
+
+    async def close(self) -> None:
+        """Close the underlying connection pool."""
+
+        await self._client.aclose()
+
+    async def _get_json(self, path: str) -> Any:
+        try:
+            response = await self._client.get(path)
+        except httpx.RequestError as exc:
+            raise ZmdLogsClientError("ZMDLogs request failed") from exc
+
+        if not 200 <= response.status_code < 300:
+            code, message = _read_api_error(response)
+            raise ZmdLogsAPIError(response.status_code, code, message)
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise ZmdLogsProtocolError("ZMDLogs returned invalid JSON") from exc
+
+
+def _validate_base_url(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError("api_base_url must be a string")
+    try:
+        url = httpx.URL(value.strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError("api_base_url is invalid") from exc
+
+    if url.scheme not in {"http", "https"} or not url.host:
+        raise ValueError("api_base_url must be an absolute HTTP(S) URL")
+    if url.query or url.fragment:
+        raise ValueError("api_base_url cannot contain a query or fragment")
+
+    return str(url.copy_with(path=f"{url.path.rstrip('/')}/"))
+
+
+def _validate_timeout(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError("request_timeout_ms must be a positive integer")
+    return value
+
+
+def _read_api_error(response: httpx.Response) -> tuple[str, str]:
+    default_code = f"http_{response.status_code}"
+    default_message = "ZMDLogs 暂时无法完成请求。"
+    try:
+        payload = response.json()
+    except ValueError:
+        return default_code, default_message
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("error"), dict):
+        return default_code, default_message
+
+    error = payload["error"]
+    code = error.get("code")
+    message = error.get("message")
+    return (
+        code if isinstance(code, str) else default_code,
+        message if isinstance(message, str) else default_message,
+    )
