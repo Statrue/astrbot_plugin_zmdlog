@@ -1,0 +1,7 @@
+# Local product and upstream API planning documents
+/MVP.md
+/UPSTREAM_API.md
+/UPSTREAM_MISSING_API.md
+
+# Local IDE metadata
+/.idea/
