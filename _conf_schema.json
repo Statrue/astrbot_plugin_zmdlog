@@ -1,0 +1,42 @@
+{
+  "api_base_url": {
+    "description": "ZMDLogs API 地址",
+    "type": "string",
+    "default": "https://zmdlogs.com"
+  },
+  "web_base_url": {
+    "description": "ZMDLogs 网页地址",
+    "type": "string",
+    "default": "https://zmdlogs.com"
+  },
+  "request_timeout_ms": {
+    "description": "API 请求超时（毫秒）",
+    "type": "int",
+    "default": 10000
+  },
+  "render_timeout_ms": {
+    "description": "图片渲染超时（毫秒）",
+    "type": "int",
+    "default": 30000
+  },
+  "alias_file_path": {
+    "description": "本地榜单与副本别名配置路径",
+    "type": "string",
+    "default": "aliases.json"
+  },
+  "ranking_cache_ttl_seconds": {
+    "description": "榜单缓存时间（秒）",
+    "type": "int",
+    "default": 60
+  },
+  "fuzzy_match_threshold": {
+    "description": "模糊匹配最低可信阈值",
+    "type": "float",
+    "default": 0.65
+  },
+  "ambiguity_score_gap": {
+    "description": "要求用户选择候选的最小分差",
+    "type": "float",
+    "default": 0.08
+  }
+}

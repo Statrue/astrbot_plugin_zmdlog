@@ -1,0 +1,6 @@
+name: astrbot_plugin_zmdbot
+display_name: ZmdBot
+desc: 在聊天中查询 ZMDLogs 公开榜单数据。
+version: "0.1.0"
+author: Statrue
+repo: https://github.com/Statrue/ZmdBot
