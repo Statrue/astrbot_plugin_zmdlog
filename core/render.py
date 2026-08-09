@@ -69,7 +69,7 @@ class TemplateRenderer:
         return cls(
             resources_path,
             plugin_root / "metadata.yaml",
-            resources_path / "common" / "zmd-industrial-base.jpg",
+            resources_path / "common" / "endfield-crane-grid.jpg",
         )
 
     def render_help(self, *, command_prefix: str) -> str:

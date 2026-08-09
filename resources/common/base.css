@@ -3,7 +3,7 @@
   font-family: "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC",
     "Microsoft YaHei", sans-serif;
   color: #17282a;
-  background: #dce7e4;
+  background: #e7ebec;
 }
 
 * {
@@ -26,18 +26,18 @@ body {
   width: 1280px;
   min-height: 720px;
   padding: 46px 50px;
-  background-color: #d4e0dd;
+  background-color: #e7ebec;
   background-image:
     linear-gradient(
       to bottom,
-      rgba(221, 232, 229, 0.02) 0,
-      rgba(221, 232, 229, 0.08) 560px,
-      rgba(212, 224, 221, 0.94) 850px,
-      #d4e0dd 980px,
-      #d4e0dd 100%
+      rgba(245, 247, 248, 0.02) 0,
+      rgba(245, 247, 248, 0.1) 560px,
+      rgba(231, 235, 236, 0.94) 850px,
+      #e7ebec 980px,
+      #e7ebec 100%
     ),
     var(--zmd-scene-background),
-    linear-gradient(145deg, #e4ecea 0%, #d4e0dd 100%);
+    linear-gradient(145deg, #f1f3f4 0%, #e7ebec 100%);
   background-position: center top, center top, center top;
   background-repeat: no-repeat, no-repeat, no-repeat;
   background-size: 100% 100%, 100% auto, 100% 100%;
@@ -47,9 +47,9 @@ body {
   position: relative;
   width: 100%;
   padding: 42px 48px 34px;
-  border: 1px solid rgba(230, 239, 237, 0.72);
+  border: 1px solid rgba(229, 231, 235, 0.8);
   border-radius: 16px;
-  background: rgba(250, 253, 252, 0.89);
+  background: rgba(255, 255, 255, 0.9);
   box-shadow:
     0 18px 48px rgba(26, 49, 50, 0.19),
     inset 0 1px rgba(255, 255, 255, 0.62);
@@ -453,6 +453,21 @@ body {
 
 .ranking-table tbody tr:first-child td {
   border-top: 0;
+}
+
+.ranking-account {
+  color: #1d3c3e;
+  font-weight: 800;
+}
+
+.ranking-dps,
+.ranking-duration {
+  font-variant-numeric: tabular-nums;
+}
+
+.ranking-duration {
+  color: #526d6b;
+  font-weight: 700;
 }
 
 .ranking-position {

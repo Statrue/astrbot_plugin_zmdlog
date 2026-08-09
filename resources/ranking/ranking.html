@@ -17,16 +17,18 @@
   <table class="ranking-table">
     <colgroup>
       {% if page.show_contract_score %}
-      <col style="width: 10%">
-      <col style="width: 18%">
-      <col style="width: 40%">
+      <col style="width: 9%">
       <col style="width: 17%">
+      <col style="width: 36%">
       <col style="width: 15%">
-      {% else %}
+      <col style="width: 12%">
       <col style="width: 11%">
-      <col style="width: 20%">
-      <col style="width: 44%">
-      <col style="width: 25%">
+      {% else %}
+      <col style="width: 10%">
+      <col style="width: 19%">
+      <col style="width: 41%">
+      <col style="width: 17%">
+      <col style="width: 13%">
       {% endif %}
     </colgroup>
     <thead>
@@ -34,7 +36,8 @@
         <th>排名</th>
         <th>公开账户</th>
         <th>主要角色与阵容</th>
-        <th>DPS / 用时</th>
+        <th>DPS</th>
+        <th>用时</th>
         {% if page.show_contract_score %}
         <th>合约分数</th>
         {% endif %}
@@ -47,7 +50,7 @@
           <span class="ranking-position">{{ row.rank }}</span>
           <span class="percentile">{{ row.percentile }}</span>
         </td>
-        <td>{{ row.account_display_name }}</td>
+        <td class="ranking-account">{{ row.account_display_name }}</td>
         <td>
           <div class="ranking-character">
             <span class="avatar">
@@ -72,8 +75,10 @@
           {% endif %}
         </td>
         <td>
-          <strong>{{ row.dps }}</strong>
-          <span class="cell-subtitle">{{ row.duration }}</span>
+          <strong class="ranking-dps">{{ row.dps }}</strong>
+        </td>
+        <td>
+          <span class="ranking-duration">{{ row.duration }}</span>
         </td>
         {% if page.show_contract_score %}
         <td>
