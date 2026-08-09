@@ -7,6 +7,7 @@ from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 
+from .core.cache import AsyncTTLCache, CacheState
 from .core.client import (
     DEFAULT_API_BASE_URL,
     DEFAULT_REQUEST_TIMEOUT_MS,
@@ -22,6 +23,7 @@ from .core.matcher import (
     RankingMatcher,
     TargetType,
 )
+from .core.models import BossRanking, HotBossCard
 from .core.routing import RouteKind, RouteRequest, parse_zmdlog_payload
 from .core.render import (
     LongImageRenderer,
@@ -33,6 +35,7 @@ _BOARD_QUERY_TARGETS = frozenset(
     {TargetType.BOARD, TargetType.DUNGEON, TargetType.DUNGEON_SCOPE}
 )
 _RENDER_FAILURE_MESSAGE = "图片生成失败，请稍后重试。"
+_UNEXPECTED_FAILURE_MESSAGE = "ZmdBot 暂时无法完成查询，请稍后重试。"
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +73,20 @@ class ZmdBotPlugin(Star):
         self.ambiguity_score_gap = self.config.get(
             "ambiguity_score_gap",
             0.08,
+        )
+        cache_ttl_seconds = self.config.get(
+            "ranking_cache_ttl_seconds",
+            60,
+        )
+        self.hot_boss_cache = AsyncTTLCache[
+            str,
+            tuple[HotBossCard, ...],
+        ](
+            cache_ttl_seconds,
+            stale_ttl_seconds=cache_ttl_seconds,
+        )
+        self.boss_ranking_cache = AsyncTTLCache[str, BossRanking](
+            cache_ttl_seconds,
         )
         self.web_base_url = self.config.get(
             "web_base_url",
@@ -112,6 +129,10 @@ class ZmdBotPlugin(Star):
             logger.error("ZmdBot image rendering failed: %s", type(exc).__name__)
             yield event.plain_result(_RENDER_FAILURE_MESSAGE)
             return
+        except Exception:
+            logger.exception("ZmdBot unexpected command failure")
+            yield event.plain_result(_UNEXPECTED_FAILURE_MESSAGE)
+            return
 
         if outcome.image_path is not None:
             yield event.image_result(outcome.image_path)
@@ -132,7 +153,7 @@ class ZmdBotPlugin(Star):
             return _DispatchOutcome(image_path=image_path)
 
         if route.kind is RouteKind.ALL_RANKINGS:
-            cards = await self.client.list_hot_bosses()
+            cards = await self._list_hot_bosses()
             image_path = await renderer.render_all_top3(
                 cards,
                 query="榜单",
@@ -140,10 +161,10 @@ class ZmdBotPlugin(Star):
             return _DispatchOutcome(image_path=image_path)
 
         try:
-            cards = await self.client.list_hot_bosses()
+            cards = await self._list_hot_bosses()
         except ZmdLogsClientError:
             if self._looks_like_direct_slug(route.query):
-                ranking = await self.client.get_boss_rankings(route.query)
+                ranking = await self._get_boss_ranking(route.query)
                 image_path = await renderer.render_ranking(
                     ranking,
                     query=route.query,
@@ -166,7 +187,7 @@ class ZmdBotPlugin(Star):
 
         if match.status is MatchStatus.NOT_FOUND:
             if self._looks_like_direct_slug(route.query):
-                ranking = await self.client.get_boss_rankings(route.query)
+                ranking = await self._get_boss_ranking(route.query)
                 image_path = await renderer.render_ranking(
                     ranking,
                     query=route.query,
@@ -187,7 +208,7 @@ class ZmdBotPlugin(Star):
                 message=f"没有找到与「{route.query}」匹配的榜单或副本。"
             )
         if choice.target.target_type is TargetType.BOARD:
-            ranking = await self.client.get_boss_rankings(choice.target.key)
+            ranking = await self._get_boss_ranking(choice.target.key)
             image_path = await renderer.render_ranking(
                 ranking,
                 query=route.query,
@@ -264,6 +285,25 @@ class ZmdBotPlugin(Star):
             raise RenderError("renderer is unavailable")
         return self.renderer
 
+    async def _list_hot_bosses(self) -> tuple[HotBossCard, ...]:
+        result = await self.hot_boss_cache.get_or_load(
+            "all_board_top3",
+            self.client.list_hot_bosses,
+            allow_stale_on_error=True,
+        )
+        if result.state is CacheState.STALE:
+            logger.warning(
+                "ZmdBot is using stale hot-bosses data after refresh failure."
+            )
+        return result.value
+
+    async def _get_boss_ranking(self, boss_slug: str) -> BossRanking:
+        result = await self.boss_ranking_cache.get_or_load(
+            boss_slug,
+            lambda: self.client.get_boss_rankings(boss_slug),
+        )
+        return result.value
+
     @staticmethod
     def _candidate_preview(candidates: tuple[MatchChoice, ...]) -> str:
         labels = {
@@ -288,6 +328,8 @@ class ZmdBotPlugin(Star):
     async def terminate(self) -> None:
         """Release HTTP, browser, and generated-image resources."""
 
+        await self.hot_boss_cache.close()
+        await self.boss_ranking_cache.close()
         try:
             await self.client.close()
         finally:

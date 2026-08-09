@@ -1,6 +1,8 @@
 """Asynchronous client for the public ZMDLogs ranking API."""
 
+import asyncio
 import re
+import time
 from typing import Any
 
 import httpx
@@ -16,6 +18,8 @@ from .models import (
 DEFAULT_API_BASE_URL = "https://zmdlogs.com"
 DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 _BOSS_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
+_MAX_REQUEST_ATTEMPTS = 2
+_MAX_TOTAL_WAIT_SECONDS = 15.0
 
 
 class ZmdLogsClientError(Exception):
@@ -58,6 +62,7 @@ class ZmdLogsClient:
     ) -> None:
         base_url = _validate_base_url(api_base_url)
         timeout_seconds = _validate_timeout(request_timeout_ms) / 1000
+        self._request_timeout_seconds = timeout_seconds
         self._client = httpx.AsyncClient(
             base_url=base_url,
             timeout=timeout_seconds,
@@ -92,19 +97,45 @@ class ZmdLogsClient:
         await self._client.aclose()
 
     async def _get_json(self, path: str) -> Any:
-        try:
-            response = await self._client.get(path)
-        except httpx.RequestError as exc:
-            raise ZmdLogsClientError("ZMDLogs request failed") from exc
+        deadline = time.monotonic() + _MAX_TOTAL_WAIT_SECONDS
+        last_request_error: Exception | None = None
+        for attempt in range(_MAX_REQUEST_ATTEMPTS):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            attempts_left = _MAX_REQUEST_ATTEMPTS - attempt
+            attempt_timeout = min(
+                self._request_timeout_seconds,
+                remaining / attempts_left,
+            )
+            try:
+                async with asyncio.timeout(attempt_timeout):
+                    response = await self._client.get(
+                        path,
+                        timeout=httpx.Timeout(attempt_timeout),
+                    )
+            except (httpx.RequestError, TimeoutError) as exc:
+                last_request_error = exc
+                continue
 
-        if not 200 <= response.status_code < 300:
-            code, message = _read_api_error(response)
-            raise ZmdLogsAPIError(response.status_code, code, message)
+            if response.status_code >= 500 and attempt + 1 < _MAX_REQUEST_ATTEMPTS:
+                continue
+            return _decode_response(response)
 
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise ZmdLogsProtocolError("ZMDLogs returned invalid JSON") from exc
+        raise ZmdLogsClientError("ZMDLogs request failed") from last_request_error
+
+
+def _decode_response(response: httpx.Response) -> Any:
+    """Decode one final response after retry policy has been applied."""
+
+    if not 200 <= response.status_code < 300:
+        code, message = _read_api_error(response)
+        raise ZmdLogsAPIError(response.status_code, code, message)
+
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ZmdLogsProtocolError("ZMDLogs returned invalid JSON") from exc
 
 
 def _validate_base_url(value: str) -> str:
