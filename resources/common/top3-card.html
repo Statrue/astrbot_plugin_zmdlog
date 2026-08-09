@@ -1,0 +1,38 @@
+{% macro render_top3_card(card) -%}
+<article class="top3-card">
+  <header class="top3-card-header">
+    <p class="top3-card-dungeon">{{ card.dungeon_name }}</p>
+    <h2 class="top3-card-title">{{ card.boss_name }}</h2>
+  </header>
+  {% if card.runs %}
+  <ol class="top3-runs">
+    {% for run in card.runs %}
+    <li class="top3-run">
+      <span class="rank-medal">{{ run.rank }}</span>
+      <div class="character-cell">
+        <span class="avatar">
+          {% if run.character_avatar_url %}
+          <img src="{{ run.character_avatar_url }}" alt="">
+          {% else %}
+          {{ run.character_initial }}
+          {% endif %}
+        </span>
+        <span class="character-name">{{ run.character_name }}</span>
+      </div>
+      <div class="account-cell">
+        <div class="account-name">{{ run.uploader_nickname }}</div>
+      </div>
+      <div class="run-result">
+        <span class="duration">{{ run.duration }}</span>
+        {% if run.contract_score is not none %}
+        <span class="contract-score">合约 {{ run.contract_score }}</span>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <div class="empty-card">暂无公开记录</div>
+  {% endif %}
+</article>
+{%- endmacro %}

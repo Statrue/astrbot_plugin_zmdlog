@@ -1,0 +1,21 @@
+{% extends "common/base.html" %}
+{% from "common/top3-card.html" import render_top3_card %}
+
+{% block content %}
+<section class="scope-list" aria-label="标准副本范围">
+  <strong class="scope-list-label">本次包含的标准副本</strong>
+  {% for dungeon_name in page.dungeon_names %}
+  <span class="scope-chip">{{ dungeon_name }}</span>
+  {% endfor %}
+</section>
+
+<div class="section-heading">
+  <h2>范围内榜单</h2>
+  <span class="section-note">{{ page.cards|length }} 个榜单</span>
+</div>
+<section class="top3-grid" aria-label="副本榜单前三名">
+  {% for card in page.cards %}
+  {{ render_top3_card(card) }}
+  {% endfor %}
+</section>
+{% endblock %}

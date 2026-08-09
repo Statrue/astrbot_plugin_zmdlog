@@ -1,0 +1,92 @@
+{% extends "common/base.html" %}
+
+{% block content %}
+<section class="ranking-meta" aria-label="榜单信息">
+  <code>{{ page.boss_slug }}</code>
+  <span class="ranking-count">{{ page.row_count }} 条公开排名</span>
+</section>
+
+{% if page.rows %}
+<div class="ranking-table-wrap">
+  <table class="ranking-table">
+    <colgroup>
+      <col style="width: 8%">
+      <col style="width: 15%">
+      <col style="width: 30%">
+      <col style="width: 13%">
+      <col style="width: 19%">
+      <col style="width: 15%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>排名</th>
+        <th>公开账户</th>
+        <th>主要角色与阵容</th>
+        <th>DPS / 用时</th>
+        <th>危机合约</th>
+        <th>战斗详情</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in page.rows %}
+      <tr>
+        <td>
+          <span class="ranking-position">{{ row.rank }}</span>
+          <span class="percentile">{{ row.percentile }}</span>
+        </td>
+        <td>{{ row.account_display_name }}</td>
+        <td>
+          <div class="ranking-character">
+            <span class="avatar">
+              {% if row.character_avatar_url %}
+              <img src="{{ row.character_avatar_url }}" alt="">
+              {% else %}
+              {{ row.character_initial }}
+              {% endif %}
+            </span>
+            <span>
+              <strong>{{ row.character_name }}</strong>
+              <span class="cell-subtitle">{{ row.character_profession }}</span>
+            </span>
+          </div>
+          {% if row.roster %}
+          <div class="roster-list">
+            {% for member in row.roster %}
+            <span class="roster-chip">
+              {{ member.character_name }}{% if member.profession %} · {{ member.profession }}{% endif %}
+            </span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </td>
+        <td>
+          <strong>{{ row.dps }}</strong>
+          <span class="cell-subtitle">{{ row.duration }}</span>
+        </td>
+        <td>
+          {% if row.contract_score is not none %}
+          <span class="contract-value">{{ row.contract_score }} 分</span>
+          {% if row.contract_tags %}
+          <div class="contract-tags">
+            {% for tag in row.contract_tags %}
+            <span class="contract-tag">{{ tag.name }} · {{ tag.score }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% else %}
+          <span class="cell-subtitle">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <a class="battle-link" href="{{ row.battle_url }}">战斗详情</a>
+          <span class="battle-id">{{ row.battle_id }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-ranking">该榜单暂无公开排名</div>
+{% endif %}
+{% endblock %}

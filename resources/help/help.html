@@ -1,0 +1,29 @@
+{% extends "common/base.html" %}
+
+{% block content %}
+<section class="tips-grid" aria-label="使用提示">
+  {% for tip in page.tips %}
+  <article class="tip-card">
+    <strong>{{ tip.title }}</strong>
+    <span>{{ tip.description }}</span>
+  </article>
+  {% endfor %}
+</section>
+
+{% for section in page.sections %}
+<section class="help-section">
+  <div class="section-heading">
+    <h2>{{ section.title }}</h2>
+    <span class="section-note">{{ section.commands|length }} 条指令</span>
+  </div>
+  <div class="help-grid">
+    {% for item in section.commands %}
+    <article class="help-command">
+      <code>{{ item.command }}</code>
+      <p>{{ item.description }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1280, initial-scale=1.0">
+  <title>{{ page.header.title }} · {{ plugin.name }}</title>
+  <style>
+    {% include "common/base.css" %}
+  </style>
+</head>
+<body>
+  <div id="zmd-page" class="zmd-page zmd-page--{{ page_kind }}">
+    <main class="main-panel">
+      <header class="page-header">
+        <div class="brand-row">
+          <span class="brand-mark">Z</span>
+          <span class="brand-name">{{ plugin.name }}</span>
+          <span class="target-badge">{{ page.header.target_type }}</span>
+        </div>
+        <h1>{{ page.header.title }}</h1>
+        <p class="page-subtitle">{{ page.header.subtitle }}</p>
+        <dl class="query-summary">
+          <div>
+            <dt>查询</dt>
+            <dd>{{ page.header.query }}</dd>
+          </div>
+          <div>
+            <dt>命中</dt>
+            <dd>{{ page.header.matched_name }}</dd>
+          </div>
+          <div>
+            <dt>类型</dt>
+            <dd>{{ page.header.target_type }}</dd>
+          </div>
+        </dl>
+      </header>
+
+      {% block content %}{% endblock %}
+
+      <footer class="page-footer">
+        <span>{{ plugin.name }} · v{{ plugin.version }}</span>
+        <span>公开榜单 · DPS 口径</span>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
