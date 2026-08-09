@@ -474,16 +474,14 @@ body {
   align-items: center;
 }
 
-.roster-list,
-.contract-tags {
+.roster-list {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 7px;
 }
 
-.roster-chip,
-.contract-tag {
+.roster-chip {
   padding: 3px 6px;
   border-radius: 5px;
   background: #edf3f1;
@@ -495,21 +493,4 @@ body {
   color: #8f6217;
   font-size: 13px;
   font-weight: 800;
-}
-
-.battle-link {
-  color: #07767b;
-  font-size: 12px;
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.battle-id {
-  display: block;
-  overflow: hidden;
-  margin-top: 4px;
-  color: #7a8886;
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }

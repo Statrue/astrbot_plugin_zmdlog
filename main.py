@@ -168,7 +168,6 @@ class ZmdBotPlugin(Star):
                 image_path = await renderer.render_ranking(
                     ranking,
                     query=route.query,
-                    web_base_url=self.web_base_url,
                 )
                 return _DispatchOutcome(image_path=image_path)
             raise
@@ -191,7 +190,6 @@ class ZmdBotPlugin(Star):
                 image_path = await renderer.render_ranking(
                     ranking,
                     query=route.query,
-                    web_base_url=self.web_base_url,
                 )
                 return _DispatchOutcome(image_path=image_path)
             return _DispatchOutcome(
@@ -212,7 +210,6 @@ class ZmdBotPlugin(Star):
             image_path = await renderer.render_ranking(
                 ranking,
                 query=route.query,
-                web_base_url=self.web_base_url,
             )
             return _DispatchOutcome(image_path=image_path)
 

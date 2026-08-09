@@ -16,12 +16,18 @@
 <div class="ranking-table-wrap">
   <table class="ranking-table">
     <colgroup>
-      <col style="width: 8%">
+      {% if page.show_contract_score %}
+      <col style="width: 10%">
+      <col style="width: 18%">
+      <col style="width: 40%">
+      <col style="width: 17%">
       <col style="width: 15%">
-      <col style="width: 30%">
-      <col style="width: 13%">
-      <col style="width: 19%">
-      <col style="width: 15%">
+      {% else %}
+      <col style="width: 11%">
+      <col style="width: 20%">
+      <col style="width: 44%">
+      <col style="width: 25%">
+      {% endif %}
     </colgroup>
     <thead>
       <tr>
@@ -29,8 +35,9 @@
         <th>公开账户</th>
         <th>主要角色与阵容</th>
         <th>DPS / 用时</th>
-        <th>危机合约</th>
-        <th>战斗详情</th>
+        {% if page.show_contract_score %}
+        <th>合约分数</th>
+        {% endif %}
       </tr>
     </thead>
     <tbody>
@@ -68,24 +75,15 @@
           <strong>{{ row.dps }}</strong>
           <span class="cell-subtitle">{{ row.duration }}</span>
         </td>
+        {% if page.show_contract_score %}
         <td>
           {% if row.contract_score is not none %}
           <span class="contract-value">{{ row.contract_score }} 分</span>
-          {% if row.contract_tags %}
-          <div class="contract-tags">
-            {% for tag in row.contract_tags %}
-            <span class="contract-tag">{{ tag.name }} · {{ tag.score }}</span>
-            {% endfor %}
-          </div>
-          {% endif %}
           {% else %}
           <span class="cell-subtitle">—</span>
           {% endif %}
         </td>
-        <td>
-          <a class="battle-link" href="{{ row.battle_url }}">战斗详情</a>
-          <span class="battle-id">{{ row.battle_id }}</span>
-        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>

@@ -104,12 +104,10 @@ class TemplateRenderer:
         ranking: BossRanking,
         *,
         query: str,
-        web_base_url: str,
     ) -> str:
         page = build_ranking_page(
             ranking,
             query=query,
-            web_base_url=web_base_url,
         )
         return self._render("ranking/ranking.html", page, "ranking")
 
@@ -198,13 +196,11 @@ class LongImageRenderer:
         ranking: BossRanking,
         *,
         query: str,
-        web_base_url: str,
     ) -> str:
         try:
             html = self.templates.render_ranking(
                 ranking,
                 query=query,
-                web_base_url=web_base_url,
             )
         except Exception as exc:
             raise RenderError("ranking template rendering failed") from exc

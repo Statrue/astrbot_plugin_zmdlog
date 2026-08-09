@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core.models import BossRanking, BossRankingRow
+from core.models import BossRanking, BossRankingRow, ContractTag
 from core.presentation import (
     build_ranking_page,
     format_duration,
@@ -33,7 +33,7 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertNotIn("固定口径", html)
         self.assertNotIn("影拓4", html)
 
-    def test_specific_ranking_is_limited_to_first_thirty_rows(self) -> None:
+    def test_specific_ranking_is_limited_to_first_fifteen_rows(self) -> None:
         ranking = BossRanking(
             boss_slug="test-boss",
             boss_name="测试首领",
@@ -61,12 +61,52 @@ class TemplateRendererTests(unittest.TestCase):
         page = build_ranking_page(
             ranking,
             query="测试",
-            web_base_url="https://zmdlogs.com",
         )
 
         self.assertEqual(page.row_count, 35)
-        self.assertEqual(len(page.rows), 30)
-        self.assertEqual(page.rows[-1].rank, 30)
+        self.assertEqual(len(page.rows), 15)
+        self.assertEqual(page.rows[-1].rank, 15)
+        self.assertFalse(page.show_contract_score)
+
+    def test_contract_ranking_only_shows_score(self) -> None:
+        ranking = BossRanking(
+            boss_slug="indie_group_ccdg",
+            boss_name="危机合约",
+            dungeon_name="危机合约",
+            profession_groups=(),
+            rows=(
+                BossRankingRow(
+                    rank=1,
+                    score_percent=100,
+                    battle_id="secret-battle-id",
+                    battle_end_at="2026-01-01T00:00:00Z",
+                    character_name="狼卫",
+                    character_profession="术士",
+                    account_id="account-1",
+                    account_display_name="公开账号",
+                    dps=17_184.36,
+                    duration_ms=385_648,
+                    roster_summary=(),
+                    roster_entries=(),
+                    contract_tag_score=52,
+                    contract_tags=(
+                        ContractTag(
+                            tag_id=1,
+                            score=2,
+                            name="队列：折刃",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        html = self.renderer.render_ranking(ranking, query="危机合约")
+
+        self.assertIn("合约分数", html)
+        self.assertIn("52 分", html)
+        self.assertNotIn("队列：折刃", html)
+        self.assertNotIn("secret-battle-id", html)
+        self.assertNotIn("战斗详情", html)
 
     def test_top_three_template_does_not_leak_ranking_fields(self) -> None:
         card = make_card(

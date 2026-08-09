@@ -1,6 +1,6 @@
 # ZmdBot
 
-ZmdBot 是用于查询 ZMDLogs 公开 DPS 榜单的 AstrBot 插件。所有成功的帮助与榜单查询都会生成一张 1280px 宽且不分页的 PNG 长图，具体榜单展示前 30 名。
+ZmdBot 是用于查询 ZMDLogs 公开 DPS 榜单的 AstrBot 插件。所有成功的帮助与榜单查询都会生成一张 1280px 宽且不分页的 PNG 长图，具体榜单展示前 15 名。
 
 ## 安装
 

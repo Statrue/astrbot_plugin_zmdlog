@@ -1,17 +1,16 @@
 """Image-template view models for public ZMDLogs ranking data."""
 
 from dataclasses import dataclass
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from .matcher import MatchChoice, TargetType
 from .models import (
     BossRanking,
     BossRankingRosterEntry,
-    ContractTag,
     HotBossCard,
 )
 
-RANKING_DISPLAY_LIMIT = 30
+RANKING_DISPLAY_LIMIT = 15
 
 
 class PresentationError(ValueError):
@@ -53,12 +52,6 @@ class Top3Page:
 
 
 @dataclass(frozen=True, slots=True)
-class ContractTagView:
-    name: str
-    score: str
-
-
-@dataclass(frozen=True, slots=True)
 class RosterEntryView:
     character_name: str
     profession: str
@@ -79,9 +72,6 @@ class RankingRowView:
     dps: str
     duration: str
     contract_score: str | None
-    contract_tags: tuple[ContractTagView, ...]
-    battle_id: str
-    battle_url: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +79,7 @@ class RankingPage:
     header: PageHeader
     boss_slug: str
     row_count: int
+    show_contract_score: bool
     rows: tuple[RankingRowView, ...]
 
 
@@ -147,11 +138,9 @@ def build_ranking_page(
     ranking: BossRanking,
     *,
     query: str,
-    web_base_url: str,
 ) -> RankingPage:
     """Build the first public DPS rows in their upstream order."""
 
-    battle_base_url = _normalise_web_base_url(web_base_url)
     displayed_rows = ranking.rows[:RANKING_DISPLAY_LIMIT]
     return RankingPage(
         header=PageHeader(
@@ -163,6 +152,9 @@ def build_ranking_page(
         ),
         boss_slug=ranking.boss_slug,
         row_count=len(ranking.rows),
+        show_contract_score=any(
+            row.contract_tag_score is not None for row in displayed_rows
+        ),
         rows=tuple(
             RankingRowView(
                 rank=row.rank,
@@ -181,14 +173,6 @@ def build_ranking_page(
                     format_number(row.contract_tag_score)
                     if row.contract_tag_score is not None
                     else None
-                ),
-                contract_tags=tuple(
-                    _build_contract_tag(tag) for tag in row.contract_tags
-                ),
-                battle_id=row.battle_id,
-                battle_url=(
-                    f"{battle_base_url}/battle/"
-                    f"{quote(row.battle_id, safe='')}"
                 ),
             )
             for row in displayed_rows
@@ -240,13 +224,6 @@ def _build_top_card(card: HotBossCard) -> TopCardView:
     )
 
 
-def _build_contract_tag(tag: ContractTag) -> ContractTagView:
-    return ContractTagView(
-        name=tag.name or f"合约标签 {tag.tag_id}",
-        score=format_number(tag.score),
-    )
-
-
 def _build_roster(
     entries: tuple[BossRankingRosterEntry, ...],
     summary: tuple[str, ...],
@@ -287,11 +264,3 @@ def _safe_http_url(value: str | None) -> str | None:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return None
     return value
-
-
-def _normalise_web_base_url(value: str) -> str:
-    parsed = urlsplit(value.strip())
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise PresentationError("web_base_url must be an absolute HTTP(S) URL")
-    path = parsed.path.rstrip("/")
-    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
