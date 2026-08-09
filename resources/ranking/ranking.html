@@ -3,7 +3,13 @@
 {% block content %}
 <section class="ranking-meta" aria-label="榜单信息">
   <code>{{ page.boss_slug }}</code>
-  <span class="ranking-count">{{ page.row_count }} 条公开排名</span>
+  <span class="ranking-count">
+    {% if page.rows|length < page.row_count %}
+    展示前 {{ page.rows|length }} 名 · 共 {{ page.row_count }} 条公开排名
+    {% else %}
+    {{ page.row_count }} 条公开排名
+    {% endif %}
+  </span>
 </section>
 
 {% if page.rows %}

@@ -11,6 +11,8 @@ from .models import (
     HotBossCard,
 )
 
+RANKING_DISPLAY_LIMIT = 30
+
 
 class PresentationError(ValueError):
     """Raised when data cannot be represented safely in a public template."""
@@ -147,9 +149,10 @@ def build_ranking_page(
     query: str,
     web_base_url: str,
 ) -> RankingPage:
-    """Build a complete DPS ranking page in the upstream row order."""
+    """Build the first public DPS rows in their upstream order."""
 
     battle_base_url = _normalise_web_base_url(web_base_url)
+    displayed_rows = ranking.rows[:RANKING_DISPLAY_LIMIT]
     return RankingPage(
         header=PageHeader(
             title=ranking.boss_name,
@@ -188,7 +191,7 @@ def build_ranking_page(
                     f"{quote(row.battle_id, safe='')}"
                 ),
             )
-            for row in ranking.rows
+            for row in displayed_rows
         ),
     )
 

@@ -171,33 +171,6 @@ body {
   font-size: 13px;
 }
 
-.tips-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 26px;
-}
-
-.tip-card {
-  padding: 15px 17px;
-  border: 1px solid rgba(8, 123, 128, 0.18);
-  border-radius: 10px;
-  background: rgba(225, 240, 238, 0.7);
-}
-
-.tip-card strong {
-  display: block;
-  margin-bottom: 5px;
-  color: #076d72;
-  font-size: 14px;
-}
-
-.tip-card span {
-  color: #476462;
-  font-size: 13px;
-  line-height: 1.55;
-}
-
 .help-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

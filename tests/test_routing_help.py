@@ -23,22 +23,27 @@ class RoutingTests(unittest.TestCase):
 
 
 class HelpTests(unittest.TestCase):
-    def test_help_uses_the_supplied_prefix_and_covers_commands(self) -> None:
+    def test_help_uses_prefix_and_only_lists_three_query_forms(self) -> None:
         page = build_help_page("!")
-        command_text = "\n".join(
+        commands = tuple(
             command.command
             for section in page.sections
             for command in section.commands
         )
 
-        self.assertIn("!zmdlog", command_text)
-        self.assertIn("!zmdlog help", command_text)
-        self.assertIn("!zmdlog 榜单", command_text)
-        self.assertIn("!zmdlog 榜单 <关键词>", command_text)
-        self.assertIn("!zmdlog <关键词>", command_text)
-        self.assertIn("!zmdlog 影拓", command_text)
-        self.assertIn("!zmdlog 影拓4", command_text)
-        self.assertNotIn("/zmdlog", command_text)
+        self.assertEqual(
+            commands,
+            (
+                "!zmdlog 榜单",
+                "!zmdlog 榜单 <关键词>",
+                "!zmdlog 关键词",
+            ),
+        )
+        visible_text = repr(page)
+        self.assertNotIn("固定口径", visible_text)
+        self.assertNotIn("智能匹配", visible_text)
+        self.assertNotIn("副本范围", visible_text)
+        self.assertNotIn("影拓", visible_text)
 
     def test_help_has_no_alternate_metric_option(self) -> None:
         page = build_help_page("/")

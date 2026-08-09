@@ -136,6 +136,11 @@ class RankingMatcher:
             "ambiguity_score_gap",
         )
         self.targets, self.issues = _build_targets(cards, aliases)
+        self._boards_by_slug = {
+            target.key: target
+            for target in self.targets
+            if target.target_type is TargetType.BOARD
+        }
 
     def match(
         self,
@@ -176,7 +181,11 @@ class RankingMatcher:
             if choice.level <= MatchLevel.NORMALIZED_EXACT
         )
         if exact:
-            return self._resolve_ranked(stripped_query, exact)
+            preferred = self._prefer_single_board_dungeons(
+                exact,
+                enabled_types,
+            )
+            return self._resolve_ranked(stripped_query, preferred)
 
         scope = None
         if TargetType.DUNGEON_SCOPE in enabled_types:
@@ -188,7 +197,41 @@ class RankingMatcher:
                 selected=scope,
             )
 
-        return self._resolve_ranked(stripped_query, ranked)
+        preferred = self._prefer_single_board_dungeons(
+            ranked,
+            enabled_types,
+        )
+        return self._resolve_ranked(stripped_query, preferred)
+
+    def _prefer_single_board_dungeons(
+        self,
+        choices: tuple[MatchChoice, ...],
+        enabled_types: frozenset[TargetType],
+    ) -> tuple[MatchChoice, ...]:
+        """Resolve an exact one-board dungeon name to its concrete ranking."""
+
+        if TargetType.BOARD not in enabled_types:
+            return choices
+
+        preferred: list[MatchChoice] = []
+        for choice in choices:
+            target = choice.target
+            if (
+                target.target_type is TargetType.DUNGEON
+                and len(target.boss_slugs) == 1
+                and choice.level
+                in {MatchLevel.STANDARD_EXACT, MatchLevel.NORMALIZED_EXACT}
+            ):
+                board = self._boards_by_slug.get(target.boss_slugs[0])
+                if board is not None:
+                    choice = MatchChoice(
+                        target=board,
+                        level=choice.level,
+                        score=choice.score,
+                        matched_text=choice.matched_text,
+                    )
+            preferred.append(choice)
+        return _rank_choices(tuple(preferred))
 
     def _resolve_ranked(
         self,

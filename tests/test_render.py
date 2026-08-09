@@ -2,7 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core.presentation import format_duration, format_number
+from core.models import BossRanking, BossRankingRow
+from core.presentation import (
+    build_ranking_page,
+    format_duration,
+    format_number,
+)
 from core.render import (
     LongImageRenderer,
     RenderError,
@@ -25,6 +30,43 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("v0.1.0", html)
         self.assertIn("data:image/jpeg;base64,", html)
         self.assertNotIn("/zmdlog", html)
+        self.assertNotIn("固定口径", html)
+        self.assertNotIn("影拓4", html)
+
+    def test_specific_ranking_is_limited_to_first_thirty_rows(self) -> None:
+        ranking = BossRanking(
+            boss_slug="test-boss",
+            boss_name="测试首领",
+            dungeon_name="测试副本",
+            profession_groups=(),
+            rows=tuple(
+                BossRankingRow(
+                    rank=rank,
+                    score_percent=100,
+                    battle_id=f"battle-{rank}",
+                    battle_end_at="2026-01-01T00:00:00Z",
+                    character_name=f"角色{rank}",
+                    character_profession="近战",
+                    account_id=f"account-{rank}",
+                    account_display_name=f"公开账号{rank}",
+                    dps=100_000 - rank,
+                    duration_ms=60_000,
+                    roster_summary=(),
+                    roster_entries=(),
+                )
+                for rank in range(1, 36)
+            ),
+        )
+
+        page = build_ranking_page(
+            ranking,
+            query="测试",
+            web_base_url="https://zmdlogs.com",
+        )
+
+        self.assertEqual(page.row_count, 35)
+        self.assertEqual(len(page.rows), 30)
+        self.assertEqual(page.rows[-1].rank, 30)
 
     def test_top_three_template_does_not_leak_ranking_fields(self) -> None:
         card = make_card(

@@ -1,15 +1,6 @@
 {% extends "common/base.html" %}
 
 {% block content %}
-<section class="tips-grid" aria-label="使用提示">
-  {% for tip in page.tips %}
-  <article class="tip-card">
-    <strong>{{ tip.title }}</strong>
-    <span>{{ tip.description }}</span>
-  </article>
-  {% endfor %}
-</section>
-
 {% for section in page.sections %}
 <section class="help-section">
   <div class="section-heading">

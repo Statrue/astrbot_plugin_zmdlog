@@ -89,6 +89,39 @@ class MatcherTests(unittest.TestCase):
         )
         self.assertEqual(len(result.selected.target.dungeon_names), 4)
 
+    def test_single_board_dungeon_query_opens_the_concrete_ranking(self) -> None:
+        for boss_name in ("危机合约", "破潮之像"):
+            with self.subTest(boss_name=boss_name):
+                cards = (
+                    make_card("crisis-contract", boss_name, "危机合约"),
+                )
+                matcher = RankingMatcher(cards, AliasConfig.empty())
+
+                result = matcher.match("危机合约")
+
+                self.assertEqual(result.status, MatchStatus.MATCHED)
+                self.assertEqual(
+                    result.selected.target.target_type,
+                    TargetType.BOARD,
+                )
+                self.assertEqual(result.selected.target.key, "crisis-contract")
+
+    def test_multi_board_dungeon_query_keeps_the_top_three_page(self) -> None:
+        cards = (
+            make_card("crisis-one", "首领一", "危机合约"),
+            make_card("crisis-two", "首领二", "危机合约"),
+        )
+        matcher = RankingMatcher(cards, AliasConfig.empty())
+
+        result = matcher.match("危机合约")
+
+        self.assertEqual(result.status, MatchStatus.MATCHED)
+        self.assertEqual(result.selected.target.target_type, TargetType.DUNGEON)
+        self.assertEqual(
+            result.selected.target.boss_slugs,
+            ("crisis-one", "crisis-two"),
+        )
+
     def test_short_non_unique_query_is_ambiguous(self) -> None:
         cards = (
             make_card("one", "巨像一", "测试副本一"),
