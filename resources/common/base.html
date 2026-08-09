@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=1280, initial-scale=1.0">
   <title>{{ page.header.title }} · {{ plugin.name }}</title>
   <style>
+    :root {
+      --zmd-scene-background: url("{{ background_data_url }}");
+    }
     {% include "common/base.css" %}
   </style>
 </head>

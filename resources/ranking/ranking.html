@@ -38,10 +38,9 @@
         <td>
           <div class="ranking-character">
             <span class="avatar">
+              {{ row.character_initial }}
               {% if row.character_avatar_url %}
               <img src="{{ row.character_avatar_url }}" alt="">
-              {% else %}
-              {{ row.character_initial }}
               {% endif %}
             </span>
             <span>

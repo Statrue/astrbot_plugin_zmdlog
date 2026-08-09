@@ -11,10 +11,9 @@
       <span class="rank-medal">{{ run.rank }}</span>
       <div class="character-cell">
         <span class="avatar">
+          {{ run.character_initial }}
           {% if run.character_avatar_url %}
           <img src="{{ run.character_avatar_url }}" alt="">
-          {% else %}
-          {{ run.character_initial }}
           {% endif %}
         </span>
         <span class="character-name">{{ run.character_name }}</span>

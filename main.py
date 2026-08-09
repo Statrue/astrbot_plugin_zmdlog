@@ -1,5 +1,6 @@
 """AstrBot entry point for ZmdBot."""
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from astrbot.api import AstrBotConfig, logger
@@ -13,7 +14,6 @@ from .core.client import (
     ZmdLogsClientError,
     is_valid_boss_slug,
 )
-from .core.models import BossRanking, HotBossCard
 from .core.matcher import (
     AliasConfig,
     AliasConfigError,
@@ -23,10 +23,22 @@ from .core.matcher import (
     TargetType,
 )
 from .core.routing import RouteKind, RouteRequest, parse_zmdlog_payload
+from .core.render import (
+    LongImageRenderer,
+    RenderError,
+    TemplateConfigurationError,
+)
 
 _BOARD_QUERY_TARGETS = frozenset(
     {TargetType.BOARD, TargetType.DUNGEON, TargetType.DUNGEON_SCOPE}
 )
+_RENDER_FAILURE_MESSAGE = "图片生成失败，请稍后重试。"
+
+
+@dataclass(frozen=True, slots=True)
+class _DispatchOutcome:
+    image_path: str | None = None
+    message: str | None = None
 
 
 class ZmdBotPlugin(Star):
@@ -39,8 +51,12 @@ class ZmdBotPlugin(Star):
     ) -> None:
         super().__init__(context)
         self.config = config if config is not None else {}
+        self.api_base_url = self.config.get(
+            "api_base_url",
+            DEFAULT_API_BASE_URL,
+        )
         self.client = ZmdLogsClient(
-            api_base_url=self.config.get("api_base_url", DEFAULT_API_BASE_URL),
+            api_base_url=self.api_base_url,
             request_timeout_ms=self.config.get(
                 "request_timeout_ms",
                 DEFAULT_REQUEST_TIMEOUT_MS,
@@ -55,6 +71,28 @@ class ZmdBotPlugin(Star):
             "ambiguity_score_gap",
             0.08,
         )
+        self.web_base_url = self.config.get(
+            "web_base_url",
+            DEFAULT_API_BASE_URL,
+        )
+        try:
+            self.renderer: LongImageRenderer | None = LongImageRenderer(
+                Path(__file__).parent,
+                render_timeout_ms=self.config.get(
+                    "render_timeout_ms",
+                    30_000,
+                ),
+                allowed_image_origins=(
+                    self.api_base_url,
+                    self.web_base_url,
+                ),
+            )
+        except TemplateConfigurationError as exc:
+            logger.error(
+                "ZmdBot renderer configuration failed: %s",
+                type(exc).__name__,
+            )
+            self.renderer = None
 
     @filter.command("zmdlog")
     async def zmdlog(self, event: AstrMessageEvent):
@@ -62,26 +100,56 @@ class ZmdBotPlugin(Star):
 
         route = parse_zmdlog_payload(self._extract_payload(event.get_message_str()))
         try:
-            result = await self._dispatch(route)
+            outcome = await self._dispatch(
+                route,
+                command_prefix=self._command_prefix(event),
+            )
         except ZmdLogsClientError as exc:
             logger.warning("ZmdBot ranking request failed: %s", type(exc).__name__)
-            result = "ZMDLogs 暂时不可用，请稍后重试。"
-        yield event.plain_result(result)
+            yield event.plain_result("ZMDLogs 暂时不可用，请稍后重试。")
+            return
+        except RenderError as exc:
+            logger.error("ZmdBot image rendering failed: %s", type(exc).__name__)
+            yield event.plain_result(_RENDER_FAILURE_MESSAGE)
+            return
 
-    async def _dispatch(self, route: RouteRequest) -> str:
+        if outcome.image_path is not None:
+            yield event.image_result(outcome.image_path)
+            return
+        yield event.plain_result(outcome.message or "本次查询未产生结果。")
+
+    async def _dispatch(
+        self,
+        route: RouteRequest,
+        *,
+        command_prefix: str,
+    ) -> _DispatchOutcome:
+        renderer = self._require_renderer()
         if route.kind is RouteKind.HELP:
-            return "ZmdBot 已加载。帮助图片将在后续步骤接入。"
+            image_path = await renderer.render_help(
+                command_prefix=command_prefix,
+            )
+            return _DispatchOutcome(image_path=image_path)
 
         if route.kind is RouteKind.ALL_RANKINGS:
             cards = await self.client.list_hot_bosses()
-            return self._hot_bosses_preview(cards)
+            image_path = await renderer.render_all_top3(
+                cards,
+                query="榜单",
+            )
+            return _DispatchOutcome(image_path=image_path)
 
         try:
             cards = await self.client.list_hot_bosses()
         except ZmdLogsClientError:
             if self._looks_like_direct_slug(route.query):
                 ranking = await self.client.get_boss_rankings(route.query)
-                return self._boss_ranking_preview(ranking)
+                image_path = await renderer.render_ranking(
+                    ranking,
+                    query=route.query,
+                    web_base_url=self.web_base_url,
+                )
+                return _DispatchOutcome(image_path=image_path)
             raise
 
         matcher = RankingMatcher(
@@ -99,23 +167,44 @@ class ZmdBotPlugin(Star):
         if match.status is MatchStatus.NOT_FOUND:
             if self._looks_like_direct_slug(route.query):
                 ranking = await self.client.get_boss_rankings(route.query)
-                return self._boss_ranking_preview(ranking)
-            return f"没有找到与「{route.query}」匹配的榜单或副本。"
+                image_path = await renderer.render_ranking(
+                    ranking,
+                    query=route.query,
+                    web_base_url=self.web_base_url,
+                )
+                return _DispatchOutcome(image_path=image_path)
+            return _DispatchOutcome(
+                message=f"没有找到与「{route.query}」匹配的榜单或副本。"
+            )
         if match.status is MatchStatus.AMBIGUOUS:
-            return self._candidate_preview(match.candidates)
+            return _DispatchOutcome(
+                message=self._candidate_preview(match.candidates)
+            )
 
         choice = match.selected
         if choice is None:
-            return f"没有找到与「{route.query}」匹配的榜单或副本。"
+            return _DispatchOutcome(
+                message=f"没有找到与「{route.query}」匹配的榜单或副本。"
+            )
         if choice.target.target_type is TargetType.BOARD:
             ranking = await self.client.get_boss_rankings(choice.target.key)
-            return self._boss_ranking_preview(ranking)
+            image_path = await renderer.render_ranking(
+                ranking,
+                query=route.query,
+                web_base_url=self.web_base_url,
+            )
+            return _DispatchOutcome(image_path=image_path)
 
         selected_slugs = set(choice.target.boss_slugs)
         selected_cards = tuple(
             card for card in cards if card.boss_slug in selected_slugs
         )
-        return self._dungeon_preview(choice, selected_cards)
+        image_path = await renderer.render_dungeon_top3(
+            choice,
+            selected_cards,
+            query=route.query,
+        )
+        return _DispatchOutcome(image_path=image_path)
 
     def _load_aliases(self) -> AliasConfig:
         configured_path = Path(self.config.get("alias_file_path", "aliases.json"))
@@ -143,38 +232,37 @@ class ZmdBotPlugin(Star):
         _, separator, payload = normalized.partition(" ")
         return payload if separator else ""
 
-    @staticmethod
-    def _hot_bosses_preview(cards: tuple[HotBossCard, ...]) -> str:
-        run_count = sum(len(card.top_speed_runs) for card in cards)
-        return (
-            f"已获取 {len(cards)} 个榜单、{run_count} 条前三名记录；"
-            "图片模板将在后续步骤接入。"
-        )
-
-    @staticmethod
-    def _boss_ranking_preview(ranking: BossRanking) -> str:
-        return (
-            f"已获取「{ranking.dungeon_name} · {ranking.boss_name}」DPS 榜单，"
-            f"共 {len(ranking.rows)} 条公开排名；图片模板将在后续步骤接入。"
-        )
-
-    @staticmethod
-    def _dungeon_preview(
-        choice: MatchChoice,
-        cards: tuple[HotBossCard, ...],
-    ) -> str:
-        run_count = sum(len(card.top_speed_runs) for card in cards)
-        if choice.target.target_type is TargetType.DUNGEON_SCOPE:
-            return (
-                f"已命中副本范围「{choice.target.name}」，包含 "
-                f"{len(choice.target.dungeon_names)} 个标准副本、"
-                f"{len(cards)} 个榜单和 {run_count} 条前三名记录；"
-                "图片模板将在后续步骤接入。"
+    def _command_prefix(self, event: AstrMessageEvent) -> str:
+        try:
+            config = self.context.get_config(event.unified_msg_origin)
+            prefixes = config.get("wake_prefix", [])
+        except Exception as exc:
+            logger.debug(
+                "ZmdBot cannot read the active command prefix: %s",
+                type(exc).__name__,
             )
-        return (
-            f"已命中副本「{choice.target.name}」，包含 {len(cards)} 个榜单和 "
-            f"{run_count} 条前三名记录；图片模板将在后续步骤接入。"
-        )
+            return ""
+        if isinstance(prefixes, str):
+            configured = (prefixes,)
+        elif isinstance(prefixes, (list, tuple)):
+            configured = tuple(
+                prefix for prefix in prefixes if isinstance(prefix, str)
+            )
+        else:
+            configured = ()
+        raw_message = getattr(event.message_obj, "message_str", "")
+        if isinstance(raw_message, str):
+            for prefix in configured:
+                if raw_message.startswith(f"{prefix}zmdlog"):
+                    return prefix
+            if raw_message.startswith("zmdlog"):
+                return ""
+        return configured[0] if configured else ""
+
+    def _require_renderer(self) -> LongImageRenderer:
+        if self.renderer is None:
+            raise RenderError("renderer is unavailable")
+        return self.renderer
 
     @staticmethod
     def _candidate_preview(candidates: tuple[MatchChoice, ...]) -> str:
@@ -198,7 +286,11 @@ class ZmdBotPlugin(Star):
         return is_valid_boss_slug(query) and ("_" in query or "-" in query)
 
     async def terminate(self) -> None:
-        """Release plugin resources added by later implementation steps."""
+        """Release HTTP, browser, and generated-image resources."""
 
-        await self.client.close()
+        try:
+            await self.client.close()
+        finally:
+            if self.renderer is not None:
+                await self.renderer.close()
         logger.info("ZmdBot plugin terminated.")
