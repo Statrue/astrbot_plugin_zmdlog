@@ -61,8 +61,8 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         description="查询具体榜单或副本。",
                     ),
                     HelpCommand(
-                        command=f"{command} 关键词",
-                        description="直接输入关键词查询榜单或副本。",
+                        command=f"{command} 关键词 [--top 数量]",
+                        description="查询榜单或副本；具体榜单可指定 1–30 名。",
                     ),
                 ),
             ),

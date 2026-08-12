@@ -25,6 +25,7 @@ from .presentation import (
     build_dungeon_top3_page,
     build_ranking_page,
 )
+from .routing import DEFAULT_RANKING_TOP
 
 _VERSION_LINE = re.compile(
     r"^\s*version\s*:\s*(?P<value>[^#]+?)\s*(?:#.*)?$"
@@ -104,10 +105,12 @@ class TemplateRenderer:
         ranking: BossRanking,
         *,
         query: str,
+        ranking_limit: int = DEFAULT_RANKING_TOP,
     ) -> str:
         page = build_ranking_page(
             ranking,
             query=query,
+            display_limit=ranking_limit,
         )
         return self._render("ranking/ranking.html", page, "ranking")
 
@@ -196,11 +199,13 @@ class LongImageRenderer:
         ranking: BossRanking,
         *,
         query: str,
+        ranking_limit: int = DEFAULT_RANKING_TOP,
     ) -> str:
         try:
             html = self.templates.render_ranking(
                 ranking,
                 query=query,
+                ranking_limit=ranking_limit,
             )
         except Exception as exc:
             raise RenderError("ranking template rendering failed") from exc

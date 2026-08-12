@@ -9,8 +9,11 @@ from .models import (
     BossRankingRosterEntry,
     HotBossCard,
 )
-
-RANKING_DISPLAY_LIMIT = 15
+from .routing import (
+    DEFAULT_RANKING_TOP,
+    MAX_RANKING_TOP,
+    MIN_RANKING_TOP,
+)
 
 
 class PresentationError(ValueError):
@@ -138,10 +141,16 @@ def build_ranking_page(
     ranking: BossRanking,
     *,
     query: str,
+    display_limit: int = DEFAULT_RANKING_TOP,
 ) -> RankingPage:
     """Build the first public DPS rows in their upstream order."""
 
-    displayed_rows = ranking.rows[:RANKING_DISPLAY_LIMIT]
+    if isinstance(display_limit, bool) or not isinstance(display_limit, int):
+        raise PresentationError("ranking display limit must be an integer")
+    if not MIN_RANKING_TOP <= display_limit <= MAX_RANKING_TOP:
+        raise PresentationError("ranking display limit must be between 1 and 30")
+
+    displayed_rows = ranking.rows[:display_limit]
     return RankingPage(
         header=PageHeader(
             title=ranking.boss_name,

@@ -24,7 +24,12 @@ from .core.matcher import (
     TargetType,
 )
 from .core.models import BossRanking, HotBossCard
-from .core.routing import RouteKind, RouteRequest, parse_zmdlog_payload
+from .core.routing import (
+    RouteKind,
+    RouteParseError,
+    RouteRequest,
+    parse_zmdlog_payload,
+)
 from .core.render import (
     LongImageRenderer,
     RenderError,
@@ -115,7 +120,13 @@ class ZmdBotPlugin(Star):
     async def zmdlog(self, event: AstrMessageEvent):
         """查询 ZMDLogs 公开榜单。"""
 
-        route = parse_zmdlog_payload(self._extract_payload(event.get_message_str()))
+        try:
+            route = parse_zmdlog_payload(
+                self._extract_payload(event.get_message_str())
+            )
+        except RouteParseError as exc:
+            yield event.plain_result(str(exc))
+            return
         try:
             outcome = await self._dispatch(
                 route,
@@ -168,6 +179,7 @@ class ZmdBotPlugin(Star):
                 image_path = await renderer.render_ranking(
                     ranking,
                     query=route.query,
+                    ranking_limit=route.ranking_limit,
                 )
                 return _DispatchOutcome(image_path=image_path)
             raise
@@ -190,6 +202,7 @@ class ZmdBotPlugin(Star):
                 image_path = await renderer.render_ranking(
                     ranking,
                     query=route.query,
+                    ranking_limit=route.ranking_limit,
                 )
                 return _DispatchOutcome(image_path=image_path)
             return _DispatchOutcome(
@@ -210,8 +223,14 @@ class ZmdBotPlugin(Star):
             image_path = await renderer.render_ranking(
                 ranking,
                 query=route.query,
+                ranking_limit=route.ranking_limit,
             )
             return _DispatchOutcome(image_path=image_path)
+
+        if route.ranking_top is not None:
+            return _DispatchOutcome(
+                message="--top 仅适用于具体榜单查询，请补充具体榜单关键词。"
+            )
 
         selected_slugs = set(choice.target.boss_slugs)
         selected_cards = tuple(

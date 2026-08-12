@@ -4,6 +4,7 @@ from pathlib import Path
 
 from core.models import BossRanking, BossRankingRow, ContractTag
 from core.presentation import (
+    PresentationError,
     build_ranking_page,
     format_duration,
     format_number,
@@ -34,7 +35,7 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertNotIn("固定口径", html)
         self.assertNotIn("影拓4", html)
 
-    def test_specific_ranking_is_limited_to_first_fifteen_rows(self) -> None:
+    def test_specific_ranking_defaults_to_ten_and_supports_top_thirty(self) -> None:
         ranking = BossRanking(
             boss_slug="test-boss",
             boss_name="测试首领",
@@ -65,9 +66,43 @@ class TemplateRendererTests(unittest.TestCase):
         )
 
         self.assertEqual(page.row_count, 35)
-        self.assertEqual(len(page.rows), 15)
-        self.assertEqual(page.rows[-1].rank, 15)
+        self.assertEqual(len(page.rows), 10)
+        self.assertEqual(page.rows[-1].rank, 10)
         self.assertFalse(page.show_contract_score)
+
+        expanded_page = build_ranking_page(
+            ranking,
+            query="测试",
+            display_limit=30,
+        )
+        self.assertEqual(len(expanded_page.rows), 30)
+        self.assertEqual(expanded_page.rows[-1].rank, 30)
+
+        expanded_html = self.renderer.render_ranking(
+            ranking,
+            query="测试",
+            ranking_limit=30,
+        )
+        self.assertIn("公开账号30", expanded_html)
+        self.assertNotIn("公开账号31", expanded_html)
+
+    def test_specific_ranking_rejects_out_of_range_display_limit(self) -> None:
+        ranking = BossRanking(
+            boss_slug="test-boss",
+            boss_name="测试首领",
+            dungeon_name="测试副本",
+            profession_groups=(),
+            rows=(),
+        )
+
+        for display_limit in (0, 31, True):
+            with self.subTest(display_limit=display_limit):
+                with self.assertRaises(PresentationError):
+                    build_ranking_page(
+                        ranking,
+                        query="测试",
+                        display_limit=display_limit,
+                    )
 
     def test_contract_ranking_only_shows_score(self) -> None:
         ranking = BossRanking(

@@ -1,6 +1,6 @@
 # ZmdBot
 
-ZmdBot 是用于查询 ZMDLogs 公开 DPS 榜单的 AstrBot 插件。所有成功的帮助与榜单查询都会生成一张 1280px 宽且不分页的 PNG 长图，具体榜单展示前 15 名。
+ZmdBot 是用于查询 ZMDLogs 公开 DPS 榜单的 AstrBot 插件。所有成功的帮助与榜单查询都会生成一张 1280px 宽且不分页的 PNG 长图，具体榜单默认展示前 10 名，可按参数扩展至前 30 名。
 
 ## 安装
 
@@ -19,6 +19,7 @@ playwright install chromium
 - `/zmdlog 榜单`：全部榜单前三名。
 - `/zmdlog 榜单 <关键词>`：查询具体榜单、副本或副本范围。
 - `/zmdlog <关键词>`：智能匹配快捷入口。
+- `/zmdlog <关键词> --top <数量>`：具体榜单展示前 1–30 名。
 
 帮助页会读取当前 AstrBot 会话配置的唤醒前缀，不固定写死为 `/`。
 
