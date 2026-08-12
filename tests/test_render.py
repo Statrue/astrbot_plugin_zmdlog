@@ -26,6 +26,7 @@ class TemplateRendererTests(unittest.TestCase):
     def test_help_is_self_contained_and_uses_manifest_version(self) -> None:
         html = self.renderer.render_help(command_prefix="!")
 
+        self.assertIn("!zmdlog help", html)
         self.assertIn("!zmdlog 榜单", html)
         self.assertIn("v0.1.0", html)
         self.assertIn("data:image/jpeg;base64,", html)

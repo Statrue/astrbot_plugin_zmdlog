@@ -23,7 +23,7 @@ class RoutingTests(unittest.TestCase):
 
 
 class HelpTests(unittest.TestCase):
-    def test_help_uses_prefix_and_only_lists_three_query_forms(self) -> None:
+    def test_help_uses_prefix_and_lists_help_before_query_forms(self) -> None:
         page = build_help_page("!")
         commands = tuple(
             command.command
@@ -34,6 +34,8 @@ class HelpTests(unittest.TestCase):
         self.assertEqual(
             commands,
             (
+                "!zmdlog",
+                "!zmdlog help",
                 "!zmdlog 榜单",
                 "!zmdlog 榜单 <关键词>",
                 "!zmdlog 关键词",

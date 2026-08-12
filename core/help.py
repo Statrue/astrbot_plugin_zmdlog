@@ -37,6 +37,19 @@ def build_help_page(command_prefix: str) -> HelpPage:
         ),
         sections=(
             HelpSection(
+                title="帮助",
+                commands=(
+                    HelpCommand(
+                        command=command,
+                        description="显示当前版本的完整帮助页。",
+                    ),
+                    HelpCommand(
+                        command=f"{command} help",
+                        description="与无参数指令显示相同的帮助页。",
+                    ),
+                ),
+            ),
+            HelpSection(
                 title="常用查询",
                 commands=(
                     HelpCommand(
