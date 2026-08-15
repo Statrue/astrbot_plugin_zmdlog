@@ -5,6 +5,7 @@ import base64
 import re
 import struct
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,10 @@ from .routing import DEFAULT_RANKING_TOP
 _VERSION_LINE = re.compile(
     r"^\s*version\s*:\s*(?P<value>[^#]+?)\s*(?:#.*)?$"
 )
+_OUTPUT_FILE_GLOB = "zmd-*.png"
+DEFAULT_MAX_CONCURRENT_RENDERS = 2
+DEFAULT_OUTPUT_TTL_SECONDS = 10 * 60
+DEFAULT_MAX_OUTPUT_FILES = 50
 
 
 class TemplateConfigurationError(ValueError):
@@ -134,6 +139,9 @@ class LongImageRenderer:
         render_timeout_ms: int = 30_000,
         output_dir: Path | None = None,
         allowed_image_origins: tuple[str, ...] = (),
+        max_concurrent_renders: int = DEFAULT_MAX_CONCURRENT_RENDERS,
+        output_ttl_seconds: float = DEFAULT_OUTPUT_TTL_SECONDS,
+        max_output_files: int = DEFAULT_MAX_OUTPUT_FILES,
     ) -> None:
         if isinstance(render_timeout_ms, bool) or not isinstance(
             render_timeout_ms,
@@ -150,13 +158,30 @@ class LongImageRenderer:
         self.output_dir = output_dir or (
             Path(tempfile.gettempdir()) / "astrbot_plugin_zmdbot"
         )
+        self.output_ttl_seconds = _positive_number(
+            output_ttl_seconds,
+            "output_ttl_seconds",
+        )
+        self.max_output_files = _positive_integer(
+            max_output_files,
+            "max_output_files",
+        )
         self.allowed_image_origins = frozenset(
             _normalise_http_origin(value) for value in allowed_image_origins
         )
         self._playwright: Any = None
         self._browser: Any = None
         self._launch_lock = asyncio.Lock()
+        self._render_semaphore = asyncio.Semaphore(
+            _positive_integer(
+                max_concurrent_renders,
+                "max_concurrent_renders",
+            )
+        )
+        self._output_lock = asyncio.Lock()
         self._created_files: set[Path] = set()
+        self._active_outputs: set[Path] = set()
+        self._cleanup_task: asyncio.Task[None] | None = None
 
     async def render_help(self, *, command_prefix: str) -> str:
         try:
@@ -212,11 +237,12 @@ class LongImageRenderer:
         return await self._capture(html, "ranking")
 
     async def _capture(self, html: str, page_kind: str) -> str:
+        async with self._render_semaphore:
+            return await self._capture_once(html, page_kind)
+
+    async def _capture_once(self, html: str, page_kind: str) -> str:
         browser = await self._ensure_browser()
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = self.output_dir / (
-            f"zmd-{page_kind}-{uuid.uuid4().hex}.png"
-        )
+        output_path = await self._reserve_output_path(page_kind)
         context = None
         page = None
         try:
@@ -246,13 +272,13 @@ class LongImageRenderer:
             width, height = _read_png_dimensions(output_path)
             if width != 1280 or height < metrics["height"]:
                 raise RenderError("captured image does not contain the full page")
-            self._created_files.add(output_path)
+            await self._complete_output(output_path)
             return str(output_path)
         except RenderError:
-            output_path.unlink(missing_ok=True)
+            await self._discard_output(output_path)
             raise
         except Exception as exc:
-            output_path.unlink(missing_ok=True)
+            await self._discard_output(output_path)
             raise RenderError("browser capture failed") from exc
         finally:
             if page is not None:
@@ -265,6 +291,76 @@ class LongImageRenderer:
                     await context.close()
                 except Exception:
                     pass
+
+    async def _reserve_output_path(self, page_kind: str) -> Path:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        async with self._output_lock:
+            self._prune_output_files_locked()
+            output_path = self.output_dir / (
+                f"zmd-{page_kind}-{uuid.uuid4().hex}.png"
+            )
+            self._active_outputs.add(output_path)
+            return output_path
+
+    async def _complete_output(self, output_path: Path) -> None:
+        async with self._output_lock:
+            self._active_outputs.discard(output_path)
+            self._created_files.add(output_path)
+            self._prune_output_files_locked()
+            if self._cleanup_task is None or self._cleanup_task.done():
+                self._cleanup_task = asyncio.create_task(
+                    self._cleanup_output_loop()
+                )
+
+    async def _discard_output(self, output_path: Path) -> None:
+        async with self._output_lock:
+            self._delete_output_locked(output_path)
+
+    async def _prune_output_files(self) -> None:
+        """Delete expired and excess images left by this or older runs."""
+
+        async with self._output_lock:
+            self._prune_output_files_locked()
+
+    def _prune_output_files_locked(self) -> None:
+        try:
+            output_paths = tuple(self.output_dir.glob(_OUTPUT_FILE_GLOB))
+        except OSError:
+            return
+
+        now = time.time()
+        retained: list[tuple[float, Path]] = []
+        for output_path in output_paths:
+            if output_path in self._active_outputs:
+                continue
+            try:
+                modified_at = output_path.stat().st_mtime
+            except OSError:
+                continue
+            if now - modified_at >= self.output_ttl_seconds:
+                self._delete_output_locked(output_path)
+                continue
+            retained.append((modified_at, output_path))
+
+        excess_count = len(retained) - self.max_output_files
+        if excess_count <= 0:
+            return
+        for _, output_path in sorted(retained)[:excess_count]:
+            self._delete_output_locked(output_path)
+
+    async def _cleanup_output_loop(self) -> None:
+        interval = min(60.0, self.output_ttl_seconds)
+        while True:
+            await asyncio.sleep(interval)
+            await self._prune_output_files()
+
+    def _delete_output_locked(self, output_path: Path) -> None:
+        self._created_files.discard(output_path)
+        self._active_outputs.discard(output_path)
+        try:
+            output_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     async def _ensure_browser(self):
         if self._browser is not None and self._browser.is_connected():
@@ -361,6 +457,11 @@ class LongImageRenderer:
         return metrics
 
     async def close(self) -> None:
+        cleanup_task = self._cleanup_task
+        self._cleanup_task = None
+        if cleanup_task is not None:
+            cleanup_task.cancel()
+            await asyncio.gather(cleanup_task, return_exceptions=True)
         try:
             if self._browser is not None:
                 await self._browser.close()
@@ -371,9 +472,15 @@ class LongImageRenderer:
             finally:
                 self._browser = None
                 self._playwright = None
-                for output_path in tuple(self._created_files):
-                    output_path.unlink(missing_ok=True)
-                self._created_files.clear()
+                async with self._output_lock:
+                    output_paths = self._created_files | self._active_outputs
+                    for output_path in tuple(output_paths):
+                        try:
+                            output_path.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+                    self._created_files.clear()
+                    self._active_outputs.clear()
 
 
 def read_plugin_version(metadata_path: Path) -> str:
@@ -434,3 +541,15 @@ def _normalise_http_origin(value: str) -> str:
             "allowed image origin must be an absolute HTTP(S) URL"
         )
     return f"{parsed.scheme.casefold()}://{parsed.netloc.casefold()}"
+
+
+def _positive_integer(value: int, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise TemplateConfigurationError(f"{name} must be a positive integer")
+    return value
+
+
+def _positive_number(value: float, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
+        raise TemplateConfigurationError(f"{name} must be a positive number")
+    return float(value)

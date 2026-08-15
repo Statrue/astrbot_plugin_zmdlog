@@ -1,4 +1,7 @@
+import asyncio
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -197,6 +200,9 @@ class TemplateRendererTests(unittest.TestCase):
 
 
 class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.root = Path(__file__).parents[1]
+
     async def test_missing_page_frame_is_a_render_error(self) -> None:
         class MissingPage:
             async def evaluate(self, script):
@@ -205,6 +211,95 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
         renderer = object.__new__(LongImageRenderer)
         with self.assertRaises(RenderError):
             await renderer._validate_page(MissingPage())
+
+    async def test_render_concurrency_is_bounded(self) -> None:
+        renderer = LongImageRenderer(
+            self.root,
+            max_concurrent_renders=2,
+        )
+        release = asyncio.Event()
+        two_started = asyncio.Event()
+        active = 0
+        peak = 0
+
+        async def capture_once(html: str, page_kind: str) -> str:
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            if active == 2:
+                two_started.set()
+            try:
+                await release.wait()
+                return page_kind
+            finally:
+                active -= 1
+
+        renderer._capture_once = capture_once
+        tasks = tuple(
+            asyncio.create_task(renderer._capture("", f"page-{index}"))
+            for index in range(6)
+        )
+        await asyncio.wait_for(two_started.wait(), timeout=1)
+        await asyncio.sleep(0)
+
+        self.assertEqual(peak, 2)
+        self.assertEqual(active, 2)
+
+        release.set()
+        results = await asyncio.gather(*tasks)
+        self.assertEqual(len(results), 6)
+        self.assertEqual(peak, 2)
+        await renderer.close()
+
+    async def test_output_pruning_removes_expired_and_excess_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            renderer = LongImageRenderer(
+                self.root,
+                output_dir=output_dir,
+                output_ttl_seconds=60,
+                max_output_files=2,
+            )
+            now = time.time()
+            stale = output_dir / "zmd-help-stale.png"
+            recent_paths = tuple(
+                output_dir / f"zmd-help-recent-{index}.png"
+                for index in range(3)
+            )
+            unrelated = output_dir / "keep.txt"
+            for path in (stale, *recent_paths, unrelated):
+                path.write_bytes(b"test")
+            os.utime(stale, (now - 120, now - 120))
+            for index, path in enumerate(recent_paths):
+                modified_at = now - (3 - index)
+                os.utime(path, (modified_at, modified_at))
+
+            await renderer._prune_output_files()
+
+            self.assertFalse(stale.exists())
+            self.assertFalse(recent_paths[0].exists())
+            self.assertTrue(recent_paths[1].exists())
+            self.assertTrue(recent_paths[2].exists())
+            self.assertTrue(unrelated.exists())
+            await renderer.close()
+
+    async def test_completed_output_expires_after_ttl(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            renderer = LongImageRenderer(
+                self.root,
+                output_dir=output_dir,
+                output_ttl_seconds=0.01,
+            )
+            output_path = output_dir / "zmd-help-expiring.png"
+            output_path.write_bytes(b"test")
+
+            await renderer._complete_output(output_path)
+            await asyncio.sleep(0.05)
+
+            self.assertFalse(output_path.exists())
+            self.assertNotIn(output_path, renderer._created_files)
+            await renderer.close()
 
 
 if __name__ == "__main__":
