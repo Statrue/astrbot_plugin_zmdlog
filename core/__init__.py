@@ -1,4 +1,4 @@
-"""Core services for the ZmdBot plugin."""
+"""Core services for the ZmdLogBot plugin."""
 
 from .cache import AsyncTTLCache, CacheResult, CacheState
 from .client import ZmdLogsClient

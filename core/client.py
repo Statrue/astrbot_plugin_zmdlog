@@ -67,7 +67,10 @@ class ZmdLogsClient:
             base_url=base_url,
             timeout=timeout_seconds,
             transport=transport,
-            headers={"Accept": "application/json", "User-Agent": "ZmdBot"},
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "astrbot_plugin_zmdlog",
+            },
         )
 
     async def list_hot_bosses(self) -> tuple[HotBossCard, ...]:

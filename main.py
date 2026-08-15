@@ -1,4 +1,4 @@
-"""AstrBot entry point for ZmdBot."""
+"""AstrBot entry point for ZmdLogBot."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,7 +40,7 @@ _BOARD_QUERY_TARGETS = frozenset(
     {TargetType.BOARD, TargetType.DUNGEON, TargetType.DUNGEON_SCOPE}
 )
 _RENDER_FAILURE_MESSAGE = "图片生成失败，请稍后重试。"
-_UNEXPECTED_FAILURE_MESSAGE = "ZmdBot 暂时无法完成查询，请稍后重试。"
+_UNEXPECTED_FAILURE_MESSAGE = "ZmdLogBot 暂时无法完成查询，请稍后重试。"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +49,7 @@ class _DispatchOutcome:
     message: str | None = None
 
 
-class ZmdBotPlugin(Star):
+class ZmdLogBotPlugin(Star):
     """Query public ZMDLogs rankings from a single ``zmdlog`` command."""
 
     def __init__(
@@ -111,7 +111,7 @@ class ZmdBotPlugin(Star):
             )
         except TemplateConfigurationError as exc:
             logger.error(
-                "ZmdBot renderer configuration failed: %s",
+                "ZmdLogBot renderer configuration failed: %s",
                 type(exc).__name__,
             )
             self.renderer = None
@@ -133,15 +133,15 @@ class ZmdBotPlugin(Star):
                 command_prefix=self._command_prefix(event),
             )
         except ZmdLogsClientError as exc:
-            logger.warning("ZmdBot ranking request failed: %s", type(exc).__name__)
+            logger.warning("ZmdLogBot ranking request failed: %s", type(exc).__name__)
             yield event.plain_result("ZMDLogs 暂时不可用，请稍后重试。")
             return
         except RenderError as exc:
-            logger.error("ZmdBot image rendering failed: %s", type(exc).__name__)
+            logger.error("ZmdLogBot image rendering failed: %s", type(exc).__name__)
             yield event.plain_result(_RENDER_FAILURE_MESSAGE)
             return
         except Exception:
-            logger.exception("ZmdBot unexpected command failure")
+            logger.exception("ZmdLogBot unexpected command failure")
             yield event.plain_result(_UNEXPECTED_FAILURE_MESSAGE)
             return
 
@@ -191,7 +191,7 @@ class ZmdBotPlugin(Star):
             ambiguity_score_gap=self.ambiguity_score_gap,
         )
         for issue in matcher.issues:
-            logger.warning("ZmdBot alias index: %s", issue)
+            logger.warning("ZmdLogBot alias index: %s", issue)
         # The account version can extend the smart route's set without changing
         # the matcher or the explicit board route.
         match = matcher.match(route.query, allowed_types=_BOARD_QUERY_TARGETS)
@@ -253,7 +253,7 @@ class ZmdBotPlugin(Star):
         try:
             return AliasConfig.load(alias_path)
         except AliasConfigError as exc:
-            logger.error("ZmdBot alias configuration failed: %s", exc)
+            logger.error("ZmdLogBot alias configuration failed: %s", exc)
             return AliasConfig.empty()
 
     @staticmethod
@@ -275,7 +275,7 @@ class ZmdBotPlugin(Star):
             prefixes = config.get("wake_prefix", [])
         except Exception as exc:
             logger.debug(
-                "ZmdBot cannot read the active command prefix: %s",
+                "ZmdLogBot cannot read the active command prefix: %s",
                 type(exc).__name__,
             )
             return ""
@@ -309,7 +309,7 @@ class ZmdBotPlugin(Star):
         )
         if result.state is CacheState.STALE:
             logger.warning(
-                "ZmdBot is using stale hot-bosses data after refresh failure."
+                "ZmdLogBot is using stale hot-bosses data after refresh failure."
             )
         return result.value
 
@@ -351,4 +351,4 @@ class ZmdBotPlugin(Star):
         finally:
             if self.renderer is not None:
                 await self.renderer.close()
-        logger.info("ZmdBot plugin terminated.")
+        logger.info("ZmdLogBot plugin terminated.")

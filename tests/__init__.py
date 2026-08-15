@@ -1,1 +1,1 @@
-"""Automated tests for ZmdBot."""
+"""Automated tests for ZmdLogBot."""

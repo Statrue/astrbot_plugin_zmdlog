@@ -32,11 +32,24 @@ class TemplateRendererTests(unittest.TestCase):
 
         self.assertIn("!zmdlog help", html)
         self.assertIn("!zmdlog 榜单", html)
-        self.assertIn("v0.1.0", html)
+        self.assertIn("ZmdLogBot", html)
+        self.assertIn("v0.2.0", html)
         self.assertIn("data:image/jpeg;base64,", html)
+        self.assertNotIn("astrbot_plugin_zmdlog", html)
         self.assertNotIn("/zmdlog", html)
         self.assertNotIn("固定口径", html)
         self.assertNotIn("影拓4", html)
+
+    def test_metadata_uses_current_plugin_identity(self) -> None:
+        metadata = (self.root / "metadata.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("name: astrbot_plugin_zmdlog", metadata)
+        self.assertIn("display_name: ZmdLogBot", metadata)
+        self.assertIn(
+            "repo: https://github.com/Statrue/astrbot_plugin_zmdlog",
+            metadata,
+        )
+        self.assertNotIn("astrbot_plugin_zmdbot", metadata)
 
     def test_specific_ranking_defaults_to_ten_and_supports_top_thirty(self) -> None:
         ranking = BossRanking(
@@ -211,6 +224,12 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
         renderer = object.__new__(LongImageRenderer)
         with self.assertRaises(RenderError):
             await renderer._validate_page(MissingPage())
+
+    async def test_default_output_directory_uses_current_plugin_name(self) -> None:
+        renderer = LongImageRenderer(self.root)
+
+        self.assertEqual(renderer.output_dir.name, "astrbot_plugin_zmdlog")
+        await renderer.close()
 
     async def test_render_concurrency_is_bounded(self) -> None:
         renderer = LongImageRenderer(

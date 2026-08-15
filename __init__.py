@@ -1,1 +1,1 @@
-"""ZmdBot AstrBot plugin package."""
+"""ZmdLogBot AstrBot plugin package."""

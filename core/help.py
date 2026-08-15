@@ -1,4 +1,4 @@
-"""Local user-facing command definitions for the ZmdBot help page."""
+"""Local user-facing command definitions for the ZmdLogBot help page."""
 
 from dataclasses import dataclass
 
@@ -29,7 +29,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
     command = f"{command_prefix}zmdlog"
     return HelpPage(
         header=PageHeader(
-            title="ZmdBot 指令帮助",
+            title="ZmdLogBot 指令帮助",
             subtitle="查询 ZMDLogs 公开 DPS 榜单",
             query=command,
             matched_name="常用查询",

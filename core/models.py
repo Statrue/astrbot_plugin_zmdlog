@@ -100,7 +100,7 @@ def parse_hot_bosses(payload: Any) -> tuple[HotBossCard, ...]:
 
 
 def parse_boss_ranking(payload: Any) -> BossRanking:
-    """Adapt a ranking response and enforce the ZmdBot DPS-only contract."""
+    """Adapt a ranking response and enforce the ZmdLogBot DPS-only contract."""
 
     item = _mapping(payload, "ranking")
     metric = _string(item.get("metric"), "ranking.metric")

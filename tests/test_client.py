@@ -13,6 +13,23 @@ from tests.helpers import hot_bosses_payload, ranking_payload
 
 
 class ZmdLogsClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_requests_use_ascii_plugin_user_agent(self) -> None:
+        seen_user_agents: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            seen_user_agents.append(request.headers["User-Agent"])
+            return httpx.Response(200, json=hot_bosses_payload())
+
+        client = ZmdLogsClient(transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+        await client.list_hot_bosses()
+
+        self.assertEqual(
+            seen_user_agents,
+            ["astrbot_plugin_zmdlog"],
+        )
+        self.assertTrue(seen_user_agents[0].isascii())
+
     async def test_hot_bosses_retries_one_5xx(self) -> None:
         calls = 0
 

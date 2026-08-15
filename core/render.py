@@ -1,4 +1,4 @@
-"""Strict HTML templates and single-image Playwright capture for ZmdBot."""
+"""Strict HTML templates and single-image Playwright capture for ZmdLogBot."""
 
 import asyncio
 import base64
@@ -42,7 +42,7 @@ class TemplateConfigurationError(ValueError):
 
 
 class RenderError(RuntimeError):
-    """Raised when a complete ZmdBot image cannot be produced."""
+    """Raised when a complete ZmdLogBot image cannot be produced."""
 
 
 class TemplateRenderer:
@@ -124,7 +124,7 @@ class TemplateRenderer:
         return template.render(
             page=page,
             page_kind=page_kind,
-            plugin={"name": "ZmdBot", "version": self.version},
+            plugin={"name": "ZmdLogBot", "version": self.version},
             background_data_url=self.background_data_url,
         )
 
@@ -156,7 +156,7 @@ class LongImageRenderer:
         self.templates = TemplateRenderer.from_plugin_root(plugin_root)
         self.render_timeout_ms = render_timeout_ms
         self.output_dir = output_dir or (
-            Path(tempfile.gettempdir()) / "astrbot_plugin_zmdbot"
+            Path(tempfile.gettempdir()) / "astrbot_plugin_zmdlog"
         )
         self.output_ttl_seconds = _positive_number(
             output_ttl_seconds,
