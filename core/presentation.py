@@ -16,6 +16,13 @@ from .routing import (
 )
 
 
+# Temporary presentation compatibility: upstream currently exposes the
+# contract board as bossName="破潮之像", while the public site labels the
+# activity and ranking page as "危机合约". Remove this override after the
+# upstream API provides the same public-facing name.
+_CRISIS_CONTRACT_BOSS_SLUG = "indie_group_ccdg"
+
+
 class PresentationError(ValueError):
     """Raised when data cannot be represented safely in a public template."""
 
@@ -151,12 +158,20 @@ def build_ranking_page(
         raise PresentationError("ranking display limit must be between 1 and 30")
 
     displayed_rows = ranking.rows[:display_limit]
+    is_crisis_contract = ranking.boss_slug == _CRISIS_CONTRACT_BOSS_SLUG
+    title = "危机合约" if is_crisis_contract else ranking.boss_name
+    subtitle = "活动竞速" if is_crisis_contract else ranking.dungeon_name
+    matched_name = (
+        "危机合约"
+        if is_crisis_contract
+        else f"{ranking.dungeon_name} · {ranking.boss_name}"
+    )
     return RankingPage(
         header=PageHeader(
-            title=ranking.boss_name,
-            subtitle=ranking.dungeon_name,
+            title=title,
+            subtitle=subtitle,
             query=query,
-            matched_name=f"{ranking.dungeon_name} · {ranking.boss_name}",
+            matched_name=matched_name,
             target_type="具体榜单",
         ),
         boss_slug=ranking.boss_slug,

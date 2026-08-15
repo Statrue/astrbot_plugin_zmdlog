@@ -85,6 +85,9 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertEqual(len(page.rows), 10)
         self.assertEqual(page.rows[-1].rank, 10)
         self.assertFalse(page.show_contract_score)
+        self.assertEqual(page.header.title, "测试首领")
+        self.assertEqual(page.header.subtitle, "测试副本")
+        self.assertEqual(page.header.matched_name, "测试副本 · 测试首领")
 
         expanded_page = build_ranking_page(
             ranking,
@@ -123,7 +126,7 @@ class TemplateRendererTests(unittest.TestCase):
     def test_contract_ranking_only_shows_score(self) -> None:
         ranking = BossRanking(
             boss_slug="indie_group_ccdg",
-            boss_name="危机合约",
+            boss_name="破潮之像",
             dungeon_name="危机合约",
             profession_groups=(),
             rows=(
@@ -152,8 +155,13 @@ class TemplateRendererTests(unittest.TestCase):
             ),
         )
 
+        page = build_ranking_page(ranking, query="危机合约")
         html = self.renderer.render_ranking(ranking, query="危机合约")
 
+        self.assertEqual(page.header.title, "危机合约")
+        self.assertEqual(page.header.subtitle, "活动竞速")
+        self.assertEqual(page.header.matched_name, "危机合约")
+        self.assertNotIn("破潮之像", html)
         self.assertIn("合约分数", html)
         self.assertIn("52 分", html)
         self.assertIn("<th>DPS</th>", html)
