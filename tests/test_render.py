@@ -5,9 +5,11 @@ import time
 import unittest
 from pathlib import Path
 
+from core.matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
 from core.models import BossRanking, BossRankingRow, ContractTag
 from core.presentation import (
     PresentationError,
+    build_dungeon_top3_page,
     build_ranking_page,
     format_duration,
     format_number,
@@ -33,7 +35,7 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("!zmdlog help", html)
         self.assertIn("!zmdlog 榜单", html)
         self.assertIn("ZmdLogBot", html)
-        self.assertIn("v0.2.0", html)
+        self.assertIn("v0.2.1", html)
         self.assertIn("data:image/jpeg;base64,", html)
         self.assertNotIn("astrbot_plugin_zmdlog", html)
         self.assertNotIn("/zmdlog", html)
@@ -199,6 +201,47 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertNotIn("secret-slug", html)
         self.assertNotIn("battle-secret-slug", html)
         self.assertIn("1:01.234", html)
+
+    def test_dungeon_scope_groups_cards_by_dungeon(self) -> None:
+        cards = (
+            make_card("a-1", "榜单甲", "影拓丰碑1期", with_run=True),
+            make_card("b-1", "榜单乙", "影拓丰碑2期", with_run=True),
+            make_card("a-2", "榜单丙", "影拓丰碑1期", with_run=True),
+        )
+        choice = MatchChoice(
+            target=MatchTarget(
+                target_type=TargetType.DUNGEON_SCOPE,
+                key="scope:影拓丰碑",
+                name="影拓丰碑1—2期",
+                dungeon_names=("影拓丰碑1期", "影拓丰碑2期"),
+                boss_slugs=tuple(card.boss_slug for card in cards),
+                query_text="丰碑",
+            ),
+            level=MatchLevel.NORMALIZED_EXACT,
+            score=1.0,
+            matched_text="丰碑",
+        )
+
+        page = build_dungeon_top3_page(choice, cards, query="丰碑")
+        html = self.renderer.render_dungeon_top3(choice, cards, query="丰碑")
+
+        self.assertTrue(page.group_by_dungeon)
+        self.assertEqual(
+            tuple(group.dungeon_name for group in page.card_groups),
+            ("影拓丰碑1期", "影拓丰碑2期"),
+        )
+        self.assertEqual(
+            tuple(len(group.cards) for group in page.card_groups),
+            (2, 1),
+        )
+        self.assertEqual(html.count('class="dungeon-group"'), 2)
+        self.assertNotIn('class="top3-card-dungeon"', html)
+        self.assertLess(
+            html.index("<h3>影拓丰碑1期</h3>"),
+            html.index("<h3>影拓丰碑2期</h3>"),
+        )
+        self.assertIn("2 个榜单", html)
+        self.assertIn("1 个榜单", html)
 
     def test_missing_background_is_a_configuration_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

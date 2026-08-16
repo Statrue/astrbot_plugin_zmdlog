@@ -236,6 +236,42 @@ body {
   margin-top: 26px;
 }
 
+.dungeon-groups {
+  display: grid;
+  gap: 28px;
+}
+
+.dungeon-group {
+  break-inside: avoid;
+}
+
+.dungeon-group-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding: 0 2px 9px;
+  border-bottom: 1px solid rgba(8, 123, 128, 0.2);
+}
+
+.dungeon-group-heading h3 {
+  margin: 0;
+  color: #184245;
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.dungeon-group-heading span {
+  flex: 0 0 auto;
+  color: #718180;
+  font-size: 12px;
+}
+
+.dungeon-group-grid {
+  margin-top: 0;
+}
+
 .top3-card {
   overflow: hidden;
   break-inside: avoid;

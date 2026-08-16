@@ -55,10 +55,18 @@ class TopCardView:
 
 
 @dataclass(frozen=True, slots=True)
+class TopCardGroupView:
+    dungeon_name: str
+    cards: tuple[TopCardView, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Top3Page:
     header: PageHeader
     dungeon_names: tuple[str, ...]
     cards: tuple[TopCardView, ...]
+    card_groups: tuple[TopCardGroupView, ...]
+    group_by_dungeon: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +108,7 @@ def build_all_top3_page(
 ) -> Top3Page:
     """Build the all-board page without exposing ranking-only fields."""
 
+    card_views = tuple(_build_top_card(card) for card in cards)
     return Top3Page(
         header=PageHeader(
             title="全部榜单前三名",
@@ -109,7 +118,9 @@ def build_all_top3_page(
             target_type="全部榜单",
         ),
         dungeon_names=_unique_dungeon_names(cards),
-        cards=tuple(_build_top_card(card) for card in cards),
+        cards=card_views,
+        card_groups=_group_top_cards(card_views),
+        group_by_dungeon=False,
     )
 
 
@@ -131,6 +142,7 @@ def build_dungeon_top3_page(
         if target_type is TargetType.DUNGEON_SCOPE
         else "该标准副本下全部榜单前三名"
     )
+    card_views = tuple(_build_top_card(card) for card in cards)
     return Top3Page(
         header=PageHeader(
             title=f"{label}榜单前三名",
@@ -140,7 +152,9 @@ def build_dungeon_top3_page(
             target_type=label,
         ),
         dungeon_names=choice.target.dungeon_names,
-        cards=tuple(_build_top_card(card) for card in cards),
+        cards=card_views,
+        card_groups=_group_top_cards(card_views),
+        group_by_dungeon=target_type is TargetType.DUNGEON_SCOPE,
     )
 
 
@@ -275,6 +289,20 @@ def _build_roster(
 
 def _unique_dungeon_names(cards: tuple[HotBossCard, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(card.dungeon_name for card in cards))
+
+
+def _group_top_cards(
+    cards: tuple[TopCardView, ...],
+) -> tuple[TopCardGroupView, ...]:
+    """Group cards by dungeon while preserving the upstream result order."""
+
+    grouped: dict[str, list[TopCardView]] = {}
+    for card in cards:
+        grouped.setdefault(card.dungeon_name, []).append(card)
+    return tuple(
+        TopCardGroupView(dungeon_name=name, cards=tuple(group_cards))
+        for name, group_cards in grouped.items()
+    )
 
 
 def _initial(value: str) -> str:

@@ -1,7 +1,9 @@
-{% macro render_top3_card(card) -%}
+{% macro render_top3_card(card, show_dungeon=true) -%}
 <article class="top3-card">
   <header class="top3-card-header">
+    {% if show_dungeon %}
     <p class="top3-card-dungeon">{{ card.dungeon_name }}</p>
+    {% endif %}
     <h2 class="top3-card-title">{{ card.boss_name }}</h2>
   </header>
   {% if card.runs %}
