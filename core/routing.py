@@ -18,6 +18,8 @@ class RouteKind(str, Enum):
     HELP = "help"
     ALL_RANKINGS = "all_rankings"
     RANKING_QUERY = "ranking_query"
+    ACCOUNT_QUERY = "account_query"
+    BATTLE_QUERY = "battle_query"
     SMART_QUERY = "smart_query"
 
 
@@ -65,6 +67,20 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
             remainder,
             ranking_top=ranking_top,
         )
+
+    if command in {"账号", "账户"}:
+        if ranking_top is not None:
+            raise RouteParseError("--top 不适用于账号查询。")
+        if not separator or not remainder:
+            raise RouteParseError("请提供 accountId 或 ZMDLogs 账号主页链接。")
+        return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder)
+
+    if command == "战报":
+        if ranking_top is not None:
+            raise RouteParseError("--top 不适用于战报查询。")
+        if not separator or not remainder:
+            raise RouteParseError("请提供 battleId 或 ZMDLogs 战报链接。")
+        return RouteRequest(RouteKind.BATTLE_QUERY, remainder)
 
     return RouteRequest(
         RouteKind.SMART_QUERY,

@@ -1,0 +1,44 @@
+{% extends "common/base.html" %}
+
+{% block extra_styles %}{% include "battle/battle.css" %}{% endblock %}
+
+{% block content %}
+<section class="battle-overview" aria-label="战斗概览">
+  <div class="battle-primary-stat"><span>通关时间</span><strong>{{ page.duration }}</strong><small>{{ page.timer_label }}</small></div>
+  <div class="battle-primary-stat"><span>总 DPS</span><strong>{{ page.total_dps }}</strong><small>整场队伍输出速率</small></div>
+  <div class="battle-primary-stat"><span>总伤害</span><strong>{{ page.total_damage }}</strong><small>{{ page.integrity_label }}</small></div>
+</section>
+
+<section class="battle-identity" aria-label="战报信息">
+  <div><span>上传者</span><strong>{{ page.uploader_display_name }}</strong></div>
+  <div><span>战斗时间</span><strong>{{ page.battle_date }}</strong></div>
+  <div><span>公开账号</span><code>{{ page.account_id }}</code></div>
+  {% if page.contract_score is not none %}<div><span>合约分数</span><strong>{{ page.contract_score }} 分</strong></div>{% endif %}
+  <div class="battle-link"><span>完整战报</span><code>{{ page.report_url }}</code></div>
+</section>
+
+<div class="section-heading">
+  <h2>本场角色</h2>
+  <span class="section-note">DPS 为直伤口径，rDPS 为团队贡献口径</span>
+</div>
+
+<section class="participant-grid" aria-label="角色战斗统计">
+  {% for participant in page.participants %}
+  <article class="participant-card">
+    <div class="participant-heading">
+      <span class="avatar participant-avatar">{{ participant.character_initial }}{% if participant.character_avatar_url %}<img src="{{ participant.character_avatar_url }}" alt="">{% endif %}</span>
+      <div><h3>{{ participant.character_name }}</h3><span>{{ participant.character_profession }} · 伤害占比 {{ participant.damage_share }}</span></div>
+    </div>
+    <dl class="participant-stats">
+      <div><dt>DPS</dt><dd>{{ participant.dps }}</dd></div>
+      <div><dt>rDPS</dt><dd>{{ participant.rdps }}</dd></div>
+      <div><dt>总伤害</dt><dd>{{ participant.total_damage }}</dd></div>
+      <div><dt>最大单次</dt><dd>{{ participant.max_hit }}</dd></div>
+      <div><dt>暴击率</dt><dd>{{ participant.crit_rate }}</dd></div>
+    </dl>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="battle-id-row"><span>battleId</span><code>{{ page.battle_id }}</code></section>
+{% endblock %}

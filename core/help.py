@@ -30,7 +30,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
     return HelpPage(
         header=PageHeader(
             title="ZmdLogBot 指令帮助",
-            subtitle="查询 ZMDLogs 公开 DPS 榜单",
+            subtitle="查询 ZMDLogs 公开榜单、账号与战报",
             query=command,
             matched_name="常用查询",
             target_type="帮助",
@@ -63,6 +63,19 @@ def build_help_page(command_prefix: str) -> HelpPage:
                     HelpCommand(
                         command=f"{command} 关键词 [--top 数量]",
                         description="查询榜单或副本；具体榜单可指定 1–30 名。",
+                    ),
+                ),
+            ),
+            HelpSection(
+                title="账号与战报",
+                commands=(
+                    HelpCommand(
+                        command=f"{command} 账号 <accountId或账号主页链接>",
+                        description="按公开账号 ID 查询各首领最佳记录。",
+                    ),
+                    HelpCommand(
+                        command=f"{command} 战报 <battleId或战报链接>",
+                        description="生成一场公开战斗的摘要卡。",
                     ),
                 ),
             ),

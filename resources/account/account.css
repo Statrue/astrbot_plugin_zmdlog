@@ -1,0 +1,53 @@
+.account-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.account-stat {
+  padding: 17px 18px;
+  border: 1px solid rgba(8, 123, 128, 0.18);
+  border-radius: 11px;
+  background: rgba(232, 241, 239, 0.72);
+}
+
+.account-stat span { display: block; color: #667c7a; font-size: 12px; font-weight: 700; }
+.account-stat strong { display: block; margin-top: 7px; color: #0b696e; font-size: 28px; font-variant-numeric: tabular-nums; }
+
+.account-identity {
+  display: grid;
+  grid-template-columns: 0.9fr 1.6fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.account-identity > div {
+  min-width: 0;
+  padding: 12px 15px;
+  border: 1px solid #dde7e4;
+  border-radius: 9px;
+  background: rgba(250, 252, 251, 0.94);
+}
+
+.account-identity span { display: block; margin-bottom: 5px; color: #71817f; font-size: 11px; font-weight: 750; }
+.account-identity code { display: block; overflow-wrap: anywhere; color: #275153; font-family: inherit; font-size: 12px; font-weight: 650; }
+
+.account-table-wrap { overflow: hidden; border: 1px solid #d8e3df; border-radius: 12px; background: rgba(253, 254, 254, 0.97); }
+.account-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.account-table th { padding: 12px 9px; color: #5c7270; background: #edf4f2; font-size: 11px; text-align: left; }
+.account-table td { padding: 12px 9px; border-top: 1px solid #e7eeec; color: #284341; font-size: 11px; vertical-align: middle; }
+.account-table th:nth-child(1) { width: 23%; }
+.account-table th:nth-child(2) { width: 9%; }
+.account-table th:nth-child(3) { width: 12%; }
+.account-table th:nth-child(4) { width: 13%; }
+.account-table th:nth-child(5) { width: 25%; }
+.account-table th:nth-child(6) { width: 11%; }
+.account-table td strong, .account-table td span { display: block; }
+.account-table td > span { margin-top: 3px; color: #748381; font-size: 9px; }
+.account-rank { color: #0b6b70; font-size: 15px; }
+.numeric { font-variant-numeric: tabular-nums; font-weight: 750; }
+.account-dps { color: #173f42; }
+.account-roster { display: flex; flex-wrap: wrap; gap: 4px; }
+.account-roster span { padding: 3px 6px; border-radius: 5px; color: #5b706e; background: #edf3f1; font-size: 9px; }
+.account-date { color: #667a78; font-variant-numeric: tabular-nums; }

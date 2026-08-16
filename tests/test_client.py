@@ -4,12 +4,18 @@ import httpx
 
 from core.client import (
     InvalidBossSlugError,
+    InvalidPublicIdentifierError,
     ZmdLogsAPIError,
     ZmdLogsClient,
     ZmdLogsProtocolError,
 )
 
-from tests.helpers import hot_bosses_payload, ranking_payload
+from tests.helpers import (
+    battle_detail_payload,
+    hot_bosses_payload,
+    public_user_rankings_payload,
+    ranking_payload,
+)
 
 
 class ZmdLogsClientTests(unittest.IsolatedAsyncioTestCase):
@@ -128,6 +134,63 @@ class ZmdLogsClientTests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(client.close)
         with self.assertRaises(InvalidBossSlugError):
             await client.get_boss_rankings("../private")
+        self.assertEqual(calls, 0)
+
+    async def test_exact_account_rankings_use_public_path(self) -> None:
+        seen_urls: list[httpx.URL] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            seen_urls.append(request.url)
+            return httpx.Response(200, json=public_user_rankings_payload())
+
+        client = ZmdLogsClient(transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+        account = await client.get_public_user_rankings(
+            "usr_1234567890abcdef"
+        )
+
+        self.assertEqual(account.account_display_name, "测试账号")
+        self.assertEqual(account.rankings[0].rank, 2)
+        self.assertEqual(
+            seen_urls[0].path,
+            "/api/battles/users/usr_1234567890abcdef/rankings",
+        )
+
+    async def test_battle_detail_keeps_summary_and_participants_only(self) -> None:
+        client = ZmdLogsClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json=battle_detail_payload(),
+                )
+            )
+        )
+        self.addAsyncCleanup(client.close)
+
+        battle = await client.get_battle_detail(
+            "btl_upload_abcdef123456"
+        )
+
+        self.assertEqual(battle.uploader_display_name, "测试账号")
+        self.assertEqual(battle.total_dps, 110_061.2)
+        self.assertEqual(len(battle.participants), 1)
+        self.assertEqual(battle.participants[0].rdps, 26_428.42)
+        self.assertTrue(battle.integrity_verified)
+
+    async def test_invalid_public_ids_are_rejected_before_request(self) -> None:
+        calls = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            return httpx.Response(200, json={})
+
+        client = ZmdLogsClient(transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+        with self.assertRaises(InvalidPublicIdentifierError):
+            await client.get_public_user_rankings("../private")
+        with self.assertRaises(InvalidPublicIdentifierError):
+            await client.get_battle_detail("https://example.com/battle")
         self.assertEqual(calls, 0)
 
 

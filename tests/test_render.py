@@ -6,7 +6,13 @@ import unittest
 from pathlib import Path
 
 from core.matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
-from core.models import BossRanking, BossRankingRow, ContractTag
+from core.models import (
+    BossRanking,
+    BossRankingRow,
+    ContractTag,
+    parse_battle_detail,
+    parse_public_user_rankings,
+)
 from core.presentation import (
     PresentationError,
     build_dungeon_top3_page,
@@ -21,7 +27,11 @@ from core.render import (
     TemplateRenderer,
 )
 
-from tests.helpers import make_card
+from tests.helpers import (
+    battle_detail_payload,
+    make_card,
+    public_user_rankings_payload,
+)
 
 
 class TemplateRendererTests(unittest.TestCase):
@@ -35,7 +45,7 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("!zmdlog help", html)
         self.assertIn("!zmdlog 榜单", html)
         self.assertIn("ZmdLogBot", html)
-        self.assertIn("v0.2.1", html)
+        self.assertIn("v0.3.0", html)
         self.assertIn("data:image/jpeg;base64,", html)
         self.assertNotIn("astrbot_plugin_zmdlog", html)
         self.assertNotIn("/zmdlog", html)
@@ -52,6 +62,44 @@ class TemplateRendererTests(unittest.TestCase):
             metadata,
         )
         self.assertNotIn("astrbot_plugin_zmdbot", metadata)
+
+    def test_account_page_shows_exact_identity_and_best_records(self) -> None:
+        payload = public_user_rankings_payload()
+        payload["accountDisplayName"] = "测试<script>账号"
+        account = parse_public_user_rankings(payload)
+
+        html = self.renderer.render_account(
+            account,
+            query="usr_1234567890abcdef",
+            web_base_url="https://zmdlogs.com",
+        )
+
+        self.assertIn("测试&lt;script&gt;账号", html)
+        self.assertIn("usr_1234567890abcdef", html)
+        self.assertIn("https://zmdlogs.com/records/usr_1234567890abcdef", html)
+        self.assertIn("110,061.2", html)
+        self.assertIn("队伍总 DPS", html)
+        self.assertIn("95%", html)
+
+    def test_battle_page_uses_compact_detail_fields_and_resolves_avatar(self) -> None:
+        battle = parse_battle_detail(battle_detail_payload())
+
+        html = self.renderer.render_battle(
+            battle,
+            query="https://zmdlogs.com/battle/btl_upload_abcdef123456",
+            web_base_url="https://zmdlogs.com",
+        )
+
+        self.assertIn("“碾骨之拳”罗丹", html)
+        self.assertIn("110,061.2", html)
+        self.assertIn("97,325.01", html)
+        self.assertIn("26,428.42", html)
+        self.assertIn("81.2%", html)
+        self.assertIn(
+            "https://zmdlogs.com/images/character/luoxi.png",
+            html,
+        )
+        self.assertNotIn("ignored", html)
 
     def test_specific_ranking_defaults_to_ten_and_supports_top_thirty(self) -> None:
         ranking = BossRanking(

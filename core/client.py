@@ -8,12 +8,17 @@ from typing import Any
 import httpx
 
 from .models import (
+    BattleDetailSummary,
     BossRanking,
     HotBossCard,
     ModelValidationError,
+    PublicUserRankings,
+    parse_battle_detail,
     parse_boss_ranking,
     parse_hot_bosses,
+    parse_public_user_rankings,
 )
+from .identifiers import is_valid_account_id, is_valid_battle_id
 
 DEFAULT_API_BASE_URL = "https://zmdlogs.com"
 DEFAULT_REQUEST_TIMEOUT_MS = 10_000
@@ -28,6 +33,10 @@ class ZmdLogsClientError(Exception):
 
 class InvalidBossSlugError(ZmdLogsClientError):
     """Raised before a request when a boss slug is unsafe or malformed."""
+
+
+class InvalidPublicIdentifierError(ZmdLogsClientError):
+    """Raised before a request when an account or battle ID is malformed."""
 
 
 class ZmdLogsAPIError(ZmdLogsClientError):
@@ -51,7 +60,7 @@ def is_valid_boss_slug(value: str) -> bool:
 
 
 class ZmdLogsClient:
-    """Fetch and adapt the two public APIs used by the MVP."""
+    """Fetch and adapt the public ZMDLogs APIs used by the plugin."""
 
     def __init__(
         self,
@@ -93,6 +102,35 @@ class ZmdLogsClient:
             return parse_boss_ranking(payload)
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError("boss ranking response is invalid") from exc
+
+    async def get_public_user_rankings(
+        self,
+        account_id: str,
+    ) -> PublicUserRankings:
+        """Return one exact public account's best records."""
+
+        if not is_valid_account_id(account_id):
+            raise InvalidPublicIdentifierError("invalid account id")
+        payload = await self._get_json(
+            f"api/battles/users/{account_id}/rankings"
+        )
+        try:
+            return parse_public_user_rankings(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError(
+                "public user rankings response is invalid"
+            ) from exc
+
+    async def get_battle_detail(self, battle_id: str) -> BattleDetailSummary:
+        """Return the compact fields needed from one full public battle."""
+
+        if not is_valid_battle_id(battle_id):
+            raise InvalidPublicIdentifierError("invalid battle id")
+        payload = await self._get_json(f"api/battles/{battle_id}")
+        try:
+            return parse_battle_detail(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError("battle detail response is invalid") from exc
 
     async def close(self) -> None:
         """Close the underlying connection pool."""

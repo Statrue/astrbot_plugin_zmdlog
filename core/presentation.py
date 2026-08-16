@@ -1,13 +1,16 @@
 """Image-template view models for public ZMDLogs ranking data."""
 
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from datetime import datetime
+from urllib.parse import quote, urljoin, urlsplit
 
 from .matcher import MatchChoice, TargetType
 from .models import (
+    BattleDetailSummary,
     BossRanking,
     BossRankingRosterEntry,
     HotBossCard,
+    PublicUserRankings,
 )
 from .routing import (
     DEFAULT_RANKING_TOP,
@@ -34,6 +37,7 @@ class PageHeader:
     query: str
     matched_name: str
     target_type: str
+    footer_note: str = "公开榜单 · DPS 口径"
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +103,64 @@ class RankingPage:
     row_count: int
     show_contract_score: bool
     rows: tuple[RankingRowView, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AccountRankingView:
+    boss_name: str
+    dungeon_name: str | None
+    rank: int
+    percentile: str
+    duration: str
+    total_dps: str
+    battle_date: str
+    roster: tuple[str, ...]
+    contract_score: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class AccountPage:
+    header: PageHeader
+    account_id: str
+    account_url: str
+    record_count: int
+    best_rank: str
+    best_percentile: str
+    average_percentile: str
+    show_contract_score: bool
+    rows: tuple[AccountRankingView, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BattleParticipantView:
+    character_name: str
+    character_profession: str
+    character_initial: str
+    character_avatar_url: str | None
+    dps: str
+    rdps: str
+    total_damage: str
+    damage_share: str
+    max_hit: str
+    crit_rate: str
+
+
+@dataclass(frozen=True, slots=True)
+class BattlePage:
+    header: PageHeader
+    battle_id: str
+    report_url: str
+    account_id: str
+    account_url: str
+    uploader_display_name: str
+    duration: str
+    total_dps: str
+    total_damage: str
+    battle_date: str
+    timer_label: str
+    integrity_label: str
+    contract_score: str | None
+    participants: tuple[BattleParticipantView, ...]
 
 
 def build_all_top3_page(
@@ -218,6 +280,152 @@ def build_ranking_page(
     )
 
 
+def build_account_page(
+    account: PublicUserRankings,
+    *,
+    query: str,
+    web_base_url: str,
+) -> AccountPage:
+    """Build one exact public account's best-record overview."""
+
+    rows = account.rankings
+    record_count = len(rows)
+    best_rank = f"#{min(row.rank for row in rows)}" if rows else "—"
+    best_percentile = (
+        f"{max(row.score_percent for row in rows)}%" if rows else "—"
+    )
+    average_percentile = (
+        f"{round(sum(row.score_percent for row in rows) / record_count)}%"
+        if rows
+        else "—"
+    )
+    return AccountPage(
+        header=PageHeader(
+            title=account.account_display_name,
+            subtitle="公开账号各首领最佳记录",
+            query=query,
+            matched_name=account.account_id,
+            target_type="公开账号",
+            footer_note="公开账号 · 当前最佳记录",
+        ),
+        account_id=account.account_id,
+        account_url=_public_url(
+            web_base_url,
+            "records",
+            account.account_id,
+        ),
+        record_count=record_count,
+        best_rank=best_rank,
+        best_percentile=best_percentile,
+        average_percentile=average_percentile,
+        show_contract_score=any(
+            row.contract_tag_score is not None for row in rows
+        ),
+        rows=tuple(
+            AccountRankingView(
+                boss_name=row.boss_name,
+                dungeon_name=(
+                    row.dungeon_name
+                    if row.dungeon_name != row.boss_name
+                    else None
+                ),
+                rank=row.rank,
+                percentile=f"{format_number(row.score_percent)}%",
+                duration=format_duration(row.duration_ms),
+                total_dps=format_number(row.total_dps),
+                battle_date=_format_date(row.battle_end_at),
+                roster=row.roster_summary,
+                contract_score=(
+                    format_number(row.contract_tag_score)
+                    if row.contract_tag_score is not None
+                    else None
+                ),
+            )
+            for row in rows
+        ),
+    )
+
+
+def build_battle_page(
+    battle: BattleDetailSummary,
+    *,
+    query: str,
+    web_base_url: str,
+) -> BattlePage:
+    """Build a compact card without exposing the full battle timeline."""
+
+    timer_is_official = (
+        battle.time_source == "game_timer"
+        and battle.official_timer_start_seen is True
+        and battle.official_timer_end_seen is True
+    )
+    total_damage = battle.total_damage
+    return BattlePage(
+        header=PageHeader(
+            title=battle.boss_name,
+            subtitle=battle.dungeon_name,
+            query=query,
+            matched_name=battle.battle_id,
+            target_type="公开战报",
+            footer_note="公开战报 · DPS / rDPS",
+        ),
+        battle_id=battle.battle_id,
+        report_url=_public_url(
+            web_base_url,
+            "battle",
+            battle.battle_id,
+        ),
+        account_id=battle.uploader_user_id,
+        account_url=_public_url(
+            web_base_url,
+            "records",
+            battle.uploader_user_id,
+        ),
+        uploader_display_name=battle.uploader_display_name,
+        duration=format_duration(battle.duration_ms),
+        total_dps=format_number(battle.total_dps),
+        total_damage=format_number(total_damage),
+        battle_date=_format_datetime(battle.battle_end_at),
+        timer_label="官方计时" if timer_is_official else "计时待核验",
+        integrity_label=(
+            "结构校验通过" if battle.integrity_verified else "结构校验未通过"
+        ),
+        contract_score=(
+            format_number(battle.contract_tag_score)
+            if battle.contract_tag_score is not None
+            else None
+        ),
+        participants=tuple(
+            BattleParticipantView(
+                character_name=participant.character_name,
+                character_profession=participant.character_profession or "",
+                character_initial=_initial(participant.character_name),
+                character_avatar_url=_safe_asset_url(
+                    participant.character_avatar_url,
+                    base_url=web_base_url,
+                ),
+                dps=format_number(participant.dps),
+                rdps=format_number(participant.rdps),
+                total_damage=format_number(participant.total_damage),
+                damage_share=(
+                    f"{participant.total_damage / total_damage * 100:.1f}%"
+                    if total_damage > 0
+                    else "—"
+                ),
+                max_hit=(
+                    format_number(participant.max_hit)
+                    if participant.max_hit is not None
+                    else "—"
+                ),
+                crit_rate=(
+                    f"{participant.crit_rate * 100:.1f}%"
+                    if participant.crit_rate is not None
+                    else "—"
+                ),
+            )
+            for participant in battle.participants
+        ),
+    )
 def format_duration(duration_ms: int) -> str:
     """Format milliseconds as ``minutes:seconds.milliseconds``."""
 
@@ -316,3 +524,33 @@ def _safe_http_url(value: str | None) -> str | None:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return None
     return value
+
+
+def _safe_asset_url(value: str | None, *, base_url: str) -> str | None:
+    if value is None:
+        return None
+    resolved = urljoin(f"{base_url.rstrip('/')}/", value)
+    return _safe_http_url(resolved)
+
+
+def _public_url(base_url: str, resource: str, identifier: str) -> str:
+    path = f"{resource}/{quote(identifier, safe='')}"
+    return urljoin(f"{base_url.rstrip('/')}/", path)
+
+
+def _format_date(value: str) -> str:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).strftime(
+            "%Y-%m-%d"
+        )
+    except ValueError:
+        return value[:10]
+
+
+def _format_datetime(value: str) -> str:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).strftime(
+            "%Y-%m-%d %H:%M"
+        )
+    except ValueError:
+        return value

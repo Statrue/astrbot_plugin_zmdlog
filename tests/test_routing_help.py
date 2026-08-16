@@ -25,6 +25,17 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(shortcut.kind, RouteKind.SMART_QUERY)
         self.assertEqual(shortcut.query, "影拓")
 
+    def test_account_and_battle_routes_keep_exact_references(self) -> None:
+        account = parse_zmdlog_payload("账号 usr_1234567890abcdef")
+        battle = parse_zmdlog_payload(
+            "战报 https://zmdlogs.com/battle/btl_upload_abcdef123456?metric=dps"
+        )
+
+        self.assertEqual(account.kind, RouteKind.ACCOUNT_QUERY)
+        self.assertEqual(account.query, "usr_1234567890abcdef")
+        self.assertEqual(battle.kind, RouteKind.BATTLE_QUERY)
+        self.assertIn("btl_upload_abcdef123456", battle.query)
+
     def test_top_option_is_removed_before_matching(self) -> None:
         shortcut = parse_zmdlog_payload("罗丹 --top 30")
         ranking = parse_zmdlog_payload("榜单 罗丹 --top 12")
@@ -52,11 +63,19 @@ class RoutingTests(unittest.TestCase):
             "罗丹 --top 10 --top 20",
             "罗丹 --top 10 额外内容",
             "榜单 --top 10",
+            "账号 usr_1234567890abcdef --top 10",
+            "战报 btl_upload_abcdef123456 --top 10",
         )
 
         for payload in invalid_payloads:
             with self.subTest(payload=payload):
                 with self.assertRaisesRegex(RouteParseError, "--top"):
+                    parse_zmdlog_payload(payload)
+
+    def test_account_and_battle_require_a_reference(self) -> None:
+        for payload in ("账号", "账户", "战报"):
+            with self.subTest(payload=payload):
+                with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
 
 
@@ -77,6 +96,8 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog 榜单",
                 "!zmdlog 榜单 <关键词>",
                 "!zmdlog 关键词 [--top 数量]",
+                "!zmdlog 账号 <accountId或账号主页链接>",
+                "!zmdlog 战报 <battleId或战报链接>",
             ),
         )
         visible_text = repr(page)

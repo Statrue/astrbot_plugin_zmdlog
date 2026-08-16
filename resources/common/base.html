@@ -9,6 +9,7 @@
       --zmd-scene-background: url("{{ background_data_url }}");
     }
     {% include "common/base.css" %}
+    {% block extra_styles %}{% endblock %}
   </style>
 </head>
 <body>
@@ -42,7 +43,7 @@
 
       <footer class="page-footer">
         <span>{{ plugin.name }} · v{{ plugin.version }}</span>
-        <span>公开榜单 · DPS 口径</span>
+        <span>{{ page.header.footer_note }}</span>
       </footer>
     </main>
   </div>

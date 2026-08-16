@@ -1,5 +1,7 @@
 """AstrBot entry point for ZmdLogBot."""
 
+import asyncio
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,7 +15,14 @@ from .core.client import (
     DEFAULT_REQUEST_TIMEOUT_MS,
     ZmdLogsClient,
     ZmdLogsClientError,
+    ZmdLogsAPIError,
     is_valid_boss_slug,
+)
+from .core.identifiers import (
+    PublicReferenceError,
+    extract_battle_references,
+    parse_account_reference,
+    parse_battle_reference,
 )
 from .core.matcher import (
     AliasConfig,
@@ -23,7 +32,12 @@ from .core.matcher import (
     RankingMatcher,
     TargetType,
 )
-from .core.models import BossRanking, HotBossCard
+from .core.models import (
+    BattleDetailSummary,
+    BossRanking,
+    HotBossCard,
+    PublicUserRankings,
+)
 from .core.routing import (
     RouteKind,
     RouteParseError,
@@ -41,6 +55,9 @@ _BOARD_QUERY_TARGETS = frozenset(
 )
 _RENDER_FAILURE_MESSAGE = "图片生成失败，请稍后重试。"
 _UNEXPECTED_FAILURE_MESSAGE = "ZmdLogBot 暂时无法完成查询，请稍后重试。"
+_BATTLE_LINK_FILTER = (
+    r"https?://[^\s<>\"']+/(?:battle|share|axis)/btl_[A-Za-z0-9_-]+"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +67,7 @@ class _DispatchOutcome:
 
 
 class ZmdLogBotPlugin(Star):
-    """Query public ZMDLogs rankings from a single ``zmdlog`` command."""
+    """Query public ZMDLogs rankings, accounts, and battle reports."""
 
     def __init__(
         self,
@@ -93,10 +110,40 @@ class ZmdLogBotPlugin(Star):
         self.boss_ranking_cache = AsyncTTLCache[str, BossRanking](
             cache_ttl_seconds,
         )
+        account_cache_ttl_seconds = self.config.get(
+            "account_cache_ttl_seconds",
+            60,
+        )
+        battle_cache_ttl_seconds = self.config.get(
+            "battle_cache_ttl_seconds",
+            300,
+        )
+        self.account_cache = AsyncTTLCache[str, PublicUserRankings](
+            account_cache_ttl_seconds,
+        )
+        self.battle_cache = AsyncTTLCache[str, BattleDetailSummary](
+            battle_cache_ttl_seconds,
+        )
         self.web_base_url = self.config.get(
             "web_base_url",
             DEFAULT_API_BASE_URL,
         )
+        self.auto_expand_battle_links = bool(
+            self.config.get("auto_expand_battle_links", False)
+        )
+        configured_dedupe_seconds = self.config.get(
+            "battle_link_dedupe_seconds",
+            300,
+        )
+        self.battle_link_dedupe_seconds = (
+            float(configured_dedupe_seconds)
+            if isinstance(configured_dedupe_seconds, int | float)
+            and not isinstance(configured_dedupe_seconds, bool)
+            and configured_dedupe_seconds > 0
+            else 300.0
+        )
+        self._auto_expand_lock = asyncio.Lock()
+        self._auto_expanded_until: dict[tuple[str, str], float] = {}
         try:
             self.renderer: LongImageRenderer | None = LongImageRenderer(
                 Path(__file__).parent,
@@ -132,8 +179,12 @@ class ZmdLogBotPlugin(Star):
                 route,
                 command_prefix=self._command_prefix(event),
             )
+        except ZmdLogsAPIError as exc:
+            logger.warning("ZmdLogBot API request failed: %s", exc.code)
+            yield event.plain_result(self._api_error_message(route, exc))
+            return
         except ZmdLogsClientError as exc:
-            logger.warning("ZmdLogBot ranking request failed: %s", type(exc).__name__)
+            logger.warning("ZmdLogBot request failed: %s", type(exc).__name__)
             yield event.plain_result("ZMDLogs 暂时不可用，请稍后重试。")
             return
         except RenderError as exc:
@@ -149,6 +200,64 @@ class ZmdLogBotPlugin(Star):
             yield event.image_result(outcome.image_path)
             return
         yield event.plain_result(outcome.message or "本次查询未产生结果。")
+
+    @filter.regex(_BATTLE_LINK_FILTER)
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def expand_battle_link(self, event: AstrMessageEvent):
+        """Expand the first trusted ZMDLogs battle link in a group message."""
+
+        if not self.auto_expand_battle_links or self._is_command_message(event):
+            return
+        battle_ids = extract_battle_references(
+            event.get_message_str(),
+            web_base_url=self.web_base_url,
+            limit=1,
+        )
+        if not battle_ids:
+            return
+        battle_id = battle_ids[0]
+        origin = getattr(event, "unified_msg_origin", "") or "unknown"
+        if not await self._claim_auto_expand(origin, battle_id):
+            return
+        try:
+            battle = await self._get_battle_detail(battle_id)
+            renderer = self._require_renderer()
+            image_path = await renderer.render_battle(
+                battle,
+                query=battle_id,
+                web_base_url=self.web_base_url,
+            )
+        except ZmdLogsAPIError as exc:
+            await self._release_auto_expand(origin, battle_id)
+            logger.warning("ZmdLogBot auto-expand API request failed: %s", exc.code)
+            yield event.plain_result(
+                "链接对应的公开战报不存在、未公开或已删除。"
+                if exc.status_code == 404
+                else "ZMDLogs 暂时不可用，请稍后重试。"
+            )
+            return
+        except ZmdLogsClientError as exc:
+            await self._release_auto_expand(origin, battle_id)
+            logger.warning(
+                "ZmdLogBot auto-expand request failed: %s",
+                type(exc).__name__,
+            )
+            yield event.plain_result("ZMDLogs 暂时不可用，请稍后重试。")
+            return
+        except RenderError as exc:
+            await self._release_auto_expand(origin, battle_id)
+            logger.error(
+                "ZmdLogBot auto-expand rendering failed: %s",
+                type(exc).__name__,
+            )
+            yield event.plain_result(_RENDER_FAILURE_MESSAGE)
+            return
+        except Exception:
+            await self._release_auto_expand(origin, battle_id)
+            logger.exception("ZmdLogBot unexpected auto-expand failure")
+            yield event.plain_result(_UNEXPECTED_FAILURE_MESSAGE)
+            return
+        yield event.image_result(image_path)
 
     async def _dispatch(
         self,
@@ -168,6 +277,38 @@ class ZmdLogBotPlugin(Star):
             image_path = await renderer.render_all_top3(
                 cards,
                 query="榜单",
+            )
+            return _DispatchOutcome(image_path=image_path)
+
+        if route.kind is RouteKind.ACCOUNT_QUERY:
+            try:
+                account_id = parse_account_reference(
+                    route.query,
+                    web_base_url=self.web_base_url,
+                )
+            except PublicReferenceError as exc:
+                return _DispatchOutcome(message=str(exc))
+            account = await self._get_public_user_rankings(account_id)
+            image_path = await renderer.render_account(
+                account,
+                query=route.query,
+                web_base_url=self.web_base_url,
+            )
+            return _DispatchOutcome(image_path=image_path)
+
+        if route.kind is RouteKind.BATTLE_QUERY:
+            try:
+                battle_id = parse_battle_reference(
+                    route.query,
+                    web_base_url=self.web_base_url,
+                )
+            except PublicReferenceError as exc:
+                return _DispatchOutcome(message=str(exc))
+            battle = await self._get_battle_detail(battle_id)
+            image_path = await renderer.render_battle(
+                battle,
+                query=route.query,
+                web_base_url=self.web_base_url,
             )
             return _DispatchOutcome(image_path=image_path)
 
@@ -320,6 +461,65 @@ class ZmdLogBotPlugin(Star):
         )
         return result.value
 
+    async def _get_public_user_rankings(
+        self,
+        account_id: str,
+    ) -> PublicUserRankings:
+        result = await self.account_cache.get_or_load(
+            account_id,
+            lambda: self.client.get_public_user_rankings(account_id),
+        )
+        return result.value
+
+    async def _get_battle_detail(self, battle_id: str) -> BattleDetailSummary:
+        result = await self.battle_cache.get_or_load(
+            battle_id,
+            lambda: self.client.get_battle_detail(battle_id),
+        )
+        return result.value
+
+    async def _claim_auto_expand(self, origin: str, battle_id: str) -> bool:
+        now = time.monotonic()
+        key = (origin, battle_id)
+        async with self._auto_expand_lock:
+            self._auto_expanded_until = {
+                entry_key: expires_at
+                for entry_key, expires_at in self._auto_expanded_until.items()
+                if expires_at > now
+            }
+            if key in self._auto_expanded_until:
+                return False
+            self._auto_expanded_until[key] = (
+                now + self.battle_link_dedupe_seconds
+            )
+            return True
+
+    async def _release_auto_expand(self, origin: str, battle_id: str) -> None:
+        async with self._auto_expand_lock:
+            self._auto_expanded_until.pop((origin, battle_id), None)
+
+    def _is_command_message(self, event: AstrMessageEvent) -> bool:
+        raw_message = getattr(event.message_obj, "message_str", "")
+        if not isinstance(raw_message, str):
+            return False
+        normalized = raw_message.lstrip()
+        prefix = self._command_prefix(event)
+        return normalized.startswith(f"{prefix}zmdlog") or normalized.startswith(
+            "zmdlog"
+        )
+
+    @staticmethod
+    def _api_error_message(
+        route: RouteRequest,
+        error: ZmdLogsAPIError,
+    ) -> str:
+        if error.status_code == 404:
+            if route.kind is RouteKind.ACCOUNT_QUERY:
+                return "没有找到这个公开账号，或该账号暂无公开榜单记录。"
+            if route.kind is RouteKind.BATTLE_QUERY:
+                return "战报不存在、未公开或已删除。"
+        return "ZMDLogs 暂时不可用，请稍后重试。"
+
     @staticmethod
     def _candidate_preview(candidates: tuple[MatchChoice, ...]) -> str:
         labels = {
@@ -346,6 +546,8 @@ class ZmdLogBotPlugin(Star):
 
         await self.hot_boss_cache.close()
         await self.boss_ranking_cache.close()
+        await self.account_cache.close()
+        await self.battle_cache.close()
         try:
             await self.client.close()
         finally:

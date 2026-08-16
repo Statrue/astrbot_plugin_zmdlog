@@ -2,13 +2,13 @@
 
 # astrbot_plugin_zmdlog
 
-### ZmdLogBot · ZMDLogs 公开 DPS 榜单查询插件
+### ZmdLogBot · ZMDLogs 公开榜单与战报查询插件
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-4A90E2?style=flat-square)](https://github.com/AstrBotDevs/AstrBot)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![GitHub stars](https://img.shields.io/github/stars/Statrue/astrbot_plugin_zmdlog?style=flat-square)](https://github.com/Statrue/astrbot_plugin_zmdlog/stargazers)
 
-在聊天中查询 ZMDLogs 公开榜单，并渲染为统一视觉风格的 PNG 长图。
+在聊天中查询 ZMDLogs 公开榜单、账号成绩与战报摘要，并渲染为统一视觉风格的 PNG 长图。
 
 </div>
 
@@ -20,9 +20,12 @@
 - 按榜单、副本或副本范围查询排名。
 - 支持中文名称、榜单 slug、本地别名及模糊匹配。
 - 具体榜单默认展示前 10 名，可通过 `--top` 展示前 1–30 名。
+- 通过 `accountId` 或账号主页链接查询公开账号的各首领最佳记录。
+- 通过 `battleId`、战报页、分享页或排轴页链接生成战报摘要卡。
+- 可选在群聊中自动展开 ZMDLogs 战报链接，并对重复链接设置冷却。
 - 固定使用 ZMDLogs 公开 DPS 口径，不提供指标切换。
 - 内置缓存、同键并发合并、请求重试及统一异常提示。
-- 帮助页和榜单均输出为 1280px 宽的单张长图。
+- 帮助页和查询结果均输出为 1280px 宽的单张长图。
 
 ## 安装与更新
 
@@ -76,6 +79,8 @@ git pull --ff-only
 | `/zmdlog 榜单 <关键词>` | 查询具体榜单、副本或副本范围 |
 | `/zmdlog <关键词>` | 智能匹配榜单或副本 |
 | `/zmdlog <关键词> --top <数量>` | 展示具体榜单前 1–30 名，默认 10 名 |
+| `/zmdlog 账号 <accountId或账号主页链接>` | 查询公开账号的各首领最佳记录 |
+| `/zmdlog 战报 <battleId或战报链接>` | 生成公开战报摘要卡 |
 
 示例：
 
@@ -84,6 +89,9 @@ git pull --ff-only
 /zmdlog 罗丹 --top 30
 /zmdlog 危机合约
 /zmdlog 影拓4
+/zmdlog 账号 usr_9df6ce8b93e3335c8291c2389b834ef0
+/zmdlog 账号 https://zmdlogs.com/records/usr_9df6ce8b93e3335c8291c2389b834ef0
+/zmdlog 战报 https://zmdlogs.com/battle/btl_upload_65d03eadfb16?metric=dps
 ```
 
 ## 配置
@@ -98,6 +106,10 @@ git pull --ff-only
 | `render_timeout_ms` | `30000` | 图片渲染超时，单位毫秒 |
 | `alias_file_path` | `aliases.json` | 本地榜单与副本别名文件 |
 | `ranking_cache_ttl_seconds` | `60` | 榜单缓存时间，单位秒 |
+| `account_cache_ttl_seconds` | `60` | 公开账号成绩缓存时间，单位秒 |
+| `battle_cache_ttl_seconds` | `300` | 公开战报摘要缓存时间，单位秒 |
+| `auto_expand_battle_links` | `false` | 是否在群聊中自动展开 ZMDLogs 战报链接 |
+| `battle_link_dedupe_seconds` | `300` | 同群同战报自动展开冷却时间，单位秒 |
 | `fuzzy_match_threshold` | `0.65` | 模糊匹配最低可信阈值 |
 | `ambiguity_score_gap` | `0.08` | 要求用户选择候选的最小分差 |
 
@@ -106,6 +118,8 @@ git pull --ff-only
 ## 缓存与异常处理
 
 - `hot-bosses` 和具体榜单分别缓存，并合并同一查询的并发请求。
+- 账号成绩与战报摘要分别缓存；完整战报响应只保留卡片所需的概要和角色统计。
+- 群聊自动展开默认关闭；开启后每条消息只展开首个可信链接，同群同战报在冷却期内不重复回复。
 - `hot-bosses` 刷新失败时可短暂使用最近一次成功结果；具体榜单不使用过期数据。
 - 网络异常和服务端 `5xx` 最多重试一次，客户端 `4xx` 不重试。
 - 图片渲染最多同时执行 2 个任务，输出图片会定期清理。
@@ -131,6 +145,10 @@ Docker 用户还应确认容器内 `/AstrBot/data` 可写，并在安装后完�
 
 `--top` 只作用于具体榜单，允许值为 1–30；全部榜单和副本范围页面仍固定展示各榜单前三名。
 
+### 输入昵称无法查询账号
+
+当前版本只接受精确 `accountId` 或 `https://zmdlogs.com/records/<accountId>` 账号主页链接；昵称搜索等待上游公开查询能力稳定后再接入。
+
 ## 开发与测试
 
 ```bash
@@ -141,7 +159,7 @@ python -m unittest discover -s tests -v
 
 ## 数据说明
 
-本插件只读取 ZMDLogs 已公开的榜单数据，不处理 ZMDLogs 登录凭据或私人战斗记录。榜单内容及可用性以 ZMDLogs 上游服务为准。
+本插件只读取 ZMDLogs 已公开的榜单、账号成绩和战报数据，不处理 ZMDLogs 登录凭据或私人战斗记录。内容及可用性以 ZMDLogs 上游服务为准。
 
 ## 鸣谢
 

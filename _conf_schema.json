@@ -29,6 +29,26 @@
     "type": "int",
     "default": 60
   },
+  "account_cache_ttl_seconds": {
+    "description": "公开账号成绩缓存时间（秒）",
+    "type": "int",
+    "default": 60
+  },
+  "battle_cache_ttl_seconds": {
+    "description": "公开战报摘要缓存时间（秒）",
+    "type": "int",
+    "default": 300
+  },
+  "auto_expand_battle_links": {
+    "description": "在群聊中自动展开 ZMDLogs 战报链接",
+    "type": "bool",
+    "default": false
+  },
+  "battle_link_dedupe_seconds": {
+    "description": "同一群聊重复展开同一战报的冷却时间（秒）",
+    "type": "int",
+    "default": 300
+  },
   "fuzzy_match_threshold": {
     "description": "模糊匹配最低可信阈值",
     "type": "float",

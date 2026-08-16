@@ -20,9 +20,16 @@ from jinja2 import (
 
 from .help import build_help_page
 from .matcher import MatchChoice
-from .models import BossRanking, HotBossCard
+from .models import (
+    BattleDetailSummary,
+    BossRanking,
+    HotBossCard,
+    PublicUserRankings,
+)
 from .presentation import (
+    build_account_page,
     build_all_top3_page,
+    build_battle_page,
     build_dungeon_top3_page,
     build_ranking_page,
 )
@@ -46,7 +53,7 @@ class RenderError(RuntimeError):
 
 
 class TemplateRenderer:
-    """Render self-contained HTML for one of the four public page types."""
+    """Render self-contained HTML for one of the public page types."""
 
     def __init__(
         self,
@@ -118,6 +125,34 @@ class TemplateRenderer:
             display_limit=ranking_limit,
         )
         return self._render("ranking/ranking.html", page, "ranking")
+
+    def render_account(
+        self,
+        account: PublicUserRankings,
+        *,
+        query: str,
+        web_base_url: str,
+    ) -> str:
+        page = build_account_page(
+            account,
+            query=query,
+            web_base_url=web_base_url,
+        )
+        return self._render("account/account.html", page, "account")
+
+    def render_battle(
+        self,
+        battle: BattleDetailSummary,
+        *,
+        query: str,
+        web_base_url: str,
+    ) -> str:
+        page = build_battle_page(
+            battle,
+            query=query,
+            web_base_url=web_base_url,
+        )
+        return self._render("battle/battle.html", page, "battle")
 
     def _render(self, template_name: str, page, page_kind: str) -> str:
         template = self.environment.get_template(template_name)
@@ -235,6 +270,40 @@ class LongImageRenderer:
         except Exception as exc:
             raise RenderError("ranking template rendering failed") from exc
         return await self._capture(html, "ranking")
+
+    async def render_account(
+        self,
+        account: PublicUserRankings,
+        *,
+        query: str,
+        web_base_url: str,
+    ) -> str:
+        try:
+            html = self.templates.render_account(
+                account,
+                query=query,
+                web_base_url=web_base_url,
+            )
+        except Exception as exc:
+            raise RenderError("account template rendering failed") from exc
+        return await self._capture(html, "account")
+
+    async def render_battle(
+        self,
+        battle: BattleDetailSummary,
+        *,
+        query: str,
+        web_base_url: str,
+    ) -> str:
+        try:
+            html = self.templates.render_battle(
+                battle,
+                query=query,
+                web_base_url=web_base_url,
+            )
+        except Exception as exc:
+            raise RenderError("battle template rendering failed") from exc
+        return await self._capture(html, "battle")
 
     async def _capture(self, html: str, page_kind: str) -> str:
         async with self._render_semaphore:
