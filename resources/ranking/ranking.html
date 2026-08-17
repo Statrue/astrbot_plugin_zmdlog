@@ -56,7 +56,7 @@
             <span class="avatar">
               {{ row.character_initial }}
               {% if row.character_avatar_url %}
-              <img src="{{ row.character_avatar_url }}" alt="">
+              <img src="{{ row.character_avatar_url }}" alt="" onerror="this.remove()">
               {% endif %}
             </span>
             <span>

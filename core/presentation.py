@@ -140,6 +140,9 @@ class BattleParticipantView:
     rdps: str
     total_damage: str
     damage_share: str
+    rdps_share: str
+    dps_share_percent: float
+    rdps_share_percent: float
     max_hit: str
     crit_rate: str
 
@@ -371,6 +374,13 @@ def build_battle_page(
         and battle.official_timer_end_seen is True
     )
     total_damage = battle.total_damage
+    # Highest DPS first, mirroring the site's contribution breakdown.
+    participants = sorted(
+        battle.participants,
+        key=lambda participant: participant.dps,
+        reverse=True,
+    )
+    total_rdps = sum(max(participant.rdps, 0.0) for participant in participants)
     return BattlePage(
         header=PageHeader(
             title=battle.boss_name,
@@ -423,6 +433,21 @@ def build_battle_page(
                     if total_damage > 0
                     else "—"
                 ),
+                rdps_share=(
+                    f"{participant.rdps / total_rdps * 100:.1f}%"
+                    if total_rdps > 0
+                    else "—"
+                ),
+                dps_share_percent=(
+                    round(participant.total_damage / total_damage * 100, 2)
+                    if total_damage > 0
+                    else 0.0
+                ),
+                rdps_share_percent=(
+                    round(max(participant.rdps, 0.0) / total_rdps * 100, 2)
+                    if total_rdps > 0
+                    else 0.0
+                ),
                 max_hit=(
                     format_number(participant.max_hit)
                     if participant.max_hit is not None
@@ -434,7 +459,7 @@ def build_battle_page(
                     else "—"
                 ),
             )
-            for participant in battle.participants
+            for participant in participants
         ),
     )
 def format_duration(duration_ms: int) -> str:

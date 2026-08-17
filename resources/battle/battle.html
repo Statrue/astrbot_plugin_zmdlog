@@ -18,16 +18,45 @@
 </section>
 
 <div class="section-heading">
-  <h2>本场角色</h2>
+  <h2>战斗贡献</h2>
   <span class="section-note">DPS 为直伤口径，rDPS 为团队贡献口径</span>
+</div>
+
+<section class="share-panel" aria-label="战斗贡献拆分">
+  <div class="share-row">
+    <span class="share-label">DPS 占比</span>
+    <div class="share-bar">
+      {% for participant in page.participants %}
+      <i class="share-seg share-seg--{{ loop.index }}" style="width: {{ participant.dps_share_percent }}%"></i>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="share-row">
+    <span class="share-label">rDPS 占比</span>
+    <div class="share-bar">
+      {% for participant in page.participants %}
+      <i class="share-seg share-seg--{{ loop.index }}" style="width: {{ participant.rdps_share_percent }}%"></i>
+      {% endfor %}
+    </div>
+  </div>
+  <ul class="share-legend">
+    {% for participant in page.participants %}
+    <li><i class="share-dot share-seg--{{ loop.index }}"></i>{{ participant.character_name }}<span>{{ participant.damage_share }} / {{ participant.rdps_share }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+
+<div class="section-heading">
+  <h2>本场角色</h2>
+  <span class="section-note">按 DPS 排序</span>
 </div>
 
 <section class="participant-grid" aria-label="角色战斗统计">
   {% for participant in page.participants %}
-  <article class="participant-card">
+  <article class="participant-card participant-card--{{ loop.index }}">
     <div class="participant-heading">
-      <span class="avatar participant-avatar">{{ participant.character_initial }}{% if participant.character_avatar_url %}<img src="{{ participant.character_avatar_url }}" alt="">{% endif %}</span>
-      <div><h3>{{ participant.character_name }}</h3><span>{{ participant.character_profession }} · 伤害占比 {{ participant.damage_share }}</span></div>
+      <span class="avatar participant-avatar">{{ participant.character_initial }}{% if participant.character_avatar_url %}<img src="{{ participant.character_avatar_url }}" alt="" onerror="this.remove()">{% endif %}</span>
+      <div><h3>{{ participant.character_name }}</h3><span>{{ participant.character_profession }} · 伤害占比 {{ participant.damage_share }} · rDPS 占比 {{ participant.rdps_share }}</span></div>
     </div>
     <dl class="participant-stats">
       <div><dt>DPS</dt><dd>{{ participant.dps }}</dd></div>

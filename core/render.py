@@ -407,8 +407,10 @@ class LongImageRenderer:
     async def _load_page(self, browser, html: str, scale: int):
         """Open the page in a fresh context and validate its frame."""
 
+        # Viewport height must not exceed the page's min-height, otherwise
+        # short pages get a blank strip below the footer in full-page shots.
         context = await browser.new_context(
-            viewport={"width": 1280, "height": 800},
+            viewport={"width": 1280, "height": 600},
             device_scale_factor=scale,
             color_scheme="light",
         )
