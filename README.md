@@ -65,7 +65,9 @@ cd AstrBot/data/plugins/astrbot_plugin_zmdlog
 git pull --ff-only
 ```
 
-更新完成后重启 AstrBot。插件不会在运行时自动下载浏览器。
+更新完成后重启 AstrBot。插件不会在运行时自动下载浏览器；未安装 Chromium 时会退回 AstrBot 自带的文转图服务（可用 `fallback_to_astrbot_renderer` 关闭），但样式与清晰度以内置 Chromium 为准。
+
+渲染用的字体（MiSans / Barlow 子集）已内嵌在插件里，无需额外安装；昵称中出现生僻字或日文假名时会回退到系统字体，因此 Docker 环境仍建议装一套中文字体（如 `fonts-noto-cjk`）。生成的图片保存在 AstrBot 的 `data/plugin_data/astrbot_plugin_zmdlog/render/` 下并定期清理。
 
 ## 指令
 
@@ -104,6 +106,7 @@ git pull --ff-only
 | `web_base_url` | `https://zmdlogs.com` | 排名记录对应的网页地址 |
 | `request_timeout_ms` | `10000` | API 请求超时，单位毫秒 |
 | `render_timeout_ms` | `30000` | 图片渲染超时，单位毫秒 |
+| `fallback_to_astrbot_renderer` | `true` | 内置 Chromium 不可用时改用 AstrBot 自带文转图服务兜底（默认走 AstrBot 的远程渲染） |
 | `alias_file_path` | `aliases.json` | 本地榜单与副本别名文件 |
 | `ranking_cache_ttl_seconds` | `60` | 榜单缓存时间，单位秒 |
 | `account_cache_ttl_seconds` | `60` | 公开账号成绩缓存时间，单位秒 |
@@ -122,14 +125,15 @@ git pull --ff-only
 - 群聊自动展开默认关闭；开启后每条消息只展开首个可信链接，同群同战报在冷却期内不重复回复。
 - `hot-bosses` 刷新失败时可短暂使用最近一次成功结果；具体榜单不使用过期数据。
 - 网络异常和服务端 `5xx` 最多重试一次，客户端 `4xx` 不重试。
-- 图片渲染最多同时执行 2 个任务，输出图片会定期清理。
+- 图片渲染最多同时执行 2 个任务，输出图片会定期清理；AstrBot 启动完成后会预热 Chromium 并预渲染一次帮助页。帮助页、具体榜单、账号、战报以 2 倍分辨率输出（宽 2560px），全部榜单与副本范围长图保持 1 倍。
+- 具体榜单查询到已下线的榜单（上游 404）时提示“没有找到这个榜单”，与网络故障区分开。
 - 上游、协议及渲染异常只返回简短提示，不向聊天消息暴露响应内容或堆栈。
 
 ## 常见问题
 
 ### 安装后提示“图片生成失败”
 
-确认 Chromium 安装在 AstrBot 实际使用的 Python 环境中：
+若同时关闭了 `fallback_to_astrbot_renderer`，请确认 Chromium 安装在 AstrBot 实际使用的 Python 环境中：
 
 ```bash
 python -m playwright install chromium
@@ -157,9 +161,15 @@ python -m unittest discover -s tests -v
 
 测试覆盖指令路由、帮助页、别名与模糊匹配、缓存并发、API 重试、协议校验和模板渲染边界。
 
+视觉资源说明见 [resources/common/ASSETS.md](resources/common/ASSETS.md)；内嵌字体由 `tools/build_fonts.py` 从上游字体子集化生成。
+
 ## 数据说明
 
 本插件只读取 ZMDLogs 已公开的榜单、账号成绩和战报数据，不处理 ZMDLogs 登录凭据或私人战斗记录。内容及可用性以 ZMDLogs 上游服务为准。
+
+## 许可
+
+本项目采用 [MIT License](LICENSE)。内嵌字体的许可见 [resources/common/ASSETS.md](resources/common/ASSETS.md)（MiSans 字体许可协议、SIL OFL 1.1）。
 
 ## 鸣谢
 

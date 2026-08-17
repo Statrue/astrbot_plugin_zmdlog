@@ -5,3 +5,10 @@
 
 # Local IDE metadata
 /.idea/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local style references (not shipped)
+/docs/style-refs/

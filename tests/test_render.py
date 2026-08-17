@@ -26,7 +26,6 @@ from core.render import (
     TemplateConfigurationError,
     TemplateRenderer,
 )
-
 from tests.helpers import (
     battle_detail_payload,
     make_card,
@@ -46,7 +45,8 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("!zmdlog 榜单", html)
         self.assertIn("ZmdLogBot", html)
         self.assertIn("v0.3.0", html)
-        self.assertIn("data:image/jpeg;base64,", html)
+        self.assertIn("data:image/svg+xml;base64,", html)
+        self.assertIn("@font-face", html)
         self.assertNotIn("astrbot_plugin_zmdlog", html)
         self.assertNotIn("/zmdlog", html)
         self.assertNotIn("固定口径", html)
@@ -306,6 +306,68 @@ class TemplateRendererTests(unittest.TestCase):
                     resources / "missing.jpg",
                 )
 
+    def test_relative_avatar_paths_resolve_against_web_base_url(self) -> None:
+        ranking = BossRanking(
+            boss_slug="test-boss",
+            boss_name="测试首领",
+            dungeon_name="测试副本",
+            profession_groups=(),
+            rows=(
+                BossRankingRow(
+                    rank=1,
+                    score_percent=100,
+                    battle_id="battle-1",
+                    battle_end_at="2026-01-01T00:00:00Z",
+                    character_name="洛茜",
+                    character_profession="近卫",
+                    account_id="account-1",
+                    account_display_name="公开账号",
+                    dps=1.0,
+                    duration_ms=1_000,
+                    roster_summary=(),
+                    roster_entries=(),
+                    character_avatar_url="/images/character/luoxi.png",
+                ),
+                BossRankingRow(
+                    rank=2,
+                    score_percent=90,
+                    battle_id="battle-2",
+                    battle_end_at="2026-01-01T00:00:00Z",
+                    character_name="卡缪",
+                    character_profession="重装",
+                    account_id="account-2",
+                    account_display_name="公开账号2",
+                    dps=1.0,
+                    duration_ms=1_000,
+                    roster_summary=(),
+                    roster_entries=(),
+                    character_avatar_url="javascript:alert(1)",
+                ),
+            ),
+        )
+
+        page = build_ranking_page(
+            ranking,
+            query="测试",
+            web_base_url="https://zmdlogs.com",
+        )
+        self.assertEqual(
+            page.rows[0].character_avatar_url,
+            "https://zmdlogs.com/images/character/luoxi.png",
+        )
+        self.assertIsNone(page.rows[1].character_avatar_url)
+
+        # Without a base URL only absolute HTTP(S) URLs survive.
+        page = build_ranking_page(ranking, query="测试")
+        self.assertIsNone(page.rows[0].character_avatar_url)
+
+        html = self.renderer.render_all_top3(
+            (make_card("a", "首领", "副本", with_run=True),),
+            query="榜单",
+            web_base_url="https://zmdlogs.com",
+        )
+        self.assertNotIn("javascript:", html)
+
     def test_number_and_duration_formats(self) -> None:
         self.assertEqual(format_duration(61_234), "1:01.234")
         self.assertEqual(format_number(123_456.78), "123,456.78")
@@ -323,6 +385,20 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
         renderer = object.__new__(LongImageRenderer)
         with self.assertRaises(RenderError):
             await renderer._validate_page(MissingPage())
+
+    async def test_capture_failure_keeps_rendered_html_for_fallback(self) -> None:
+        renderer = LongImageRenderer(self.root)
+
+        async def failing_capture(html: str, page_kind: str) -> str:
+            raise RenderError("browser capture failed")
+
+        renderer._capture_once = failing_capture
+        with self.assertRaises(RenderError) as context:
+            await renderer.render_help(command_prefix="/")
+
+        self.assertIn("/zmdlog", context.exception.html or "")
+        self.assertIsNone(RenderError("renderer is unavailable").html)
+        await renderer.close()
 
     async def test_default_output_directory_uses_current_plugin_name(self) -> None:
         renderer = LongImageRenderer(self.root)

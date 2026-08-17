@@ -224,7 +224,10 @@ def parse_battle_detail(payload: Any) -> BattleDetailSummary:
         battle.get("roster"),
         "battle-detail.battle.roster",
     )
+    # Upstream fills every roster accountDisplayName with the uploader
+    # nickname; prefer an explicit uploaderNickname if the API ever adds one.
     uploader_display_name = _first_account_display_name(
+        [{"accountDisplayName": battle.get("uploaderNickname")}],
         roster_items,
         participant_items,
     )

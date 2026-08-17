@@ -2,12 +2,14 @@
   "api_base_url": {
     "description": "ZMDLogs API 地址",
     "type": "string",
-    "default": "https://zmdlogs.com"
+    "default": "https://zmdlogs.com",
+    "hint": "ZMDLogs 后端 API 根地址，仅在自建镜像时修改。"
   },
   "web_base_url": {
     "description": "ZMDLogs 网页地址",
     "type": "string",
-    "default": "https://zmdlogs.com"
+    "default": "https://zmdlogs.com",
+    "hint": "用于识别战报/账号链接、拼接头像与主页链接；通常与 API 地址一致。"
   },
   "request_timeout_ms": {
     "description": "API 请求超时（毫秒）",
@@ -19,10 +21,17 @@
     "type": "int",
     "default": 30000
   },
+  "fallback_to_astrbot_renderer": {
+    "description": "内置 Chromium 不可用时改用 AstrBot 自带的文转图服务",
+    "type": "bool",
+    "default": true,
+    "hint": "未执行 python -m playwright install chromium 或截图失败时的兜底；AstrBot 默认使用远程渲染服务，会把页面 HTML 发送出去。"
+  },
   "alias_file_path": {
     "description": "本地榜单与副本别名配置路径",
     "type": "string",
-    "default": "aliases.json"
+    "default": "aliases.json",
+    "hint": "相对路径基于插件目录；boards 以 bossSlug 为键，dungeons 以完整副本名为键。"
   },
   "ranking_cache_ttl_seconds": {
     "description": "榜单缓存时间（秒）",
@@ -42,7 +51,8 @@
   "auto_expand_battle_links": {
     "description": "在群聊中自动展开 ZMDLogs 战报链接",
     "type": "bool",
-    "default": false
+    "default": false,
+    "hint": "开启后，群里出现 zmdlogs 战报链接时自动回复该战报的摘要图；同一群同一战报受冷却时间限制。"
   },
   "battle_link_dedupe_seconds": {
     "description": "同一群聊重复展开同一战报的冷却时间（秒）",

@@ -9,7 +9,6 @@ from core.client import (
     ZmdLogsClient,
     ZmdLogsProtocolError,
 )
-
 from tests.helpers import (
     battle_detail_payload,
     hot_bosses_payload,

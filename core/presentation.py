@@ -18,7 +18,6 @@ from .routing import (
     MIN_RANKING_TOP,
 )
 
-
 # Temporary presentation compatibility: upstream currently exposes the
 # contract board as bossName="破潮之像", while the public site labels the
 # activity and ranking page as "危机合约". Remove this override after the
@@ -167,10 +166,13 @@ def build_all_top3_page(
     cards: tuple[HotBossCard, ...],
     *,
     query: str,
+    web_base_url: str | None = None,
 ) -> Top3Page:
     """Build the all-board page without exposing ranking-only fields."""
 
-    card_views = tuple(_build_top_card(card) for card in cards)
+    card_views = tuple(
+        _build_top_card(card, web_base_url=web_base_url) for card in cards
+    )
     return Top3Page(
         header=PageHeader(
             title="全部榜单前三名",
@@ -191,6 +193,7 @@ def build_dungeon_top3_page(
     cards: tuple[HotBossCard, ...],
     *,
     query: str,
+    web_base_url: str | None = None,
 ) -> Top3Page:
     """Build a dungeon or dungeon-scope page using the shared top-three card."""
 
@@ -204,7 +207,9 @@ def build_dungeon_top3_page(
         if target_type is TargetType.DUNGEON_SCOPE
         else "该标准副本下全部榜单前三名"
     )
-    card_views = tuple(_build_top_card(card) for card in cards)
+    card_views = tuple(
+        _build_top_card(card, web_base_url=web_base_url) for card in cards
+    )
     return Top3Page(
         header=PageHeader(
             title=f"{label}榜单前三名",
@@ -225,6 +230,7 @@ def build_ranking_page(
     *,
     query: str,
     display_limit: int = DEFAULT_RANKING_TOP,
+    web_base_url: str | None = None,
 ) -> RankingPage:
     """Build the first public DPS rows in their upstream order."""
 
@@ -263,10 +269,15 @@ def build_ranking_page(
                 character_name=row.character_name,
                 character_profession=row.character_profession,
                 character_initial=_initial(row.character_name),
-                character_avatar_url=_safe_http_url(
+                character_avatar_url=_safe_asset_url(
                     row.character_avatar_url,
+                    base_url=web_base_url,
                 ),
-                roster=_build_roster(row.roster_entries, row.roster_summary),
+                roster=_build_roster(
+                    row.roster_entries,
+                    row.roster_summary,
+                    web_base_url=web_base_url,
+                ),
                 dps=format_number(row.dps),
                 duration=format_duration(row.duration_ms),
                 contract_score=(
@@ -445,7 +456,11 @@ def format_number(value: int | float) -> str:
     return f"{number:,.2f}".rstrip("0").rstrip(".")
 
 
-def _build_top_card(card: HotBossCard) -> TopCardView:
+def _build_top_card(
+    card: HotBossCard,
+    *,
+    web_base_url: str | None,
+) -> TopCardView:
     return TopCardView(
         dungeon_name=card.dungeon_name,
         boss_name=card.boss_name,
@@ -454,8 +469,9 @@ def _build_top_card(card: HotBossCard) -> TopCardView:
                 rank=index,
                 character_name=run.character_name,
                 character_initial=_initial(run.character_name),
-                character_avatar_url=_safe_http_url(
+                character_avatar_url=_safe_asset_url(
                     run.character_avatar_url,
+                    base_url=web_base_url,
                 ),
                 uploader_nickname=run.uploader_nickname,
                 duration=format_duration(run.duration_ms),
@@ -473,6 +489,8 @@ def _build_top_card(card: HotBossCard) -> TopCardView:
 def _build_roster(
     entries: tuple[BossRankingRosterEntry, ...],
     summary: tuple[str, ...],
+    *,
+    web_base_url: str | None,
 ) -> tuple[RosterEntryView, ...]:
     if entries:
         return tuple(
@@ -480,7 +498,10 @@ def _build_roster(
                 character_name=entry.character_name,
                 profession=entry.profession,
                 character_initial=_initial(entry.character_name),
-                avatar_url=_safe_http_url(entry.avatar_url),
+                avatar_url=_safe_asset_url(
+                    entry.avatar_url,
+                    base_url=web_base_url,
+                ),
             )
             for entry in entries
         )
@@ -526,9 +547,17 @@ def _safe_http_url(value: str | None) -> str | None:
     return value
 
 
-def _safe_asset_url(value: str | None, *, base_url: str) -> str | None:
+def _safe_asset_url(
+    value: str | None,
+    *,
+    base_url: str | None,
+) -> str | None:
+    """Resolve upstream asset paths (usually site-relative) to safe URLs."""
+
     if value is None:
         return None
+    if base_url is None:
+        return _safe_http_url(value)
     resolved = urljoin(f"{base_url.rstrip('/')}/", value)
     return _safe_http_url(resolved)
 

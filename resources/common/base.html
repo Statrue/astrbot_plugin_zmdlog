@@ -8,42 +8,66 @@
     :root {
       --zmd-scene-background: url("{{ background_data_url }}");
     }
+    {{ font_face_css }}
     {% include "common/base.css" %}
     {% block extra_styles %}{% endblock %}
   </style>
 </head>
 <body>
   <div id="zmd-page" class="zmd-page zmd-page--{{ page_kind }}">
+    <div class="scene-deco" aria-hidden="true">
+      <div class="scene-hatch scene-hatch--top"></div>
+      <div class="scene-hatch scene-hatch--bottom"></div>
+      <div class="scene-watermark">ZMDLOG</div>
+    </div>
     <main class="main-panel">
       <header class="page-header">
         <div class="brand-row">
-          <span class="brand-mark">Z</span>
-          <span class="brand-name">{{ plugin.name }}</span>
-          <span class="target-badge">{{ page.header.target_type }}</span>
+          <span class="brand-block">ZMD<b>LOG</b></span>
+          <span class="brand-kind">// {{ page_kind|upper }}</span>
+          <span class="brand-note">ENDFIELD · PUBLIC DPS LOGS</span>
+          <span class="color-strip" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="brand-version">{{ plugin.name }} v{{ plugin.version }}</span>
         </div>
-        <h1>{{ page.header.title }}</h1>
-        <p class="page-subtitle">{{ page.header.subtitle }}</p>
-        <dl class="query-summary">
-          <div>
-            <dt>查询</dt>
-            <dd>{{ page.header.query }}</dd>
+        <div class="title-row">
+          <h1 class="page-title">
+            <span class="title-bracket" aria-hidden="true">[</span>
+            <span class="title-text">{{ page.header.title }}</span>
+            <span class="title-bracket" aria-hidden="true">]</span>
+          </h1>
+          <div class="title-side">
+            <span class="title-tag">// {{ page.header.target_type }}</span>
+            <p class="page-subtitle">{{ page.header.subtitle }}</p>
           </div>
-          <div>
-            <dt>命中</dt>
-            <dd>{{ page.header.matched_name }}</dd>
-          </div>
-          <div>
-            <dt>类型</dt>
-            <dd>{{ page.header.target_type }}</dd>
-          </div>
+        </div>
+        <div class="rule-band" aria-hidden="true">
+          <i class="rule-orange"></i><i class="rule-red"></i><i class="rule-blue"></i><i class="rule-teal"></i>
+          <span class="rule-line"></span>
+          <span class="rule-caption">ZMDLOGS PUBLIC DATA</span>
+        </div>
+        <dl class="query-tape">
+          <div class="tape-item"><dt>查询</dt><dd>{{ page.header.query }}</dd></div>
+          <span class="tape-arrow" aria-hidden="true">»</span>
+          <div class="tape-item"><dt>命中</dt><dd>{{ page.header.matched_name }}</dd></div>
+          <span class="tape-arrow" aria-hidden="true">»</span>
+          <div class="tape-item"><dt>类型</dt><dd>{{ page.header.target_type }}</dd></div>
+          <span class="tape-tail" aria-hidden="true"></span>
         </dl>
       </header>
 
-      {% block content %}{% endblock %}
+      <div class="page-body">
+        {% block content %}{% endblock %}
+      </div>
 
       <footer class="page-footer">
-        <span>{{ plugin.name }} · v{{ plugin.version }}</span>
-        <span>{{ page.header.footer_note }}</span>
+        <div class="footer-notes">
+          <p>※ 数据来源 ZMDLogs · {{ page.header.footer_note }}</p>
+          <p>※ 素材仅作展示，具体以站点实际数据为准</p>
+        </div>
+        <div class="footer-brand">
+          <span class="color-strip" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span>{{ plugin.name }} · v{{ plugin.version }}</span>
+        </div>
       </footer>
     </main>
   </div>

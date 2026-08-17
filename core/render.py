@@ -17,6 +17,7 @@ from jinja2 import (
     StrictUndefined,
     select_autoescape,
 )
+from markupsafe import Markup
 
 from .help import build_help_page
 from .matcher import MatchChoice
@@ -39,6 +40,9 @@ _VERSION_LINE = re.compile(
     r"^\s*version\s*:\s*(?P<value>[^#]+?)\s*(?:#.*)?$"
 )
 _OUTPUT_FILE_GLOB = "zmd-*.png"
+# Short pages are captured at 2x for legibility on phones; the potentially very
+# long top-3 pages stay at 1x to remain well below Chromium's 16384px limit.
+_HIGH_DPI_PAGE_KINDS = frozenset({"help", "ranking", "account", "battle", "warmup"})
 DEFAULT_MAX_CONCURRENT_RENDERS = 2
 DEFAULT_OUTPUT_TTL_SECONDS = 10 * 60
 DEFAULT_MAX_OUTPUT_FILES = 50
@@ -49,7 +53,15 @@ class TemplateConfigurationError(ValueError):
 
 
 class RenderError(RuntimeError):
-    """Raised when a complete ZmdLogBot image cannot be produced."""
+    """Raised when a complete ZmdLogBot image cannot be produced.
+
+    ``html`` carries the fully rendered page when only the browser capture
+    failed, so callers can hand it to another renderer.
+    """
+
+    def __init__(self, message: str, *, html: str | None = None) -> None:
+        super().__init__(message)
+        self.html = html
 
 
 class TemplateRenderer:
@@ -60,10 +72,12 @@ class TemplateRenderer:
         resources_path: Path,
         metadata_path: Path,
         background_path: Path,
+        fonts_path: Path | None = None,
     ) -> None:
         self.resources_path = resources_path.resolve()
         self.version = read_plugin_version(metadata_path)
         self.background_data_url = _load_background_data_url(background_path)
+        self.font_face_css = _load_font_face_css(fonts_path)
         self.environment = Environment(
             loader=FileSystemLoader(str(self.resources_path)),
             autoescape=select_autoescape(
@@ -82,7 +96,8 @@ class TemplateRenderer:
         return cls(
             resources_path,
             plugin_root / "metadata.yaml",
-            resources_path / "common" / "endfield-crane-grid.jpg",
+            resources_path / "common" / "scene-background.svg",
+            resources_path / "common" / "fonts",
         )
 
     def render_help(self, *, command_prefix: str) -> str:
@@ -94,8 +109,13 @@ class TemplateRenderer:
         cards: tuple[HotBossCard, ...],
         *,
         query: str,
+        web_base_url: str | None = None,
     ) -> str:
-        page = build_all_top3_page(cards, query=query)
+        page = build_all_top3_page(
+            cards,
+            query=query,
+            web_base_url=web_base_url,
+        )
         return self._render("all-top3/all-top3.html", page, "all-top3")
 
     def render_dungeon_top3(
@@ -104,8 +124,14 @@ class TemplateRenderer:
         cards: tuple[HotBossCard, ...],
         *,
         query: str,
+        web_base_url: str | None = None,
     ) -> str:
-        page = build_dungeon_top3_page(choice, cards, query=query)
+        page = build_dungeon_top3_page(
+            choice,
+            cards,
+            query=query,
+            web_base_url=web_base_url,
+        )
         return self._render(
             "dungeon-top3/dungeon-top3.html",
             page,
@@ -118,11 +144,13 @@ class TemplateRenderer:
         *,
         query: str,
         ranking_limit: int = DEFAULT_RANKING_TOP,
+        web_base_url: str | None = None,
     ) -> str:
         page = build_ranking_page(
             ranking,
             query=query,
             display_limit=ranking_limit,
+            web_base_url=web_base_url,
         )
         return self._render("ranking/ranking.html", page, "ranking")
 
@@ -161,6 +189,7 @@ class TemplateRenderer:
             page_kind=page_kind,
             plugin={"name": "ZmdLogBot", "version": self.version},
             background_data_url=self.background_data_url,
+            font_face_css=self.font_face_css,
         )
 
 
@@ -230,9 +259,14 @@ class LongImageRenderer:
         cards: tuple[HotBossCard, ...],
         *,
         query: str,
+        web_base_url: str | None = None,
     ) -> str:
         try:
-            html = self.templates.render_all_top3(cards, query=query)
+            html = self.templates.render_all_top3(
+                cards,
+                query=query,
+                web_base_url=web_base_url,
+            )
         except Exception as exc:
             raise RenderError("all-board template rendering failed") from exc
         return await self._capture(html, "all-top3")
@@ -243,12 +277,14 @@ class LongImageRenderer:
         cards: tuple[HotBossCard, ...],
         *,
         query: str,
+        web_base_url: str | None = None,
     ) -> str:
         try:
             html = self.templates.render_dungeon_top3(
                 choice,
                 cards,
                 query=query,
+                web_base_url=web_base_url,
             )
         except Exception as exc:
             raise RenderError("dungeon template rendering failed") from exc
@@ -260,12 +296,14 @@ class LongImageRenderer:
         *,
         query: str,
         ranking_limit: int = DEFAULT_RANKING_TOP,
+        web_base_url: str | None = None,
     ) -> str:
         try:
             html = self.templates.render_ranking(
                 ranking,
                 query=query,
                 ranking_limit=ranking_limit,
+                web_base_url=web_base_url,
             )
         except Exception as exc:
             raise RenderError("ranking template rendering failed") from exc
@@ -305,19 +343,31 @@ class LongImageRenderer:
             raise RenderError("battle template rendering failed") from exc
         return await self._capture(html, "battle")
 
+    async def warm_up(self) -> None:
+        """Launch Chromium and render one page so the first query is fast."""
+
+        html = self.templates.render_help(command_prefix="/")
+        output_path = await self._capture(html, "warmup")
+        await self._discard_output(Path(output_path))
+
     async def _capture(self, html: str, page_kind: str) -> str:
         async with self._render_semaphore:
-            return await self._capture_once(html, page_kind)
+            try:
+                return await self._capture_once(html, page_kind)
+            except RenderError as exc:
+                exc.html = html
+                raise
 
     async def _capture_once(self, html: str, page_kind: str) -> str:
         browser = await self._ensure_browser()
         output_path = await self._reserve_output_path(page_kind)
+        scale = 2 if page_kind in _HIGH_DPI_PAGE_KINDS else 1
         context = None
         page = None
         try:
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 800},
-                device_scale_factor=1,
+                device_scale_factor=scale,
                 color_scheme="light",
             )
             await context.route("**/*", self._route_asset_request)
@@ -339,7 +389,7 @@ class LongImageRenderer:
                 timeout=self.render_timeout_ms,
             )
             width, height = _read_png_dimensions(output_path)
-            if width != 1280 or height < metrics["height"]:
+            if width != 1280 * scale or height < metrics["height"] * scale:
                 raise RenderError("captured image does not contain the full page")
             await self._complete_output(output_path)
             return str(output_path)
@@ -505,7 +555,7 @@ class LongImageRenderer:
               return {
                 width: Math.ceil(root.scrollWidth),
                 height: Math.ceil(root.scrollHeight),
-                panelBottom: Math.ceil(panelRect.bottom - rootRect.top),
+                panelBottom: Math.round(panelRect.bottom - rootRect.top),
                 hasBackground:
                   getComputedStyle(root).backgroundImage !== "none" &&
                   getComputedStyle(root)
@@ -584,12 +634,46 @@ def _load_background_data_url(background_path: Path) -> str:
         media_type = "image/png"
     elif payload.startswith(b"\xff\xd8\xff"):
         media_type = "image/jpeg"
+    elif payload.lstrip().startswith((b"<svg", b"<?xml")):
+        media_type = "image/svg+xml"
     else:
         raise TemplateConfigurationError(
             "local scene background has an unsupported format"
         )
     encoded = base64.b64encode(payload).decode("ascii")
     return f"data:{media_type};base64,{encoded}"
+
+
+# Subset web fonts built by tools/build_fonts.py; missing files simply fall
+# back to the system font stack declared in base.css.
+_FONT_FACES = (
+    ("MiSans-Heavy.woff2", "MiSans", 900),
+    ("MiSans-Bold.woff2", "MiSans", 700),
+    ("MiSans-Regular.woff2", "MiSans", 400),
+    ("Barlow-Bold.woff2", "Barlow", 700),
+    ("Barlow-SemiBold.woff2", "Barlow", 600),
+    ("Barlow-Medium.woff2", "Barlow", 500),
+    ("BarlowSemiCondensed-ExtraBold.woff2", "Barlow Semi Condensed", 800),
+)
+
+
+def _load_font_face_css(fonts_path: Path | None) -> Markup:
+    if fonts_path is None:
+        return Markup("")
+    rules: list[str] = []
+    for file_name, family, weight in _FONT_FACES:
+        try:
+            payload = (fonts_path / file_name).read_bytes()
+        except OSError:
+            continue
+        encoded = base64.b64encode(payload).decode("ascii")
+        rules.append(
+            "@font-face{"
+            f'font-family:"{family}";font-weight:{weight};font-style:normal;'
+            f"font-display:block;src:url(data:font/woff2;base64,{encoded})"
+            'format("woff2")}'
+        )
+    return Markup("\n".join(rules))
 
 
 def _read_png_dimensions(path: Path) -> tuple[int, int]:

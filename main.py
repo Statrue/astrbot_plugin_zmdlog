@@ -9,13 +9,18 @@ from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 
+try:  # StarTools.get_data_dir is missing on older AstrBot releases.
+    from astrbot.api.star import StarTools
+except ImportError:  # pragma: no cover - depends on host AstrBot version
+    StarTools = None
+
 from .core.cache import AsyncTTLCache, CacheState
 from .core.client import (
     DEFAULT_API_BASE_URL,
     DEFAULT_REQUEST_TIMEOUT_MS,
+    ZmdLogsAPIError,
     ZmdLogsClient,
     ZmdLogsClientError,
-    ZmdLogsAPIError,
     is_valid_boss_slug,
 )
 from .core.identifiers import (
@@ -38,16 +43,16 @@ from .core.models import (
     HotBossCard,
     PublicUserRankings,
 )
+from .core.render import (
+    LongImageRenderer,
+    RenderError,
+    TemplateConfigurationError,
+)
 from .core.routing import (
     RouteKind,
     RouteParseError,
     RouteRequest,
     parse_zmdlog_payload,
-)
-from .core.render import (
-    LongImageRenderer,
-    RenderError,
-    TemplateConfigurationError,
 )
 
 _BOARD_QUERY_TARGETS = frozenset(
@@ -144,6 +149,9 @@ class ZmdLogBotPlugin(Star):
         )
         self._auto_expand_lock = asyncio.Lock()
         self._auto_expanded_until: dict[tuple[str, str], float] = {}
+        self.fallback_to_astrbot_renderer = bool(
+            self.config.get("fallback_to_astrbot_renderer", True)
+        )
         try:
             self.renderer: LongImageRenderer | None = LongImageRenderer(
                 Path(__file__).parent,
@@ -151,6 +159,7 @@ class ZmdLogBotPlugin(Star):
                     "render_timeout_ms",
                     30_000,
                 ),
+                output_dir=self._render_output_dir(),
                 allowed_image_origins=(
                     self.api_base_url,
                     self.web_base_url,
@@ -162,6 +171,20 @@ class ZmdLogBotPlugin(Star):
                 type(exc).__name__,
             )
             self.renderer = None
+
+    @filter.on_astrbot_loaded()
+    async def warm_up_renderer(self) -> None:
+        """Start Chromium ahead of the first query so it does not time out."""
+
+        if self.renderer is None:
+            return
+        try:
+            await self.renderer.warm_up()
+        except RenderError as exc:
+            logger.warning(
+                "ZmdLogBot renderer warm-up failed: %s",
+                type(exc).__name__,
+            )
 
     @filter.command("zmdlog")
     async def zmdlog(self, event: AstrMessageEvent):
@@ -189,6 +212,10 @@ class ZmdLogBotPlugin(Star):
             return
         except RenderError as exc:
             logger.error("ZmdLogBot image rendering failed: %s", type(exc).__name__)
+            fallback_path = await self._render_with_astrbot(exc)
+            if fallback_path is not None:
+                yield event.image_result(fallback_path)
+                return
             yield event.plain_result(_RENDER_FAILURE_MESSAGE)
             return
         except Exception:
@@ -250,6 +277,10 @@ class ZmdLogBotPlugin(Star):
                 "ZmdLogBot auto-expand rendering failed: %s",
                 type(exc).__name__,
             )
+            fallback_path = await self._render_with_astrbot(exc)
+            if fallback_path is not None:
+                yield event.image_result(fallback_path)
+                return
             yield event.plain_result(_RENDER_FAILURE_MESSAGE)
             return
         except Exception:
@@ -277,6 +308,7 @@ class ZmdLogBotPlugin(Star):
             image_path = await renderer.render_all_top3(
                 cards,
                 query="榜单",
+                web_base_url=self.web_base_url,
             )
             return _DispatchOutcome(image_path=image_path)
 
@@ -321,6 +353,7 @@ class ZmdLogBotPlugin(Star):
                     ranking,
                     query=route.query,
                     ranking_limit=route.ranking_limit,
+                    web_base_url=self.web_base_url,
                 )
                 return _DispatchOutcome(image_path=image_path)
             raise
@@ -344,6 +377,7 @@ class ZmdLogBotPlugin(Star):
                     ranking,
                     query=route.query,
                     ranking_limit=route.ranking_limit,
+                    web_base_url=self.web_base_url,
                 )
                 return _DispatchOutcome(image_path=image_path)
             return _DispatchOutcome(
@@ -365,6 +399,7 @@ class ZmdLogBotPlugin(Star):
                 ranking,
                 query=route.query,
                 ranking_limit=route.ranking_limit,
+                web_base_url=self.web_base_url,
             )
             return _DispatchOutcome(image_path=image_path)
 
@@ -381,6 +416,7 @@ class ZmdLogBotPlugin(Star):
             choice,
             selected_cards,
             query=route.query,
+            web_base_url=self.web_base_url,
         )
         return _DispatchOutcome(image_path=image_path)
 
@@ -441,6 +477,52 @@ class ZmdLogBotPlugin(Star):
         if self.renderer is None:
             raise RenderError("renderer is unavailable")
         return self.renderer
+
+    @staticmethod
+    def _render_output_dir() -> Path | None:
+        """Keep generated images under AstrBot's data dir, never the plugin dir."""
+
+        if StarTools is None:
+            return None
+        try:
+            return StarTools.get_data_dir("astrbot_plugin_zmdlog") / "render"
+        except Exception as exc:
+            logger.warning(
+                "ZmdLogBot cannot resolve the plugin data dir: %s",
+                type(exc).__name__,
+            )
+            return None
+
+    async def _render_with_astrbot(self, error: RenderError) -> str | None:
+        """Render the already-built page through AstrBot's own text-to-image
+        service when the bundled Chromium capture is unavailable."""
+
+        html = error.html
+        if not self.fallback_to_astrbot_renderer or html is None:
+            return None
+        # AstrBot treats the argument as a Jinja template; neutralise delimiters
+        # so user-supplied text (nicknames) can never become template code.
+        html = (
+            html.replace("{{", "&#123;&#123;")
+            .replace("{%", "&#123;%")
+            .replace("{#", "&#123;#")
+        )
+        try:
+            try:
+                return await self.html_render(
+                    html,
+                    {},
+                    options={"full_page": True},
+                )
+            except TypeError:
+                # Older AstrBot builds have no ``options`` parameter.
+                return await self.html_render(html, {})
+        except Exception as exc:
+            logger.warning(
+                "ZmdLogBot AstrBot renderer fallback failed: %s",
+                type(exc).__name__,
+            )
+            return None
 
     async def _list_hot_bosses(self) -> tuple[HotBossCard, ...]:
         result = await self.hot_boss_cache.get_or_load(
@@ -518,6 +600,8 @@ class ZmdLogBotPlugin(Star):
                 return "没有找到这个公开账号，或该账号暂无公开榜单记录。"
             if route.kind is RouteKind.BATTLE_QUERY:
                 return "战报不存在、未公开或已删除。"
+            if route.kind in {RouteKind.RANKING_QUERY, RouteKind.SMART_QUERY}:
+                return "没有找到这个榜单，可能已下线或暂未公开。"
         return "ZMDLogs 暂时不可用，请稍后重试。"
 
     @staticmethod

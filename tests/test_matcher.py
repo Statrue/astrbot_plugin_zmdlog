@@ -7,7 +7,6 @@ from core.matcher import (
     TargetType,
     normalize_search_text,
 )
-
 from tests.helpers import make_card
 
 
