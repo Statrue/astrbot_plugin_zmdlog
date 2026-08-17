@@ -43,6 +43,7 @@ _OUTPUT_FILE_GLOB = "zmd-*.png"
 # Short pages are captured at 2x for legibility on phones; the potentially very
 # long top-3 pages stay at 1x to remain well below Chromium's 16384px limit.
 _HIGH_DPI_PAGE_KINDS = frozenset({"help", "ranking", "account", "battle", "warmup"})
+_MAX_CAPTURE_HEIGHT_PX = 15_000
 DEFAULT_MAX_CONCURRENT_RENDERS = 2
 DEFAULT_OUTPUT_TTL_SECONDS = 10 * 60
 DEFAULT_MAX_OUTPUT_FILES = 50
@@ -365,22 +366,14 @@ class LongImageRenderer:
         context = None
         page = None
         try:
-            context = await browser.new_context(
-                viewport={"width": 1280, "height": 800},
-                device_scale_factor=scale,
-                color_scheme="light",
-            )
-            await context.route("**/*", self._route_asset_request)
-            page = await context.new_page()
-            page.set_default_timeout(self.render_timeout_ms)
-            await page.emulate_media(reduced_motion="reduce")
-            await page.set_content(
-                html,
-                wait_until="domcontentloaded",
-                timeout=self.render_timeout_ms,
-            )
-            await self._settle_page(page)
-            metrics = await self._validate_page(page)
+            context, page, metrics = await self._load_page(browser, html, scale)
+            if scale > 1 and metrics["height"] * scale > _MAX_CAPTURE_HEIGHT_PX:
+                # Very long pages fall back to 1x to stay inside Chromium's
+                # texture limit instead of failing.
+                await page.close()
+                await context.close()
+                scale = 1
+                context, page, metrics = await self._load_page(browser, html, scale)
             await page.screenshot(
                 path=str(output_path),
                 full_page=True,
@@ -410,6 +403,40 @@ class LongImageRenderer:
                     await context.close()
                 except Exception:
                     pass
+
+    async def _load_page(self, browser, html: str, scale: int):
+        """Open the page in a fresh context and validate its frame."""
+
+        context = await browser.new_context(
+            viewport={"width": 1280, "height": 800},
+            device_scale_factor=scale,
+            color_scheme="light",
+        )
+        page = None
+        try:
+            await context.route("**/*", self._route_asset_request)
+            page = await context.new_page()
+            page.set_default_timeout(self.render_timeout_ms)
+            await page.emulate_media(reduced_motion="reduce")
+            await page.set_content(
+                html,
+                wait_until="domcontentloaded",
+                timeout=self.render_timeout_ms,
+            )
+            await self._settle_page(page)
+            metrics = await self._validate_page(page)
+        except BaseException:
+            if page is not None:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+            try:
+                await context.close()
+            except Exception:
+                pass
+            raise
+        return context, page, metrics
 
     async def _reserve_output_path(self, page_kind: str) -> Path:
         self.output_dir.mkdir(parents=True, exist_ok=True)

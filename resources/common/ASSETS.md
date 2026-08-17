@@ -7,7 +7,7 @@
 
 ## `fonts/*.woff2`
 
-由 `tools/build_fonts.py` 从上游字体子集化生成（GB2312 一级常用字 + 模板固定文案；拉丁字体只保留 ASCII 与常用符号），运行时以 data URL 内嵌。
+由 `tools/build_fonts.py` 从上游字体子集化生成（GB2312 全集 6763 字 + 模板固定文案；拉丁字体只保留 ASCII 与常用符号），运行时以 data URL 内嵌。
 
 | 文件 | 来源 | 许可 |
 | --- | --- | --- |

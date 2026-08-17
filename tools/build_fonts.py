@@ -15,8 +15,9 @@ Source files expected in the input directory:
         https://github.com/jpt/barlow  (SIL Open Font License 1.1)
 
 Output goes to ``resources/common/fonts/*.woff2``. CJK fonts are reduced to
-GB2312 level-1 (3755 common characters) plus every character used by the
-templates; glyphs outside that set fall back to system fonts.
+the full GB2312 set (6763 characters, covering every simplified-Chinese
+operator/boss name seen so far) plus every character used by the templates;
+glyphs outside that set fall back to system fonts.
 """
 
 from __future__ import annotations
@@ -40,9 +41,9 @@ LATIN_FONTS = (
 )
 
 
-def gb2312_level1() -> set[str]:
+def gb2312_characters() -> set[str]:
     chars: set[str] = set()
-    for row in range(16, 56):
+    for row in range(16, 88):
         for col in range(1, 95):
             try:
                 chars.add(bytes((row + 0xA0, col + 0xA0)).decode("gb2312"))
@@ -63,7 +64,7 @@ def build(source_dir: Path) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     latin = set(string.printable) | set(LATIN_EXTRA)
     latin = {c for c in latin if not c.isspace()} | {" "}
-    cjk = gb2312_level1() | template_characters() | latin
+    cjk = gb2312_characters() | template_characters() | latin
 
     jobs = [(name, cjk) for name in CJK_FONTS]
     jobs += [(name, latin) for name in LATIN_FONTS]
