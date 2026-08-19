@@ -74,7 +74,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
                 commands=(
                     HelpCommand(
                         command=(
-                            f"{command} 角色 [榜单关键词] "
+                            f"{command} 角色统计 [榜单关键词] "
                             "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
                         ),
                         description=(

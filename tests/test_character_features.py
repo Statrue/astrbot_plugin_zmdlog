@@ -34,18 +34,19 @@ from tests.helpers import (
 
 class OptionRoutingTests(unittest.TestCase):
     def test_character_stats_routes(self) -> None:
-        route = parse_zmdlog_payload("角色")
+        route = parse_zmdlog_payload("角色统计")
         self.assertEqual(route.kind, RouteKind.CHARACTER_STATS)
         self.assertEqual(route.query, "")
         self.assertEqual(route.stats_range, "all")
         self.assertEqual(route.stats_potential, "all")
 
-        route = parse_zmdlog_payload("角色 罗丹 --潜能 0 --范围 7天")
+        route = parse_zmdlog_payload("角色统计 罗丹 --潜能 0 --范围 7天")
         self.assertEqual(route.kind, RouteKind.CHARACTER_STATS)
         self.assertEqual(route.query, "罗丹")
         self.assertEqual(route.stats_range, "7d")
         self.assertEqual(route.stats_potential, "0")
 
+        # Bare 角色 is still accepted as an alias of 角色统计.
         route = parse_zmdlog_payload("角色 --range 30D --potential 1-5")
         self.assertEqual(route.stats_range, "30d")
         self.assertEqual(route.stats_potential, "1-5")
@@ -70,14 +71,14 @@ class OptionRoutingTests(unittest.TestCase):
 
     def test_options_rejected_where_they_do_not_apply(self) -> None:
         cases = {
-            "角色 罗丹 --top 5": "--top",
-            "角色 罗丹 --角色 黎风": "--角色",
+            "角色统计 罗丹 --top 5": "--top",
+            "角色统计 罗丹 --角色 黎风": "--角色",
             "阵容 罗丹 --范围 7d": "--范围",
             "罗丹 --潜能 0": "--潜能",
             "榜单 --角色 黎风": "--角色",
             "账号 usr_x --角色 黎风": "--角色",
-            "角色 --范围 3d": "--范围",
-            "角色 --潜能 6": "--潜能",
+            "角色统计 --范围 3d": "--范围",
+            "角色统计 --潜能 6": "--潜能",
             "罗丹 --范围": "--范围",
             "罗丹 --角色 黎风 --角色 洛茜": "--角色",
             "罗丹 --角色 黎风 多余": "--角色",

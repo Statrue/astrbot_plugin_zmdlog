@@ -421,7 +421,7 @@ class ZmdLogBotPlugin(Star):
             )
             image_path = await renderer.render_character_stats(
                 stats,
-                query="角色",
+                query="角色统计",
                 web_base_url=self.web_base_url,
             )
             return _DispatchOutcome(image_path=image_path)
@@ -547,8 +547,8 @@ class ZmdLogBotPlugin(Star):
     ) -> str | None:
         """Explain the right command when a board query is really a character.
 
-        ``/zmdlog 角色 庄方宜`` is a natural misreading of the board-only
-        ``角色`` route. The global statistics response doubles as a six-star
+        ``/zmdlog 角色统计 庄方宜`` is a natural misreading of the board-only
+        ``角色统计`` route. The global statistics response doubles as a six-star
         character catalog, so use it (cached) to recognise the name.
         """
 
@@ -565,8 +565,8 @@ class ZmdLogBotPlugin(Star):
         name = resolution.name
         if view is CandidateView.CHARACTER_STATS:
             return (
-                f"「{name}」是角色名。`角色` 后面接榜单关键词，"
-                f"例如 `角色 罗丹` 看该榜的角色分布；"
+                f"「{name}」是角色名。`角色统计` 后面接榜单关键词，"
+                f"例如 `角色统计 罗丹` 看该榜的角色分布；"
                 f"要看 {name} 的排名请用 `罗丹 --角色 {name}`。"
             )
         if view is CandidateView.ROSTER:

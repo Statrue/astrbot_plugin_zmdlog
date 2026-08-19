@@ -155,7 +155,7 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
             raise RouteParseError("请提供 battleId 或 ZMDLogs 战报链接。")
         return RouteRequest(RouteKind.BATTLE_QUERY, remainder)
 
-    if command == "角色":
+    if command in {"角色统计", "角色"}:
         options.reject_except(
             "range", "potential", context="不适用于角色统计。"
         )
