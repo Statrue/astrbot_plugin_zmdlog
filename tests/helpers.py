@@ -116,3 +116,137 @@ def battle_detail_payload() -> dict:
         "roleSkillStats": [{"ignored": True}],
         "integrity": {"verified": True},
     }
+
+
+def character_statistics_payload(*, scope: str = "boss", metric: str = "dps") -> dict:
+    def row(
+        name: str,
+        profession: str,
+        key: str,
+        *,
+        rank: int | None,
+        samples: int,
+        median: float | None,
+        maximum: float | None = None,
+        outliers: int = 0,
+    ) -> dict:
+        insufficient = rank is None
+        spread = (median or 0) * 0.2
+        return {
+            "rank": rank,
+            "characterKey": key,
+            "characterName": name,
+            "characterProfession": profession,
+            "characterAvatarUrl": f"/images/character/{key}.png",
+            "sampleCount": samples + outliers,
+            "normalSampleCount": samples,
+            "outlierCount": outliers,
+            "insufficientSamples": insufficient,
+            "lowerWhisker": None if median is None else median - spread * 2,
+            "p10": None if median is None else median - spread * 1.5,
+            "p25": None if median is None else median - spread,
+            "median": median,
+            "p75": None if median is None else median + spread,
+            "p90": None if median is None else median + spread * 1.5,
+            "upperWhisker": None if median is None else median + spread * 2,
+            "maximum": maximum if maximum is not None else (
+                None if median is None else median + spread * 2
+            ),
+            "outliers": (
+                [{"value": (median or 0) * 3, "count": outliers}] if outliers else []
+            ),
+        }
+
+    is_global = scope == "all"
+    return {
+        "scope": scope,
+        "bossSlug": "all" if is_global else "dung01_group_bossrush02",
+        "bossName": "全部副本" if is_global else "危境再现·三位一体",
+        "dungeonName": "角色统计总榜" if is_global else "危境再现 · 测试区",
+        "metric": metric,
+        "range": "all",
+        "potential": "all",
+        "includedBossCount": 12 if is_global else 1,
+        "minimumSampleCount": 5,
+        "eligibleBattleCount": 40,
+        "totalSampleCount": 57,
+        "totalOutlierCount": 2,
+        "rows": [
+            row("黎风", "近卫", "chr_lifeng", rank=1, samples=20, median=120_000,
+                maximum=260_000, outliers=2),
+            row("洛茜", "近卫", "chr_luoxi", rank=2, samples=15, median=90_000),
+            row("卡缪", "术士", "chr_kamiu", rank=3, samples=8, median=60_500.5),
+            row("佩丽卡", "辅助", "chr_peilika", rank=None, samples=3, median=30_000),
+            row("无样本", "先锋", "chr_none", rank=None, samples=0, median=None),
+        ],
+    }
+
+
+def ranking_payload_with_rows() -> dict:
+    def entry(name: str, profession: str) -> dict:
+        return {
+            "characterKey": f"chr_{name}",
+            "characterName": name,
+            "profession": profession,
+            "avatarUrl": f"/images/character/{name}.png",
+        }
+
+    def row(rank: int, main: str, roster: list[tuple[str, str]], dps: float) -> dict:
+        return {
+            "rank": rank,
+            "scorePercent": 100 - rank,
+            "battleId": f"btl_upload_{rank:012d}",
+            "battleEndAt": "2026-07-13T22:00:32+08:00",
+            "characterKey": f"chr_{main}",
+            "characterName": main,
+            "characterProfession": dict(roster)[main],
+            "characterAvatarUrl": f"/images/character/{main}.png",
+            "accountId": f"usr_{rank:032d}",
+            "accountDisplayName": f"公开账号{rank}",
+            "dps": dps,
+            "rdps": dps / 2,
+            "durationMs": 60_000 + rank * 1000,
+            "rosterSummary": [name for name, _ in roster],
+            "rosterEntries": [entry(name, profession) for name, profession in roster],
+            "contractTagScore": None,
+            "contractTags": [],
+        }
+
+    support = [("卡缪", "术士"), ("佩丽卡", "辅助"), ("洁尔佩塔", "重装")]
+    team_a = [("黎风", "近卫"), *support]
+    team_b = [("洛茜", "近卫"), *support]
+    return {
+        "bossSlug": "dung01_group_bossrush02",
+        "bossName": "危境再现·三位一体",
+        "dungeonName": "危境再现 · 测试区",
+        "metric": "dps",
+        "professionGroups": [
+            {
+                "profession": "近卫",
+                "entries": [
+                    {"characterKey": "chr_黎风", "characterName": "黎风",
+                     "avatarUrl": "/images/character/黎风.png", "usagePercent": 60.0},
+                    {"characterKey": "chr_洛茜", "characterName": "洛茜",
+                     "avatarUrl": None, "usagePercent": 40.0},
+                ],
+            },
+            {"profession": "重装", "entries": [
+                {"characterKey": None, "characterName": "洁尔佩塔",
+                 "avatarUrl": None, "usagePercent": 100.0}]},
+            {"profession": "辅助", "entries": [
+                {"characterKey": None, "characterName": "佩丽卡",
+                 "avatarUrl": None, "usagePercent": 100.0}]},
+            {"profession": "突击", "entries": []},
+            {"profession": "术士", "entries": [
+                {"characterKey": None, "characterName": "卡缪",
+                 "avatarUrl": None, "usagePercent": 100.0}]},
+            {"profession": "先锋", "entries": []},
+        ],
+        "rows": [
+            row(1, "黎风", team_a, 130_000.5),
+            row(2, "黎风", list(reversed(team_a)), 125_000),
+            row(3, "洛茜", team_b, 110_000),
+            row(4, "黎风", team_a, 100_000),
+            row(5, "卡缪", team_b, 90_000),
+        ],
+    }

@@ -3,6 +3,12 @@
 {% block content %}
 <section class="ranking-meta" aria-label="榜单信息">
   <code>{{ page.boss_slug }}</code>
+  {% if page.character_filter %}
+  <span class="ranking-filter">主C：{{ page.character_filter }}</span>
+  <span class="ranking-count">
+    筛选出 {{ page.filtered_count }} 条{% if page.rows|length < page.filtered_count %} · 展示前 {{ page.rows|length }} 名{% endif %} · 共 {{ page.row_count }} 条公开排名
+  </span>
+  {% else %}
   <span class="ranking-count">
     {% if page.rows|length < page.row_count %}
     展示前 {{ page.rows|length }} 名 · 共 {{ page.row_count }} 条公开排名
@@ -10,6 +16,7 @@
     {{ page.row_count }} 条公开排名
     {% endif %}
   </span>
+  {% endif %}
 </section>
 
 {% if page.rows %}
@@ -45,7 +52,7 @@
     </thead>
     <tbody>
       {% for row in page.rows %}
-      <tr>
+      <tr{% if row.rank <= 3 %} class="rank-{{ row.rank }}"{% endif %}>
         <td>
           <span class="ranking-position">{{ row.rank }}</span>
           <span class="percentile">{{ row.percentile }}</span>
@@ -95,6 +102,6 @@
   </table>
 </div>
 {% else %}
-<div class="empty-ranking">该榜单暂无公开排名</div>
+<div class="empty-ranking">{% if page.character_filter %}该榜单没有以 {{ page.character_filter }} 为主C的公开排名{% else %}该榜单暂无公开排名{% endif %}</div>
 {% endif %}
 {% endblock %}

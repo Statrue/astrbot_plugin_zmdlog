@@ -12,3 +12,8 @@ __pycache__/
 
 # Local style references (not shipped)
 /docs/style-refs/
+/DESIGN_0.4.0.md
+
+# local reference material (© HYPERGRYPH) and derived KB text
+docs/武陵旅社/
+docs/kb/

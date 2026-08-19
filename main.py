@@ -17,9 +17,16 @@ except ImportError:  # pragma: no cover - depends on host AstrBot version
 from .core.cache import AsyncTTLCache, CacheState
 from .core.candidates import (
     CandidateStore,
+    CandidateView,
+    PendingCandidates,
     extract_code,
     format_candidates,
     parse_selection,
+)
+from .core.characters import (
+    CharacterResolutionStatus,
+    ranking_character_names,
+    resolve_character_name,
 )
 from .core.client import (
     DEFAULT_API_BASE_URL,
@@ -47,6 +54,7 @@ from .core.matcher import (
 from .core.models import (
     BattleDetailSummary,
     BossRanking,
+    CharacterStatistics,
     HotBossCard,
     PublicUserRankings,
     parse_hot_bosses,
@@ -78,6 +86,10 @@ _UNEXPECTED_FAILURE_MESSAGE = "ZmdLogBot 暂时无法完成查询，请稍后重
 _BATTLE_LINK_FILTER = (
     r"https?://[^\s<>\"']+/(?:battle|share|axis)/btl_[A-Za-z0-9_-]+"
 )
+_BOARD_ONLY_VIEWS = frozenset(
+    {CandidateView.CHARACTER_STATS, CandidateView.ROSTER}
+)
+_CHARACTER_STATS_UNAVAILABLE = "character_statistics_not_available"
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +155,16 @@ class ZmdLogBotPlugin(Star):
         )
         self.account_cache = AsyncTTLCache[str, PublicUserRankings](
             account_cache_ttl_seconds,
+        )
+        character_stats_cache_ttl_seconds = self.config.get(
+            "character_stats_cache_ttl_seconds",
+            120,
+        )
+        self.character_stats_cache = AsyncTTLCache[
+            tuple[str, str, str],
+            CharacterStatistics,
+        ](
+            character_stats_cache_ttl_seconds,
         )
         self.battle_cache = AsyncTTLCache[str, BattleDetailSummary](
             battle_cache_ttl_seconds,
@@ -391,18 +413,29 @@ class ZmdLogBotPlugin(Star):
             )
             return _DispatchOutcome(image_path=image_path)
 
+        if route.kind is RouteKind.CHARACTER_STATS and not route.query.strip():
+            stats = await self._get_character_statistics(
+                None,
+                time_range=route.stats_range,
+                potential=route.stats_potential,
+            )
+            image_path = await renderer.render_character_stats(
+                stats,
+                query="角色",
+                web_base_url=self.web_base_url,
+            )
+            return _DispatchOutcome(image_path=image_path)
+
+        view = _route_view(route)
+        pending = _pending_from_route(route)
+
         try:
             cards = await self._list_hot_bosses()
         except ZmdLogsClientError:
             if self._looks_like_direct_slug(route.query):
-                ranking = await self._get_boss_ranking(route.query)
-                image_path = await renderer.render_ranking(
-                    ranking,
-                    query=route.query,
-                    ranking_limit=route.ranking_limit,
-                    web_base_url=self.web_base_url,
+                return await self._render_board(
+                    route.query, query=route.query, pending=pending
                 )
-                return _DispatchOutcome(image_path=image_path)
             raise
 
         matcher = RankingMatcher(
@@ -417,24 +450,44 @@ class ZmdLogBotPlugin(Star):
         # the matcher or the explicit board route.
         match = matcher.match(route.query, allowed_types=_BOARD_QUERY_TARGETS)
 
+        not_found_message = (
+            f"没有找到与「{route.query}」匹配的榜单。"
+            if view in _BOARD_ONLY_VIEWS
+            else f"没有找到与「{route.query}」匹配的榜单或副本。"
+        )
         if match.status is MatchStatus.NOT_FOUND:
             if self._looks_like_direct_slug(route.query):
-                ranking = await self._get_boss_ranking(route.query)
-                image_path = await renderer.render_ranking(
-                    ranking,
-                    query=route.query,
-                    ranking_limit=route.ranking_limit,
-                    web_base_url=self.web_base_url,
+                return await self._render_board(
+                    route.query, query=route.query, pending=pending
                 )
-                return _DispatchOutcome(image_path=image_path)
-            return _DispatchOutcome(
-                message=f"没有找到与「{route.query}」匹配的榜单或副本。"
-            )
+            return _DispatchOutcome(message=not_found_message)
+
+        candidates: tuple[MatchChoice, ...] = ()
+        choice: MatchChoice | None = None
         if match.status is MatchStatus.AMBIGUOUS:
+            candidates = match.candidates
+        else:
+            choice = match.selected
+        if view in _BOARD_ONLY_VIEWS:
+            # Character statistics and roster pages exist per board only, so a
+            # dungeon / scope hit becomes a pick list of its boards.
+            if choice is not None and choice.target.target_type is not TargetType.BOARD:
+                candidates = (choice,)
+                choice = None
+            if candidates:
+                candidates = matcher.expand_to_boards(candidates)
+                if len(candidates) == 1:
+                    choice = candidates[0]
+                    candidates = ()
+        if candidates:
             entry = self.candidates.remember(
                 route.query,
-                match.candidates,
-                ranking_top=route.ranking_top,
+                candidates,
+                ranking_top=pending.ranking_top,
+                view=pending.view,
+                character_filter=pending.character_filter,
+                stats_range=pending.stats_range,
+                stats_potential=pending.stats_potential,
             )
             return _DispatchOutcome(
                 message=format_candidates(
@@ -442,17 +495,13 @@ class ZmdLogBotPlugin(Star):
                     ttl_seconds=self.candidates.ttl_seconds,
                 )
             )
-
-        choice = match.selected
         if choice is None:
-            return _DispatchOutcome(
-                message=f"没有找到与「{route.query}」匹配的榜单或副本。"
-            )
+            return _DispatchOutcome(message=not_found_message)
         return await self._render_choice(
             choice,
             cards,
             query=route.query,
-            ranking_top=route.ranking_top,
+            pending=pending,
         )
 
     async def _render_choice(
@@ -461,24 +510,21 @@ class ZmdLogBotPlugin(Star):
         cards: tuple[HotBossCard, ...],
         *,
         query: str,
-        ranking_top: int | None,
+        pending: PendingCandidates,
     ) -> _DispatchOutcome:
         renderer = self._require_renderer()
         if choice.target.target_type is TargetType.BOARD:
-            ranking = await self._get_boss_ranking(choice.target.key)
-            image_path = await renderer.render_ranking(
-                ranking,
-                query=query,
-                ranking_limit=(
-                    ranking_top if ranking_top is not None else DEFAULT_RANKING_TOP
-                ),
-                web_base_url=self.web_base_url,
+            return await self._render_board(
+                choice.target.key, query=query, pending=pending
             )
-            return _DispatchOutcome(image_path=image_path)
 
-        if ranking_top is not None:
+        if pending.ranking_top is not None:
             return _DispatchOutcome(
                 message="--top 仅适用于具体榜单查询，请补充具体榜单关键词。"
+            )
+        if pending.character_filter is not None:
+            return _DispatchOutcome(
+                message="--角色 仅适用于具体榜单查询，请补充具体榜单关键词。"
             )
 
         selected_slugs = set(choice.target.boss_slugs)
@@ -490,6 +536,81 @@ class ZmdLogBotPlugin(Star):
             selected_cards,
             query=query,
             web_base_url=self.web_base_url,
+        )
+        return _DispatchOutcome(image_path=image_path)
+
+    async def _render_board(
+        self,
+        boss_slug: str,
+        *,
+        query: str,
+        pending: PendingCandidates,
+    ) -> _DispatchOutcome:
+        """Render one concrete board in whichever view the request asked for."""
+
+        renderer = self._require_renderer()
+        ranking_limit = (
+            pending.ranking_top
+            if pending.ranking_top is not None
+            else DEFAULT_RANKING_TOP
+        )
+        if pending.view is CandidateView.CHARACTER_STATS:
+            stats = await self._get_character_statistics(
+                boss_slug,
+                time_range=pending.stats_range,
+                potential=pending.stats_potential,
+            )
+            image_path = await renderer.render_character_stats(
+                stats,
+                query=query,
+                web_base_url=self.web_base_url,
+            )
+            return _DispatchOutcome(image_path=image_path)
+
+        ranking = await self._get_boss_ranking(boss_slug)
+        if pending.view is CandidateView.ROSTER:
+            image_path = await renderer.render_roster(
+                ranking,
+                query=query,
+                ranking_limit=ranking_limit,
+                web_base_url=self.web_base_url,
+            )
+            return _DispatchOutcome(image_path=image_path)
+
+        character_filter = None
+        if pending.character_filter is not None:
+            resolution = resolve_character_name(
+                pending.character_filter,
+                ranking_character_names(ranking),
+            )
+            if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
+                options = " / ".join(resolution.candidates)
+                return _DispatchOutcome(
+                    message=f"「{resolution.query}」可能是：{options}，请写全名。"
+                )
+            if resolution.status is CharacterResolutionStatus.NOT_FOUND:
+                return _DispatchOutcome(
+                    message=(
+                        f"「{ranking.boss_name}」的公开排名里没有"
+                        f"「{resolution.query}」。"
+                    )
+                )
+            character_filter = resolution.name
+            if not any(
+                row.character_name == character_filter for row in ranking.rows
+            ):
+                return _DispatchOutcome(
+                    message=(
+                        f"「{ranking.boss_name}」的公开排名里没有以"
+                        f"「{character_filter}」为主C的记录。"
+                    )
+                )
+        image_path = await renderer.render_ranking(
+            ranking,
+            query=query,
+            ranking_limit=ranking_limit,
+            web_base_url=self.web_base_url,
+            character_filter=character_filter,
         )
         return _DispatchOutcome(image_path=image_path)
 
@@ -510,15 +631,11 @@ class ZmdLogBotPlugin(Star):
                 choice,
                 cards,
                 query=entry.query,
-                ranking_top=entry.ranking_top,
+                pending=entry,
             )
         except ZmdLogsAPIError as exc:
             logger.warning("ZmdLogBot API request failed: %s", exc.code)
-            yield event.plain_result(
-                "没有找到这个榜单，可能已下线或暂未公开。"
-                if exc.status_code == 404
-                else "ZMDLogs 暂时不可用，请稍后重试。"
-            )
+            yield event.plain_result(self._board_api_error_message(exc))
             return
         except ZmdLogsClientError as exc:
             logger.warning("ZmdLogBot request failed: %s", type(exc).__name__)
@@ -829,6 +946,24 @@ class ZmdLogBotPlugin(Star):
         )
         return result.value
 
+    async def _get_character_statistics(
+        self,
+        boss_slug: str | None,
+        *,
+        time_range: str,
+        potential: str,
+    ) -> CharacterStatistics:
+        key = (boss_slug or "all", time_range, potential)
+        result = await self.character_stats_cache.get_or_load(
+            key,
+            lambda: self.client.get_character_statistics(
+                boss_slug,
+                time_range=time_range,
+                potential=potential,
+            ),
+        )
+        return result.value
+
     async def _get_public_user_rankings(
         self,
         account_id: str,
@@ -876,8 +1011,9 @@ class ZmdLogBotPlugin(Star):
             "zmdlog"
         )
 
-    @staticmethod
+    @classmethod
     def _api_error_message(
+        cls,
         route: RouteRequest,
         error: ZmdLogsAPIError,
     ) -> str:
@@ -886,8 +1022,21 @@ class ZmdLogBotPlugin(Star):
                 return "没有找到这个公开账号，或该账号暂无公开榜单记录。"
             if route.kind is RouteKind.BATTLE_QUERY:
                 return "战报不存在、未公开或已删除。"
-            if route.kind in {RouteKind.RANKING_QUERY, RouteKind.SMART_QUERY}:
-                return "没有找到这个榜单，可能已下线或暂未公开。"
+            if route.kind in {
+                RouteKind.RANKING_QUERY,
+                RouteKind.SMART_QUERY,
+                RouteKind.CHARACTER_STATS,
+                RouteKind.ROSTER_QUERY,
+            }:
+                return cls._board_api_error_message(error)
+        return "ZMDLogs 暂时不可用，请稍后重试。"
+
+    @staticmethod
+    def _board_api_error_message(error: ZmdLogsAPIError) -> str:
+        if error.status_code == 404:
+            if error.code == _CHARACTER_STATS_UNAVAILABLE:
+                return "危机合约不提供角色统计。"
+            return "没有找到这个榜单，可能已下线或暂未公开。"
         return "ZMDLogs 暂时不可用，请稍后重试。"
 
     @staticmethod
@@ -901,9 +1050,34 @@ class ZmdLogBotPlugin(Star):
         await self.boss_ranking_cache.close()
         await self.account_cache.close()
         await self.battle_cache.close()
+        await self.character_stats_cache.close()
         try:
             await self.client.close()
         finally:
             if self.renderer is not None:
                 await self.renderer.close()
         logger.info("ZmdLogBot plugin terminated.")
+
+
+def _route_view(route: RouteRequest) -> CandidateView:
+    if route.kind is RouteKind.CHARACTER_STATS:
+        return CandidateView.CHARACTER_STATS
+    if route.kind is RouteKind.ROSTER_QUERY:
+        return CandidateView.ROSTER
+    return CandidateView.RANKING
+
+
+def _pending_from_route(route: RouteRequest) -> PendingCandidates:
+    """Carry the route's view and options in the same shape candidates use."""
+
+    return PendingCandidates(
+        code="",
+        query=route.query,
+        choices=(),
+        ranking_top=route.ranking_top,
+        created_at=0.0,
+        view=_route_view(route),
+        character_filter=route.character_filter,
+        stats_range=route.stats_range,
+        stats_potential=route.stats_potential,
+    )

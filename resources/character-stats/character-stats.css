@@ -1,0 +1,323 @@
+.stats-overview {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.stats-chip {
+  position: relative;
+  padding: 12px 16px 12px 18px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+}
+
+.stats-chip::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 100%;
+  background: var(--line);
+}
+
+.stats-chip--accent::before {
+  background: var(--yellow);
+}
+
+.stats-chip span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.stats-chip strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.stats-chip em {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.section-heading--minor h2 {
+  font-size: 18px;
+}
+
+.section-heading--minor h2::after {
+  height: 7px;
+  background: var(--line-soft);
+}
+
+/* ---------- box-plot table ---------- */
+
+.stats-table-wrap {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+
+.stats-head,
+.stats-row {
+  display: grid;
+  grid-template-columns: 62px 200px 84px minmax(0, 1fr) 120px 96px;
+  align-items: center;
+  column-gap: 12px;
+  padding: 0 14px;
+}
+
+.stats-head {
+  min-height: 40px;
+  color: #fff;
+  background: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.stats-head-axis {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  height: 100%;
+  align-items: center;
+  color: #cfcfca;
+  font-family: var(--font-num);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.stats-head-axis i {
+  font-style: normal;
+}
+
+.stats-head-median,
+.stats-head-max,
+.stats-median,
+.stats-max {
+  text-align: right;
+}
+
+.stats-row {
+  min-height: 58px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.stats-row:nth-child(even) {
+  background: var(--card-soft);
+}
+
+.stats-row--top {
+  background: linear-gradient(90deg, rgba(248, 211, 77, 0.18), transparent 40%);
+}
+
+.stats-rank .ranking-position {
+  display: inline-flex;
+  width: 34px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+
+.stats-row:nth-child(2) .ranking-position::before {
+  background: var(--yellow);
+}
+
+.stats-row:nth-child(3) .ranking-position {
+  color: #fff;
+}
+
+.stats-row:nth-child(3) .ranking-position::before {
+  background: var(--ink);
+}
+
+.stats-row:nth-child(4) .ranking-position {
+  color: #fff;
+}
+
+.stats-row:nth-child(4) .ranking-position::before {
+  background: var(--muted);
+}
+
+.stats-char {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.stats-char-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.stats-char-text strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-sample strong {
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.stats-sample em {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.stats-plot {
+  position: relative;
+  display: block;
+  height: 30px;
+  overflow: hidden;
+}
+
+.stats-plot i {
+  position: absolute;
+  display: block;
+}
+
+.plot-grid {
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(25% - 1px),
+    var(--line-soft) calc(25% - 1px) 25%
+  );
+}
+
+.plot-whisker {
+  top: 14px;
+  height: 2px;
+  background: var(--steel);
+}
+
+.plot-whisker::before,
+.plot-whisker::after {
+  content: "";
+  position: absolute;
+  top: -5px;
+  width: 2px;
+  height: 12px;
+  background: var(--steel);
+}
+
+.plot-whisker::before {
+  left: 0;
+}
+
+.plot-whisker::after {
+  right: 0;
+}
+
+.plot-box {
+  top: 7px;
+  height: 16px;
+  min-width: 3px;
+  border: 1px solid var(--ink);
+  background: var(--yellow);
+  box-sizing: border-box;
+}
+
+.plot-tick {
+  top: 11px;
+  width: 2px;
+  height: 8px;
+  margin-left: -1px;
+  background: var(--muted);
+}
+
+.plot-median {
+  top: 4px;
+  width: 3px;
+  height: 22px;
+  margin-left: -1.5px;
+  background: var(--ink);
+}
+
+.plot-max {
+  top: 10px;
+  width: 0;
+  height: 0;
+  margin-left: -5px;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid var(--red);
+}
+
+.stats-median {
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.stats-max {
+  color: var(--steel);
+  font-family: var(--font-num);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* ---------- insufficient samples ---------- */
+
+.stats-insufficient {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stats-insufficient-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  color: var(--steel);
+  background: var(--card);
+  font-size: 13px;
+  font-weight: 600;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+}
+
+.stats-insufficient-chip b {
+  padding: 0 5px;
+  color: var(--ink);
+  background: var(--line-soft);
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-weight: 700;
+}

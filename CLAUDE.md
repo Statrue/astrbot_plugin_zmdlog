@@ -9,7 +9,7 @@ AstrBot plugin (`ZmdLogBot`) that queries public ZMDLogs data (Endfield DPS lead
 ## Commands
 
 ```bash
-.venv/Scripts/python.exe -m unittest discover -s tests -v          # full suite (~62 tests, ~1s)
+.venv/Scripts/python.exe -m unittest discover -s tests -v          # full suite (~85 tests, ~2s)
 .venv/Scripts/python.exe -m ruff check main.py core tests tools    # lint (ruff.toml: E/F/I/W, py310)
 .venv/Scripts/python.exe -m unittest tests.test_matcher -v         # one module
 .venv/Scripts/python.exe -m unittest tests.test_matcher.MatcherTests.test_slug_and_board_aliases_match_one_board
@@ -19,11 +19,14 @@ Tests import `core.*` directly (run from repo root). Playwright is *not* exercis
 
 ## Architecture (request flow)
 
-`main.py` → `core/routing.parse_zmdlog_payload` (subcommand + `--top`) → `_dispatch`:
+`main.py` → `core/routing.parse_zmdlog_payload` (subcommand + trailing `--top` / `--角色` / `--范围` / `--潜能` options, parsed by `_extract_options`; each route rejects options it does not accept) → `_dispatch`:
 - HELP → `core/help.build_help_page` (local only, no API)
 - ALL_RANKINGS → `hot-bosses` cache → all-top3 template
 - ACCOUNT_QUERY / BATTLE_QUERY → `core/identifiers` (exact ID or trusted `web_base_url` URL) → client → account/battle template
-- RANKING_QUERY / SMART_QUERY → `hot-bosses` cache → `core/matcher.RankingMatcher` → BOARD ⇒ `/api/bosses/{slug}/rankings` (ranking template); DUNGEON / DUNGEON_SCOPE ⇒ filter hot-bosses cards (dungeon-top3 template); AMBIGUOUS ⇒ compact text list stored in `core/candidates.CandidateStore` (ends with `候选编号 XXXX · N 分钟内有效`); a reply that *quotes* that message with a number (bare, or `/zmdlog 2`) resolves it via `main._quoted_candidate_code`
+- RANKING_QUERY / SMART_QUERY → `hot-bosses` cache → `core/matcher.RankingMatcher` → BOARD ⇒ `/api/bosses/{slug}/rankings` (ranking template; `--角色 X` filters rows by main character after `core/characters.resolve_character_name` resolves X against the names in that ranking — exact → folded → pinyin → unique prefix/substring; rows keep their global rank); DUNGEON / DUNGEON_SCOPE ⇒ filter hot-bosses cards (dungeon-top3 template); AMBIGUOUS ⇒ compact text list stored in `core/candidates.CandidateStore` (ends with `候选编号 XXXX · N 分钟内有效`); a reply that *quotes* that message with a number (bare, or `/zmdlog 2`) resolves it via `main._quoted_candidate_code`
+- CHARACTER_STATS (`/zmdlog 角色 [关键词] [--范围] [--潜能]`) → no keyword ⇒ `GET /api/bosses/character-statistics`; keyword ⇒ same matcher, but **board-only**: dungeon/scope hits are flattened with `RankingMatcher.expand_to_boards` into a candidate list (single board ⇒ rendered directly) → `GET /api/bosses/{slug}/character-statistics?range=&potential=` (never `metric`) → character-stats template (CSS box plots; axis spans whiskers, off-scale maxima pinned at 100%; crisis contract returns upstream 404 `character_statistics_not_available` → `危机合约不提供角色统计。`)
+- ROSTER_QUERY (`/zmdlog 阵容 <关键词> [--top N]`) → same board-only pipeline → reuses the ranking cache → roster template (upstream `professionGroups` for the whole board + local top-N roster combos / main-character counts)
+- `PendingCandidates.view` (`CandidateView.RANKING|CHARACTER_STATS|ROSTER`) plus the parsed options travel with the candidate list so a quoted pick renders the right page (`main._render_board` is the single place that renders one slug in any view)
 - ALIAS_LIST / ALIAS_ADD / ALIAS_REMOVE (`/zmdlog 别名 …`) → admin-only (`event.is_admin()`), edits the alias JSON in the data dir and swaps `self.aliases` in place
 
 Supporting layers: `core/client.py` (httpx; 1 retry, 15s total budget, 4xx never retried, all failures → `ZmdLogsClientError` subclasses) → `core/models.py` (strict field-by-field validation into frozen dataclasses; `ModelValidationError` → `ZmdLogsProtocolError`) → `core/presentation.py` (view models, number/duration formatting, URL safety) → `core/render.py` (`TemplateRenderer` = Jinja with `StrictUndefined`; `LongImageRenderer` = Playwright capture with page-integrity validation, render semaphore, output pruning). `core/cache.py` `AsyncTTLCache` merges concurrent loads per key; only the hot-bosses cache allows stale-on-error.
@@ -45,13 +48,14 @@ Supporting layers: `core/client.py` (httpx; 1 retry, 15s total budget, 4xx never
 
 ## Config
 
-`_conf_schema.json` is the AstrBot config schema; defaults are duplicated in `main.py.__init__` `.get(...)` calls — keep both in sync. `README.md` documents commands/config for end users and must be updated alongside. Rendered PNGs go to `StarTools.get_data_dir("astrbot_plugin_zmdlog")/render` (falls back to system temp when StarTools is unavailable); `@filter.on_astrbot_loaded` warms up Chromium. `_HIGH_DPI_PAGE_KINDS` in `render.py` are captured at `device_scale_factor=2` (PNG 2560px wide); the long top-3 pages stay 1x. `metadata.yaml` carries `short_desc`; `logo.png` (256×256) is the market icon.
+`_conf_schema.json` is the AstrBot config schema; defaults are duplicated in `main.py.__init__` `.get(...)` calls — keep both in sync. `README.md` documents commands/config for end users and must be updated alongside. Rendered PNGs go to `StarTools.get_data_dir("astrbot_plugin_zmdlog")/render` (falls back to system temp when StarTools is unavailable); `@filter.on_astrbot_loaded` warms up Chromium. `_HIGH_DPI_PAGE_KINDS` in `render.py` (help, ranking, account, battle, character-stats, roster) are captured at `device_scale_factor=2` (PNG 2560px wide); the long top-3 pages stay 1x. `metadata.yaml` carries `short_desc`; `logo.png` (256×256) is the market icon.
 
 ## Upstream facts (verified against endfield-suite-open `apps/api/app/services/public_data.py`)
 
 - `characterAvatarUrl` / `avatarUrl` in hot-bosses, rankings and battles are usually **site-relative paths** (`/images/...`), occasionally absolute CDN URLs — resolve them against `web_base_url` before rendering.
 - In battle detail every `roster[].accountDisplayName` is the uploader nickname, so `roster[0]` is a valid uploader name source; `GET /api/battles/{id}/share-summary` also returns `uploaderNickname` directly.
 - Board slugs come from static `BOSS_SEEDS`; the crisis-contract board is `indie_group_ccdg` (`bossName` 破潮之像, `dungeonName` 危机合约). Unknown slug → 404 `boss_not_found`.
+- `GET /api/bosses[/{slug}]/character-statistics` (`range=7d|14d|30d|all`, `potential=0|1-5|all`, `metric` defaults to dps) returns every six-star character (`SIX_STAR_STATISTICS_CATALOG`), zero-sample rows included; `rank` is null when `normalSampleCount < minimumSampleCount` (5); whiskers are min/max of IQR-filtered normal samples, `maximum` includes outliers. Crisis contract → 404 `character_statistics_not_available`. `professionGroups[].entries[].usagePercent` is the share within that profession slot over **all** rows.
 - No public account-directory endpoint exists yet (`GET /api/battles/users` is only planned), so nickname search is blocked upstream.
 
 ## References

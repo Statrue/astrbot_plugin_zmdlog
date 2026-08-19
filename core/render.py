@@ -24,6 +24,7 @@ from .matcher import MatchChoice
 from .models import (
     BattleDetailSummary,
     BossRanking,
+    CharacterStatistics,
     HotBossCard,
     PublicUserRankings,
 )
@@ -31,8 +32,10 @@ from .presentation import (
     build_account_page,
     build_all_top3_page,
     build_battle_page,
+    build_character_stats_page,
     build_dungeon_top3_page,
     build_ranking_page,
+    build_roster_page,
 )
 from .routing import DEFAULT_RANKING_TOP
 
@@ -42,7 +45,17 @@ _VERSION_LINE = re.compile(
 _OUTPUT_FILE_GLOB = "zmd-*.png"
 # Short pages are captured at 2x for legibility on phones; the potentially very
 # long top-3 pages stay at 1x to remain well below Chromium's 16384px limit.
-_HIGH_DPI_PAGE_KINDS = frozenset({"help", "ranking", "account", "battle", "warmup"})
+_HIGH_DPI_PAGE_KINDS = frozenset(
+    {
+        "help",
+        "ranking",
+        "account",
+        "battle",
+        "character-stats",
+        "roster",
+        "warmup",
+    }
+)
 _MAX_CAPTURE_HEIGHT_PX = 15_000
 DEFAULT_MAX_CONCURRENT_RENDERS = 2
 DEFAULT_OUTPUT_TTL_SECONDS = 10 * 60
@@ -146,14 +159,50 @@ class TemplateRenderer:
         query: str,
         ranking_limit: int = DEFAULT_RANKING_TOP,
         web_base_url: str | None = None,
+        character_filter: str | None = None,
     ) -> str:
         page = build_ranking_page(
             ranking,
             query=query,
             display_limit=ranking_limit,
             web_base_url=web_base_url,
+            character_filter=character_filter,
         )
         return self._render("ranking/ranking.html", page, "ranking")
+
+    def render_character_stats(
+        self,
+        stats: CharacterStatistics,
+        *,
+        query: str,
+        web_base_url: str | None = None,
+    ) -> str:
+        page = build_character_stats_page(
+            stats,
+            query=query,
+            web_base_url=web_base_url,
+        )
+        return self._render(
+            "character-stats/character-stats.html",
+            page,
+            "character-stats",
+        )
+
+    def render_roster(
+        self,
+        ranking: BossRanking,
+        *,
+        query: str,
+        ranking_limit: int = DEFAULT_RANKING_TOP,
+        web_base_url: str | None = None,
+    ) -> str:
+        page = build_roster_page(
+            ranking,
+            query=query,
+            display_limit=ranking_limit,
+            web_base_url=web_base_url,
+        )
+        return self._render("roster/roster.html", page, "roster")
 
     def render_account(
         self,
@@ -298,6 +347,7 @@ class LongImageRenderer:
         query: str,
         ranking_limit: int = DEFAULT_RANKING_TOP,
         web_base_url: str | None = None,
+        character_filter: str | None = None,
     ) -> str:
         try:
             html = self.templates.render_ranking(
@@ -305,10 +355,47 @@ class LongImageRenderer:
                 query=query,
                 ranking_limit=ranking_limit,
                 web_base_url=web_base_url,
+                character_filter=character_filter,
             )
         except Exception as exc:
             raise RenderError("ranking template rendering failed") from exc
         return await self._capture(html, "ranking")
+
+    async def render_character_stats(
+        self,
+        stats: CharacterStatistics,
+        *,
+        query: str,
+        web_base_url: str | None = None,
+    ) -> str:
+        try:
+            html = self.templates.render_character_stats(
+                stats,
+                query=query,
+                web_base_url=web_base_url,
+            )
+        except Exception as exc:
+            raise RenderError("character stats template rendering failed") from exc
+        return await self._capture(html, "character-stats")
+
+    async def render_roster(
+        self,
+        ranking: BossRanking,
+        *,
+        query: str,
+        ranking_limit: int = DEFAULT_RANKING_TOP,
+        web_base_url: str | None = None,
+    ) -> str:
+        try:
+            html = self.templates.render_roster(
+                ranking,
+                query=query,
+                ranking_limit=ranking_limit,
+                web_base_url=web_base_url,
+            )
+        except Exception as exc:
+            raise RenderError("roster template rendering failed") from exc
+        return await self._capture(html, "roster")
 
     async def render_account(
         self,

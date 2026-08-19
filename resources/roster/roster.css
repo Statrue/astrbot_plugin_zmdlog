@@ -1,0 +1,221 @@
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.usage-column {
+  min-width: 0;
+  padding: 0 0 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+}
+
+.usage-title {
+  margin: 0;
+  padding: 7px 12px;
+  color: #fff;
+  background: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.usage-list,
+.main-list,
+.combo-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.usage-item,
+.main-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+
+.avatar--small {
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+}
+
+.usage-text,
+.main-text,
+.combo-member-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.usage-name-row {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.usage-name-row strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-name-row em {
+  flex: 0 0 auto;
+  color: var(--steel);
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.usage-bar {
+  position: relative;
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  background: var(--line-soft);
+}
+
+.usage-bar i {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  height: 100%;
+  background: var(--yellow);
+}
+
+.usage-bar--ink i {
+  background: var(--ink);
+}
+
+.usage-more,
+.usage-empty {
+  margin: 8px 12px 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.usage-empty {
+  padding: 10px 0;
+  text-align: center;
+  font-size: 16px;
+}
+
+/* ---------- bottom columns ---------- */
+
+.roster-columns {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 24px;
+}
+
+.roster-block {
+  min-width: 0;
+}
+
+.combo-item {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+}
+
+.combo-item:first-child {
+  margin-top: 0;
+}
+
+.combo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--card-soft);
+}
+
+.combo-count {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.combo-count strong {
+  margin-right: 2px;
+  font-family: var(--font-num);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.combo-item:first-child .combo-count strong {
+  padding: 0 6px;
+  background: var(--yellow);
+}
+
+.combo-best {
+  color: var(--steel);
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.combo-members {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 14px 12px;
+}
+
+.combo-member {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.combo-member-text {
+  gap: 2px;
+}
+
+.combo-member-text strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combo-member-text em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.main-list {
+  padding: 4px 0 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+}
+
+.main-item {
+  padding: 10px 14px 0;
+}

@@ -38,6 +38,11 @@
     "type": "int",
     "default": 60
   },
+  "character_stats_cache_ttl_seconds": {
+    "description": "角色统计缓存时间（秒）",
+    "type": "int",
+    "default": 120
+  },
   "account_cache_ttl_seconds": {
     "description": "公开账号成绩缓存时间（秒）",
     "type": "int",

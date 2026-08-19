@@ -302,6 +302,40 @@ class RankingMatcher:
         )
         return self._resolve_ranked(stripped_query, preferred)
 
+    def expand_to_boards(
+        self,
+        choices: tuple[MatchChoice, ...],
+    ) -> tuple[MatchChoice, ...]:
+        """Flatten dungeon / scope choices into their concrete board choices.
+
+        Board-only features (character statistics, roster analysis) cannot use
+        a dungeon as a target, so every non-board choice is replaced by one
+        choice per board it covers. Order is preserved and slugs are unique.
+        """
+
+        expanded: list[MatchChoice] = []
+        seen: set[str] = set()
+        for choice in choices:
+            target = choice.target
+            if target.target_type is TargetType.BOARD:
+                slugs: tuple[str, ...] = (target.key,)
+            else:
+                slugs = target.boss_slugs
+            for slug in slugs:
+                board = self._boards_by_slug.get(slug)
+                if board is None or slug in seen:
+                    continue
+                seen.add(slug)
+                expanded.append(
+                    MatchChoice(
+                        target=board,
+                        level=choice.level,
+                        score=choice.score,
+                        matched_text=choice.matched_text,
+                    )
+                )
+        return tuple(expanded)
+
     def _prefer_single_board_dungeons(
         self,
         choices: tuple[MatchChoice, ...],

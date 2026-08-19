@@ -11,11 +11,13 @@ from .identifiers import is_valid_account_id, is_valid_battle_id
 from .models import (
     BattleDetailSummary,
     BossRanking,
+    CharacterStatistics,
     HotBossCard,
     ModelValidationError,
     PublicUserRankings,
     parse_battle_detail,
     parse_boss_ranking,
+    parse_character_statistics,
     parse_hot_bosses,
     parse_public_user_rankings,
 )
@@ -25,6 +27,8 @@ DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 _BOSS_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 _MAX_REQUEST_ATTEMPTS = 2
 _MAX_TOTAL_WAIT_SECONDS = 15.0
+_STATS_RANGES = frozenset({"7d", "14d", "30d", "all"})
+_STATS_POTENTIALS = frozenset({"0", "1-5", "all"})
 
 
 class ZmdLogsClientError(Exception):
@@ -115,6 +119,41 @@ class ZmdLogsClient:
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError("boss ranking response is invalid") from exc
 
+    async def get_character_statistics(
+        self,
+        boss_slug: str | None,
+        *,
+        time_range: str = "all",
+        potential: str = "all",
+    ) -> CharacterStatistics:
+        """Return DPS character statistics for one board or for all boards.
+
+        ``boss_slug=None`` targets the global endpoint. The ``metric`` query
+        parameter is deliberately never sent so the upstream DPS default applies.
+        """
+
+        if time_range not in _STATS_RANGES:
+            raise ValueError("invalid statistics range")
+        if potential not in _STATS_POTENTIALS:
+            raise ValueError("invalid statistics potential filter")
+        if boss_slug is None:
+            path = "api/bosses/character-statistics"
+        else:
+            if not is_valid_boss_slug(boss_slug):
+                raise InvalidBossSlugError("invalid boss slug")
+            path = f"api/bosses/{boss_slug}/character-statistics"
+
+        payload = await self._get_json(
+            path,
+            params={"range": time_range, "potential": potential},
+        )
+        try:
+            return parse_character_statistics(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError(
+                "character statistics response is invalid"
+            ) from exc
+
     async def get_public_user_rankings(
         self,
         account_id: str,
@@ -149,7 +188,12 @@ class ZmdLogsClient:
 
         await self._client.aclose()
 
-    async def _get_json(self, path: str) -> Any:
+    async def _get_json(
+        self,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+    ) -> Any:
         deadline = time.monotonic() + _MAX_TOTAL_WAIT_SECONDS
         last_request_error: Exception | None = None
         for attempt in range(_MAX_REQUEST_ATTEMPTS):
@@ -165,6 +209,7 @@ class ZmdLogsClient:
                 async with asyncio.timeout(attempt_timeout):
                     response = await self._client.get(
                         path,
+                        params=params,
                         timeout=httpx.Timeout(attempt_timeout),
                     )
             except (httpx.RequestError, TimeoutError) as exc:

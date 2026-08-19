@@ -1,0 +1,85 @@
+{% extends "common/base.html" %}
+
+{% block extra_styles %}{% include "character-stats/character-stats.css" %}{% endblock %}
+
+{% block content %}
+<section class="stats-overview" aria-label="统计范围">
+  <div class="stats-chip stats-chip--accent"><span>范围</span><strong>{{ page.range_label }}</strong></div>
+  <div class="stats-chip"><span>潜能</span><strong>{{ page.potential_label }}</strong></div>
+  <div class="stats-chip"><span>有效战斗</span><strong>{{ page.eligible_battle_count }}</strong></div>
+  <div class="stats-chip"><span>样本</span><strong>{{ page.total_sample_count }}</strong><em>含离群 {{ page.total_outlier_count }}</em></div>
+  {% if page.scope_label == "全部副本" %}
+  <div class="stats-chip"><span>覆盖榜单</span><strong>{{ page.included_boss_count }}</strong></div>
+  {% else %}
+  <div class="stats-chip"><span>统计对象</span><strong>单个榜单</strong></div>
+  {% endif %}
+</section>
+
+<div class="section-heading">
+  <h2>六星角色 DPS 分布</h2>
+  <span class="section-note">盒=P25–P75 · 竖线=中位 · 须=正常样本极值 · 至少 {{ page.minimum_sample_count }} 个样本参与排名</span>
+</div>
+
+{% if page.rows %}
+<div class="stats-table-wrap">
+  <div class="stats-head">
+    <span class="stats-head-rank">排名</span>
+    <span class="stats-head-char">角色</span>
+    <span class="stats-head-sample">样本</span>
+    <span class="stats-head-axis">
+      {% for label in page.axis_labels %}<i>{{ label }}</i>{% endfor %}
+    </span>
+    <span class="stats-head-median">中位 DPS</span>
+    <span class="stats-head-max">最高</span>
+  </div>
+  {% for row in page.rows %}
+  <div class="stats-row{% if row.rank <= 3 %} stats-row--top{% endif %}">
+    <span class="stats-rank"><span class="ranking-position">{{ row.rank }}</span></span>
+    <span class="stats-char">
+      <span class="avatar">
+        {{ row.character_initial }}
+        {% if row.character_avatar_url %}
+        <img src="{{ row.character_avatar_url }}" alt="" onerror="this.remove()">
+        {% endif %}
+      </span>
+      <span class="stats-char-text">
+        <strong>{{ row.character_name }}</strong>
+        <span class="cell-subtitle">{{ row.character_profession }}</span>
+      </span>
+    </span>
+    <span class="stats-sample">
+      <strong>{{ row.sample_count }}</strong>
+      {% if row.outlier_count %}<em>+{{ row.outlier_count }} 离群</em>{% endif %}
+    </span>
+    <span class="stats-plot" aria-hidden="true">
+      <i class="plot-grid"></i>
+      <i class="plot-whisker" style="left: {{ row.whisker_left }}%; width: {{ row.whisker_width }}%;"></i>
+      <i class="plot-box" style="left: {{ row.box_left }}%; width: {{ row.box_width }}%;"></i>
+      <i class="plot-tick" style="left: {{ row.p10_left }}%;"></i>
+      <i class="plot-tick" style="left: {{ row.p90_left }}%;"></i>
+      <i class="plot-median" style="left: {{ row.median_left }}%;"></i>
+      {% if row.maximum_left is not none %}
+      <i class="plot-max" style="left: {{ row.maximum_left }}%;"></i>
+      {% endif %}
+    </span>
+    <span class="stats-median">{{ row.median }}</span>
+    <span class="stats-max">{{ row.maximum }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-ranking">该范围内暂无足够样本</div>
+{% endif %}
+
+{% if page.insufficient %}
+<div class="section-heading section-heading--minor">
+  <h2>样本不足</h2>
+  <span class="section-note">不足 {{ page.minimum_sample_count }} 个正常样本，不参与排名</span>
+</div>
+<div class="stats-insufficient">
+  {% for chip in page.insufficient %}
+  <span class="stats-insufficient-chip">{{ chip.character_name }}<b>{{ chip.sample_count }}</b></span>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

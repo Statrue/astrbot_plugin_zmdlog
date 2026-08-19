@@ -4,6 +4,7 @@ import re
 import secrets
 import time
 from dataclasses import dataclass
+from enum import Enum
 
 from .matcher import MatchChoice, TargetType
 
@@ -14,6 +15,21 @@ DEFAULT_CANDIDATE_TTL_SECONDS = 10 * 60
 MAX_CANDIDATES = 5
 
 
+class CandidateView(str, Enum):
+    """Which page a resolved candidate should render."""
+
+    RANKING = "ranking"
+    CHARACTER_STATS = "character_stats"
+    ROSTER = "roster"
+
+
+_VIEW_TITLES = {
+    CandidateView.RANKING: "匹配到 {count} 个目标",
+    CandidateView.CHARACTER_STATS: "的角色统计匹配到 {count} 个榜单",
+    CandidateView.ROSTER: "的阵容查询匹配到 {count} 个榜单",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class PendingCandidates:
     code: str
@@ -21,6 +37,10 @@ class PendingCandidates:
     choices: tuple[MatchChoice, ...]
     ranking_top: int | None
     created_at: float
+    view: CandidateView = CandidateView.RANKING
+    character_filter: str | None = None
+    stats_range: str = "all"
+    stats_potential: str = "all"
 
 
 class CandidateStore:
@@ -42,6 +62,10 @@ class CandidateStore:
         choices: tuple[MatchChoice, ...],
         *,
         ranking_top: int | None = None,
+        view: CandidateView = CandidateView.RANKING,
+        character_filter: str | None = None,
+        stats_range: str = "all",
+        stats_potential: str = "all",
         now: float | None = None,
     ) -> PendingCandidates:
         timestamp = time.monotonic() if now is None else now
@@ -53,6 +77,10 @@ class CandidateStore:
             choices=tuple(choices[:MAX_CANDIDATES]),
             ranking_top=ranking_top,
             created_at=timestamp,
+            view=view,
+            character_filter=character_filter,
+            stats_range=stats_range,
+            stats_potential=stats_potential,
         )
         self._entries[code] = entry
         return entry
@@ -115,10 +143,8 @@ def format_candidates(
 ) -> str:
     """Compact, phone-friendly candidate list ending with the pick marker."""
 
-    lines = [
-        f"「{entry.query}」匹配到 {len(entry.choices)} 个目标，"
-        "引用本条消息回复序号即可："
-    ]
+    title = _VIEW_TITLES[entry.view].format(count=len(entry.choices))
+    lines = [f"「{entry.query}」{title}，引用本条消息回复序号即可："]
     for index, choice in enumerate(entry.choices, start=1):
         lines.append(f"{index}. {describe_choice(choice)}")
     minutes = max(1, int(ttl_seconds // 60))

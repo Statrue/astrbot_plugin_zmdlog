@@ -151,6 +151,45 @@ class BattleDetailSummary:
     contract_tags: tuple[ContractTag, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class CharacterStatisticsRow:
+    character_key: str
+    character_name: str
+    character_profession: str
+    sample_count: int
+    normal_sample_count: int
+    outlier_count: int
+    insufficient_samples: bool
+    rank: int | None = None
+    character_avatar_url: str | None = None
+    lower_whisker: float | None = None
+    p10: float | None = None
+    p25: float | None = None
+    median: float | None = None
+    p75: float | None = None
+    p90: float | None = None
+    upper_whisker: float | None = None
+    maximum: float | None = None
+    outliers: tuple[tuple[float, int], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterStatistics:
+    scope: Literal["boss", "all"]
+    boss_slug: str
+    boss_name: str
+    dungeon_name: str
+    range: Literal["7d", "14d", "30d", "all"]
+    potential: Literal["0", "1-5", "all"]
+    included_boss_count: int
+    minimum_sample_count: int
+    eligible_battle_count: int
+    total_sample_count: int
+    total_outlier_count: int
+    rows: tuple[CharacterStatisticsRow, ...]
+    metric: Literal["dps"] = "dps"
+
+
 def parse_hot_bosses(payload: Any) -> tuple[HotBossCard, ...]:
     """Adapt the ``GET /api/home/hot-bosses`` response."""
 
@@ -178,6 +217,124 @@ def parse_boss_ranking(payload: Any) -> BossRanking:
         ),
         rows=tuple(_parse_ranking_row(row, index) for index, row in enumerate(rows)),
     )
+
+
+def parse_character_statistics(payload: Any) -> CharacterStatistics:
+    """Adapt ``GET /api/bosses[/{slug}]/character-statistics`` (DPS only)."""
+
+    item = _mapping(payload, "character-statistics")
+    path = "character-statistics"
+    metric = _string(item.get("metric"), f"{path}.metric")
+    if metric != "dps":
+        raise ModelValidationError(f"{path}.metric must be 'dps'")
+    scope = _string(item.get("scope"), f"{path}.scope")
+    if scope not in ("boss", "all"):
+        raise ModelValidationError(f"{path}.scope must be 'boss' or 'all'")
+    time_range = _string(item.get("range"), f"{path}.range")
+    if time_range not in ("7d", "14d", "30d", "all"):
+        raise ModelValidationError(f"{path}.range is not a known range")
+    potential = _string(item.get("potential"), f"{path}.potential")
+    if potential not in ("0", "1-5", "all"):
+        raise ModelValidationError(f"{path}.potential is not a known filter")
+    rows = _list(item.get("rows"), f"{path}.rows")
+    return CharacterStatistics(
+        scope=scope,
+        boss_slug=_string(item.get("bossSlug"), f"{path}.bossSlug"),
+        boss_name=_string(item.get("bossName"), f"{path}.bossName"),
+        dungeon_name=_string(item.get("dungeonName"), f"{path}.dungeonName"),
+        range=time_range,
+        potential=potential,
+        included_boss_count=_non_negative(
+            item.get("includedBossCount"), f"{path}.includedBossCount"
+        ),
+        minimum_sample_count=_non_negative(
+            item.get("minimumSampleCount"), f"{path}.minimumSampleCount"
+        ),
+        eligible_battle_count=_non_negative(
+            item.get("eligibleBattleCount"), f"{path}.eligibleBattleCount"
+        ),
+        total_sample_count=_non_negative(
+            item.get("totalSampleCount"), f"{path}.totalSampleCount"
+        ),
+        total_outlier_count=_non_negative(
+            item.get("totalOutlierCount"), f"{path}.totalOutlierCount"
+        ),
+        rows=tuple(
+            _parse_character_statistics_row(row, f"{path}.rows[{index}]")
+            for index, row in enumerate(rows)
+        ),
+    )
+
+
+def _parse_character_statistics_row(value: Any, path: str) -> CharacterStatisticsRow:
+    item = _mapping(value, path)
+    insufficient = _boolean(
+        item.get("insufficientSamples"), f"{path}.insufficientSamples"
+    )
+    rank = _optional_integer(item.get("rank"), f"{path}.rank")
+    if rank is None and not insufficient:
+        raise ModelValidationError(f"{path}.rank is required for ranked rows")
+    if rank is not None and (insufficient or rank < 1):
+        raise ModelValidationError(f"{path}.rank must be a positive ranked index")
+    outliers_raw = _list(item.get("outliers", []), f"{path}.outliers")
+    outliers = []
+    for index, outlier in enumerate(outliers_raw):
+        outlier_path = f"{path}.outliers[{index}]"
+        outlier_item = _mapping(outlier, outlier_path)
+        outliers.append(
+            (
+                _non_negative_number(
+                    outlier_item.get("value"), f"{outlier_path}.value"
+                ),
+                _non_negative(outlier_item.get("count"), f"{outlier_path}.count"),
+            )
+        )
+    return CharacterStatisticsRow(
+        character_key=_string(item.get("characterKey"), f"{path}.characterKey"),
+        character_name=_string(item.get("characterName"), f"{path}.characterName"),
+        character_profession=_string(
+            item.get("characterProfession"), f"{path}.characterProfession"
+        ),
+        sample_count=_non_negative(item.get("sampleCount"), f"{path}.sampleCount"),
+        normal_sample_count=_non_negative(
+            item.get("normalSampleCount"), f"{path}.normalSampleCount"
+        ),
+        outlier_count=_non_negative(item.get("outlierCount"), f"{path}.outlierCount"),
+        insufficient_samples=insufficient,
+        rank=rank,
+        character_avatar_url=_optional_string(
+            item.get("characterAvatarUrl"), f"{path}.characterAvatarUrl"
+        ),
+        lower_whisker=_optional_stat(item.get("lowerWhisker"), f"{path}.lowerWhisker"),
+        p10=_optional_stat(item.get("p10"), f"{path}.p10"),
+        p25=_optional_stat(item.get("p25"), f"{path}.p25"),
+        median=_optional_stat(item.get("median"), f"{path}.median"),
+        p75=_optional_stat(item.get("p75"), f"{path}.p75"),
+        p90=_optional_stat(item.get("p90"), f"{path}.p90"),
+        upper_whisker=_optional_stat(item.get("upperWhisker"), f"{path}.upperWhisker"),
+        maximum=_optional_stat(item.get("maximum"), f"{path}.maximum"),
+        outliers=tuple(outliers),
+    )
+
+
+def _optional_stat(value: Any, path: str) -> float | None:
+    if value is None:
+        return None
+    return _non_negative_number(value, path)
+
+
+def _non_negative(value: Any, path: str) -> int:
+    number = _integer(value, path)
+    if number < 0:
+        raise ModelValidationError(f"{path} must not be negative")
+    return number
+
+
+def _non_negative_number(value: Any, path: str) -> float:
+    number = _number(value, path)
+    if number < 0:
+        raise ModelValidationError(f"{path} must not be negative")
+    return number
 
 
 def parse_public_user_rankings(payload: Any) -> PublicUserRankings:

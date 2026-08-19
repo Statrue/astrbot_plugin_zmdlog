@@ -856,6 +856,15 @@ body {
   font-weight: 600;
 }
 
+.ranking-filter {
+  padding: 3px 9px;
+  color: var(--ink);
+  background: var(--yellow);
+  font-size: 12px;
+  font-weight: 800;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+
 .ranking-meta::after {
   content: "";
   flex: 1;
@@ -906,7 +915,9 @@ body {
   position: relative;
 }
 
-.ranking-table tbody tr:nth-child(-n + 3) td:first-child::before {
+.ranking-table tbody tr.rank-1 td:first-child::before,
+.ranking-table tbody tr.rank-2 td:first-child::before,
+.ranking-table tbody tr.rank-3 td:first-child::before {
   content: "";
   position: absolute;
   top: 0;
@@ -916,11 +927,11 @@ body {
   background: var(--yellow);
 }
 
-.ranking-table tbody tr:nth-child(2) td:first-child::before {
+.ranking-table tbody tr.rank-2 td:first-child::before {
   background: var(--ink);
 }
 
-.ranking-table tbody tr:nth-child(3) td:first-child::before {
+.ranking-table tbody tr.rank-3 td:first-child::before {
   background: var(--muted);
 }
 
@@ -957,20 +968,20 @@ body {
   text-align: center;
 }
 
-.ranking-table tbody tr:nth-child(1) .ranking-position::before {
+.ranking-table tbody tr.rank-1 .ranking-position::before {
   background: var(--yellow);
 }
 
-.ranking-table tbody tr:nth-child(2) .ranking-position,
-.ranking-table tbody tr:nth-child(3) .ranking-position {
+.ranking-table tbody tr.rank-2 .ranking-position,
+.ranking-table tbody tr.rank-3 .ranking-position {
   color: #fff;
 }
 
-.ranking-table tbody tr:nth-child(2) .ranking-position::before {
+.ranking-table tbody tr.rank-2 .ranking-position::before {
   background: var(--ink);
 }
 
-.ranking-table tbody tr:nth-child(3) .ranking-position::before {
+.ranking-table tbody tr.rank-3 .ranking-position::before {
   background: var(--muted);
 }
 

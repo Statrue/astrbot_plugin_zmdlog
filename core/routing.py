@@ -7,6 +7,51 @@ DEFAULT_RANKING_TOP = 10
 MIN_RANKING_TOP = 1
 MAX_RANKING_TOP = 30
 
+STATS_RANGES = ("7d", "14d", "30d", "all")
+STATS_POTENTIALS = ("0", "1-5", "all")
+DEFAULT_STATS_RANGE = "all"
+DEFAULT_STATS_POTENTIAL = "all"
+
+_RANGE_ALIASES = {
+    "7天": "7d",
+    "7日": "7d",
+    "14天": "14d",
+    "14日": "14d",
+    "30天": "30d",
+    "30日": "30d",
+    "全部": "all",
+    "所有": "all",
+}
+_POTENTIAL_ALIASES = {
+    "0潜": "0",
+    "零": "0",
+    "零潜": "0",
+    "1-5潜": "1-5",
+    "1~5": "1-5",
+    "1～5": "1-5",
+    "全部": "all",
+    "所有": "all",
+}
+
+# Canonical option name -> accepted spellings (case-insensitive).
+_OPTION_SPELLINGS: dict[str, tuple[str, ...]] = {
+    "top": ("--top",),
+    "character": ("--角色", "--char", "--character"),
+    "range": ("--范围", "--range"),
+    "potential": ("--潜能", "--potential"),
+}
+_OPTION_BY_SPELLING = {
+    spelling.casefold(): name
+    for name, spellings in _OPTION_SPELLINGS.items()
+    for spelling in spellings
+}
+_OPTION_LABEL = {
+    "top": "--top",
+    "character": "--角色",
+    "range": "--范围",
+    "potential": "--潜能",
+}
+
 
 class RouteParseError(ValueError):
     """Raised when a public command option is malformed or unsupported."""
@@ -21,9 +66,31 @@ class RouteKind(str, Enum):
     ACCOUNT_QUERY = "account_query"
     BATTLE_QUERY = "battle_query"
     SMART_QUERY = "smart_query"
+    CHARACTER_STATS = "character_stats"
+    ROSTER_QUERY = "roster_query"
     ALIAS_LIST = "alias_list"
     ALIAS_ADD = "alias_add"
     ALIAS_REMOVE = "alias_remove"
+
+
+@dataclass(frozen=True, slots=True)
+class RouteOptions:
+    """Trailing ``--name value`` options parsed from the payload."""
+
+    ranking_top: int | None = None
+    character_filter: str | None = None
+    stats_range: str = DEFAULT_STATS_RANGE
+    stats_potential: str = DEFAULT_STATS_POTENTIAL
+    present: frozenset[str] = frozenset()
+
+    def reject_except(self, *allowed: str, context: str) -> None:
+        """Raise when an option outside ``allowed`` was given."""
+
+        for name in ("top", "character", "range", "potential"):
+            if name in self.present and name not in allowed:
+                raise RouteParseError(
+                    f"{_OPTION_LABEL[name]} {context}"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +100,9 @@ class RouteRequest:
     kind: RouteKind
     query: str = ""
     ranking_top: int | None = None
+    character_filter: str | None = None
+    stats_range: str = DEFAULT_STATS_RANGE
+    stats_potential: str = DEFAULT_STATS_POTENTIAL
 
     @property
     def ranking_limit(self) -> int:
@@ -53,41 +123,61 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
     unified matcher rather than the command handler.
     """
 
-    normalized, ranking_top = _extract_ranking_top(" ".join(payload.split()))
+    normalized, options = _extract_options(" ".join(payload.split()))
     if not normalized or normalized.casefold() == "help":
-        if ranking_top is not None:
-            raise RouteParseError("--top 仅适用于具体榜单查询。")
+        options.reject_except(context="仅适用于具体榜单查询。")
         return RouteRequest(RouteKind.HELP)
 
     command, separator, remainder = normalized.partition(" ")
     if command == "榜单":
         if not separator:
-            if ranking_top is not None:
-                raise RouteParseError("--top 仅适用于具体榜单查询。")
+            options.reject_except(context="仅适用于具体榜单查询。")
             return RouteRequest(RouteKind.ALL_RANKINGS)
+        options.reject_except(
+            "top", "character", context="仅适用于具体榜单查询。"
+        )
         return RouteRequest(
             RouteKind.RANKING_QUERY,
             remainder,
-            ranking_top=ranking_top,
+            ranking_top=options.ranking_top,
+            character_filter=options.character_filter,
         )
 
     if command in {"账号", "账户"}:
-        if ranking_top is not None:
-            raise RouteParseError("--top 不适用于账号查询。")
+        options.reject_except(context="不适用于账号查询。")
         if not separator or not remainder:
             raise RouteParseError("请提供 accountId 或 ZMDLogs 账号主页链接。")
         return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder)
 
     if command == "战报":
-        if ranking_top is not None:
-            raise RouteParseError("--top 不适用于战报查询。")
+        options.reject_except(context="不适用于战报查询。")
         if not separator or not remainder:
             raise RouteParseError("请提供 battleId 或 ZMDLogs 战报链接。")
         return RouteRequest(RouteKind.BATTLE_QUERY, remainder)
 
+    if command == "角色":
+        options.reject_except(
+            "range", "potential", context="不适用于角色统计。"
+        )
+        return RouteRequest(
+            RouteKind.CHARACTER_STATS,
+            remainder,
+            stats_range=options.stats_range,
+            stats_potential=options.stats_potential,
+        )
+
+    if command == "阵容":
+        options.reject_except("top", context="不适用于阵容查询。")
+        if not separator or not remainder:
+            raise RouteParseError("请提供榜单关键词。")
+        return RouteRequest(
+            RouteKind.ROSTER_QUERY,
+            remainder,
+            ranking_top=options.ranking_top,
+        )
+
     if command == "别名":
-        if ranking_top is not None:
-            raise RouteParseError("--top 不适用于别名管理。")
+        options.reject_except(context="不适用于别名管理。")
         if not remainder:
             return RouteRequest(RouteKind.ALIAS_LIST)
         action, _, rest = remainder.partition(" ")
@@ -103,36 +193,84 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
             return RouteRequest(RouteKind.ALIAS_REMOVE, rest)
         raise RouteParseError("别名子命令只支持：添加 / 删除，或不带参数查看列表。")
 
+    options.reject_except("top", "character", context="仅适用于具体榜单查询。")
     return RouteRequest(
         RouteKind.SMART_QUERY,
         normalized,
-        ranking_top=ranking_top,
+        ranking_top=options.ranking_top,
+        character_filter=options.character_filter,
     )
 
 
-def _extract_ranking_top(payload: str) -> tuple[str, int | None]:
+def _extract_options(payload: str) -> tuple[str, RouteOptions]:
+    """Split trailing ``--name value`` pairs off the free-text query."""
+
     tokens = payload.split()
     positions = [
         index
         for index, token in enumerate(tokens)
-        if token.casefold() == "--top"
+        if token.startswith("--")
     ]
     if not positions:
-        return payload, None
-    if len(positions) > 1:
-        raise RouteParseError("--top 参数只能填写一次。")
+        return payload, RouteOptions()
 
-    position = positions[0]
-    if position == len(tokens) - 1:
-        raise RouteParseError("--top 后需要填写 1–30 的整数。")
-    if position != len(tokens) - 2:
-        raise RouteParseError("--top 参数必须放在查询末尾。")
+    first = positions[0]
+    values: dict[str, str] = {}
+    index = first
+    last_label = ""
+    while index < len(tokens):
+        token = tokens[index]
+        name = _OPTION_BY_SPELLING.get(token.casefold())
+        if name is None:
+            if token.startswith("--"):
+                raise RouteParseError(f"不支持的选项 {token}。")
+            raise RouteParseError(f"{last_label} 参数必须放在查询末尾。")
+        label = last_label = _OPTION_LABEL[name]
+        if name in values:
+            raise RouteParseError(f"{label} 参数只能填写一次。")
+        if index + 1 >= len(tokens) or tokens[index + 1].startswith("--"):
+            raise RouteParseError(f"{label} 后需要填写取值。")
+        values[name] = tokens[index + 1]
+        index += 2
 
-    raw_top = tokens[position + 1]
+    query = " ".join(tokens[:first])
+    return query, RouteOptions(
+        ranking_top=_parse_top(values["top"]) if "top" in values else None,
+        character_filter=values.get("character"),
+        stats_range=(
+            _parse_choice(values["range"], STATS_RANGES, _RANGE_ALIASES, "--范围")
+            if "range" in values
+            else DEFAULT_STATS_RANGE
+        ),
+        stats_potential=(
+            _parse_choice(
+                values["potential"], STATS_POTENTIALS, _POTENTIAL_ALIASES, "--潜能"
+            )
+            if "potential" in values
+            else DEFAULT_STATS_POTENTIAL
+        ),
+        present=frozenset(values),
+    )
+
+
+def _parse_top(raw_top: str) -> int:
     if not raw_top.isascii() or not raw_top.isdecimal():
         raise RouteParseError("--top 只支持 1–30 的整数。")
     ranking_top = int(raw_top)
     if not MIN_RANKING_TOP <= ranking_top <= MAX_RANKING_TOP:
         raise RouteParseError("--top 只支持 1–30 的整数。")
+    return ranking_top
 
-    return " ".join(tokens[:position]), ranking_top
+
+def _parse_choice(
+    raw: str,
+    choices: tuple[str, ...],
+    aliases: dict[str, str],
+    label: str,
+) -> str:
+    folded = raw.casefold()
+    if folded in choices:
+        return folded
+    if raw in aliases:
+        return aliases[raw]
+    raise RouteParseError(f"{label} 只支持 {' / '.join(choices)}。")

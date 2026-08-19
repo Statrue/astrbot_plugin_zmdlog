@@ -61,11 +61,30 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         description="查询具体榜单或副本。",
                     ),
                     HelpCommand(
-                        command=f"{command} 关键词 [--top 数量]",
+                        command=f"{command} 关键词 [--top 数量] [--角色 角色名]",
                         description=(
                             "查询榜单或副本，支持别名与拼音首字母；"
-                            "具体榜单可指定 1–30 名。"
+                            "具体榜单可指定 1–30 名，或只看某个主C的记录。"
                         ),
+                    ),
+                ),
+            ),
+            HelpSection(
+                title="角色与阵容",
+                commands=(
+                    HelpCommand(
+                        command=(
+                            f"{command} 角色 [关键词] "
+                            "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
+                        ),
+                        description=(
+                            "查看全部副本或某个榜单的六星角色 DPS 分布，"
+                            "可限定时间范围与潜能。"
+                        ),
+                    ),
+                    HelpCommand(
+                        command=f"{command} 阵容 <关键词> [--top 数量]",
+                        description="查看某个榜单的职业位出场率与前 N 名常见阵容。",
                     ),
                 ),
             ),
