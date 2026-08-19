@@ -2,6 +2,7 @@ import unittest
 
 from core.matcher import (
     AliasConfig,
+    MatchLevel,
     MatchStatus,
     RankingMatcher,
     TargetType,
@@ -242,3 +243,40 @@ class DerivedAliasTests(unittest.TestCase):
             matcher.match("fb4").selected.target.target_type,
             TargetType.DUNGEON,
         )
+
+
+class HomophoneTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.matcher = RankingMatcher(
+            (
+                make_card("thunder", "蚀影噪雷", "危境碎片"),
+                make_card("rodin", "危境再现·罗丹", "危境再现"),
+                make_card("other", "其他首领", "别的副本"),
+            ),
+            AliasConfig.empty(),
+        )
+
+    def test_wrong_character_with_same_reading_still_matches(self) -> None:
+        whole = self.matcher.match("罗单")
+        self.assertEqual(whole.status, MatchStatus.MATCHED)
+        self.assertEqual(whole.selected.target.key, "rodin")
+        self.assertEqual(whole.selected.level, MatchLevel.PINYIN_EXACT)
+
+        tail = self.matcher.match("躁雷")
+        self.assertEqual(tail.status, MatchStatus.MATCHED)
+        self.assertEqual(tail.selected.target.key, "thunder")
+        # Correct spelling must still rank above the homophone.
+        self.assertLess(
+            tail.selected.score,
+            self.matcher.match("噪雷").selected.score,
+        )
+
+    def test_single_weak_hit_is_shown_instead_of_a_one_item_pick_list(self) -> None:
+        matcher = RankingMatcher(
+            (make_card("only", "完全不同的名字", "某副本"),),
+            AliasConfig.empty(),
+            fuzzy_threshold=0.99,
+        )
+        result = matcher.match("完全不")
+        self.assertEqual(result.status, MatchStatus.MATCHED)
+        self.assertEqual(result.selected.target.key, "only")

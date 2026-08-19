@@ -15,6 +15,7 @@ _IGNORED_QUERY_WORDS = ("排行榜", "榜单", "排行", "排名", "副本", "�
 _DIFFICULTY_SUFFIX_RE = re.compile(r"[·・\-–—\s]*(?:苦难|残酷|困难|噩梦|普通|简单)$")
 _NAME_SEPARATOR_RE = re.compile(r"\s*[·・]\s*")
 _ASCII_LETTERS_RE = re.compile(r"^[a-z][a-z0-9]*$")
+_MIN_HOMOPHONE_AFFIX_LENGTH = 4
 _CHINESE_PHASE_RE = re.compile(r"[零〇一二两三四五六七八九十百]+(?=期)")
 _PHASE_FAMILY_RE = re.compile(r"^(?P<family>.+?)(?P<phase>\d+)期")
 _CHINESE_DIGITS = {
@@ -223,6 +224,9 @@ class RankingMatcher:
         enabled_types = (
             frozenset(TargetType) if allowed_types is None else allowed_types
         )
+        # A CJK query with a wrong-but-homophonic character (躁雷 vs 噪雷)
+        # still reads the same aloud, so its full pinyin is a second key.
+        query_pinyin = _query_full_pinyin(compact_query)
 
         choices = tuple(
             choice
@@ -233,6 +237,7 @@ class RankingMatcher:
                     target,
                     folded_query,
                     compact_query,
+                    query_pinyin,
                 )
             )
             is not None
@@ -372,7 +377,13 @@ class RankingMatcher:
     ) -> MatchResult:
         top = ranked[0]
         candidates = ranked[:5]
-        if top.level is MatchLevel.SIMILARITY and top.score < self.fuzzy_threshold:
+        if (
+            top.level is MatchLevel.SIMILARITY
+            and top.score < self.fuzzy_threshold
+            and len(ranked) > 1
+        ):
+            # Low confidence with several options: let the user pick. A single
+            # weak hit is shown directly; the page header names what matched.
             return MatchResult(
                 MatchStatus.AMBIGUOUS,
                 query,
@@ -603,10 +614,20 @@ def pinyin_keys(texts: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(keys)
 
 
+def _query_full_pinyin(compact_query: str) -> str | None:
+    """Full pinyin of a CJK query, or None for ASCII / non-CJK input."""
+
+    if not compact_query or _ASCII_LETTERS_RE.match(compact_query):
+        return None
+    keys = pinyin_keys((compact_query,))
+    return keys[0] if keys else None
+
+
 def _score_target(
     target: MatchTarget,
     folded_query: str,
     compact_query: str,
+    query_pinyin: str | None = None,
 ) -> MatchChoice | None:
     if (
         target.target_type is TargetType.BOARD
@@ -643,7 +664,26 @@ def _score_target(
         )
         is not None
     )
-    return _rank_choices(matches)[0] if matches else None
+    best = _rank_choices(matches)[0] if matches else None
+    if query_pinyin is None or not target.pinyin:
+        return best
+    if query_pinyin in target.pinyin and (
+        best is None or best.level > MatchLevel.PINYIN_EXACT
+    ):
+        # Homophone of the name or an alias; rank just below a typed-pinyin hit.
+        return MatchChoice(target, MatchLevel.PINYIN_EXACT, 0.98, target.name)
+    if (
+        len(query_pinyin) >= _MIN_HOMOPHONE_AFFIX_LENGTH
+        and (best is None or best.level >= MatchLevel.SIMILARITY)
+        and any(
+            key.startswith(query_pinyin) or key.endswith(query_pinyin)
+            for key in target.pinyin
+        )
+    ):
+        # Homophone of the head or tail of a name (躁雷 → 蚀影噪雷). Scored
+        # below a real CJK prefix/suffix hit so correct spelling still wins.
+        return MatchChoice(target, MatchLevel.PREFIX_SUFFIX, 0.85, target.name)
+    return best
 
 
 def _score_search_text(
