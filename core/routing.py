@@ -273,4 +273,9 @@ def _parse_choice(
         return folded
     if raw in aliases:
         return aliases[raw]
+    if label == "--潜能":
+        raise RouteParseError(
+            "--潜能 只支持 0（零潜）/ 1-5（有潜能，合并统计）/ all，"
+            "ZMDLogs 不按具体潜能层数拆分。"
+        )
     raise RouteParseError(f"{label} 只支持 {' / '.join(choices)}。")
