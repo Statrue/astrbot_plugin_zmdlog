@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .matcher import MatchChoice, TargetType
 
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-_CODE_RE = re.compile(r"#Q([A-Z2-9]{4})\b")
+_CODE_RE = re.compile(r"候选编号 ?([A-Z2-9]{4})(?![A-Z2-9])")
 _SELECTION_RE = re.compile(r"^\s*(?:选|选择|第)?\s*(\d{1,2})\s*(?:号|个)?\s*$")
 DEFAULT_CANDIDATE_TTL_SECONDS = 10 * 60
 MAX_CANDIDATES = 5
@@ -121,7 +121,8 @@ def format_candidates(
     ]
     for index, choice in enumerate(entry.choices, start=1):
         lines.append(f"{index}. {describe_choice(choice)}")
-    lines.append(f"#Q{entry.code}")
+    minutes = max(1, int(ttl_seconds // 60))
+    lines.append(f"候选编号 {entry.code} · {minutes} 分钟内有效")
     return "\n".join(lines)
 
 
