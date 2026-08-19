@@ -658,10 +658,10 @@ body {
 
 .top3-run {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1.25fr) minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 60px;
+  min-height: 62px;
   padding: 8px 16px 8px 12px;
   border-top: 1px solid var(--line-soft);
 }
@@ -723,15 +723,18 @@ body {
   background: var(--muted);
 }
 
-.character-cell,
-.account-cell {
-  min-width: 0;
-}
-
 .character-cell {
   display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
+}
+
+.run-identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .avatar {
@@ -769,19 +772,16 @@ body {
 
 .character-name {
   color: var(--ink);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .account-name {
   color: var(--steel);
   font-size: 12px;
-  font-weight: 500;
-}
-
-.account-name::before {
-  content: "@";
-  color: var(--faint);
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .run-result {

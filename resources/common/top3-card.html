@@ -18,10 +18,10 @@
           <img src="{{ run.character_avatar_url }}" alt="" onerror="this.remove()">
           {% endif %}
         </span>
-        <span class="character-name">{{ run.character_name }}</span>
-      </div>
-      <div class="account-cell">
-        <div class="account-name">{{ run.uploader_nickname }}</div>
+        <span class="run-identity">
+          <span class="character-name">{{ run.character_name }}</span>
+          <span class="account-name">{{ run.uploader_nickname }}</span>
+        </span>
       </div>
       <div class="run-result">
         <span class="duration">{{ run.duration }}</span>
