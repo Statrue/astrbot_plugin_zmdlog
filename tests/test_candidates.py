@@ -25,13 +25,13 @@ class CandidateStoreTests(unittest.TestCase):
     def test_remember_format_and_resolve_by_quote(self) -> None:
         store = CandidateStore(ttl_seconds=60)
         entry = store.remember("巨", _ambiguous_choices(), ranking_top=5, now=0.0)
-        text = format_candidates(entry)
+        text = format_candidates(entry, ttl_seconds=60)
 
         self.assertIn("「巨」匹配到", text)
         self.assertIn("1. 巨像一 · 榜单 · 测试副本一", text)
-        self.assertTrue(text.rstrip().endswith(f"#Q{entry.code}"))
+        self.assertTrue(text.rstrip().endswith(f"候选编号 {entry.code} · 1 分钟内有效"))
         self.assertEqual(extract_code(text), entry.code)
-        self.assertIsNone(extract_code("随便什么 #Q12"))
+        self.assertIsNone(extract_code("随便什么 候选编号 12"))
 
         resolved = store.resolve(entry.code, "2", now=1.0)
         self.assertIsNotNone(resolved)

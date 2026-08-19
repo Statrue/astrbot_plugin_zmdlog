@@ -92,7 +92,7 @@ class CandidateStore:
 
 
 def extract_code(text: str | None) -> str | None:
-    """Find the ``#QXXXX`` marker inside a quoted candidate message."""
+    """Find the ``候选编号 XXXX`` marker inside a quoted candidate message."""
 
     if not text:
         return None
@@ -108,7 +108,11 @@ def parse_selection(text: str) -> int | None:
     return value if 1 <= value <= MAX_CANDIDATES else None
 
 
-def format_candidates(entry: PendingCandidates) -> str:
+def format_candidates(
+    entry: PendingCandidates,
+    *,
+    ttl_seconds: float = DEFAULT_CANDIDATE_TTL_SECONDS,
+) -> str:
     """Compact, phone-friendly candidate list ending with the pick marker."""
 
     lines = [

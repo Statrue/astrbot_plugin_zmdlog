@@ -436,7 +436,12 @@ class ZmdLogBotPlugin(Star):
                 match.candidates,
                 ranking_top=route.ranking_top,
             )
-            return _DispatchOutcome(message=format_candidates(entry))
+            return _DispatchOutcome(
+                message=format_candidates(
+                    entry,
+                    ttl_seconds=self.candidates.ttl_seconds,
+                )
+            )
 
         choice = match.selected
         if choice is None:
