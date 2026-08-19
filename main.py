@@ -460,7 +460,8 @@ class ZmdLogBotPlugin(Star):
                 return await self._render_board(
                     route.query, query=route.query, pending=pending
                 )
-            return _DispatchOutcome(message=not_found_message)
+            hint = await self._character_name_hint(route.query, view)
+            return _DispatchOutcome(message=hint or not_found_message)
 
         candidates: tuple[MatchChoice, ...] = ()
         choice: MatchChoice | None = None
@@ -538,6 +539,46 @@ class ZmdLogBotPlugin(Star):
             web_base_url=self.web_base_url,
         )
         return _DispatchOutcome(image_path=image_path)
+
+    async def _character_name_hint(
+        self,
+        query: str,
+        view: CandidateView,
+    ) -> str | None:
+        """Explain the right command when a board query is really a character.
+
+        ``/zmdlog 角色 庄方宜`` is a natural misreading of the board-only
+        ``角色`` route. The global statistics response doubles as a six-star
+        character catalog, so use it (cached) to recognise the name.
+        """
+
+        try:
+            stats = await self._get_character_statistics(
+                None, time_range="all", potential="all"
+            )
+        except ZmdLogsClientError:
+            return None
+        names = tuple(row.character_name for row in stats.rows)
+        resolution = resolve_character_name(query, names)
+        if resolution.status is not CharacterResolutionStatus.MATCHED:
+            return None
+        name = resolution.name
+        if view is CandidateView.CHARACTER_STATS:
+            return (
+                f"「{name}」是角色名。`角色` 后面接榜单关键词，"
+                f"例如 `角色 罗丹` 看该榜的角色分布；"
+                f"要看 {name} 的排名请用 `罗丹 --角色 {name}`。"
+            )
+        if view is CandidateView.ROSTER:
+            return (
+                f"「{name}」是角色名。`阵容` 后面接榜单关键词，"
+                f"例如 `阵容 罗丹`。"
+            )
+        return (
+            f"「{name}」是角色名，不是榜单。"
+            f"要看 {name} 的排名请在榜单后加 `--角色 {name}`，"
+            f"例如 `罗丹 --角色 {name}`。"
+        )
 
     async def _render_board(
         self,

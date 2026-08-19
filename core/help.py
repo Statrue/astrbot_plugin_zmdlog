@@ -74,7 +74,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
                 commands=(
                     HelpCommand(
                         command=(
-                            f"{command} 角色 [关键词] "
+                            f"{command} 角色 [榜单关键词] "
                             "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
                         ),
                         description=(
@@ -83,7 +83,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
-                        command=f"{command} 阵容 <关键词> [--top 数量]",
+                        command=f"{command} 阵容 <榜单关键词> [--top 数量]",
                         description="查看某个榜单的职业位出场率与前 N 名常见阵容。",
                     ),
                 ),
