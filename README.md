@@ -65,7 +65,7 @@ cd AstrBot/data/plugins/astrbot_plugin_zmdlog
 git pull --ff-only
 ```
 
-更新完成后重启 AstrBot。插件不会在运行时自动下载浏览器；未安装 Chromium 时会退回 AstrBot 自带的文转图服务（可用 `fallback_to_astrbot_renderer` 关闭），但样式与清晰度以内置 Chromium 为准。
+更新完成后重启 AstrBot；如果 `requirements.txt` 有变化（例如新增了 `pypinyin`），重启前先重新执行一次 `pip install -r requirements.txt`。插件不会在运行时自动下载浏览器；未安装 Chromium 时会退回 AstrBot 自带的文转图服务（可用 `fallback_to_astrbot_renderer` 关闭），但样式与清晰度以内置 Chromium 为准。
 
 渲染用的字体（MiSans / Barlow 子集）已内嵌在插件里，无需额外安装；昵称中出现生僻字或日文假名时会回退到系统字体，因此 Docker 环境仍建议装一套中文字体（如 `fonts-noto-cjk`）。生成的图片保存在 AstrBot 的 `data/plugin_data/astrbot_plugin_zmdlog/render/` 下并定期清理。
 
@@ -83,18 +83,33 @@ git pull --ff-only
 | `/zmdlog <关键词> --top <数量>` | 展示具体榜单前 1–30 名，默认 10 名 |
 | `/zmdlog 账号 <accountId或账号主页链接>` | 查询公开账号的各首领最佳记录 |
 | `/zmdlog 战报 <battleId或战报链接>` | 生成公开战报摘要卡 |
+| `/zmdlog 别名` | 查看自定义别名 |
+| `/zmdlog 别名 添加 <榜单或副本> <别名...>` | 管理员添加别名，立即生效 |
+| `/zmdlog 别名 删除 <别名>` | 管理员删除别名 |
 
 示例：
 
 ```text
 /zmdlog 罗丹
+/zmdlog ld
 /zmdlog 罗丹 --top 30
 /zmdlog 危机合约
-/zmdlog 影拓4
+/zmdlog 丰碑4
+/zmdlog 丰碑1
 /zmdlog 账号 usr_9df6ce8b93e3335c8291c2389b834ef0
 /zmdlog 账号 https://zmdlogs.com/records/usr_9df6ce8b93e3335c8291c2389b834ef0
 /zmdlog 战报 https://zmdlogs.com/battle/btl_upload_65d03eadfb16?metric=dps
+/zmdlog 别名 添加 白垩界卫 白垩 界卫
 ```
+
+### 关键词怎么写
+
+- **榜单名**可以省略难度后缀和副本前缀：`山犼争王`、`罗丹` 都能直达对应榜单。
+- **副本名**可以只写其中一段或"系列+期数"：`山中见犼`、`丰碑4`、`影拓4` 都指向影拓丰碑4期；`丰碑1` 会把 1 期下的 3 个副本一起列出；`丰碑`、`影拓` 列出全部期数。
+- **拼音**：支持全拼和首字母，如 `luodan`、`ld`、`sw`、`fb4`。
+- 只有一个榜单的副本（如 `危机合约`）直接给出该榜单的排行。
+- 匹配到多个目标时会回复一份编号候选列表，**引用那条消息回复序号**（如 `2`）即可选择，10 分钟内有效。
+- 以上都命中不了的群内黑话，用 `/zmdlog 别名 添加` 补充即可，不需要改文件或重启。
 
 ## 配置
 
@@ -107,7 +122,7 @@ git pull --ff-only
 | `request_timeout_ms` | `10000` | API 请求超时，单位毫秒 |
 | `render_timeout_ms` | `30000` | 图片渲染超时，单位毫秒 |
 | `fallback_to_astrbot_renderer` | `true` | 内置 Chromium 不可用时改用 AstrBot 自带文转图服务兜底（默认走 AstrBot 的远程渲染） |
-| `alias_file_path` | `aliases.json` | 本地榜单与副本别名文件 |
+| `alias_file_path` | `aliases.json` | 自定义别名文件，相对路径基于 `data/plugin_data/astrbot_plugin_zmdlog/`（首次启动自动从插件目录复制） |
 | `ranking_cache_ttl_seconds` | `60` | 榜单缓存时间，单位秒 |
 | `account_cache_ttl_seconds` | `60` | 公开账号成绩缓存时间，单位秒 |
 | `battle_cache_ttl_seconds` | `300` | 公开战报摘要缓存时间，单位秒 |
@@ -123,7 +138,7 @@ git pull --ff-only
 - `hot-bosses` 和具体榜单分别缓存，并合并同一查询的并发请求。
 - 账号成绩与战报摘要分别缓存；完整战报响应只保留卡片所需的概要和角色统计。
 - 群聊自动展开默认关闭；开启后每条消息只展开首个可信链接，同群同战报在冷却期内不重复回复。
-- `hot-bosses` 刷新失败时可短暂使用最近一次成功结果；具体榜单不使用过期数据。
+- `hot-bosses` 刷新失败时可短暂使用最近一次成功结果，并在数据目录保存一份快照，重启后上游不可达时仍可搜索；具体榜单不使用过期数据。
 - 网络异常和服务端 `5xx` 最多重试一次，客户端 `4xx` 不重试。
 - 图片渲染最多同时执行 2 个任务，输出图片会定期清理；AstrBot 启动完成后会预热 Chromium 并预渲染一次帮助页。帮助页、具体榜单、账号、战报以 2 倍分辨率输出（宽 2560px），全部榜单与副本范围长图保持 1 倍。
 - 具体榜单查询到已下线的榜单（上游 404）时提示“没有找到这个榜单”，与网络故障区分开。

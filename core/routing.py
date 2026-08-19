@@ -21,6 +21,9 @@ class RouteKind(str, Enum):
     ACCOUNT_QUERY = "account_query"
     BATTLE_QUERY = "battle_query"
     SMART_QUERY = "smart_query"
+    ALIAS_LIST = "alias_list"
+    ALIAS_ADD = "alias_add"
+    ALIAS_REMOVE = "alias_remove"
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +84,24 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         if not separator or not remainder:
             raise RouteParseError("请提供 battleId 或 ZMDLogs 战报链接。")
         return RouteRequest(RouteKind.BATTLE_QUERY, remainder)
+
+    if command == "别名":
+        if ranking_top is not None:
+            raise RouteParseError("--top 不适用于别名管理。")
+        if not remainder:
+            return RouteRequest(RouteKind.ALIAS_LIST)
+        action, _, rest = remainder.partition(" ")
+        if action in {"添加", "增加", "add"}:
+            if len(rest.split()) < 2:
+                raise RouteParseError(
+                    "用法：别名 添加 <榜单或副本> <别名1> [别名2 ...]"
+                )
+            return RouteRequest(RouteKind.ALIAS_ADD, rest)
+        if action in {"删除", "移除", "del", "remove"}:
+            if not rest:
+                raise RouteParseError("用法：别名 删除 <别名>")
+            return RouteRequest(RouteKind.ALIAS_REMOVE, rest)
+        raise RouteParseError("别名子命令只支持：添加 / 删除，或不带参数查看列表。")
 
     return RouteRequest(
         RouteKind.SMART_QUERY,

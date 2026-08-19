@@ -62,7 +62,10 @@ def build_help_page(command_prefix: str) -> HelpPage:
                     ),
                     HelpCommand(
                         command=f"{command} 关键词 [--top 数量]",
-                        description="查询榜单或副本；具体榜单可指定 1–30 名。",
+                        description=(
+                            "查询榜单或副本，支持别名与拼音首字母；"
+                            "具体榜单可指定 1–30 名。"
+                        ),
                     ),
                 ),
             ),
@@ -76,6 +79,23 @@ def build_help_page(command_prefix: str) -> HelpPage:
                     HelpCommand(
                         command=f"{command} 战报 <battleId或战报链接>",
                         description="生成一场公开战斗的摘要卡。",
+                    ),
+                ),
+            ),
+            HelpSection(
+                title="别名管理",
+                commands=(
+                    HelpCommand(
+                        command=f"{command} 别名",
+                        description="查看本群机器人自定义的榜单 / 副本别名。",
+                    ),
+                    HelpCommand(
+                        command=f"{command} 别名 添加 <榜单或副本> <别名...>",
+                        description="管理员为榜单或副本增加别名，立即生效。",
+                    ),
+                    HelpCommand(
+                        command=f"{command} 别名 删除 <别名>",
+                        description="管理员删除一个自定义别名。",
                     ),
                 ),
             ),

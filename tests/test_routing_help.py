@@ -98,6 +98,9 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog 关键词 [--top 数量]",
                 "!zmdlog 账号 <accountId或账号主页链接>",
                 "!zmdlog 战报 <battleId或战报链接>",
+                "!zmdlog 别名",
+                "!zmdlog 别名 添加 <榜单或副本> <别名...>",
+                "!zmdlog 别名 删除 <别名>",
             ),
         )
         visible_text = repr(page)
@@ -114,3 +117,20 @@ class HelpTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AliasRouteTests(unittest.TestCase):
+    def test_alias_subcommands(self) -> None:
+        from core.routing import RouteParseError
+
+        self.assertEqual(parse_zmdlog_payload("别名").kind, RouteKind.ALIAS_LIST)
+        add = parse_zmdlog_payload("别名 添加 罗丹 ld 小罗")
+        self.assertEqual(add.kind, RouteKind.ALIAS_ADD)
+        self.assertEqual(add.query, "罗丹 ld 小罗")
+        remove = parse_zmdlog_payload("别名 删除 小罗")
+        self.assertEqual(remove.kind, RouteKind.ALIAS_REMOVE)
+        self.assertEqual(remove.query, "小罗")
+        for payload in ("别名 添加 罗丹", "别名 删除", "别名 看看", "别名 --top 3"):
+            with self.subTest(payload=payload):
+                with self.assertRaises(RouteParseError):
+                    parse_zmdlog_payload(payload)

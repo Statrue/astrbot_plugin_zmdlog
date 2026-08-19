@@ -28,10 +28,10 @@
     "hint": "未执行 python -m playwright install chromium 或截图失败时的兜底；AstrBot 默认使用远程渲染服务，会把页面 HTML 发送出去。"
   },
   "alias_file_path": {
-    "description": "本地榜单与副本别名配置路径",
+    "description": "自定义别名文件（相对路径基于插件数据目录）",
     "type": "string",
     "default": "aliases.json",
-    "hint": "相对路径基于插件目录；boards 以 bossSlug 为键，dungeons 以完整副本名为键。"
+    "hint": "首次启动时会把插件自带的 aliases.json 复制到 data/plugin_data/astrbot_plugin_zmdlog/ 下；之后用 /zmdlog 别名 添加|删除 在线维护即可，无需改文件。"
   },
   "ranking_cache_ttl_seconds": {
     "description": "榜单缓存时间（秒）",

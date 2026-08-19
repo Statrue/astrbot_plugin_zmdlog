@@ -85,9 +85,21 @@ class ZmdLogsClient:
     async def list_hot_bosses(self) -> tuple[HotBossCard, ...]:
         """Return every card from ``GET /api/home/hot-bosses`` in API order."""
 
+        cards, _ = await self.list_hot_bosses_with_payload()
+        return cards
+
+    async def list_hot_bosses_with_payload(
+        self,
+    ) -> tuple[tuple[HotBossCard, ...], Any]:
+        """Like :meth:`list_hot_bosses` but also return the raw JSON payload.
+
+        The payload lets callers persist a snapshot that can be re-parsed with
+        :func:`parse_hot_bosses` when the upstream API is unreachable.
+        """
+
         payload = await self._get_json("api/home/hot-bosses")
         try:
-            return parse_hot_bosses(payload)
+            return parse_hot_bosses(payload), payload
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError("hot-bosses response is invalid") from exc
 

@@ -21,6 +21,7 @@ def _cards():
         make_card("phase2", "首领二", "影拓丰碑2期 · 区域二"),
         make_card("phase3", "首领三", "影拓丰碑3期 · 区域三"),
         make_card("phase4", "首领四", "影拓丰碑4期 · 山中见犼"),
+        make_card("phase4b", "首领五", "影拓丰碑4期 · 山中见犼"),
     )
 
 
@@ -71,7 +72,10 @@ class MatcherTests(unittest.TestCase):
                     result.selected.target.target_type,
                     TargetType.DUNGEON,
                 )
-                self.assertEqual(result.selected.target.boss_slugs, ("phase4",))
+                self.assertEqual(
+                    result.selected.target.boss_slugs,
+                    ("phase4", "phase4b"),
+                )
 
     def test_family_query_builds_a_scope_in_source_order(self) -> None:
         matcher = RankingMatcher(_cards(), _aliases())
@@ -84,7 +88,7 @@ class MatcherTests(unittest.TestCase):
         )
         self.assertEqual(
             result.selected.target.boss_slugs,
-            ("phase1", "phase2", "phase3", "phase4"),
+            ("phase1", "phase2", "phase3", "phase4", "phase4b"),
         )
         self.assertEqual(len(result.selected.target.dungeon_names), 4)
 
@@ -160,3 +164,81 @@ class MatcherTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DerivedAliasTests(unittest.TestCase):
+    def _live_like_cards(self):
+        return (
+            make_card("dung01_group_bossrush01", "危境再现·罗丹", "危境再现"),
+            make_card("dung01_group_bossrush03", "危境再现·白垩界卫", "危境再现"),
+            make_card("indie_hard022_s", "撼山雾火·苦难", "影拓丰碑4期 · 山中见犼"),
+            make_card("indie_hard024_s", "山犼争王·苦难", "影拓丰碑4期 · 山中见犼"),
+            make_card("indie_hard008_s", "怨憎雾海·苦难", "影拓丰碑1期 · 灼痛疤痕"),
+            make_card("indie_hard002_s", "矢影环伺·苦难", "影拓丰碑1期 · 无机造物"),
+            make_card("indie_battletower004_ex", "斧柄纪年·残酷", "战争回响"),
+        )
+
+    def test_derived_aliases_strip_prefix_suffix_and_split_dungeons(self) -> None:
+        from core.matcher import derived_board_aliases, derived_dungeon_aliases
+
+        self.assertEqual(
+            derived_board_aliases("危境再现·罗丹", "危境再现"),
+            ("罗丹", "危境再现·罗丹"),
+        )
+        self.assertEqual(
+            derived_board_aliases("山犼争王·苦难", "影拓丰碑4期 · 山中见犼"),
+            ("山犼争王",),
+        )
+        self.assertEqual(
+            derived_dungeon_aliases("影拓丰碑4期 · 山中见犼"),
+            ("影拓丰碑4期", "山中见犼", "影拓丰碑4", "影拓4", "丰碑4"),
+        )
+        self.assertEqual(derived_dungeon_aliases("战争回响"), ())
+
+    def test_stripped_names_hit_boards_without_configured_aliases(self) -> None:
+        matcher = RankingMatcher(self._live_like_cards(), AliasConfig.empty())
+        for query, slug in (
+            ("罗丹", "dung01_group_bossrush01"),
+            ("山犼争王", "indie_hard024_s"),
+            ("斧柄纪年", "indie_battletower004_ex"),
+            ("罗丹榜单", "dung01_group_bossrush01"),
+        ):
+            with self.subTest(query=query):
+                result = matcher.match(query)
+                self.assertEqual(result.status, MatchStatus.MATCHED)
+                self.assertEqual(result.selected.target.key, slug)
+
+    def test_phase_alias_spanning_dungeons_becomes_a_scope(self) -> None:
+        matcher = RankingMatcher(self._live_like_cards(), AliasConfig.empty())
+        result = matcher.match("丰碑1")
+
+        self.assertEqual(result.status, MatchStatus.MATCHED)
+        self.assertEqual(
+            result.selected.target.target_type,
+            TargetType.DUNGEON_SCOPE,
+        )
+        self.assertEqual(
+            result.selected.target.dungeon_names,
+            ("影拓丰碑1期 · 灼痛疤痕", "影拓丰碑1期 · 无机造物"),
+        )
+        single = matcher.match("丰碑4")
+        self.assertEqual(single.selected.target.target_type, TargetType.DUNGEON)
+
+    def test_pinyin_initials_and_full_pinyin_match(self) -> None:
+        try:
+            import pypinyin  # noqa: F401
+        except ImportError:  # pragma: no cover
+            self.skipTest("pypinyin not installed")
+        matcher = RankingMatcher(self._live_like_cards(), AliasConfig.empty())
+        for query in ("ld", "luodan", "LD", "fb4"):
+            with self.subTest(query=query):
+                result = matcher.match(query)
+                self.assertEqual(result.status, MatchStatus.MATCHED)
+        self.assertEqual(
+            matcher.match("ld").selected.target.key,
+            "dung01_group_bossrush01",
+        )
+        self.assertEqual(
+            matcher.match("fb4").selected.target.target_type,
+            TargetType.DUNGEON,
+        )

@@ -15,6 +15,12 @@ except ImportError:  # pragma: no cover - depends on host AstrBot version
     StarTools = None
 
 from .core.cache import AsyncTTLCache, CacheState
+from .core.candidates import (
+    CandidateStore,
+    extract_code,
+    format_candidates,
+    parse_selection,
+)
 from .core.client import (
     DEFAULT_API_BASE_URL,
     DEFAULT_REQUEST_TIMEOUT_MS,
@@ -33,6 +39,7 @@ from .core.matcher import (
     AliasConfig,
     AliasConfigError,
     MatchChoice,
+    MatchLevel,
     MatchStatus,
     RankingMatcher,
     TargetType,
@@ -42,13 +49,16 @@ from .core.models import (
     BossRanking,
     HotBossCard,
     PublicUserRankings,
+    parse_hot_bosses,
 )
+from .core.persistence import load_json, save_json
 from .core.render import (
     LongImageRenderer,
     RenderError,
     TemplateConfigurationError,
 )
 from .core.routing import (
+    DEFAULT_RANKING_TOP,
     RouteKind,
     RouteParseError,
     RouteRequest,
@@ -58,6 +68,11 @@ from .core.routing import (
 _BOARD_QUERY_TARGETS = frozenset(
     {TargetType.BOARD, TargetType.DUNGEON, TargetType.DUNGEON_SCOPE}
 )
+_ALIAS_ROUTES = frozenset(
+    {RouteKind.ALIAS_LIST, RouteKind.ALIAS_ADD, RouteKind.ALIAS_REMOVE}
+)
+_PLUGIN_DATA_NAME = "astrbot_plugin_zmdlog"
+_HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
 _RENDER_FAILURE_MESSAGE = "图片生成失败，请稍后重试。"
 _UNEXPECTED_FAILURE_MESSAGE = "ZmdLogBot 暂时无法完成查询，请稍后重试。"
 _BATTLE_LINK_FILTER = (
@@ -92,7 +107,10 @@ class ZmdLogBotPlugin(Star):
                 DEFAULT_REQUEST_TIMEOUT_MS,
             ),
         )
+        self.data_dir = self._plugin_data_dir()
+        self.alias_path = self._resolve_alias_path()
         self.aliases = self._load_aliases()
+        self.candidates = CandidateStore()
         self.fuzzy_match_threshold = self.config.get(
             "fuzzy_match_threshold",
             0.65,
@@ -190,12 +208,26 @@ class ZmdLogBotPlugin(Star):
     async def zmdlog(self, event: AstrMessageEvent):
         """查询 ZMDLogs 公开榜单。"""
 
+        payload = self._extract_payload(event.get_message_str())
+        quoted_code = self._quoted_candidate_code(event)
+        if quoted_code is not None and parse_selection(payload) is not None:
+            async for result in self._reply_with_candidate(
+                event,
+                quoted_code,
+                payload,
+            ):
+                yield result
+            return
+
         try:
-            route = parse_zmdlog_payload(
-                self._extract_payload(event.get_message_str())
-            )
+            route = parse_zmdlog_payload(payload)
         except RouteParseError as exc:
             yield event.plain_result(str(exc))
+            return
+        if route.kind in _ALIAS_ROUTES:
+            yield event.plain_result(
+                await self._handle_alias_route(route, event)
+            )
             return
         try:
             outcome = await self._dispatch(
@@ -227,6 +259,21 @@ class ZmdLogBotPlugin(Star):
             yield event.image_result(outcome.image_path)
             return
         yield event.plain_result(outcome.message or "本次查询未产生结果。")
+
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def pick_candidate(self, event: AstrMessageEvent):
+        """Let a bare ``2`` that quotes a candidate list select that entry."""
+
+        if self._is_command_message(event):
+            return
+        text = event.get_message_str() or ""
+        if parse_selection(text) is None:
+            return
+        code = self._quoted_candidate_code(event)
+        if code is None:
+            return
+        async for result in self._reply_with_candidate(event, code, text):
+            yield result
 
     @filter.regex(_BATTLE_LINK_FILTER)
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
@@ -384,26 +431,47 @@ class ZmdLogBotPlugin(Star):
                 message=f"没有找到与「{route.query}」匹配的榜单或副本。"
             )
         if match.status is MatchStatus.AMBIGUOUS:
-            return _DispatchOutcome(
-                message=self._candidate_preview(match.candidates)
+            entry = self.candidates.remember(
+                route.query,
+                match.candidates,
+                ranking_top=route.ranking_top,
             )
+            return _DispatchOutcome(message=format_candidates(entry))
 
         choice = match.selected
         if choice is None:
             return _DispatchOutcome(
                 message=f"没有找到与「{route.query}」匹配的榜单或副本。"
             )
+        return await self._render_choice(
+            choice,
+            cards,
+            query=route.query,
+            ranking_top=route.ranking_top,
+        )
+
+    async def _render_choice(
+        self,
+        choice: MatchChoice,
+        cards: tuple[HotBossCard, ...],
+        *,
+        query: str,
+        ranking_top: int | None,
+    ) -> _DispatchOutcome:
+        renderer = self._require_renderer()
         if choice.target.target_type is TargetType.BOARD:
             ranking = await self._get_boss_ranking(choice.target.key)
             image_path = await renderer.render_ranking(
                 ranking,
-                query=route.query,
-                ranking_limit=route.ranking_limit,
+                query=query,
+                ranking_limit=(
+                    ranking_top if ranking_top is not None else DEFAULT_RANKING_TOP
+                ),
                 web_base_url=self.web_base_url,
             )
             return _DispatchOutcome(image_path=image_path)
 
-        if route.ranking_top is not None:
+        if ranking_top is not None:
             return _DispatchOutcome(
                 message="--top 仅适用于具体榜单查询，请补充具体榜单关键词。"
             )
@@ -415,20 +483,218 @@ class ZmdLogBotPlugin(Star):
         image_path = await renderer.render_dungeon_top3(
             choice,
             selected_cards,
-            query=route.query,
+            query=query,
             web_base_url=self.web_base_url,
         )
         return _DispatchOutcome(image_path=image_path)
 
-    def _load_aliases(self) -> AliasConfig:
-        configured_path = Path(self.config.get("alias_file_path", "aliases.json"))
-        alias_path = (
-            configured_path
-            if configured_path.is_absolute()
-            else Path(__file__).parent / configured_path
-        )
+    async def _reply_with_candidate(
+        self,
+        event: AstrMessageEvent,
+        code: str,
+        selection: str,
+    ):
+        resolved = self.candidates.resolve(code, selection)
+        if resolved is None:
+            yield event.plain_result("这份候选列表已过期或序号无效，请重新查询。")
+            return
+        entry, choice = resolved
         try:
-            return AliasConfig.load(alias_path)
+            cards = await self._list_hot_bosses()
+            outcome = await self._render_choice(
+                choice,
+                cards,
+                query=entry.query,
+                ranking_top=entry.ranking_top,
+            )
+        except ZmdLogsAPIError as exc:
+            logger.warning("ZmdLogBot API request failed: %s", exc.code)
+            yield event.plain_result(
+                "没有找到这个榜单，可能已下线或暂未公开。"
+                if exc.status_code == 404
+                else "ZMDLogs 暂时不可用，请稍后重试。"
+            )
+            return
+        except ZmdLogsClientError as exc:
+            logger.warning("ZmdLogBot request failed: %s", type(exc).__name__)
+            yield event.plain_result("ZMDLogs 暂时不可用，请稍后重试。")
+            return
+        except RenderError as exc:
+            logger.error("ZmdLogBot image rendering failed: %s", type(exc).__name__)
+            fallback_path = await self._render_with_astrbot(exc)
+            if fallback_path is not None:
+                yield event.image_result(fallback_path)
+                return
+            yield event.plain_result(_RENDER_FAILURE_MESSAGE)
+            return
+        except Exception:
+            logger.exception("ZmdLogBot unexpected candidate failure")
+            yield event.plain_result(_UNEXPECTED_FAILURE_MESSAGE)
+            return
+        if outcome.image_path is not None:
+            yield event.image_result(outcome.image_path)
+            return
+        yield event.plain_result(outcome.message or "本次查询未产生结果。")
+
+    @staticmethod
+    def _quoted_candidate_code(event: AstrMessageEvent) -> str | None:
+        """Return the ``#QXXXX`` marker of a quoted candidate list, if any."""
+
+        message_obj = getattr(event, "message_obj", None)
+        chain = getattr(message_obj, "message", None) or ()
+        for component in chain:
+            if type(component).__name__ != "Reply":
+                continue
+            for attribute in ("message_str", "text"):
+                code = extract_code(getattr(component, attribute, None))
+                if code is not None:
+                    return code
+            quoted_chain = getattr(component, "chain", None) or ()
+            for quoted in quoted_chain:
+                code = extract_code(getattr(quoted, "text", None))
+                if code is not None:
+                    return code
+        return None
+
+    async def _handle_alias_route(
+        self,
+        route: RouteRequest,
+        event: AstrMessageEvent,
+    ) -> str:
+        if route.kind is RouteKind.ALIAS_LIST:
+            names: dict[str, str] = {}
+            try:
+                cards = await self._list_hot_bosses()
+            except ZmdLogsClientError:
+                cards = ()
+            for card in cards:
+                names[card.boss_slug] = card.boss_name
+            return self._format_alias_list(names)
+        if not self._event_is_admin(event):
+            return "只有机器人管理员可以修改别名。"
+        if route.kind is RouteKind.ALIAS_REMOVE:
+            updated, removed = self.aliases.without_alias(route.query)
+            if removed == 0:
+                return f"没有找到自定义别名「{route.query}」。"
+            if not self._save_aliases(updated):
+                return "别名文件写入失败，请检查数据目录权限。"
+            return f"已删除别名「{route.query}」。"
+
+        target_text, _, alias_text = route.query.partition(" ")
+        aliases = tuple(dict.fromkeys(alias_text.split()))
+        try:
+            cards = await self._list_hot_bosses()
+        except ZmdLogsClientError:
+            return "ZMDLogs 暂时不可用，无法核对目标，请稍后重试。"
+        matcher = RankingMatcher(
+            cards,
+            self.aliases,
+            fuzzy_threshold=self.fuzzy_match_threshold,
+            ambiguity_score_gap=self.ambiguity_score_gap,
+        )
+        match = matcher.match(
+            target_text,
+            allowed_types=frozenset({TargetType.BOARD, TargetType.DUNGEON}),
+        )
+        choice = match.selected
+        if match.status is not MatchStatus.MATCHED or choice is None:
+            return f"没有唯一匹配到「{target_text}」，请用更完整的榜单或副本名。"
+        exact_types = frozenset({TargetType.BOARD, TargetType.DUNGEON})
+        taken = set()
+        for alias in aliases:
+            probe = matcher.match(alias, allowed_types=exact_types)
+            selected = probe.selected
+            if (
+                probe.status is MatchStatus.MATCHED
+                and selected is not None
+                and selected.level <= MatchLevel.NORMALIZED_EXACT
+                and selected.target.key != choice.target.key
+            ):
+                taken.add(alias)
+        if taken:
+            return "以下别名已被其它榜单或副本占用：" + "、".join(sorted(taken))
+        updated = self.aliases.with_aliases(
+            choice.target.target_type,
+            choice.target.key,
+            aliases,
+        )
+        if not self._save_aliases(updated):
+            return "别名文件写入失败，请检查数据目录权限。"
+        label = "榜单" if choice.target.target_type is TargetType.BOARD else "副本"
+        return (
+            f"已为{label}「{choice.target.name}」添加别名："
+            + "、".join(aliases)
+        )
+
+    def _format_alias_list(self, board_names: dict[str, str]) -> str:
+        lines: list[str] = []
+        for target_type, key, values in self.aliases.iter_entries():
+            if target_type is TargetType.BOARD:
+                label, shown = "榜单", board_names.get(key, key)
+            else:
+                label, shown = "副本", key
+            lines.append(f"{label} {shown}：{'、'.join(values)}")
+        if not lines:
+            return (
+                "当前没有自定义别名。"
+                "榜单名去掉难度/副本前缀、拼音首字母都已内置支持。"
+            )
+        return "自定义别名：\n" + "\n".join(lines)
+
+    def _save_aliases(self, updated: AliasConfig) -> bool:
+        if self.alias_path is None or not save_json(
+            self.alias_path,
+            updated.to_payload(),
+        ):
+            return False
+        self.aliases = updated
+        return True
+
+    @staticmethod
+    def _event_is_admin(event: AstrMessageEvent) -> bool:
+        checker = getattr(event, "is_admin", None)
+        try:
+            return bool(checker()) if callable(checker) else False
+        except Exception:
+            return False
+
+    @staticmethod
+    def _plugin_data_dir() -> Path | None:
+        if StarTools is None:
+            return None
+        try:
+            return Path(StarTools.get_data_dir(_PLUGIN_DATA_NAME))
+        except Exception as exc:
+            logger.warning(
+                "ZmdLogBot cannot resolve the plugin data dir: %s",
+                type(exc).__name__,
+            )
+            return None
+
+    def _resolve_alias_path(self) -> Path | None:
+        """Editable alias file lives in the data dir; plugin ships defaults."""
+
+        configured = Path(self.config.get("alias_file_path", "aliases.json"))
+        if configured.is_absolute():
+            return configured
+        bundled = Path(__file__).parent / configured
+        if self.data_dir is None:
+            return bundled
+        target = self.data_dir / configured
+        if not target.exists():
+            payload = load_json(bundled) if bundled.is_file() else None
+            if payload is None:
+                payload = AliasConfig.empty().to_payload()
+            if not save_json(target, payload):
+                logger.warning("ZmdLogBot cannot seed the alias file in data dir")
+                return bundled
+        return target
+
+    def _load_aliases(self) -> AliasConfig:
+        if self.alias_path is None:
+            return AliasConfig.empty()
+        try:
+            return AliasConfig.load(self.alias_path)
         except AliasConfigError as exc:
             logger.error("ZmdLogBot alias configuration failed: %s", exc)
             return AliasConfig.empty()
@@ -478,20 +744,10 @@ class ZmdLogBotPlugin(Star):
             raise RenderError("renderer is unavailable")
         return self.renderer
 
-    @staticmethod
-    def _render_output_dir() -> Path | None:
+    def _render_output_dir(self) -> Path | None:
         """Keep generated images under AstrBot's data dir, never the plugin dir."""
 
-        if StarTools is None:
-            return None
-        try:
-            return StarTools.get_data_dir("astrbot_plugin_zmdlog") / "render"
-        except Exception as exc:
-            logger.warning(
-                "ZmdLogBot cannot resolve the plugin data dir: %s",
-                type(exc).__name__,
-            )
-            return None
+        return None if self.data_dir is None else self.data_dir / "render"
 
     async def _render_with_astrbot(self, error: RenderError) -> str | None:
         """Render the already-built page through AstrBot's own text-to-image
@@ -527,7 +783,7 @@ class ZmdLogBotPlugin(Star):
     async def _list_hot_bosses(self) -> tuple[HotBossCard, ...]:
         result = await self.hot_boss_cache.get_or_load(
             "all_board_top3",
-            self.client.list_hot_bosses,
+            self._fetch_hot_bosses,
             allow_stale_on_error=True,
         )
         if result.state is CacheState.STALE:
@@ -535,6 +791,31 @@ class ZmdLogBotPlugin(Star):
                 "ZmdLogBot is using stale hot-bosses data after refresh failure."
             )
         return result.value
+
+    async def _fetch_hot_bosses(self) -> tuple[HotBossCard, ...]:
+        """Fetch the board index; fall back to the on-disk snapshot if needed."""
+
+        snapshot_path = (
+            None if self.data_dir is None else self.data_dir / _HOT_BOSSES_SNAPSHOT
+        )
+        try:
+            cards, payload = await self.client.list_hot_bosses_with_payload()
+        except ZmdLogsClientError as upstream_error:
+            payload = None if snapshot_path is None else load_json(snapshot_path)
+            if payload is None:
+                raise
+            try:
+                cards = parse_hot_bosses(payload)
+            except Exception:
+                # A corrupt snapshot must not mask the real upstream failure.
+                raise upstream_error from None
+            logger.warning(
+                "ZmdLogBot is serving the board index from the local snapshot."
+            )
+            return cards
+        if snapshot_path is not None:
+            save_json(snapshot_path, payload)
+        return cards
 
     async def _get_boss_ranking(self, boss_slug: str) -> BossRanking:
         result = await self.boss_ranking_cache.get_or_load(
@@ -603,23 +884,6 @@ class ZmdLogBotPlugin(Star):
             if route.kind in {RouteKind.RANKING_QUERY, RouteKind.SMART_QUERY}:
                 return "没有找到这个榜单，可能已下线或暂未公开。"
         return "ZMDLogs 暂时不可用，请稍后重试。"
-
-    @staticmethod
-    def _candidate_preview(candidates: tuple[MatchChoice, ...]) -> str:
-        labels = {
-            TargetType.BOARD: "榜单",
-            TargetType.DUNGEON: "副本",
-            TargetType.DUNGEON_SCOPE: "副本范围",
-        }
-        lines = ["匹配到多个可能的目标，请提供更完整的关键词："]
-        for index, candidate in enumerate(candidates, start=1):
-            dungeon = "、".join(candidate.target.dungeon_names)
-            lines.append(
-                f"{index}. {candidate.target.name}"
-                f"（{labels[candidate.target.target_type]}；{dungeon}；"
-                f"查询关键词：{candidate.target.query_text}）"
-            )
-        return "\n".join(lines)
 
     @staticmethod
     def _looks_like_direct_slug(query: str) -> bool:

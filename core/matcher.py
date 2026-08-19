@@ -11,7 +11,10 @@ from typing import Any
 
 from .models import HotBossCard
 
-_IGNORED_QUERY_WORDS = ("排行榜", "榜单", "排行", "排名", "副本")
+_IGNORED_QUERY_WORDS = ("排行榜", "榜单", "排行", "排名", "副本", "榜", "dps")
+_DIFFICULTY_SUFFIX_RE = re.compile(r"[·・\-–—\s]*(?:苦难|残酷|困难|噩梦|普通|简单)$")
+_NAME_SEPARATOR_RE = re.compile(r"\s*[·・]\s*")
+_ASCII_LETTERS_RE = re.compile(r"^[a-z][a-z0-9]*$")
 _CHINESE_PHASE_RE = re.compile(r"[零〇一二两三四五六七八九十百]+(?=期)")
 _PHASE_FAMILY_RE = re.compile(r"^(?P<family>.+?)(?P<phase>\d+)期")
 _CHINESE_DIGITS = {
@@ -48,9 +51,10 @@ class MatchLevel(IntEnum):
     STANDARD_EXACT = 2
     ALIAS_EXACT = 3
     NORMALIZED_EXACT = 4
-    PREFIX_SUFFIX = 5
-    CONTAINS = 6
-    SIMILARITY = 7
+    PINYIN_EXACT = 5
+    PREFIX_SUFFIX = 6
+    CONTAINS = 7
+    SIMILARITY = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +73,10 @@ class AliasConfig:
         except (OSError, ValueError) as exc:
             raise AliasConfigError(f"cannot load alias file: {path}") from exc
 
+        return cls.from_payload(payload)
+
+    @classmethod
+    def from_payload(cls, payload: Any) -> "AliasConfig":
         root = _mapping(payload, "aliases")
         return cls(
             boards=_parse_alias_group(root.get("boards", {}), "aliases.boards"),
@@ -77,6 +85,63 @@ class AliasConfig:
                 "aliases.dungeons",
             ),
         )
+
+    def to_payload(self) -> dict[str, dict[str, list[str]]]:
+        return {
+            "boards": {key: list(values) for key, values in self.boards.items()},
+            "dungeons": {
+                key: list(values) for key, values in self.dungeons.items()
+            },
+        }
+
+    def with_aliases(
+        self,
+        target_type: "TargetType",
+        target_key: str,
+        aliases: tuple[str, ...],
+    ) -> "AliasConfig":
+        """Return a copy with ``aliases`` added to one board or dungeon."""
+
+        group = dict(
+            self.boards if target_type is TargetType.BOARD else self.dungeons
+        )
+        current = list(group.get(target_key, ()))
+        for alias in aliases:
+            cleaned = alias.strip()
+            if cleaned and cleaned not in current:
+                current.append(cleaned)
+        group[target_key] = tuple(current)
+        if target_type is TargetType.BOARD:
+            return AliasConfig(boards=group, dungeons=dict(self.dungeons))
+        return AliasConfig(boards=dict(self.boards), dungeons=group)
+
+    def without_alias(self, alias: str) -> tuple["AliasConfig", int]:
+        """Return a copy with every occurrence of ``alias`` removed."""
+
+        key = fold_text(alias)
+        removed = 0
+
+        def strip(group: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+            nonlocal removed
+            result: dict[str, tuple[str, ...]] = {}
+            for target, values in group.items():
+                kept = tuple(v for v in values if fold_text(v) != key)
+                removed += len(values) - len(kept)
+                if kept:
+                    result[target] = kept
+            return result
+
+        updated = AliasConfig(
+            boards=strip(self.boards),
+            dungeons=strip(self.dungeons),
+        )
+        return updated, removed
+
+    def iter_entries(self):
+        for key, values in self.boards.items():
+            yield TargetType.BOARD, key, values
+        for key, values in self.dungeons.items():
+            yield TargetType.DUNGEON, key, values
 
 
 class AliasConfigError(ValueError):
@@ -92,6 +157,7 @@ class MatchTarget:
     boss_slugs: tuple[str, ...]
     query_text: str
     aliases: tuple[str, ...] = ()
+    pinyin: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,9 +244,32 @@ class RankingMatcher:
         exact = tuple(
             choice
             for choice in ranked
-            if choice.level <= MatchLevel.NORMALIZED_EXACT
+            if choice.level <= MatchLevel.PINYIN_EXACT
         )
         if exact:
+            # "影拓丰碑1期" names several dungeons of one phase; treat an exact
+            # hit on all of them as the whole phase rather than an ambiguity.
+            exact_dungeons = tuple(
+                choice
+                for choice in exact
+                if choice.target.target_type is TargetType.DUNGEON
+            )
+            if (
+                TargetType.DUNGEON_SCOPE in enabled_types
+                and len(exact_dungeons) >= 2
+                and len(exact_dungeons) == len(exact)
+            ):
+                scope = self._build_scope(
+                    stripped_query,
+                    compact_query,
+                    exact_dungeons,
+                )
+                if scope is not None:
+                    return MatchResult(
+                        MatchStatus.MATCHED,
+                        stripped_query,
+                        selected=scope,
+                    )
             preferred = self._prefer_single_board_dungeons(
                 exact,
                 enabled_types,
@@ -189,7 +278,17 @@ class RankingMatcher:
 
         scope = None
         if TargetType.DUNGEON_SCOPE in enabled_types:
-            scope = self._build_scope(stripped_query, compact_query, ranked)
+            scope = self._build_scope(
+                stripped_query,
+                compact_query,
+                tuple(
+                    choice
+                    for choice in ranked
+                    if choice.target.target_type is TargetType.DUNGEON
+                    and choice.level
+                    in {MatchLevel.PREFIX_SUFFIX, MatchLevel.CONTAINS}
+                ),
+            )
         if scope is not None:
             return MatchResult(
                 MatchStatus.MATCHED,
@@ -219,8 +318,7 @@ class RankingMatcher:
             if (
                 target.target_type is TargetType.DUNGEON
                 and len(target.boss_slugs) == 1
-                and choice.level
-                in {MatchLevel.STANDARD_EXACT, MatchLevel.NORMALIZED_EXACT}
+                and choice.level <= MatchLevel.PINYIN_EXACT
             ):
                 board = self._boards_by_slug.get(target.boss_slugs[0])
                 if board is not None:
@@ -273,14 +371,8 @@ class RankingMatcher:
         self,
         query: str,
         compact_query: str,
-        ranked: tuple[MatchChoice, ...],
+        dungeon_matches: tuple[MatchChoice, ...],
     ) -> MatchChoice | None:
-        dungeon_matches = tuple(
-            choice
-            for choice in ranked
-            if choice.target.target_type is TargetType.DUNGEON
-            and choice.level in {MatchLevel.PREFIX_SUFFIX, MatchLevel.CONTAINS}
-        )
         if len(dungeon_matches) < 2:
             return None
 
@@ -361,6 +453,11 @@ def _build_targets(
         dungeon_cards.setdefault(card.dungeon_name, []).append(card)
 
     for slug, card in cards_by_slug.items():
+        merged = _merge_aliases(
+            card.boss_name,
+            aliases.boards.get(slug, ()),
+            derived_board_aliases(card.boss_name, card.dungeon_name),
+        )
         targets.append(
             MatchTarget(
                 target_type=TargetType.BOARD,
@@ -369,11 +466,17 @@ def _build_targets(
                 dungeon_names=(card.dungeon_name,),
                 boss_slugs=(slug,),
                 query_text=slug,
-                aliases=aliases.boards.get(slug, ()),
+                aliases=merged,
+                pinyin=pinyin_keys((card.boss_name, *merged)),
             )
         )
 
     for dungeon_name, grouped_cards in dungeon_cards.items():
+        merged = _merge_aliases(
+            dungeon_name,
+            aliases.dungeons.get(dungeon_name, ()),
+            derived_dungeon_aliases(dungeon_name),
+        )
         targets.append(
             MatchTarget(
                 target_type=TargetType.DUNGEON,
@@ -382,7 +485,8 @@ def _build_targets(
                 dungeon_names=(dungeon_name,),
                 boss_slugs=tuple(card.boss_slug for card in grouped_cards),
                 query_text=dungeon_name,
-                aliases=aliases.dungeons.get(dungeon_name, ()),
+                aliases=merged,
+                pinyin=pinyin_keys((dungeon_name, *merged)),
             )
         )
 
@@ -390,8 +494,79 @@ def _build_targets(
         issues.append(f"board alias target does not exist: {slug}")
     for dungeon_name in aliases.dungeons.keys() - dungeon_cards.keys():
         issues.append(f"dungeon alias target does not exist: {dungeon_name}")
-    issues.extend(_alias_collision_issues(tuple(targets)))
+    issues.extend(_alias_collision_issues(aliases))
     return tuple(targets), tuple(issues)
+
+
+def _merge_aliases(
+    name: str,
+    configured: tuple[str, ...],
+    derived: tuple[str, ...],
+) -> tuple[str, ...]:
+    seen = {fold_text(name)}
+    merged: list[str] = []
+    for alias in (*configured, *derived):
+        key = fold_text(alias)
+        if key and key not in seen:
+            seen.add(key)
+            merged.append(alias)
+    return tuple(merged)
+
+
+def derived_board_aliases(boss_name: str, dungeon_name: str) -> tuple[str, ...]:
+    """Names people actually type: no difficulty suffix, no dungeon prefix."""
+
+    results: list[str] = []
+    stripped = _DIFFICULTY_SUFFIX_RE.sub("", boss_name).strip()
+    for candidate in (boss_name, stripped):
+        parts = _NAME_SEPARATOR_RE.split(candidate, maxsplit=1)
+        if len(parts) == 2 and fold_text(parts[0]) == fold_text(dungeon_name):
+            results.append(parts[1].strip())
+    results.append(stripped)
+    return tuple(dict.fromkeys(alias for alias in results if alias))
+
+
+def derived_dungeon_aliases(dungeon_name: str) -> tuple[str, ...]:
+    """Split ``影拓丰碑4期 · 山中见犼`` into its parts plus ``丰碑4`` / ``影拓4``."""
+
+    results: list[str] = []
+    parts = [part.strip() for part in _NAME_SEPARATOR_RE.split(dungeon_name)]
+    if len(parts) > 1:
+        results.extend(part for part in parts if part)
+    for part in parts:
+        match = _PHASE_FAMILY_RE.match(normalize_search_text(part))
+        if match is None:
+            continue
+        family, phase = match.group("family"), match.group("phase")
+        results.append(f"{family}{phase}")
+        if len(family) > 2:
+            results.append(f"{family[:2]}{phase}")
+            results.append(f"{family[-2:]}{phase}")
+    return tuple(dict.fromkeys(alias for alias in results if alias))
+
+
+def pinyin_keys(texts: tuple[str, ...]) -> tuple[str, ...]:
+    """Full pinyin and initials for every CJK text; empty without pypinyin."""
+
+    try:
+        from pypinyin import Style, lazy_pinyin
+    except ImportError:  # pragma: no cover - optional dependency
+        return ()
+    keys: list[str] = []
+    for text in texts:
+        cjk = "".join(
+            ch for ch in text if "一" <= ch <= "鿿" or ch.isdigit()
+        )
+        if not any("一" <= ch <= "鿿" for ch in cjk):
+            continue
+        full = "".join(lazy_pinyin(cjk))
+        initials = "".join(
+            item[:1] for item in lazy_pinyin(cjk, style=Style.FIRST_LETTER)
+        )
+        for key in (full, initials):
+            if len(key) >= 2 and key not in keys:
+                keys.append(key)
+    return tuple(keys)
 
 
 def _score_target(
@@ -409,6 +584,13 @@ def _score_target(
             1.0,
             target.key,
         )
+
+    if (
+        target.pinyin
+        and _ASCII_LETTERS_RE.match(compact_query)
+        and compact_query in target.pinyin
+    ):
+        return MatchChoice(target, MatchLevel.PINYIN_EXACT, 1.0, target.name)
 
     texts = (
         _search_text(target.name, is_alias=False),
@@ -560,14 +742,16 @@ def _chinese_number(value: str) -> int:
     return total + current
 
 
-def _alias_collision_issues(targets: tuple[MatchTarget, ...]) -> tuple[str, ...]:
-    owners: dict[str, set[tuple[TargetType, str]]] = {}
+def _alias_collision_issues(aliases: AliasConfig) -> tuple[str, ...]:
+    owners: dict[str, set[tuple[str, str]]] = {}
     labels: dict[str, str] = {}
-    for target in targets:
-        for alias in target.aliases:
-            key = fold_text(alias)
-            owners.setdefault(key, set()).add((target.target_type, target.key))
-            labels.setdefault(key, alias)
+    groups = (("board", aliases.boards), ("dungeon", aliases.dungeons))
+    for kind, group in groups:
+        for target_key, target_aliases in group.items():
+            for alias in target_aliases:
+                key = fold_text(alias)
+                owners.setdefault(key, set()).add((kind, target_key))
+                labels.setdefault(key, alias)
     return tuple(
         f"alias is assigned to multiple targets: {labels[key]}"
         for key, targets_for_alias in owners.items()

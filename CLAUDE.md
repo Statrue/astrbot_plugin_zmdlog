@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-AstrBot plugin (`ZmdLogBot`) that queries public ZMDLogs data (Endfield DPS leaderboards, account best records, battle reports) and replies with a single 1280px-wide PNG rendered by Jinja2 + Playwright. Entry point is `main.py` (`ZmdLogBotPlugin(Star)`); all logic lives in `core/`. Python 3.10+, deps in `requirements.txt` (httpx, jinja2, playwright). Chromium must be installed separately (`python -m playwright install chromium`).
+AstrBot plugin (`ZmdLogBot`) that queries public ZMDLogs data (Endfield DPS leaderboards, account best records, battle reports) and replies with a single 1280px-wide PNG rendered by Jinja2 + Playwright. Entry point is `main.py` (`ZmdLogBotPlugin(Star)`); all logic lives in `core/`. Python 3.10+, deps in `requirements.txt` (httpx, jinja2, playwright, pypinyin). Chromium must be installed separately (`python -m playwright install chromium`).
 
 ## Commands
 
 ```bash
-.venv/Scripts/python.exe -m unittest discover -s tests -v          # full suite (55 tests, ~1s)
+.venv/Scripts/python.exe -m unittest discover -s tests -v          # full suite (~62 tests, ~1s)
 .venv/Scripts/python.exe -m ruff check main.py core tests tools    # lint (ruff.toml: E/F/I/W, py310)
 .venv/Scripts/python.exe -m unittest tests.test_matcher -v         # one module
 .venv/Scripts/python.exe -m unittest tests.test_matcher.MatcherTests.test_slug_and_board_aliases_match_one_board
@@ -23,7 +23,8 @@ Tests import `core.*` directly (run from repo root). Playwright is *not* exercis
 - HELP → `core/help.build_help_page` (local only, no API)
 - ALL_RANKINGS → `hot-bosses` cache → all-top3 template
 - ACCOUNT_QUERY / BATTLE_QUERY → `core/identifiers` (exact ID or trusted `web_base_url` URL) → client → account/battle template
-- RANKING_QUERY / SMART_QUERY → `hot-bosses` cache → `core/matcher.RankingMatcher` → BOARD ⇒ `/api/bosses/{slug}/rankings` (ranking template); DUNGEON / DUNGEON_SCOPE ⇒ filter hot-bosses cards (dungeon-top3 template); AMBIGUOUS ⇒ text candidate list
+- RANKING_QUERY / SMART_QUERY → `hot-bosses` cache → `core/matcher.RankingMatcher` → BOARD ⇒ `/api/bosses/{slug}/rankings` (ranking template); DUNGEON / DUNGEON_SCOPE ⇒ filter hot-bosses cards (dungeon-top3 template); AMBIGUOUS ⇒ compact text list stored in `core/candidates.CandidateStore` (ends with `#QXXXX`); a reply that *quotes* that message with a number (bare, or `/zmdlog 2`) resolves it via `main._quoted_candidate_code`
+- ALIAS_LIST / ALIAS_ADD / ALIAS_REMOVE (`/zmdlog 别名 …`) → admin-only (`event.is_admin()`), edits the alias JSON in the data dir and swaps `self.aliases` in place
 
 Supporting layers: `core/client.py` (httpx; 1 retry, 15s total budget, 4xx never retried, all failures → `ZmdLogsClientError` subclasses) → `core/models.py` (strict field-by-field validation into frozen dataclasses; `ModelValidationError` → `ZmdLogsProtocolError`) → `core/presentation.py` (view models, number/duration formatting, URL safety) → `core/render.py` (`TemplateRenderer` = Jinja with `StrictUndefined`; `LongImageRenderer` = Playwright capture with page-integrity validation, render semaphore, output pruning). `core/cache.py` `AsyncTTLCache` merges concurrent loads per key; only the hot-bosses cache allows stale-on-error.
 
@@ -39,7 +40,7 @@ Supporting layers: `core/client.py` (httpx; 1 retry, 15s total budget, 4xx never
 - Rendered pages must contain `#zmd-page > .main-panel` and the local background data-URL (`resources/common/scene-background.svg`, inlined as `data:image/svg+xml`), or `_validate_page` fails the render. Templates extend `resources/common/base.html`; page-specific CSS is `{% include %}`d into `extra_styles`. Decorative elements that overflow must live inside `.scene-deco` (overflow hidden) or `#zmd-page` scrollWidth exceeds 1280 and validation fails.
 - **Visual language is Endfield-style** (light paper `#f1f1ee`, ink `#1c1c1c`, accent yellow `#f8d34d`, cut corners via `clip-path`, skewed badges, Barlow for Latin/digits, MiSans for CJK). Fonts are subset woff2 files (CJK = full GB2312, 6763 chars) in `resources/common/fonts/` embedded as data URLs by `core/render._load_font_face_css`; regenerate with `tools/build_fonts.py <dir-with-source-ttfs>` (needs fonttools+brotli, see `resources/common/ASSETS.md`). No AGPL assets remain.
 - Avatar URLs from upstream are site-relative; every page builder takes `web_base_url` and resolves via `_safe_asset_url` (unsafe schemes → `None`).
-- `hot-bosses` is the sole source of the board/dungeon index — no hardcoded board catalog. Business aliases live in `aliases.json` (`boards` keyed by `bossSlug`, `dungeons` keyed by full `dungeonName`).
+- `hot-bosses` is the sole source of the board/dungeon index — no hardcoded board catalog; a JSON snapshot of the last good payload is kept in the data dir (`hot-bosses.json`) and used when upstream is unreachable. Matching derives aliases automatically (`derived_board_aliases`: strip `·苦难/·残酷` suffix and `{dungeon}·` prefix; `derived_dungeon_aliases`: split `影拓丰碑4期 · 山中见犼` into parts + `丰碑4/影拓4`) and pinyin keys (`pypinyin`, full + initials, `MatchLevel.PINYIN_EXACT`). An exact hit on several dungeons of one phase becomes a DUNGEON_SCOPE instead of AMBIGUOUS; an exact hit on a one-board dungeon is promoted to that board. Hand-written aliases live in `aliases.json` (`boards` keyed by `bossSlug`, `dungeons` keyed by full `dungeonName`); the bundled file only seeds `data/plugin_data/astrbot_plugin_zmdlog/aliases.json`, which is the editable copy.
 - Only image requests to `api_base_url` / `web_base_url` origins are allowed during capture; everything else is aborted.
 
 ## Config
