@@ -12,6 +12,7 @@ from .models import (
     BossRanking,
     BossRankingRosterEntry,
     BossRankingRow,
+    CharacterBossStatistics,
     CharacterStatistics,
     HotBossCard,
     PublicUserRankings,
@@ -153,6 +154,50 @@ class CharacterStatsPage:
     axis_labels: tuple[str, ...]
     rows: tuple[CharacterStatRowView, ...]
     insufficient: tuple[CharacterStatChipView, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterBossRowView:
+    boss_name: str
+    dungeon_name: str
+    rank: int
+    ranked_character_count: int
+    sample_count: int
+    outlier_count: int
+    median: str
+    maximum: str
+    whisker_left: float
+    whisker_width: float
+    box_left: float
+    box_width: float
+    median_left: float
+    p10_left: float
+    p90_left: float
+    maximum_left: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterBossChipView:
+    boss_name: str
+    sample_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterBossPage:
+    header: PageHeader
+    character_name: str
+    character_profession: str
+    character_initial: str
+    character_avatar_url: str | None
+    range_label: str
+    potential_label: str
+    total_sample_count: int
+    total_outlier_count: int
+    included_boss_count: int
+    minimum_sample_count: int
+    axis_labels: tuple[str, ...]
+    rows: tuple[CharacterBossRowView, ...]
+    insufficient: tuple[CharacterBossChipView, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -506,6 +551,108 @@ def build_character_stats_page(
         range_label=_RANGE_LABELS.get(stats.range, stats.range),
         potential_label=_POTENTIAL_LABELS.get(stats.potential, stats.potential),
         eligible_battle_count=stats.eligible_battle_count,
+        total_sample_count=stats.total_sample_count,
+        total_outlier_count=stats.total_outlier_count,
+        included_boss_count=stats.included_boss_count,
+        minimum_sample_count=stats.minimum_sample_count,
+        axis_labels=axis_labels,
+        rows=tuple(rows),
+        insufficient=insufficient,
+    )
+
+
+def build_character_boss_page(
+    stats: CharacterBossStatistics,
+    *,
+    query: str,
+    web_base_url: str | None = None,
+) -> CharacterBossPage:
+    """One character across every board: rank badge first, box plot second."""
+
+    ranked = tuple(
+        row
+        for row in stats.rows
+        if row.rank is not None and not row.insufficient_samples
+    )
+    ranked = tuple(
+        sorted(
+            ranked,
+            key=lambda row: (
+                -(row.median if row.median is not None else -1.0),
+                row.boss_name,
+            ),
+        )
+    )
+    axis_max = _stats_axis_max(ranked)
+    step = axis_max / 4 if axis_max else 0
+    axis_labels = tuple(_format_axis_value(step * index) for index in range(5))
+
+    def percent(value: float | None) -> float:
+        if value is None or axis_max <= 0:
+            return 0.0
+        return round(max(0.0, min(100.0, value / axis_max * 100)), 2)
+
+    rows: list[CharacterBossRowView] = []
+    for row in ranked:
+        low = row.lower_whisker if row.lower_whisker is not None else row.p25
+        high = row.upper_whisker if row.upper_whisker is not None else row.p75
+        p25 = row.p25 if row.p25 is not None else row.median
+        p75 = row.p75 if row.p75 is not None else row.median
+        whisker_left = percent(low)
+        whisker_right = percent(high)
+        box_left = percent(p25)
+        box_right = percent(p75)
+        maximum_left = None
+        if row.maximum is not None and high is not None and row.maximum > high:
+            maximum_left = min(percent(row.maximum), 100.0)
+        rows.append(
+            CharacterBossRowView(
+                boss_name=row.boss_name,
+                dungeon_name=row.dungeon_name,
+                rank=row.rank or 0,
+                ranked_character_count=row.ranked_character_count,
+                sample_count=row.normal_sample_count,
+                outlier_count=row.outlier_count,
+                median=format_number(row.median) if row.median is not None else "—",
+                maximum=(
+                    format_number(row.maximum) if row.maximum is not None else "—"
+                ),
+                whisker_left=whisker_left,
+                whisker_width=round(max(0.0, whisker_right - whisker_left), 2),
+                box_left=box_left,
+                box_width=round(max(0.0, box_right - box_left), 2),
+                median_left=percent(row.median),
+                p10_left=percent(row.p10 if row.p10 is not None else p25),
+                p90_left=percent(row.p90 if row.p90 is not None else p75),
+                maximum_left=maximum_left,
+            )
+        )
+
+    insufficient = tuple(
+        CharacterBossChipView(
+            boss_name=row.boss_name,
+            sample_count=row.sample_count,
+        )
+        for row in stats.rows
+        if row.insufficient_samples and row.sample_count > 0
+    )
+    return CharacterBossPage(
+        header=PageHeader(
+            title=stats.character_name,
+            subtitle=stats.character_profession,
+            query=query,
+            matched_name=f"{stats.character_name} · 全榜单角色统计",
+            target_type="角色统计",
+            footer_note="公开战斗 · 单角色全榜单 DPS 分布",
+        ),
+        character_name=stats.character_name,
+        character_profession=stats.character_profession,
+        character_initial=_initial(stats.character_name),
+        character_avatar_url=_safe_asset_url(
+            stats.character_avatar_url, base_url=web_base_url
+        ),
+        range_label=_RANGE_LABELS.get(stats.range, stats.range),
+        potential_label=_POTENTIAL_LABELS.get(stats.potential, stats.potential),
         total_sample_count=stats.total_sample_count,
         total_outlier_count=stats.total_outlier_count,
         included_boss_count=stats.included_boss_count,

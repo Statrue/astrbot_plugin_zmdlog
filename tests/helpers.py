@@ -250,3 +250,61 @@ def ranking_payload_with_rows() -> dict:
             row(5, "卡缪", team_b, 90_000),
         ],
     }
+
+
+def character_boss_statistics_payload(*, metric: str = "dps") -> dict:
+    def row(slug: str, boss: str, dungeon: str, *, rank: int | None,
+            ranked_total: int, samples: int, median: float | None,
+            maximum: float | None = None, outliers: int = 0) -> dict:
+        spread = (median or 0) * 0.2
+        return {
+            "bossSlug": slug,
+            "bossName": boss,
+            "dungeonName": dungeon,
+            "rank": rank,
+            "rankedCharacterCount": ranked_total,
+            "sampleCount": samples + outliers,
+            "normalSampleCount": samples,
+            "outlierCount": outliers,
+            "insufficientSamples": rank is None,
+            "lowerWhisker": None if median is None else median - spread * 2,
+            "p10": None if median is None else median - spread * 1.5,
+            "p25": None if median is None else median - spread,
+            "median": median,
+            "p75": None if median is None else median + spread,
+            "p90": None if median is None else median + spread * 1.5,
+            "upperWhisker": None if median is None else median + spread * 2,
+            "maximum": maximum if maximum is not None else (
+                None if median is None else median + spread * 2
+            ),
+            "outliers": (
+                [{"value": (median or 0) * 3, "count": outliers}]
+                if outliers
+                else []
+            ),
+        }
+
+    return {
+        "characterKey": "chr_0028_wulfa",
+        "characterName": "洛茜",
+        "characterProfession": "近卫",
+        "characterAvatarUrl": "/images/character/icon_chr_0028_wulfa.png",
+        "metric": metric,
+        "range": "30d",
+        "potential": "all",
+        "minimumSampleCount": 5,
+        "includedBossCount": 4,
+        "totalSampleCount": 120,
+        "totalOutlierCount": 3,
+        "rows": [
+            row("slug_a", "危境再现·罗丹", "危境再现",
+                rank=2, ranked_total=15, samples=93, median=57000,
+                maximum=150000, outliers=2),
+            row("slug_b", "蚀影噪雷", "危境碎片",
+                rank=1, ranked_total=12, samples=20, median=90000, outliers=1),
+            row("slug_c", "白垩界卫·苦难", "危境再现·白垩界卫",
+                rank=None, ranked_total=9, samples=3, median=30000),
+            row("slug_d", "清波访客·苦难", "影拓丰碑4期 · 山中见犼",
+                rank=None, ranked_total=0, samples=0, median=None),
+        ],
+    }

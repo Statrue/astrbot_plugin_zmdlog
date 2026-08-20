@@ -97,7 +97,7 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog 榜单 <关键词>",
                 "!zmdlog 关键词 [--top 数量] [--角色 角色名]",
                 (
-                    "!zmdlog 角色统计 [榜单关键词] "
+                    "!zmdlog 角色统计 [榜单或角色名] "
                     "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
                 ),
                 "!zmdlog 阵容 <榜单关键词> [--top 数量]",

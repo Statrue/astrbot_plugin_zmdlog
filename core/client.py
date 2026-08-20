@@ -13,6 +13,7 @@ from .models import (
     AccountSearch,
     BattleDetailSummary,
     BossRanking,
+    CharacterBossStatistics,
     CharacterStatistics,
     HotBossCard,
     ModelValidationError,
@@ -20,6 +21,7 @@ from .models import (
     parse_account_search,
     parse_battle_detail,
     parse_boss_ranking,
+    parse_character_boss_statistics,
     parse_character_statistics,
     parse_hot_bosses,
     parse_public_user_rankings,
@@ -32,6 +34,7 @@ _MAX_REQUEST_ATTEMPTS = 2
 _MAX_TOTAL_WAIT_SECONDS = 15.0
 _STATS_RANGES = frozenset({"7d", "14d", "30d", "all"})
 MIN_ACCOUNT_SEARCH_LENGTH = 2
+_CHARACTER_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 _STATS_POTENTIALS = frozenset({"0", "1-5", "all"})
 
 
@@ -181,6 +184,37 @@ class ZmdLogsClient:
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError(
                 "account search response is invalid"
+            ) from exc
+
+    async def get_character_boss_statistics(
+        self,
+        character_key: str,
+        *,
+        time_range: str = "all",
+        potential: str = "all",
+    ) -> CharacterBossStatistics:
+        """Return one character's DPS distribution on every statistics board.
+
+        The ``metric`` query parameter is deliberately never sent so the
+        upstream DPS default applies.
+        """
+
+        if time_range not in _STATS_RANGES:
+            raise ValueError("invalid statistics range")
+        if potential not in _STATS_POTENTIALS:
+            raise ValueError("invalid statistics potential filter")
+        if not _CHARACTER_KEY_PATTERN.match(character_key):
+            raise InvalidBossSlugError("invalid character key")
+
+        payload = await self._get_json(
+            f"api/characters/{character_key}/boss-statistics",
+            params={"range": time_range, "potential": potential},
+        )
+        try:
+            return parse_character_boss_statistics(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError(
+                "character boss statistics response is invalid"
             ) from exc
 
     async def get_public_user_rankings(

@@ -1,0 +1,122 @@
+.charboss-hero {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.avatar--hero {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 auto;
+  font-size: 26px;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+}
+
+.charboss-hero-text {
+  display: flex;
+  min-width: 150px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding-right: 8px;
+}
+
+.charboss-hero-text strong {
+  color: var(--ink);
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.charboss-hero-text span {
+  align-self: flex-start;
+  padding: 1px 8px;
+  color: #fff;
+  background: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+
+.charboss-hero .stats-chip {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- per-board rows ---------- */
+
+.stats-head--charboss,
+.stats-row--charboss {
+  grid-template-columns: 96px 230px 84px minmax(0, 1fr) 120px 96px;
+}
+
+.charboss-rank {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.charboss-rank b {
+  position: relative;
+  isolation: isolate;
+  padding: 2px 8px;
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.charboss-rank b::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: var(--line-soft);
+  transform: skewX(-12deg);
+}
+
+.charboss-rank--1 b::before {
+  background: var(--yellow);
+}
+
+.charboss-rank--2 b,
+.charboss-rank--3 b {
+  color: #fff;
+}
+
+.charboss-rank--2 b::before {
+  background: var(--ink);
+}
+
+.charboss-rank--3 b::before {
+  background: var(--muted);
+}
+
+.charboss-rank i {
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.charboss-board {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.charboss-board strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

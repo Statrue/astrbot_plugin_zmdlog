@@ -58,6 +58,7 @@ from .core.matcher import (
 from .core.models import (
     BattleDetailSummary,
     BossRanking,
+    CharacterBossStatistics,
     CharacterStatistics,
     HotBossCard,
     PublicUserRankings,
@@ -167,6 +168,12 @@ class ZmdLogBotPlugin(Star):
         self.character_stats_cache = AsyncTTLCache[
             tuple[str, str, str],
             CharacterStatistics,
+        ](
+            character_stats_cache_ttl_seconds,
+        )
+        self.character_boss_cache = AsyncTTLCache[
+            tuple[str, str, str],
+            CharacterBossStatistics,
         ](
             character_stats_cache_ttl_seconds,
         )
@@ -473,6 +480,10 @@ class ZmdLogBotPlugin(Star):
                 return await self._render_board(
                     route.query, query=route.query, pending=pending
                 )
+            if view is CandidateView.CHARACTER_STATS:
+                outcome = await self._character_boss_outcome(route.query, pending)
+                if outcome is not None:
+                    return outcome
             if (
                 view is CandidateView.RANKING
                 and pending.ranking_top is None
@@ -501,6 +512,15 @@ class ZmdLogBotPlugin(Star):
             if choice is not None
             else min((entry.level for entry in candidates), default=None)
         )
+        if (
+            view is CandidateView.CHARACTER_STATS
+            and best_level is not None
+            and best_level > MatchLevel.PINYIN_EXACT
+        ):
+            # 角色统计 <角色名>: a recognised character beats fuzzy board hits.
+            outcome = await self._character_boss_outcome(route.query, pending)
+            if outcome is not None:
+                return outcome
         if (
             view is CandidateView.RANKING
             and pending.ranking_top is None
@@ -679,6 +699,68 @@ class ZmdLogBotPlugin(Star):
             return ()
         return tuple(_account_choice(hit, stripped) for hit in search.accounts)
 
+    async def _character_boss_outcome(
+        self,
+        query: str,
+        pending: PendingCandidates,
+    ) -> _DispatchOutcome | None:
+        """Render one character's all-boards page when ``query`` names one.
+
+        Returns None when the query is not a recognised character (or the
+        catalog is unavailable) so board handling can continue.
+        """
+
+        try:
+            catalog = await self._get_character_statistics(
+                None, time_range="all", potential="all"
+            )
+        except ZmdLogsClientError:
+            return None
+        names = tuple(row.character_name for row in catalog.rows)
+        resolution = resolve_character_name(query, names)
+        if resolution.status is CharacterResolutionStatus.NOT_FOUND:
+            return None
+        if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
+            options = " / ".join(resolution.candidates)
+            return _DispatchOutcome(
+                message=f"「{resolution.query}」可能是：{options}，请写全名。"
+            )
+        character_key = next(
+            row.character_key
+            for row in catalog.rows
+            if row.character_name == resolution.name
+        )
+        stats = await self._get_character_boss_statistics(
+            character_key,
+            time_range=pending.stats_range,
+            potential=pending.stats_potential,
+        )
+        renderer = self._require_renderer()
+        image_path = await renderer.render_character_boss(
+            stats,
+            query=query,
+            web_base_url=self.web_base_url,
+        )
+        return _DispatchOutcome(image_path=image_path)
+
+    async def _get_character_boss_statistics(
+        self,
+        character_key: str,
+        *,
+        time_range: str,
+        potential: str,
+    ) -> CharacterBossStatistics:
+        key = (character_key, time_range, potential)
+        result = await self.character_boss_cache.get_or_load(
+            key,
+            lambda: self.client.get_character_boss_statistics(
+                character_key,
+                time_range=time_range,
+                potential=potential,
+            ),
+        )
+        return result.value
+
     async def _character_name_hint(
         self,
         query: str,
@@ -702,12 +784,6 @@ class ZmdLogBotPlugin(Star):
         if resolution.status is not CharacterResolutionStatus.MATCHED:
             return None
         name = resolution.name
-        if view is CandidateView.CHARACTER_STATS:
-            return (
-                f"「{name}」是角色名。`角色统计` 后面接榜单关键词，"
-                f"例如 `角色统计 罗丹` 看该榜的角色分布；"
-                f"要看 {name} 的排名请用 `罗丹 --角色 {name}`。"
-            )
         if view is CandidateView.ROSTER:
             return (
                 f"「{name}」是角色名。`阵容` 后面接榜单关键词，"
@@ -715,8 +791,8 @@ class ZmdLogBotPlugin(Star):
             )
         return (
             f"「{name}」是角色名，不是榜单。"
-            f"要看 {name} 的排名请在榜单后加 `--角色 {name}`，"
-            f"例如 `罗丹 --角色 {name}`。"
+            f"用 `角色统计 {name}` 看其全部榜单的分布，"
+            f"或在榜单后加 `--角色 {name}` 只看该榜排名。"
         )
 
     async def _render_board(
@@ -1231,6 +1307,7 @@ class ZmdLogBotPlugin(Star):
         await self.account_cache.close()
         await self.battle_cache.close()
         await self.character_stats_cache.close()
+        await self.character_boss_cache.close()
         try:
             await self.client.close()
         finally:

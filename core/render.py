@@ -24,6 +24,7 @@ from .matcher import MatchChoice
 from .models import (
     BattleDetailSummary,
     BossRanking,
+    CharacterBossStatistics,
     CharacterStatistics,
     HotBossCard,
     PublicUserRankings,
@@ -32,6 +33,7 @@ from .presentation import (
     build_account_page,
     build_all_top3_page,
     build_battle_page,
+    build_character_boss_page,
     build_character_stats_page,
     build_dungeon_top3_page,
     build_ranking_page,
@@ -52,6 +54,7 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
         "account",
         "battle",
         "character-stats",
+        "character-boss",
         "roster",
         "warmup",
     }
@@ -186,6 +189,24 @@ class TemplateRenderer:
             "character-stats/character-stats.html",
             page,
             "character-stats",
+        )
+
+    def render_character_boss(
+        self,
+        stats: CharacterBossStatistics,
+        *,
+        query: str,
+        web_base_url: str | None = None,
+    ) -> str:
+        page = build_character_boss_page(
+            stats,
+            query=query,
+            web_base_url=web_base_url,
+        )
+        return self._render(
+            "character-boss/character-boss.html",
+            page,
+            "character-boss",
         )
 
     def render_roster(
@@ -377,6 +398,25 @@ class LongImageRenderer:
         except Exception as exc:
             raise RenderError("character stats template rendering failed") from exc
         return await self._capture(html, "character-stats")
+
+    async def render_character_boss(
+        self,
+        stats: CharacterBossStatistics,
+        *,
+        query: str,
+        web_base_url: str | None = None,
+    ) -> str:
+        try:
+            html = self.templates.render_character_boss(
+                stats,
+                query=query,
+                web_base_url=web_base_url,
+            )
+        except Exception as exc:
+            raise RenderError(
+                "character boss template rendering failed"
+            ) from exc
+        return await self._capture(html, "character-boss")
 
     async def render_roster(
         self,

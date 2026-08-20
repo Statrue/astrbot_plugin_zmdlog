@@ -385,3 +385,88 @@ class BoardOnlyCandidateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CharacterBossStatisticsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from tests.helpers import character_boss_statistics_payload
+
+        self.payload = character_boss_statistics_payload
+
+    def test_parse_and_reject_non_dps(self) -> None:
+        from core.models import parse_character_boss_statistics
+
+        stats = parse_character_boss_statistics(self.payload())
+        self.assertEqual(stats.character_name, "洛茜")
+        self.assertEqual(len(stats.rows), 4)
+        self.assertEqual(stats.rows[0].rank, 2)
+        self.assertEqual(stats.rows[0].ranked_character_count, 15)
+        self.assertIsNone(stats.rows[3].median)
+        with self.assertRaises(ModelValidationError):
+            parse_character_boss_statistics(self.payload(metric="rdps"))
+        bad = self.payload()
+        bad["rows"][0]["rank"] = None
+        with self.assertRaises(ModelValidationError):
+            parse_character_boss_statistics(bad)
+
+    def test_page_sorts_by_median_and_collects_chips(self) -> None:
+        from core.models import parse_character_boss_statistics
+        from core.presentation import build_character_boss_page
+
+        stats = parse_character_boss_statistics(self.payload())
+        page = build_character_boss_page(
+            stats, query="角色统计 洛茜", web_base_url="https://zmdlogs.com"
+        )
+        self.assertEqual(page.header.title, "洛茜")
+        self.assertEqual(page.header.target_type, "角色统计")
+        # 蚀影噪雷 (median 90k) sorts above 罗丹 (57k) regardless of input order.
+        self.assertEqual(
+            [(row.boss_name, row.rank) for row in page.rows],
+            [("蚀影噪雷", 1), ("危境再现·罗丹", 2)],
+        )
+        self.assertEqual(page.rows[0].ranked_character_count, 12)
+        self.assertIsNotNone(page.rows[1].maximum_left)
+        self.assertEqual(
+            page.character_avatar_url,
+            "https://zmdlogs.com/images/character/icon_chr_0028_wulfa.png",
+        )
+        # Insufficient board with samples becomes a chip; zero-sample one is dropped.
+        self.assertEqual(
+            [chip.boss_name for chip in page.insufficient], ["白垩界卫·苦难"]
+        )
+
+    def test_template_renders(self) -> None:
+        from core.models import parse_character_boss_statistics
+
+        renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
+        stats = parse_character_boss_statistics(self.payload())
+        html = renderer.render_character_boss(
+            stats, query="角色统计 洛茜", web_base_url="https://zmdlogs.com"
+        )
+        self.assertIn("各榜单 DPS 分布", html)
+        self.assertIn("#1", html)
+        self.assertIn("/ 12", html)
+        self.assertIn("蚀影噪雷", html)
+        self.assertIn("样本不足", html)
+        body = html.split("<body>", 1)[1]
+        self.assertNotIn("rdps", body.lower())
+
+
+class CharacterBossClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_request_shape(self) -> None:
+        from tests.helpers import character_boss_statistics_payload
+
+        seen: list[httpx.URL] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.url)
+            return httpx.Response(200, json=character_boss_statistics_payload())
+
+        client = ZmdLogsClient(transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.close)
+        await client.get_character_boss_statistics(
+            "chr_0028_wulfa", time_range="30d", potential="all"
+        )
+        self.assertEqual(seen[0].path, "/api/characters/chr_0028_wulfa/boss-statistics")
+        self.assertEqual(dict(seen[0].params), {"range": "30d", "potential": "all"})
+        self.assertNotIn("metric", str(seen[0]))

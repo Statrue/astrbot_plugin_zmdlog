@@ -74,12 +74,12 @@ def build_help_page(command_prefix: str) -> HelpPage:
                 commands=(
                     HelpCommand(
                         command=(
-                            f"{command} 角色统计 [榜单关键词] "
+                            f"{command} 角色统计 [榜单或角色名] "
                             "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
                         ),
                         description=(
-                            "查看全部副本或某个榜单的六星角色 DPS 分布，"
-                            "可限定时间范围与潜能。"
+                            "查看全部副本或某个榜单的六星角色 DPS 分布；"
+                            "填角色名则查看该角色在各榜单的分布。"
                         ),
                     ),
                     HelpCommand(
