@@ -178,3 +178,64 @@
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
+
+/* ---------- top-3 medals ---------- */
+
+.account-table tr.rank-1 .account-rank,
+.account-table tr.rank-2 .account-rank,
+.account-table tr.rank-3 .account-rank {
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  padding: 2px 9px;
+}
+
+.account-table tr.rank-1 .account-rank::before,
+.account-table tr.rank-2 .account-rank::before,
+.account-table tr.rank-3 .account-rank::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  transform: skewX(-12deg);
+}
+
+.account-table tr.rank-1 .account-rank::before {
+  background: var(--yellow);
+}
+
+.account-table tr.rank-2 .account-rank,
+.account-table tr.rank-3 .account-rank {
+  color: #fff;
+}
+
+.account-table tr.rank-2 .account-rank::before {
+  background: var(--ink);
+}
+
+.account-table tr.rank-3 .account-rank::before {
+  background: var(--muted);
+}
+
+.account-table tbody tr.rank-1 {
+  background: linear-gradient(90deg, rgba(248, 211, 77, 0.16), transparent 45%);
+}
+
+/* Let the row gradient show through instead of restarting in every cell. */
+.account-table tbody tr.rank-1 td {
+  background: none;
+}
+
+.account-table tbody tr.rank-1 td:first-child {
+  position: relative;
+}
+
+.account-table tbody tr.rank-1 td:first-child::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
+  background: var(--yellow);
+}

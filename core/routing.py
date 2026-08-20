@@ -51,6 +51,14 @@ _OPTION_LABEL = {
     "range": "--范围",
     "potential": "--潜能",
 }
+# Rejection text names where the option DOES work, not the current route —
+# "--潜能 不适用于榜单查询" reads like the option belongs somewhere unknown.
+_OPTION_USAGE = {
+    "top": "--top 仅适用于具体榜单和阵容查询。",
+    "character": "--角色 仅适用于具体榜单查询，例如：罗丹 --角色 黎风。",
+    "range": "--范围 仅适用于角色统计，例如：角色统计 罗丹 --范围 7d。",
+    "potential": "--潜能 仅适用于角色统计，例如：角色统计 罗丹 --潜能 0。",
+}
 
 
 class RouteParseError(ValueError):
@@ -83,14 +91,12 @@ class RouteOptions:
     stats_potential: str = DEFAULT_STATS_POTENTIAL
     present: frozenset[str] = frozenset()
 
-    def reject_except(self, *allowed: str, context: str) -> None:
+    def reject_except(self, *allowed: str) -> None:
         """Raise when an option outside ``allowed`` was given."""
 
         for name in ("top", "character", "range", "potential"):
             if name in self.present and name not in allowed:
-                raise RouteParseError(
-                    f"{_OPTION_LABEL[name]} {context}"
-                )
+                raise RouteParseError(_OPTION_USAGE[name])
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,17 +131,15 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
 
     normalized, options = _extract_options(" ".join(payload.split()))
     if not normalized or normalized.casefold() == "help":
-        options.reject_except(context="仅适用于具体榜单查询。")
+        options.reject_except()
         return RouteRequest(RouteKind.HELP)
 
     command, separator, remainder = normalized.partition(" ")
     if command == "榜单":
         if not separator:
-            options.reject_except(context="仅适用于具体榜单查询。")
+            options.reject_except()
             return RouteRequest(RouteKind.ALL_RANKINGS)
-        options.reject_except(
-            "top", "character", context="仅适用于具体榜单查询。"
-        )
+        options.reject_except("top", "character")
         return RouteRequest(
             RouteKind.RANKING_QUERY,
             remainder,
@@ -144,21 +148,19 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         )
 
     if command in {"账号", "账户"}:
-        options.reject_except(context="不适用于账号查询。")
+        options.reject_except()
         if not separator or not remainder:
             raise RouteParseError("请提供 accountId 或 ZMDLogs 账号主页链接。")
         return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder)
 
     if command == "战报":
-        options.reject_except(context="不适用于战报查询。")
+        options.reject_except()
         if not separator or not remainder:
             raise RouteParseError("请提供 battleId 或 ZMDLogs 战报链接。")
         return RouteRequest(RouteKind.BATTLE_QUERY, remainder)
 
     if command in {"角色统计", "角色"}:
-        options.reject_except(
-            "range", "potential", context="不适用于角色统计。"
-        )
+        options.reject_except("range", "potential")
         return RouteRequest(
             RouteKind.CHARACTER_STATS,
             remainder,
@@ -167,7 +169,7 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         )
 
     if command == "阵容":
-        options.reject_except("top", context="不适用于阵容查询。")
+        options.reject_except("top")
         if not separator or not remainder:
             raise RouteParseError("请提供榜单关键词。")
         return RouteRequest(
@@ -177,7 +179,7 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         )
 
     if command == "别名":
-        options.reject_except(context="不适用于别名管理。")
+        options.reject_except()
         if not remainder:
             return RouteRequest(RouteKind.ALIAS_LIST)
         action, _, rest = remainder.partition(" ")
@@ -193,7 +195,7 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
             return RouteRequest(RouteKind.ALIAS_REMOVE, rest)
         raise RouteParseError("别名子命令只支持：添加 / 删除，或不带参数查看列表。")
 
-    options.reject_except("top", "character", context="仅适用于具体榜单查询。")
+    options.reject_except("top", "character")
     return RouteRequest(
         RouteKind.SMART_QUERY,
         normalized,

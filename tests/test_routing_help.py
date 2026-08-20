@@ -101,7 +101,7 @@ class HelpTests(unittest.TestCase):
                     "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
                 ),
                 "!zmdlog 阵容 <榜单关键词> [--top 数量]",
-                "!zmdlog 账号 <accountId或账号主页链接>",
+                "!zmdlog 账号 <昵称、accountId或主页链接>",
                 "!zmdlog 战报 <battleId或战报链接>",
                 "!zmdlog 别名",
                 "!zmdlog 别名 添加 <榜单或副本> <别名...>",

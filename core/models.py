@@ -116,6 +116,19 @@ class PublicUserRankings:
 
 
 @dataclass(frozen=True, slots=True)
+class AccountSearchHit:
+    account_id: str
+    account_display_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class AccountSearch:
+    query: str
+    has_more: bool
+    accounts: tuple[AccountSearchHit, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BattleParticipant:
     character_name: str
     account_display_name: str
@@ -335,6 +348,31 @@ def _non_negative_number(value: Any, path: str) -> float:
     if number < 0:
         raise ModelValidationError(f"{path} must not be negative")
     return number
+
+
+def parse_account_search(payload: Any) -> AccountSearch:
+    """Adapt ``GET /api/battles/users/search``."""
+
+    item = _mapping(payload, "account-search")
+    accounts = _list(item.get("accounts"), "account-search.accounts")
+    hits = []
+    for index, account in enumerate(accounts):
+        path = f"account-search.accounts[{index}]"
+        entry = _mapping(account, path)
+        hits.append(
+            AccountSearchHit(
+                account_id=_string(entry.get("accountId"), f"{path}.accountId"),
+                account_display_name=_string(
+                    entry.get("accountDisplayName"),
+                    f"{path}.accountDisplayName",
+                ),
+            )
+        )
+    return AccountSearch(
+        query=_string(item.get("query"), "account-search.query"),
+        has_more=_boolean(item.get("hasMore"), "account-search.hasMore"),
+        accounts=tuple(hits),
+    )
 
 
 def parse_public_user_rankings(payload: Any) -> PublicUserRankings:

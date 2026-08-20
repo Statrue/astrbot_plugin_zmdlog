@@ -39,6 +39,7 @@ class TargetType(str, Enum):
     BOARD = "board"
     DUNGEON = "dungeon"
     DUNGEON_SCOPE = "dungeon_scope"
+    ACCOUNT = "account"
 
 
 class MatchStatus(str, Enum):

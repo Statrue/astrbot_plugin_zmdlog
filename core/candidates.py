@@ -140,6 +140,7 @@ def format_candidates(
     entry: PendingCandidates,
     *,
     ttl_seconds: float = DEFAULT_CANDIDATE_TTL_SECONDS,
+    note: str | None = None,
 ) -> str:
     """Compact, phone-friendly candidate list ending with the pick marker."""
 
@@ -147,6 +148,8 @@ def format_candidates(
     lines = [f"「{entry.query}」{title}，引用本条消息回复序号即可："]
     for index, choice in enumerate(entry.choices, start=1):
         lines.append(f"{index}. {describe_choice(choice)}")
+    if note:
+        lines.append(note)
     minutes = max(1, int(ttl_seconds // 60))
     lines.append(f"候选编号 {entry.code} · {minutes} 分钟内有效")
     return "\n".join(lines)
@@ -154,6 +157,8 @@ def format_candidates(
 
 def describe_choice(choice: MatchChoice) -> str:
     target = choice.target
+    if target.target_type is TargetType.ACCOUNT:
+        return f"{target.name} · 公开账号"
     if target.target_type is TargetType.BOARD:
         dungeon = target.dungeon_names[0] if target.dungeon_names else ""
         label = f"{target.name} · 榜单"

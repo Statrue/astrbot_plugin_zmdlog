@@ -31,7 +31,7 @@
     </thead>
     <tbody>
       {% for row in page.rows %}
-      <tr>
+      <tr{% if row.rank <= 3 %} class="rank-{{ row.rank }}"{% endif %}>
         <td><strong>{{ row.boss_name }}</strong>{% if row.dungeon_name %}<span>{{ row.dungeon_name }}</span>{% endif %}</td>
         <td><strong class="account-rank">#{{ row.rank }}</strong><span>{{ row.percentile }}</span></td>
         <td class="numeric">{{ row.duration }}</td>

@@ -92,8 +92,11 @@ def build_help_page(command_prefix: str) -> HelpPage:
                 title="账号与战报",
                 commands=(
                     HelpCommand(
-                        command=f"{command} 账号 <accountId或账号主页链接>",
-                        description="按公开账号 ID 查询各首领最佳记录。",
+                        command=f"{command} 账号 <昵称、accountId或主页链接>",
+                        description=(
+                            "查询公开账号的各首领最佳记录；"
+                            "昵称支持模糊搜索，多个结果时回复序号选择。"
+                        ),
                     ),
                     HelpCommand(
                         command=f"{command} 战报 <battleId或战报链接>",

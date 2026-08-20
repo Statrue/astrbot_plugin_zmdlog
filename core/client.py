@@ -3,18 +3,21 @@
 import asyncio
 import re
 import time
+import unicodedata
 from typing import Any
 
 import httpx
 
 from .identifiers import is_valid_account_id, is_valid_battle_id
 from .models import (
+    AccountSearch,
     BattleDetailSummary,
     BossRanking,
     CharacterStatistics,
     HotBossCard,
     ModelValidationError,
     PublicUserRankings,
+    parse_account_search,
     parse_battle_detail,
     parse_boss_ranking,
     parse_character_statistics,
@@ -28,6 +31,7 @@ _BOSS_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 _MAX_REQUEST_ATTEMPTS = 2
 _MAX_TOTAL_WAIT_SECONDS = 15.0
 _STATS_RANGES = frozenset({"7d", "14d", "30d", "all"})
+MIN_ACCOUNT_SEARCH_LENGTH = 2
 _STATS_POTENTIALS = frozenset({"0", "1-5", "all"})
 
 
@@ -152,6 +156,31 @@ class ZmdLogsClient:
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError(
                 "character statistics response is invalid"
+            ) from exc
+
+    async def search_public_accounts(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+    ) -> AccountSearch:
+        """Search public accounts by nickname substring (2-64 chars)."""
+
+        normalized = unicodedata.normalize("NFKC", query).strip()
+        if not MIN_ACCOUNT_SEARCH_LENGTH <= len(normalized) <= 64:
+            raise InvalidPublicIdentifierError("invalid account search query")
+        if not 1 <= limit <= 20:
+            raise ValueError("account search limit must be between 1 and 20")
+
+        payload = await self._get_json(
+            "api/battles/users/search",
+            params={"query": normalized, "limit": str(limit)},
+        )
+        try:
+            return parse_account_search(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError(
+                "account search response is invalid"
             ) from exc
 
     async def get_public_user_rankings(

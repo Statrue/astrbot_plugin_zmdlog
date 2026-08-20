@@ -44,7 +44,7 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("!zmdlog help", html)
         self.assertIn("!zmdlog 榜单", html)
         self.assertIn("ZmdLogBot", html)
-        self.assertIn("v0.4.0", html)
+        self.assertIn("v0.4.1", html)
         self.assertIn("data:image/svg+xml;base64,", html)
         self.assertIn("@font-face", html)
         self.assertNotIn("astrbot_plugin_zmdlog", html)

@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover - depends on host AstrBot version
 
 from .core.cache import AsyncTTLCache, CacheState
 from .core.candidates import (
+    MAX_CANDIDATES,
     CandidateStore,
     CandidateView,
     PendingCandidates,
@@ -31,6 +32,7 @@ from .core.characters import (
 from .core.client import (
     DEFAULT_API_BASE_URL,
     DEFAULT_REQUEST_TIMEOUT_MS,
+    MIN_ACCOUNT_SEARCH_LENGTH,
     ZmdLogsAPIError,
     ZmdLogsClient,
     ZmdLogsClientError,
@@ -48,6 +50,7 @@ from .core.matcher import (
     MatchChoice,
     MatchLevel,
     MatchStatus,
+    MatchTarget,
     RankingMatcher,
     TargetType,
 )
@@ -387,8 +390,17 @@ class ZmdLogBotPlugin(Star):
                     route.query,
                     web_base_url=self.web_base_url,
                 )
-            except PublicReferenceError as exc:
-                return _DispatchOutcome(message=str(exc))
+            except PublicReferenceError:
+                # Not an ID or trusted URL: treat the text as a nickname.
+                outcome = await self._account_search_outcome(route.query)
+                if outcome is None:
+                    return _DispatchOutcome(
+                        message=(
+                            "请提供公开昵称（至少 2 个字符）、accountId "
+                            "或 ZMDLogs 账号主页链接。"
+                        )
+                    )
+                return outcome
             account = await self._get_public_user_rankings(account_id)
             image_path = await renderer.render_account(
                 account,
@@ -460,6 +472,16 @@ class ZmdLogBotPlugin(Star):
                 return await self._render_board(
                     route.query, query=route.query, pending=pending
                 )
+            if (
+                view is CandidateView.RANKING
+                and pending.ranking_top is None
+                and pending.character_filter is None
+            ):
+                outcome = await self._account_search_outcome(
+                    route.query, quiet=True
+                )
+                if outcome is not None:
+                    return outcome
             hint = await self._character_name_hint(route.query, view)
             return _DispatchOutcome(message=hint or not_found_message)
 
@@ -514,6 +536,14 @@ class ZmdLogBotPlugin(Star):
         pending: PendingCandidates,
     ) -> _DispatchOutcome:
         renderer = self._require_renderer()
+        if choice.target.target_type is TargetType.ACCOUNT:
+            account = await self._get_public_user_rankings(choice.target.key)
+            image_path = await renderer.render_account(
+                account,
+                query=query,
+                web_base_url=self.web_base_url,
+            )
+            return _DispatchOutcome(image_path=image_path)
         if choice.target.target_type is TargetType.BOARD:
             return await self._render_board(
                 choice.target.key, query=query, pending=pending
@@ -539,6 +569,75 @@ class ZmdLogBotPlugin(Star):
             web_base_url=self.web_base_url,
         )
         return _DispatchOutcome(image_path=image_path)
+
+    async def _account_search_outcome(
+        self,
+        query: str,
+        *,
+        quiet: bool = False,
+    ) -> _DispatchOutcome | None:
+        """Resolve a nickname via upstream search; None means "not applicable".
+
+        ``quiet`` marks the smart-query fallback where an empty result should
+        fall through to other hints instead of producing a message.
+        """
+
+        stripped = query.strip()
+        if len(stripped) < MIN_ACCOUNT_SEARCH_LENGTH or len(stripped) > 64:
+            return None
+        try:
+            search = await self.client.search_public_accounts(
+                stripped, limit=MAX_CANDIDATES
+            )
+        except ZmdLogsClientError:
+            if quiet:
+                return None
+            raise
+        if not search.accounts:
+            if quiet:
+                return None
+            return _DispatchOutcome(
+                message=f"没有找到昵称包含「{stripped}」的公开账号。"
+            )
+        if len(search.accounts) == 1 and not search.has_more:
+            renderer = self._require_renderer()
+            account = await self._get_public_user_rankings(
+                search.accounts[0].account_id
+            )
+            image_path = await renderer.render_account(
+                account,
+                query=query,
+                web_base_url=self.web_base_url,
+            )
+            return _DispatchOutcome(image_path=image_path)
+        choices = tuple(
+            MatchChoice(
+                target=MatchTarget(
+                    target_type=TargetType.ACCOUNT,
+                    key=hit.account_id,
+                    name=hit.account_display_name,
+                    dungeon_names=(),
+                    boss_slugs=(),
+                    query_text=stripped,
+                ),
+                level=MatchLevel.STANDARD_EXACT,
+                score=1.0,
+                matched_text=hit.account_display_name,
+            )
+            for hit in search.accounts
+        )
+        entry = self.candidates.remember(stripped, choices)
+        return _DispatchOutcome(
+            message=format_candidates(
+                entry,
+                ttl_seconds=self.candidates.ttl_seconds,
+                note=(
+                    "还有更多同名结果未列出，可输入更完整的昵称。"
+                    if search.has_more
+                    else None
+                ),
+            )
+        )
 
     async def _character_name_hint(
         self,
