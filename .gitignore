@@ -17,3 +17,6 @@ __pycache__/
 # local reference material (© HYPERGRYPH) and derived KB text
 docs/武陵旅社/
 docs/kb/
+/CHARACTER_BOSS_STATISTICS_API.md
+/DESIGN_0.5.0.md
+/ACCOUNT_BINDING_CODE_API.md
