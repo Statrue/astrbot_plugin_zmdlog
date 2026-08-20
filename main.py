@@ -53,6 +53,7 @@ from .core.matcher import (
     MatchTarget,
     RankingMatcher,
     TargetType,
+    fold_text,
 )
 from .core.models import (
     BattleDetailSummary,
@@ -491,6 +492,41 @@ class ZmdLogBotPlugin(Star):
             candidates = match.candidates
         else:
             choice = match.selected
+
+        # An exact public nickname must beat fuzzy board hits (the smart route
+        # searches boards AND accounts). Exact board tiers stay untouched and
+        # skip the extra request entirely.
+        best_level = (
+            choice.level
+            if choice is not None
+            else min((entry.level for entry in candidates), default=None)
+        )
+        if (
+            view is CandidateView.RANKING
+            and pending.ranking_top is None
+            and pending.character_filter is None
+            and best_level is not None
+            and best_level > MatchLevel.PINYIN_EXACT
+        ):
+            account_choices = await self._search_account_choices(route.query)
+            if account_choices:
+                folded_query = fold_text(route.query)
+                exact = tuple(
+                    entry
+                    for entry in account_choices
+                    if fold_text(entry.target.name) == folded_query
+                )
+                if len(exact) == 1:
+                    return await self._render_choice(
+                        exact[0], cards, query=route.query, pending=pending
+                    )
+                if len(exact) > 1:
+                    choice = None
+                    candidates = exact
+                elif candidates:
+                    # Fuzzy on both sides: one typed pick list.
+                    candidates = (candidates + account_choices)[:MAX_CANDIDATES]
+
         if view in _BOARD_ONLY_VIEWS:
             # Character statistics and roster pages exist per board only, so a
             # dungeon / scope hit becomes a pick list of its boards.
@@ -611,20 +647,7 @@ class ZmdLogBotPlugin(Star):
             )
             return _DispatchOutcome(image_path=image_path)
         choices = tuple(
-            MatchChoice(
-                target=MatchTarget(
-                    target_type=TargetType.ACCOUNT,
-                    key=hit.account_id,
-                    name=hit.account_display_name,
-                    dungeon_names=(),
-                    boss_slugs=(),
-                    query_text=stripped,
-                ),
-                level=MatchLevel.STANDARD_EXACT,
-                score=1.0,
-                matched_text=hit.account_display_name,
-            )
-            for hit in search.accounts
+            _account_choice(hit, stripped) for hit in search.accounts
         )
         entry = self.candidates.remember(stripped, choices)
         return _DispatchOutcome(
@@ -638,6 +661,23 @@ class ZmdLogBotPlugin(Star):
                 ),
             )
         )
+
+    async def _search_account_choices(
+        self,
+        query: str,
+    ) -> tuple[MatchChoice, ...]:
+        """Quiet nickname lookup for the smart route; empty on any failure."""
+
+        stripped = query.strip()
+        if len(stripped) < MIN_ACCOUNT_SEARCH_LENGTH or len(stripped) > 64:
+            return ()
+        try:
+            search = await self.client.search_public_accounts(
+                stripped, limit=MAX_CANDIDATES
+            )
+        except ZmdLogsClientError:
+            return ()
+        return tuple(_account_choice(hit, stripped) for hit in search.accounts)
 
     async def _character_name_hint(
         self,
@@ -1198,6 +1238,23 @@ class ZmdLogBotPlugin(Star):
                 await self.renderer.close()
         logger.info("ZmdLogBot plugin terminated.")
 
+
+def _account_choice(hit, query: str) -> MatchChoice:
+    """Wrap one search hit in the candidate shape the pick list understands."""
+
+    return MatchChoice(
+        target=MatchTarget(
+            target_type=TargetType.ACCOUNT,
+            key=hit.account_id,
+            name=hit.account_display_name,
+            dungeon_names=(),
+            boss_slugs=(),
+            query_text=query,
+        ),
+        level=MatchLevel.STANDARD_EXACT,
+        score=1.0,
+        matched_text=hit.account_display_name,
+    )
 
 def _route_view(route: RouteRequest) -> CandidateView:
     if route.kind is RouteKind.CHARACTER_STATS:
