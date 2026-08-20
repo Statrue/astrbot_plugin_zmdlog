@@ -1,5 +1,6 @@
 """Command routing primitives for the ``zmdlog`` entry point."""
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 
@@ -11,6 +12,8 @@ STATS_RANGES = ("7d", "14d", "30d", "all")
 STATS_POTENTIALS = ("0", "1-5", "all")
 DEFAULT_STATS_RANGE = "all"
 DEFAULT_STATS_POTENTIAL = "all"
+
+_BATTLE_RANK_RE = re.compile(r"^(?:第|#)?([0-9]{1,3})(?:名)?$")
 
 _RANGE_ALIASES = {
     "7天": "7d",
@@ -109,6 +112,7 @@ class RouteRequest:
     character_filter: str | None = None
     stats_range: str = DEFAULT_STATS_RANGE
     stats_potential: str = DEFAULT_STATS_POTENTIAL
+    battle_rank: int = 1
 
     @property
     def ranking_limit(self) -> int:
@@ -156,8 +160,15 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
     if command == "战报":
         options.reject_except()
         if not separator or not remainder:
-            raise RouteParseError("请提供 battleId 或 ZMDLogs 战报链接。")
-        return RouteRequest(RouteKind.BATTLE_QUERY, remainder)
+            raise RouteParseError(
+                "请提供 battleId、战报链接，或榜单关键词（可加名次，如：战报 罗丹 3）。"
+            )
+        query, battle_rank = _split_battle_rank(remainder)
+        return RouteRequest(
+            RouteKind.BATTLE_QUERY,
+            query,
+            battle_rank=battle_rank,
+        )
 
     if command in {"角色统计", "角色"}:
         options.reject_except("range", "potential")
@@ -253,6 +264,25 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
         ),
         present=frozenset(values),
     )
+
+
+def _split_battle_rank(remainder: str) -> tuple[str, int]:
+    """Split a trailing rank token off ``战报 <榜单> [名次]``.
+
+    Single-token arguments (battle ids, URLs, plain board names) are left
+    untouched so ``战报 btl_xxx`` keeps its exact reference semantics.
+    """
+
+    tokens = remainder.split()
+    if len(tokens) < 2:
+        return remainder, 1
+    match = _BATTLE_RANK_RE.match(tokens[-1])
+    if match is None:
+        return remainder, 1
+    rank = int(match.group(1))
+    if rank < 1:
+        raise RouteParseError("战报名次从 1 开始。")
+    return " ".join(tokens[:-1]), rank
 
 
 def _parse_top(raw_top: str) -> int:

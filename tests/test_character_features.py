@@ -470,3 +470,49 @@ class CharacterBossClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen[0].path, "/api/characters/chr_0028_wulfa/boss-statistics")
         self.assertEqual(dict(seen[0].params), {"range": "30d", "potential": "all"})
         self.assertNotIn("metric", str(seen[0]))
+
+
+class BattleByRankRoutingTests(unittest.TestCase):
+    def test_board_keyword_with_optional_rank(self) -> None:
+        route = parse_zmdlog_payload("战报 罗丹")
+        self.assertEqual(route.kind, RouteKind.BATTLE_QUERY)
+        self.assertEqual(route.query, "罗丹")
+        self.assertEqual(route.battle_rank, 1)
+        for tail, expected in (("3", 3), ("第3", 3), ("#12", 12), ("3名", 3)):
+            with self.subTest(tail=tail):
+                route = parse_zmdlog_payload(f"战报 山犼争王 {tail}")
+                self.assertEqual(route.query, "山犼争王")
+                self.assertEqual(route.battle_rank, expected)
+
+    def test_exact_references_and_edge_cases_are_untouched(self) -> None:
+        route = parse_zmdlog_payload("战报 btl_upload_abcdef123456")
+        self.assertEqual(route.query, "btl_upload_abcdef123456")
+        self.assertEqual(route.battle_rank, 1)
+        # A lone number stays part of the query rather than becoming a rank.
+        route = parse_zmdlog_payload("战报 3")
+        self.assertEqual(route.query, "3")
+        with self.assertRaisesRegex(RouteParseError, "从 1 开始"):
+            parse_zmdlog_payload("战报 罗丹 0")
+
+    def test_battle_candidate_view_roundtrip(self) -> None:
+        cards = (
+            make_card("a", "巨像一", "副本一"),
+            make_card("b", "巨像二", "副本二"),
+        )
+        matcher = RankingMatcher(cards, AliasConfig.empty())
+        result = matcher.match("巨")
+        self.assertEqual(result.status, MatchStatus.AMBIGUOUS)
+        store = CandidateStore(ttl_seconds=60)
+        entry = store.remember(
+            "巨",
+            result.candidates,
+            view=CandidateView.BATTLE,
+            battle_rank=3,
+            now=0.0,
+        )
+        self.assertIn("战报查询", format_candidates(entry, ttl_seconds=60))
+        resolved = store.resolve(entry.code, "1", now=1.0)
+        assert resolved is not None
+        pending, _ = resolved
+        self.assertEqual(pending.view, CandidateView.BATTLE)
+        self.assertEqual(pending.battle_rank, 3)

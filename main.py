@@ -92,7 +92,7 @@ _BATTLE_LINK_FILTER = (
     r"https?://[^\s<>\"']+/(?:battle|share|axis)/btl_[A-Za-z0-9_-]+"
 )
 _BOARD_ONLY_VIEWS = frozenset(
-    {CandidateView.CHARACTER_STATS, CandidateView.ROSTER}
+    {CandidateView.CHARACTER_STATS, CandidateView.ROSTER, CandidateView.BATTLE}
 )
 _CHARACTER_STATS_UNAVAILABLE = "character_statistics_not_available"
 
@@ -423,15 +423,18 @@ class ZmdLogBotPlugin(Star):
                     route.query,
                     web_base_url=self.web_base_url,
                 )
-            except PublicReferenceError as exc:
-                return _DispatchOutcome(message=str(exc))
-            battle = await self._get_battle_detail(battle_id)
-            image_path = await renderer.render_battle(
-                battle,
-                query=route.query,
-                web_base_url=self.web_base_url,
-            )
-            return _DispatchOutcome(image_path=image_path)
+            except PublicReferenceError:
+                # Not an exact reference: fall through and treat the text as
+                # a board keyword whose rank-N battle should be shown.
+                battle_id = None
+            if battle_id is not None:
+                battle = await self._get_battle_detail(battle_id)
+                image_path = await renderer.render_battle(
+                    battle,
+                    query=route.query,
+                    web_base_url=self.web_base_url,
+                )
+                return _DispatchOutcome(image_path=image_path)
 
         if route.kind is RouteKind.CHARACTER_STATS and not route.query.strip():
             stats = await self._get_character_statistics(
@@ -567,6 +570,7 @@ class ZmdLogBotPlugin(Star):
                 character_filter=pending.character_filter,
                 stats_range=pending.stats_range,
                 stats_potential=pending.stats_potential,
+                battle_rank=pending.battle_rank,
             )
             return _DispatchOutcome(
                 message=format_candidates(
@@ -824,6 +828,29 @@ class ZmdLogBotPlugin(Star):
             return _DispatchOutcome(image_path=image_path)
 
         ranking = await self._get_boss_ranking(boss_slug)
+        if pending.view is CandidateView.BATTLE:
+            row = next(
+                (
+                    entry
+                    for entry in ranking.rows
+                    if entry.rank == pending.battle_rank
+                ),
+                None,
+            )
+            if row is None:
+                return _DispatchOutcome(
+                    message=(
+                        f"「{ranking.boss_name}」公开排名共 {len(ranking.rows)} 条，"
+                        f"没有第 {pending.battle_rank} 名。"
+                    )
+                )
+            battle = await self._get_battle_detail(row.battle_id)
+            image_path = await renderer.render_battle(
+                battle,
+                query=query,
+                web_base_url=self.web_base_url,
+            )
+            return _DispatchOutcome(image_path=image_path)
         if pending.view is CandidateView.ROSTER:
             image_path = await renderer.render_roster(
                 ranking,
@@ -1338,6 +1365,8 @@ def _route_view(route: RouteRequest) -> CandidateView:
         return CandidateView.CHARACTER_STATS
     if route.kind is RouteKind.ROSTER_QUERY:
         return CandidateView.ROSTER
+    if route.kind is RouteKind.BATTLE_QUERY:
+        return CandidateView.BATTLE
     return CandidateView.RANKING
 
 
@@ -1354,4 +1383,5 @@ def _pending_from_route(route: RouteRequest) -> PendingCandidates:
         character_filter=route.character_filter,
         stats_range=route.stats_range,
         stats_potential=route.stats_potential,
+        battle_rank=route.battle_rank,
     )

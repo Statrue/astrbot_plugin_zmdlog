@@ -91,6 +91,7 @@ git pull --ff-only
 | `/zmdlog 阵容 <榜单关键词> [--top <数量>]` | 某个榜单的职业位出场率与前 N 名常见阵容 |
 | `/zmdlog 账号 <昵称、accountId或主页链接>` | 查询公开账号的各首领最佳记录；昵称至少 2 个字符，多个结果时回复序号选择 |
 | `/zmdlog 战报 <battleId或战报链接>` | 生成公开战报摘要卡 |
+| `/zmdlog 战报 <榜单关键词> [名次]` | 直接看该榜单第 N 名的战报，默认第 1 名（如 `战报 罗丹 3`） |
 | `/zmdlog 别名` | 查看自定义别名 |
 | `/zmdlog 别名 添加 <榜单或副本> <别名...>` | 管理员添加别名，立即生效 |
 | `/zmdlog 别名 删除 <别名>` | 管理员删除别名 |
@@ -113,6 +114,8 @@ git pull --ff-only
 /zmdlog 账号 usr_9df6ce8b93e3335c8291c2389b834ef0
 /zmdlog 账号 https://zmdlogs.com/records/usr_9df6ce8b93e3335c8291c2389b834ef0
 /zmdlog 战报 https://zmdlogs.com/battle/btl_upload_65d03eadfb16?metric=dps
+/zmdlog 战报 罗丹
+/zmdlog 战报 罗丹 3
 /zmdlog 别名 添加 白垩界卫 白垩 界卫
 ```
 

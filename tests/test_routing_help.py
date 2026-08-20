@@ -102,7 +102,7 @@ class HelpTests(unittest.TestCase):
                 ),
                 "!zmdlog 阵容 <榜单关键词> [--top 数量]",
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
-                "!zmdlog 战报 <battleId或战报链接>",
+                "!zmdlog 战报 <battleId、链接或榜单关键词 [名次]>",
                 "!zmdlog 别名",
                 "!zmdlog 别名 添加 <榜单或副本> <别名...>",
                 "!zmdlog 别名 删除 <别名>",

@@ -21,12 +21,14 @@ class CandidateView(str, Enum):
     RANKING = "ranking"
     CHARACTER_STATS = "character_stats"
     ROSTER = "roster"
+    BATTLE = "battle"
 
 
 _VIEW_TITLES = {
     CandidateView.RANKING: "匹配到 {count} 个目标",
     CandidateView.CHARACTER_STATS: "的角色统计匹配到 {count} 个榜单",
     CandidateView.ROSTER: "的阵容查询匹配到 {count} 个榜单",
+    CandidateView.BATTLE: "的战报查询匹配到 {count} 个榜单",
 }
 
 
@@ -41,6 +43,7 @@ class PendingCandidates:
     character_filter: str | None = None
     stats_range: str = "all"
     stats_potential: str = "all"
+    battle_rank: int = 1
 
 
 class CandidateStore:
@@ -66,6 +69,7 @@ class CandidateStore:
         character_filter: str | None = None,
         stats_range: str = "all",
         stats_potential: str = "all",
+        battle_rank: int = 1,
         now: float | None = None,
     ) -> PendingCandidates:
         timestamp = time.monotonic() if now is None else now
@@ -81,6 +85,7 @@ class CandidateStore:
             character_filter=character_filter,
             stats_range=stats_range,
             stats_potential=stats_potential,
+            battle_rank=battle_rank,
         )
         self._entries[code] = entry
         return entry

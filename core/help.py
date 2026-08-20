@@ -99,8 +99,11 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
-                        command=f"{command} 战报 <battleId或战报链接>",
-                        description="生成一场公开战斗的摘要卡。",
+                        command=f"{command} 战报 <battleId、链接或榜单关键词 [名次]>",
+                        description=(
+                            "生成一场公开战斗的摘要卡；"
+                            "填榜单关键词直接看该榜第 N 名的战报，默认第 1 名。"
+                        ),
                     ),
                 ),
             ),
