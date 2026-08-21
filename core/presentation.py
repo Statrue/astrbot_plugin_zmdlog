@@ -98,6 +98,8 @@ class RankingRowView:
     dps: str
     duration: str
     contract_score: str | None
+    # score_percent clamped for the in-row relative-DPS bar (percent of rank 1).
+    score_bar_width: float = 100.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -441,6 +443,7 @@ def build_ranking_page(
                     if row.contract_tag_score is not None
                     else None
                 ),
+                score_bar_width=max(2.0, min(100.0, float(row.score_percent))),
             )
             for row in displayed_rows
         ),

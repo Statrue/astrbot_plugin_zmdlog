@@ -13,14 +13,12 @@
     <img src="{{ page.character_avatar_url }}" alt="" onerror="this.remove()">
     {% endif %}
   </span>
-  <div class="charboss-hero-text">
-    <strong>{{ page.character_name }}</strong>
-    <span>{{ page.character_profession }}</span>
+  <div class="meta-tape charboss-meta">
+    <div class="meta-item meta-item--accent"><span>范围</span><strong>{{ page.range_label }}</strong></div>
+    <div class="meta-item"><span>潜能</span><strong>{{ page.potential_label }}</strong></div>
+    <div class="meta-item"><span>样本</span><strong>{{ page.total_sample_count }}</strong><em>含离群 {{ page.total_outlier_count }}</em></div>
+    <div class="meta-item"><span>覆盖榜单</span><strong>{{ page.included_boss_count }}</strong></div>
   </div>
-  <div class="stats-chip stats-chip--accent"><span>范围</span><strong>{{ page.range_label }}</strong></div>
-  <div class="stats-chip"><span>潜能</span><strong>{{ page.potential_label }}</strong></div>
-  <div class="stats-chip"><span>样本</span><strong>{{ page.total_sample_count }}</strong><em>含离群 {{ page.total_outlier_count }}</em></div>
-  <div class="stats-chip"><span>覆盖榜单</span><strong>{{ page.included_boss_count }}</strong></div>
 </section>
 
 <div class="section-heading">

@@ -1,6 +1,28 @@
 {% extends "common/base.html" %}
 
 {% block content %}
+{% if page.rows %}
+{% set top = page.rows[0] %}
+<section class="lead-band" aria-label="榜首基准">
+  <span class="avatar">
+    {{ top.character_initial }}
+    {% if top.character_avatar_url %}
+    <img src="{{ top.character_avatar_url }}" alt="" onerror="this.remove()">
+    {% endif %}
+  </span>
+  <div class="lead-cell lead-cell--text lead-cell--grow">
+    <span>{% if page.character_filter %}筛选最佳 · 全榜第 {{ top.rank }} 名{% else %}榜首基准 · 第 {{ top.rank }} 名{% endif %}</span>
+    <strong><span class="ranking-account">{{ top.account_display_name }}</span> · 主C {{ top.character_name }}</strong>
+  </div>
+  <div class="lead-divider" aria-hidden="true"></div>
+  <div class="lead-cell lead-cell--hero"><span>DPS</span><strong>{{ top.dps }}</strong></div>
+  <div class="lead-cell"><span>用时</span><strong>{{ top.duration }}</strong></div>
+  {% if page.show_contract_score and top.contract_score is not none %}
+  <div class="lead-cell"><span>合约分数</span><strong>{{ top.contract_score }} 分</strong></div>
+  {% endif %}
+</section>
+{% endif %}
+
 <section class="ranking-meta" aria-label="榜单信息">
   <code>{{ page.boss_slug }}</code>
   {% if page.character_filter %}
@@ -83,6 +105,7 @@
         </td>
         <td>
           <strong class="ranking-dps">{{ row.dps }}</strong>
+          <span class="rel-bar" aria-hidden="true"><i style="width: {{ row.score_bar_width }}%;"></i></span>
         </td>
         <td>
           <span class="ranking-duration">{{ row.duration }}</span>

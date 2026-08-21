@@ -3,15 +3,15 @@
 {% block extra_styles %}{% include "character-stats/character-stats.css" %}{% endblock %}
 
 {% block content %}
-<section class="stats-overview" aria-label="统计范围">
-  <div class="stats-chip stats-chip--accent"><span>范围</span><strong>{{ page.range_label }}</strong></div>
-  <div class="stats-chip"><span>潜能</span><strong>{{ page.potential_label }}</strong></div>
-  <div class="stats-chip"><span>有效战斗</span><strong>{{ page.eligible_battle_count }}</strong></div>
-  <div class="stats-chip"><span>样本</span><strong>{{ page.total_sample_count }}</strong><em>含离群 {{ page.total_outlier_count }}</em></div>
+<section class="meta-tape" aria-label="统计范围">
+  <div class="meta-item meta-item--accent"><span>范围</span><strong>{{ page.range_label }}</strong></div>
+  <div class="meta-item"><span>潜能</span><strong>{{ page.potential_label }}</strong></div>
+  <div class="meta-item"><span>有效战斗</span><strong>{{ page.eligible_battle_count }}</strong></div>
+  <div class="meta-item"><span>样本</span><strong>{{ page.total_sample_count }}</strong><em>含离群 {{ page.total_outlier_count }}</em></div>
   {% if page.scope_label == "全部副本" %}
-  <div class="stats-chip"><span>覆盖榜单</span><strong>{{ page.included_boss_count }}</strong></div>
+  <div class="meta-item"><span>覆盖榜单</span><strong>{{ page.included_boss_count }}</strong></div>
   {% else %}
-  <div class="stats-chip"><span>统计对象</span><strong>单个榜单</strong></div>
+  <div class="meta-item"><span>统计对象</span><strong>单个榜单</strong></div>
   {% endif %}
 </section>
 

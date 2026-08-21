@@ -17,42 +17,35 @@
   <div id="zmd-page" class="zmd-page zmd-page--{{ page_kind }}">
     <div class="scene-deco" aria-hidden="true">
       <div class="scene-hatch scene-hatch--top"></div>
-      <div class="scene-hatch scene-hatch--bottom"></div>
       <div class="scene-watermark">ZMDLOG</div>
     </div>
     <main class="main-panel">
       <header class="page-header">
-        <div class="brand-row">
+        <div class="ident-row">
           <span class="brand-block">ZMD<b>LOG</b></span>
-          <span class="brand-kind">// {{ page_kind|upper }}</span>
-          <span class="brand-note">ENDFIELD · PUBLIC DPS LOGS</span>
-          <span class="color-strip" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-          <span class="brand-version">{{ plugin.name }} v{{ plugin.version }}</span>
+          <span class="ident-kind">// {{ page_kind|upper }}</span>
+          <span class="ident-trace">
+            {%- if page.header.query and page.header.query != page.header.matched_name -%}
+            {{ page.header.query }}<i aria-hidden="true">»</i>{{ page.header.matched_name }}
+            {%- else -%}
+            {{ page.header.matched_name }}
+            {%- endif -%}
+          </span>
+          <span class="ident-version">{{ plugin.name }} v{{ plugin.version }}</span>
         </div>
-        <div class="title-row">
+        {% block hero %}
+        <div class="title-block">
           <h1 class="page-title">
             <span class="title-bracket" aria-hidden="true">[</span>
             <span class="title-text">{{ page.header.title }}</span>
             <span class="title-bracket" aria-hidden="true">]</span>
           </h1>
           <div class="title-side">
-            <span class="title-tag">// {{ page.header.target_type }}</span>
+            <span class="title-tag">{{ page.header.target_type }}</span>
             <p class="page-subtitle">{{ page.header.subtitle }}</p>
           </div>
         </div>
-        <div class="rule-band" aria-hidden="true">
-          <i class="rule-orange"></i><i class="rule-red"></i><i class="rule-blue"></i><i class="rule-teal"></i>
-          <span class="rule-line"></span>
-          <span class="rule-caption">ZMDLOGS PUBLIC DATA</span>
-        </div>
-        <dl class="query-tape">
-          <div class="tape-item"><dt>查询</dt><dd>{{ page.header.query }}</dd></div>
-          <span class="tape-arrow" aria-hidden="true">»</span>
-          <div class="tape-item"><dt>命中</dt><dd>{{ page.header.matched_name }}</dd></div>
-          <span class="tape-arrow" aria-hidden="true">»</span>
-          <div class="tape-item"><dt>类型</dt><dd>{{ page.header.target_type }}</dd></div>
-          <span class="tape-tail" aria-hidden="true"></span>
-        </dl>
+        {% endblock %}
       </header>
 
       <div class="page-body">
@@ -64,10 +57,7 @@
           <p>※ 数据来源 ZMDLogs · {{ page.header.footer_note }}</p>
           <p>※ 素材仅作展示，具体以站点实际数据为准</p>
         </div>
-        <div class="footer-brand">
-          <span class="color-strip" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-          <span>{{ plugin.name }} · v{{ plugin.version }}</span>
-        </div>
+        <span class="footer-brand">{{ plugin.name }} · v{{ plugin.version }}</span>
       </footer>
     </main>
   </div>

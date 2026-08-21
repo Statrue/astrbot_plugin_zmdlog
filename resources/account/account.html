@@ -3,11 +3,11 @@
 {% block extra_styles %}{% include "account/account.css" %}{% endblock %}
 
 {% block content %}
-<section class="account-overview" aria-label="账号概览">
-  <div class="account-stat"><span>上榜记录</span><strong>{{ page.record_count }}</strong></div>
-  <div class="account-stat"><span>最佳名次</span><strong>{{ page.best_rank }}</strong></div>
-  <div class="account-stat"><span>最佳百分位</span><strong>{{ page.best_percentile }}</strong></div>
-  <div class="account-stat"><span>已上榜平均</span><strong>{{ page.average_percentile }}</strong></div>
+<section class="meta-tape" aria-label="账号概览">
+  <div class="meta-item meta-item--accent"><span>上榜记录</span><strong>{{ page.record_count }}</strong></div>
+  <div class="meta-item"><span>最佳名次</span><strong>{{ page.best_rank }}</strong></div>
+  <div class="meta-item"><span>最佳百分位</span><strong>{{ page.best_percentile }}</strong></div>
+  <div class="meta-item"><span>已上榜平均</span><strong>{{ page.average_percentile }}</strong></div>
 </section>
 
 <section class="account-identity" aria-label="公开账号信息">

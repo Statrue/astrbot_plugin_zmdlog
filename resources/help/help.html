@@ -7,12 +7,12 @@
     <h2>{{ section.title }}</h2>
     <span class="section-note">{{ section.commands|length }} 条指令</span>
   </div>
-  <div class="help-grid">
+  <div class="help-list">
     {% for item in section.commands %}
-    <article class="help-command">
+    <div class="help-row">
       <code>{{ item.command }}</code>
       <p>{{ item.description }}</p>
-    </article>
+    </div>
     {% endfor %}
   </div>
 </section>

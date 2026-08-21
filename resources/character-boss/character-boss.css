@@ -6,43 +6,17 @@
 }
 
 .avatar--hero {
-  width: 72px;
-  height: 72px;
+  width: 76px;
+  height: 76px;
   flex: 0 0 auto;
+  border-width: 2px;
   font-size: 26px;
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
 }
 
-.charboss-hero-text {
-  display: flex;
-  min-width: 150px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  padding-right: 8px;
-}
-
-.charboss-hero-text strong {
-  color: var(--ink);
-  font-size: 26px;
-  font-weight: 900;
-  line-height: 1.1;
-}
-
-.charboss-hero-text span {
-  align-self: flex-start;
-  padding: 1px 8px;
-  color: #fff;
-  background: var(--ink);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
-}
-
-.charboss-hero .stats-chip {
+.charboss-meta {
   flex: 1;
   min-width: 0;
+  margin-top: 0;
 }
 
 /* ---------- per-board rows ---------- */
