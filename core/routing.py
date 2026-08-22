@@ -82,6 +82,9 @@ class RouteKind(str, Enum):
     ALIAS_LIST = "alias_list"
     ALIAS_ADD = "alias_add"
     ALIAS_REMOVE = "alias_remove"
+    WATCH_LIST = "watch_list"
+    WATCH_ADD = "watch_add"
+    WATCH_REMOVE = "watch_remove"
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,6 +208,18 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
                 raise RouteParseError("用法：别名 删除 <别名>")
             return RouteRequest(RouteKind.ALIAS_REMOVE, rest)
         raise RouteParseError("别名子命令只支持：添加 / 删除，或不带参数查看列表。")
+
+    if command in {"关注", "盯"}:
+        options.reject_except()
+        if not remainder:
+            return RouteRequest(RouteKind.WATCH_LIST)
+        return RouteRequest(RouteKind.WATCH_ADD, remainder)
+
+    if command in {"取关", "取消关注", "不盯"}:
+        options.reject_except()
+        if not remainder:
+            raise RouteParseError("用法：取关 <序号或昵称>，序号见 关注 列表。")
+        return RouteRequest(RouteKind.WATCH_REMOVE, remainder)
 
     options.reject_except("top", "character")
     return RouteRequest(

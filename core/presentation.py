@@ -904,7 +904,7 @@ def build_account_page(
             footer_note="公开账号 · 当前最佳记录",
         ),
         account_id=account.account_id,
-        account_url=_public_url(
+        account_url=public_url(
             web_base_url,
             "records",
             account.account_id,
@@ -972,13 +972,13 @@ def build_battle_page(
             footer_note="公开战报 · DPS / rDPS",
         ),
         battle_id=battle.battle_id,
-        report_url=_public_url(
+        report_url=public_url(
             web_base_url,
             "battle",
             battle.battle_id,
         ),
         account_id=battle.uploader_user_id,
-        account_url=_public_url(
+        account_url=public_url(
             web_base_url,
             "records",
             battle.uploader_user_id,
@@ -1168,7 +1168,7 @@ def _safe_asset_url(
     return _safe_http_url(resolved)
 
 
-def _public_url(base_url: str, resource: str, identifier: str) -> str:
+def public_url(base_url: str, resource: str, identifier: str) -> str:
     path = f"{resource}/{quote(identifier, safe='')}"
     return urljoin(f"{base_url.rstrip('/')}/", path)
 

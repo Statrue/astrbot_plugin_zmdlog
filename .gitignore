@@ -15,3 +15,6 @@ __pycache__/
 /CHARACTER_BOSS_STATISTICS_API.md
 /DESIGN_0.5.0.md
 /ACCOUNT_BINDING_CODE_API.md
+
+# AstrBot data dir created when driving main.py locally
+/data/

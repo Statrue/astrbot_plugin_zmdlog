@@ -106,6 +106,9 @@ class HelpTests(unittest.TestCase):
                 ),
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 "!zmdlog 战报 <battleId、链接或榜单关键词 [名次]>",
+                "!zmdlog 关注 <昵称、accountId或主页链接>",
+                "!zmdlog 关注",
+                "!zmdlog 取关 <序号或昵称>",
                 "!zmdlog 别名",
                 "!zmdlog 别名 添加 <榜单或副本> <别名...>",
                 "!zmdlog 别名 删除 <别名>",
@@ -128,6 +131,16 @@ class HelpTests(unittest.TestCase):
                 with self.subTest(command=command.command):
                     self.assertTrue(command.answers.endswith("？"))
 
+    def test_watch_help_never_claims_who_overtook_the_account(self) -> None:
+        # One board read cannot prove who caused a drop, so the notice only
+        # reports the new records above. The help page must promise no more.
+        page = build_help_page("/")
+        section = next(
+            entry for entry in page.sections if entry.title == "名次通报"
+        )
+
+        self.assertNotIn("超", repr(section))
+
     def test_help_has_no_alternate_metric_option(self) -> None:
         page = build_help_page("/")
         visible_text = repr(page)
@@ -136,6 +149,27 @@ class HelpTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WatchRouteTests(unittest.TestCase):
+    def test_watch_subcommands(self) -> None:
+        from core.routing import RouteParseError
+
+        self.assertEqual(parse_zmdlog_payload("关注").kind, RouteKind.WATCH_LIST)
+        add = parse_zmdlog_payload("关注 CPU 0")
+        self.assertEqual(add.kind, RouteKind.WATCH_ADD)
+        self.assertEqual(add.query, "CPU 0")
+        self.assertEqual(parse_zmdlog_payload("盯 usr_x").kind, RouteKind.WATCH_ADD)
+        remove = parse_zmdlog_payload("取关 2")
+        self.assertEqual(remove.kind, RouteKind.WATCH_REMOVE)
+        self.assertEqual(remove.query, "2")
+        self.assertEqual(
+            parse_zmdlog_payload("取消关注 CPU").kind, RouteKind.WATCH_REMOVE
+        )
+        for payload in ("取关", "关注 CPU --top 3", "取关 1 --角色 黎风"):
+            with self.subTest(payload=payload):
+                with self.assertRaises(RouteParseError):
+                    parse_zmdlog_payload(payload)
 
 
 class AliasRouteTests(unittest.TestCase):

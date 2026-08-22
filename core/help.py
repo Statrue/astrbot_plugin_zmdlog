@@ -130,6 +130,30 @@ def build_help_page(command_prefix: str) -> HelpPage:
                 ),
             ),
             HelpSection(
+                title="名次通报",
+                summary="被人顶下去了想第一时间知道，用这一组",
+                commands=(
+                    HelpCommand(
+                        command=f"{command} 关注 <昵称、accountId或主页链接>",
+                        answers="怎么让机器人盯着一个账号？",
+                        description=(
+                            "把公开账号加进关注列表；它的榜单名次掉下来时在这里"
+                            "通报，并列出这段时间内新出现在它上方的纪录。"
+                        ),
+                    ),
+                    HelpCommand(
+                        command=f"{command} 关注",
+                        answers="本群现在盯着哪些账号？",
+                        description="列出关注列表与序号，取关时用这个序号。",
+                    ),
+                    HelpCommand(
+                        command=f"{command} 取关 <序号或昵称>",
+                        answers="怎么不盯了？",
+                        description="添加这条关注的人和机器人管理员可以取消它。",
+                    ),
+                ),
+            ),
+            HelpSection(
                 title="别名管理",
                 summary="榜单叫不出名字时，教机器人认你们的叫法（仅管理员）",
                 commands=(

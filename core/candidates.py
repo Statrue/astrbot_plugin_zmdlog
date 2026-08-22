@@ -22,6 +22,7 @@ class CandidateView(str, Enum):
     CHARACTER_STATS = "character_stats"
     ROSTER = "roster"
     BATTLE = "battle"
+    WATCH = "watch"
 
 
 _VIEW_TITLES = {
@@ -29,6 +30,7 @@ _VIEW_TITLES = {
     CandidateView.CHARACTER_STATS: "的角色统计匹配到 {count} 个榜单",
     CandidateView.ROSTER: "的阵容查询匹配到 {count} 个榜单",
     CandidateView.BATTLE: "的战报查询匹配到 {count} 个榜单",
+    CandidateView.WATCH: "匹配到 {count} 个公开账号，选一个关注",
 }
 
 

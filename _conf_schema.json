@@ -73,5 +73,23 @@
     "description": "要求用户选择候选的最小分差",
     "type": "float",
     "default": 0.08
+  },
+  "rank_watch_enabled": {
+    "description": "开启名次通报（顶屁股提醒）",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后用 /zmdlog 关注 <昵称或accountId> 把公开账号加入本群关注列表；它掉出原名次时机器人在群里通报。只读取公开榜单数据。"
+  },
+  "rank_watch_interval_seconds": {
+    "description": "名次检查间隔（秒）",
+    "type": "int",
+    "default": 900,
+    "hint": "每轮对每个被关注账号发一个请求，最低 120 秒。"
+  },
+  "rank_watch_rank_threshold": {
+    "description": "只通报原名次在前几名以内的下降",
+    "type": "int",
+    "default": 10,
+    "hint": "例如填 10 时，从第 3 掉到第 5 会通报，从第 87 掉到第 90 不会。"
   }
 }
