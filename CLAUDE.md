@@ -66,4 +66,3 @@ Supporting layers: `core/client.py` (httpx; 1 retry, 15s total budget, 4xx never
 - Upstream ZMDLogs source: https://github.com/medps16000/endfield-suite-open (`endfield-logs/apps/api`)
 - Reference plugin for structure/visual style only: https://github.com/Entropy-Increase-Team/astrbot_plugin_endfield (AGPL-3.0; its background image was used until the Endfield restyle and is no longer present)
 - `MVP.md`, `UPSTREAM_API.md`, `UPSTREAM_MISSING_API.md` are gitignored local planning docs. `MVP.md` is partly stale (predates `--top`, account, battle features).
-- `docs/style-refs/` holds official Endfield UI/poster screenshots used as visual references (gitignored, © HYPERGRYPH — do not commit or redistribute).
