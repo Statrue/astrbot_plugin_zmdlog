@@ -304,22 +304,27 @@ body {
   white-space: nowrap;
 }
 
+/* 三行共享网格：标签 / 数值 / 小注各自成行，跨列对齐。
+   每个 .hero-fact 用 display:contents 把子元素直接交给外层网格，
+   这样"有小注"和"没小注"的两组仍然共用同一条基线。 */
 .hero-facts {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: flex-end;
-  gap: 0 26px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  grid-template-rows: auto auto auto;
+  gap: 3px 26px;
+  align-items: end;
+  justify-items: end;
   margin-left: auto;
   padding-bottom: 2px;
 }
 
 .hero-fact {
-  min-width: 0;
-  text-align: right;
+  display: contents;
 }
 
 .hero-fact > span {
-  display: block;
+  grid-row: 1;
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
@@ -327,9 +332,8 @@ body {
   white-space: nowrap;
 }
 
-.hero-fact strong {
-  display: block;
-  margin-top: 3px;
+.hero-fact > strong {
+  grid-row: 2;
   color: var(--ink);
   font-family: var(--font-num);
   font-size: 24px;
@@ -339,9 +343,8 @@ body {
   white-space: nowrap;
 }
 
-.hero-fact em {
-  display: block;
-  margin-top: 3px;
+.hero-fact > em {
+  grid-row: 3;
   color: var(--muted);
   font-size: 10.5px;
   font-style: normal;
@@ -349,17 +352,11 @@ body {
   white-space: nowrap;
 }
 
-.hero-fact--key strong {
-  display: inline-block;
+.hero-fact--key > strong {
   padding: 0 5px;
   margin-right: -5px;
   font-size: 32px;
   background: linear-gradient(transparent 58%, var(--action) 58%, var(--action) 96%, transparent 96%);
-}
-
-.hero-fact + .hero-fact {
-  padding-left: 22px;
-  border-left: 1px solid var(--line);
 }
 
 /* ---------- sections ---------- */
