@@ -91,16 +91,19 @@ class HelpTests(unittest.TestCase):
         self.assertEqual(
             commands,
             (
-                "!zmdlog",
-                "!zmdlog help",
+                "!zmdlog [help]",
                 "!zmdlog 榜单",
-                "!zmdlog 榜单 <关键词>",
-                "!zmdlog 关键词 [--top 数量] [--角色 角色名]",
+                "!zmdlog <榜单关键词> [--top 数量]",
+                "!zmdlog <榜单关键词> --角色 <角色名>",
+                "!zmdlog 阵容 <榜单关键词> [--top 数量]",
                 (
-                    "!zmdlog 角色统计 [榜单或角色名] "
+                    "!zmdlog 角色统计 [榜单关键词] "
                     "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
                 ),
-                "!zmdlog 阵容 <榜单关键词> [--top 数量]",
+                (
+                    "!zmdlog 角色统计 <角色名> "
+                    "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
+                ),
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 "!zmdlog 战报 <battleId、链接或榜单关键词 [名次]>",
                 "!zmdlog 别名",
@@ -113,6 +116,17 @@ class HelpTests(unittest.TestCase):
         self.assertNotIn("智能匹配", visible_text)
         self.assertNotIn("副本范围", visible_text)
         self.assertNotIn("影拓", visible_text)
+
+    def test_every_row_states_the_question_it_answers(self) -> None:
+        # The page groups look-alike commands (阵容 / 角色统计 / --角色), so the
+        # question each one answers is what tells them apart.
+        page = build_help_page("/")
+        for section in page.sections:
+            with self.subTest(section=section.title):
+                self.assertTrue(section.summary)
+            for command in section.commands:
+                with self.subTest(command=command.command):
+                    self.assertTrue(command.answers.endswith("？"))
 
     def test_help_has_no_alternate_metric_option(self) -> None:
         page = build_help_page("/")

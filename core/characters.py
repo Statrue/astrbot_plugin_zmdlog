@@ -111,3 +111,34 @@ def resolve_character_name(
                 candidates=hits[:6],
             )
     return CharacterResolution(CharacterResolutionStatus.NOT_FOUND, stripped)
+
+
+class CharacterFilterScope(str, Enum):
+    """Which row field a resolved ``--角色`` name is matched against."""
+
+    MAIN = "main"
+    ROSTER = "roster"
+    NONE = "none"
+
+
+def pick_character_filter_scope(
+    ranking: BossRanking,
+    name: str,
+) -> CharacterFilterScope:
+    """Prefer main-C rows, fall back to whole-roster rows when there are none.
+
+    Supports and other off-carry characters are never a row's ``characterName``,
+    so a main-C-only filter reports "no records" for exactly the characters
+    people most need the ranking rows for. Falling back keeps one option instead
+    of teaching a second one.
+    """
+
+    if any(row.character_name == name for row in ranking.rows):
+        return CharacterFilterScope.MAIN
+    if any(
+        entry.character_name == name
+        for row in ranking.rows
+        for entry in row.roster_entries
+    ):
+        return CharacterFilterScope.ROSTER
+    return CharacterFilterScope.NONE

@@ -17,7 +17,7 @@
     <span class="bm-tag">榜单基准</span>
     <span class="bm-slug">{{ page.boss_slug }}</span>
     {% if page.character_filter %}
-    <span class="bm-filter">主 C {{ page.character_filter }}</span>
+    <span class="bm-filter">{% if page.character_filter_scope == "roster" %}阵容含{% else %}主 C{% endif %} {{ page.character_filter }}</span>
     {% endif %}
     <span class="bm-count">
       {% if page.character_filter %}
@@ -29,6 +29,13 @@
       {% endif %}
     </span>
   </div>
+
+  {% if page.character_filter_scope == "roster" %}
+  <p class="board-fallback">
+    本榜没有以「{{ page.character_filter }}」为主 C 的公开记录，
+    下面是阵容里带上它的 {{ page.filtered_count }} 支队伍。
+  </p>
+  {% endif %}
 
   {% if page.rows %}
   <div class="board-head">
@@ -71,7 +78,7 @@
       {% if row.roster %}
       <div class="cell-team">
         {% for member in row.roster %}
-        <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}">
+        <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}{% if page.character_filter_scope == "roster" and member.character_name == page.character_filter %} is-match{% endif %}">
           <span class="avatar">
             {{ member.character_initial }}
             {% if member.avatar_url %}
@@ -91,7 +98,7 @@
     条形长度为该记录 DPS 相对榜首 {{ page.top_dps }} 的比例；名次下方为 ZMDLogs 公开排名的百分位；黄圈头像为该场主 C。
   </p>
   {% else %}
-  <div class="empty-ranking">{% if page.character_filter %}该榜单没有以 {{ page.character_filter }} 为主C的公开排名{% else %}该榜单暂无公开排名{% endif %}</div>
+  <div class="empty-ranking">{% if page.character_filter %}该榜单没有带 {{ page.character_filter }} 的公开排名{% else %}该榜单暂无公开排名{% endif %}</div>
   {% endif %}
 </section>
 {% endblock %}

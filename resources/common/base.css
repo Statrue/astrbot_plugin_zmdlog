@@ -475,10 +475,23 @@ body {
   line-height: 1.45;
 }
 
+/* 主线是“这条指令回答什么问题”，语法本身放左边，细则降为小字 */
+.help-text {
+  min-width: 0;
+}
+
+.help-text b {
+  display: block;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
 .help-row p {
-  margin: 0;
+  margin: 3px 0 0;
   color: var(--steel);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
   line-height: 1.55;
 }

@@ -25,7 +25,9 @@ from .core.candidates import (
     parse_selection,
 )
 from .core.characters import (
+    CharacterFilterScope,
     CharacterResolutionStatus,
+    pick_character_filter_scope,
     ranking_character_names,
     resolve_character_name,
 )
@@ -861,6 +863,7 @@ class ZmdLogBotPlugin(Star):
             return _DispatchOutcome(image_path=image_path)
 
         character_filter = None
+        character_filter_scope = CharacterFilterScope.MAIN
         if pending.character_filter is not None:
             resolution = resolve_character_name(
                 pending.character_filter,
@@ -879,13 +882,16 @@ class ZmdLogBotPlugin(Star):
                     )
                 )
             character_filter = resolution.name
-            if not any(
-                row.character_name == character_filter for row in ranking.rows
-            ):
+            # No main-C records is the normal case for supports, so widen the
+            # filter to the whole roster instead of answering "nothing found".
+            character_filter_scope = pick_character_filter_scope(
+                ranking, character_filter
+            )
+            if character_filter_scope is CharacterFilterScope.NONE:
                 return _DispatchOutcome(
                     message=(
-                        f"「{ranking.boss_name}」的公开排名里没有以"
-                        f"「{character_filter}」为主C的记录。"
+                        f"「{ranking.boss_name}」的公开排名里没有带"
+                        f"「{character_filter}」的记录。"
                     )
                 )
         image_path = await renderer.render_ranking(
@@ -894,6 +900,7 @@ class ZmdLogBotPlugin(Star):
             ranking_limit=ranking_limit,
             web_base_url=self.web_base_url,
             character_filter=character_filter,
+            character_filter_scope=character_filter_scope,
         )
         return _DispatchOutcome(image_path=image_path)
 

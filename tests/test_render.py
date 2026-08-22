@@ -41,10 +41,10 @@ class TemplateRendererTests(unittest.TestCase):
     def test_help_is_self_contained_and_uses_manifest_version(self) -> None:
         html = self.renderer.render_help(command_prefix="!")
 
-        self.assertIn("!zmdlog help", html)
+        self.assertIn("!zmdlog [help]", html)
         self.assertIn("!zmdlog 榜单", html)
         self.assertIn("ZmdLogBot", html)
-        self.assertIn("v0.4.5", html)
+        self.assertIn("v0.4.6", html)
         self.assertIn("data:image/svg+xml;base64,", html)
         self.assertIn("@font-face", html)
         self.assertNotIn("astrbot_plugin_zmdlog", html)

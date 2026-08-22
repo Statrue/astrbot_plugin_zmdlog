@@ -7,7 +7,9 @@ import httpx
 
 from core.candidates import CandidateStore, CandidateView, format_candidates
 from core.characters import (
+    CharacterFilterScope,
     CharacterResolutionStatus,
+    pick_character_filter_scope,
     ranking_character_names,
     resolve_character_name,
 )
@@ -209,6 +211,53 @@ class CharacterFilterPageTests(unittest.TestCase):
         self.assertIn("主 C 洛茜", html)
         self.assertIn("筛选出 1 条", html)
         self.assertIn("共 5 条公开排名", html)
+
+    def test_scope_prefers_the_main_c_and_falls_back_to_the_roster(self) -> None:
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+
+        self.assertIs(
+            pick_character_filter_scope(ranking, "黎风"), CharacterFilterScope.MAIN
+        )
+        # 卡缪 sits in every roster but also carries row 5: main C still wins.
+        self.assertIs(
+            pick_character_filter_scope(ranking, "卡缪"), CharacterFilterScope.MAIN
+        )
+        # 佩丽卡 only ever supports: exactly the case the fallback exists for.
+        self.assertIs(
+            pick_character_filter_scope(ranking, "佩丽卡"), CharacterFilterScope.ROSTER
+        )
+        self.assertIs(
+            pick_character_filter_scope(ranking, "无此角色"), CharacterFilterScope.NONE
+        )
+
+    def test_roster_scope_keeps_every_row_that_fields_the_character(self) -> None:
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        page = build_ranking_page(
+            ranking,
+            query="测试 --角色 佩丽卡",
+            display_limit=10,
+            character_filter="佩丽卡",
+            character_filter_scope=CharacterFilterScope.ROSTER,
+        )
+
+        self.assertEqual(page.filtered_count, 5)
+        self.assertEqual([row.rank for row in page.rows], [1, 2, 3, 4, 5])
+
+    def test_template_explains_the_roster_fallback(self) -> None:
+        renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        html = renderer.render_ranking(
+            ranking,
+            query="q",
+            ranking_limit=10,
+            character_filter="佩丽卡",
+            character_filter_scope=CharacterFilterScope.ROSTER,
+        )
+
+        self.assertIn("阵容含 佩丽卡", html)
+        self.assertIn("没有以「佩丽卡」为主 C 的公开记录", html)
+        self.assertIn("筛选出 5 条", html)
+        self.assertIn("is-match", html)
 
 
 class CharacterStatsPageTests(unittest.TestCase):

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import quote, urljoin, urlsplit
 
+from .characters import CharacterFilterScope
 from .matcher import MatchChoice, TargetType
 from .models import (
     BattleDetailSummary,
@@ -113,6 +114,9 @@ class RankingPage:
     # Formatted DPS of the board leader; the 100% mark of the in-row bars.
     top_dps: str = ""
     character_filter: str | None = None
+    # MAIN filters on the row's main C; ROSTER is the automatic fallback for
+    # characters that never carry, matching anywhere in the four-man team.
+    character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN
     filtered_count: int | None = None
 
 
@@ -381,11 +385,13 @@ def build_ranking_page(
     display_limit: int = DEFAULT_RANKING_TOP,
     web_base_url: str | None = None,
     character_filter: str | None = None,
+    character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
 ) -> RankingPage:
     """Build the first public DPS rows in their upstream order.
 
-    ``character_filter`` is an already-resolved main-character name; rows keep
-    their upstream global rank after filtering.
+    ``character_filter`` is an already-resolved character name matched against
+    the row's main C, or against the whole roster when the scope says so; rows
+    keep their upstream global rank after filtering.
     """
 
     if isinstance(display_limit, bool) or not isinstance(display_limit, int):
@@ -396,9 +402,21 @@ def build_ranking_page(
     source_rows = ranking.rows
     filtered_count: int | None = None
     if character_filter is not None:
-        source_rows = tuple(
-            row for row in ranking.rows if row.character_name == character_filter
-        )
+        if character_filter_scope is CharacterFilterScope.ROSTER:
+            source_rows = tuple(
+                row
+                for row in ranking.rows
+                if any(
+                    entry.character_name == character_filter
+                    for entry in row.roster_entries
+                )
+            )
+        else:
+            source_rows = tuple(
+                row
+                for row in ranking.rows
+                if row.character_name == character_filter
+            )
         filtered_count = len(source_rows)
     displayed_rows = source_rows[:display_limit]
     top_dps = ranking.rows[0].dps if ranking.rows else 0.0
@@ -453,6 +471,7 @@ def build_ranking_page(
         ),
         top_dps=format_number(top_dps) if ranking.rows else "",
         character_filter=character_filter,
+        character_filter_scope=character_filter_scope,
         filtered_count=filtered_count,
     )
 

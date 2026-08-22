@@ -19,6 +19,7 @@ from jinja2 import (
 )
 from markupsafe import Markup
 
+from .characters import CharacterFilterScope
 from .help import build_help_page
 from .matcher import MatchChoice
 from .models import (
@@ -163,6 +164,7 @@ class TemplateRenderer:
         ranking_limit: int = DEFAULT_RANKING_TOP,
         web_base_url: str | None = None,
         character_filter: str | None = None,
+        character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
     ) -> str:
         page = build_ranking_page(
             ranking,
@@ -170,6 +172,7 @@ class TemplateRenderer:
             display_limit=ranking_limit,
             web_base_url=web_base_url,
             character_filter=character_filter,
+            character_filter_scope=character_filter_scope,
         )
         return self._render("ranking/ranking.html", page, "ranking")
 
@@ -369,6 +372,7 @@ class LongImageRenderer:
         ranking_limit: int = DEFAULT_RANKING_TOP,
         web_base_url: str | None = None,
         character_filter: str | None = None,
+        character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
     ) -> str:
         try:
             html = self.templates.render_ranking(
@@ -377,6 +381,7 @@ class LongImageRenderer:
                 ranking_limit=ranking_limit,
                 web_base_url=web_base_url,
                 character_filter=character_filter,
+                character_filter_scope=character_filter_scope,
             )
         except Exception as exc:
             raise RenderError("ranking template rendering failed") from exc
