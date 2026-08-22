@@ -206,7 +206,7 @@ class CharacterFilterPageTests(unittest.TestCase):
         html = renderer.render_ranking(
             ranking, query="q", ranking_limit=10, character_filter="洛茜"
         )
-        self.assertIn("主C：洛茜", html)
+        self.assertIn("主 C 洛茜", html)
         self.assertIn("筛选出 1 条", html)
         self.assertIn("共 5 条公开排名", html)
 

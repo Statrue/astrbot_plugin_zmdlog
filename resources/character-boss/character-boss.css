@@ -1,22 +1,17 @@
-.charboss-hero {
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
-  margin-top: 26px;
+.title-block--portrait {
+  align-items: center;
+}
+
+.title-block--portrait .title-side {
+  padding-bottom: 0;
 }
 
 .avatar--hero {
-  width: 76px;
-  height: 76px;
+  width: 64px;
+  height: 64px;
   flex: 0 0 auto;
   border-width: 2px;
   font-size: 26px;
-}
-
-.charboss-meta {
-  flex: 1;
-  min-width: 0;
-  margin-top: 0;
 }
 
 /* ---------- per-board rows ---------- */

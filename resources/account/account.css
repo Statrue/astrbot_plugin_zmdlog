@@ -2,7 +2,7 @@
   display: grid;
   grid-template-columns: 0.9fr 1.6fr;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 24px;
 }
 
 .account-identity > div {

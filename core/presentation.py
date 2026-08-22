@@ -98,7 +98,8 @@ class RankingRowView:
     dps: str
     duration: str
     contract_score: str | None
-    # score_percent clamped for the in-row relative-DPS bar (percent of rank 1).
+    # Real DPS share of the board leader, for the in-row bar. Upstream
+    # ``scorePercent`` is a rank percentile and would only restate the rank.
     score_bar_width: float = 100.0
 
 
@@ -109,6 +110,8 @@ class RankingPage:
     row_count: int
     show_contract_score: bool
     rows: tuple[RankingRowView, ...]
+    # Formatted DPS of the board leader; the 100% mark of the in-row bars.
+    top_dps: str = ""
     character_filter: str | None = None
     filtered_count: int | None = None
 
@@ -398,6 +401,7 @@ def build_ranking_page(
         )
         filtered_count = len(source_rows)
     displayed_rows = source_rows[:display_limit]
+    top_dps = ranking.rows[0].dps if ranking.rows else 0.0
     is_crisis_contract = ranking.boss_slug == _CRISIS_CONTRACT_BOSS_SLUG
     title = "危机合约" if is_crisis_contract else ranking.boss_name
     subtitle = "活动竞速" if is_crisis_contract else ranking.dungeon_name
@@ -443,13 +447,22 @@ def build_ranking_page(
                     if row.contract_tag_score is not None
                     else None
                 ),
-                score_bar_width=max(2.0, min(100.0, float(row.score_percent))),
+                score_bar_width=_dps_share(row.dps, top_dps),
             )
             for row in displayed_rows
         ),
+        top_dps=format_number(top_dps) if ranking.rows else "",
         character_filter=character_filter,
         filtered_count=filtered_count,
     )
+
+
+def _dps_share(dps: float, top_dps: float) -> float:
+    """Percent of the board leader's DPS, clamped to a visible minimum."""
+
+    if top_dps <= 0:
+        return 2.0
+    return round(max(2.0, min(100.0, dps / top_dps * 100.0)), 2)
 
 
 _RANGE_LABELS = {

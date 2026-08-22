@@ -2,14 +2,16 @@
 
 {% block extra_styles %}{% include "account/account.css" %}{% endblock %}
 
-{% block content %}
-<section class="meta-tape" aria-label="账号概览">
-  <div class="meta-item meta-item--accent"><span>上榜记录</span><strong>{{ page.record_count }}</strong></div>
-  <div class="meta-item"><span>最佳名次</span><strong>{{ page.best_rank }}</strong></div>
-  <div class="meta-item"><span>最佳百分位</span><strong>{{ page.best_percentile }}</strong></div>
-  <div class="meta-item"><span>已上榜平均</span><strong>{{ page.average_percentile }}</strong></div>
-</section>
+{% block hero_facts %}
+<div class="hero-facts">
+  <div class="hero-fact"><span>上榜记录</span><strong>{{ page.record_count }}</strong></div>
+  <div class="hero-fact hero-fact--key"><span>最佳名次</span><strong>{{ page.best_rank }}</strong></div>
+  <div class="hero-fact"><span>最佳百分位</span><strong>{{ page.best_percentile }}</strong></div>
+  <div class="hero-fact"><span>已上榜平均</span><strong>{{ page.average_percentile }}</strong></div>
+</div>
+{% endblock %}
 
+{% block content %}
 <section class="account-identity" aria-label="公开账号信息">
   <div><span>accountId</span><code>{{ page.account_id }}</code></div>
   <div><span>账号主页</span><code>{{ page.account_url }}</code></div>

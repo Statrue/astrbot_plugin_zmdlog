@@ -1,23 +1,8 @@
-.lead-cell--note em {
-  display: block;
-  margin-top: 4px;
-  color: var(--on-dark-muted);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 600;
-  line-height: 1.5;
-  text-align: right;
-}
-
-.lead-cell--note span {
-  text-align: right;
-}
-
 .battle-identity {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 24px;
 }
 
 .battle-identity > div,
@@ -206,8 +191,8 @@
 .share-seg--2 { background: var(--ink); }
 .share-seg--3 { background: var(--blue); }
 .share-seg--4 { background: var(--info); }
-.share-seg--5 { background: var(--notify); }
-.share-seg--6 { background: var(--danger); }
+.share-seg--5 { background: var(--special); }
+.share-seg--6 { background: var(--notify); }
 
 .share-legend {
   display: flex;

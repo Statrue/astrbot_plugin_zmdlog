@@ -2,18 +2,15 @@
 
 {% block extra_styles %}{% include "battle/battle.css" %}{% endblock %}
 
-{% block content %}
-<section class="lead-band" aria-label="战斗概览">
-  <div class="lead-cell lead-cell--hero"><span>通关时间</span><strong>{{ page.duration }}</strong></div>
-  <div class="lead-divider" aria-hidden="true"></div>
-  <div class="lead-cell"><span>总 DPS</span><strong>{{ page.total_dps }}</strong></div>
-  <div class="lead-cell"><span>总伤害</span><strong>{{ page.total_damage }}</strong></div>
-  <div class="lead-cell lead-cell--note lead-cell--grow">
-    <span>口径</span>
-    <em>{{ page.timer_label }}<br>{{ page.integrity_label }}</em>
-  </div>
-</section>
+{% block hero_facts %}
+<div class="hero-facts">
+  <div class="hero-fact hero-fact--key"><span>通关时间</span><strong>{{ page.duration }}</strong><em>{{ page.timer_label }}</em></div>
+  <div class="hero-fact"><span>总 DPS</span><strong>{{ page.total_dps }}</strong></div>
+  <div class="hero-fact"><span>总伤害</span><strong>{{ page.total_damage }}</strong><em>{{ page.integrity_label }}</em></div>
+</div>
+{% endblock %}
 
+{% block content %}
 <section class="battle-identity" aria-label="战报信息">
   <div><span>上传者</span><strong>{{ page.uploader_display_name }}</strong></div>
   <div><span>战斗时间</span><strong>{{ page.battle_date }}</strong></div>

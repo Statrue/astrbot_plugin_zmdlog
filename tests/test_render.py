@@ -44,7 +44,7 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("!zmdlog help", html)
         self.assertIn("!zmdlog 榜单", html)
         self.assertIn("ZmdLogBot", html)
-        self.assertIn("v0.4.4", html)
+        self.assertIn("v0.4.5", html)
         self.assertIn("data:image/svg+xml;base64,", html)
         self.assertIn("@font-face", html)
         self.assertNotIn("astrbot_plugin_zmdlog", html)
@@ -213,26 +213,23 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertEqual(page.header.matched_name, "危机合约")
         self.assertNotIn("破潮之像", html)
         self.assertIn("合约分数", html)
-        self.assertIn("52 分", html)
-        self.assertIn("<th>DPS</th>", html)
-        self.assertIn("<th>用时</th>", html)
+        self.assertIn("<b>52</b>", html)
+        self.assertIn('<span class="head-right">DPS</span>', html)
+        self.assertIn('<span class="head-right">用时</span>', html)
         self.assertNotIn("DPS / 用时", html)
-        self.assertIn(
-            'class="ranking-account">公开账号',
-            html,
-        )
+        self.assertIn("<strong>公开账号", html)
         self.assertNotIn("队列：折刃", html)
         self.assertNotIn("secret-battle-id", html)
         self.assertNotIn("战斗详情", html)
 
     def test_public_account_column_uses_bold_style(self) -> None:
-        css = (self.root / "resources" / "common" / "base.css").read_text(
+        css = (self.root / "resources" / "ranking" / "ranking.css").read_text(
             encoding="utf-8",
         )
 
         self.assertRegex(
             css,
-            r"\.ranking-account\s*\{[^}]*font-weight:\s*800;",
+            r"\.cell-id strong\s*\{[^}]*font-weight:\s*800;",
         )
 
     def test_top_three_template_does_not_leak_ranking_fields(self) -> None:

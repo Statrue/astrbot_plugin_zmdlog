@@ -1,0 +1,335 @@
+/* 榜单页 —— 数据简报家族：纸白画布 + 白色数据行 + 全表共享的 DPS 刻度（黄=完成度条）。
+   榜首 DPS 定义刻度 100%，基准条的右缘、表头刻度尺的终点、每一行条形的满格
+   落在同一条竖线上；行内条形量的是真实 DPS 比例，不是名次的复述。 */
+
+.board {
+  /* 名次 | 账户与主C | 条形轨 | DPS | 用时  ——行内左右内边距各 18px */
+  --cols: 56px minmax(0, 380px) minmax(0, 1fr) 112px 88px;
+  --gap: 16px;
+  margin-top: 24px;
+}
+
+.board--contract {
+  --cols: 56px minmax(0, 340px) minmax(0, 1fr) 106px 82px 88px;
+}
+
+/* ---------- 基准条：定义刻度，不复述榜首行 ---------- */
+
+.board-benchmark {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 9px;
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+/* 区段标签：黄色短竖条 + 文字；黄色实底留给“当前选择”（榜首、筛选） */
+.bm-tag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.bm-tag::before {
+  content: "";
+  width: 4px;
+  height: 14px;
+  background: var(--action);
+}
+
+.bm-slug {
+  overflow-wrap: anywhere;
+  padding: 2px 8px;
+  color: #fff;
+  background: var(--charcoal);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.bm-count {
+  color: var(--steel);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bm-filter {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  color: var(--ink);
+  background: var(--action);
+  font-size: 12px;
+  font-weight: 800;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+
+/* ---------- 表头：刻度尺与列名 ---------- */
+
+.board-head {
+  display: grid;
+  grid-template-columns: var(--cols);
+  gap: var(--gap);
+  align-items: end;
+  margin-top: 16px;
+  padding: 0 18px 7px;
+}
+
+.board-head > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.head-right {
+  text-align: right;
+}
+
+.axis-caption {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.axis-caption i {
+  color: var(--steel);
+  font-style: normal;
+  font-weight: 800;
+}
+
+.axis-ruler {
+  display: block;
+  height: 6px;
+  margin-top: 4px;
+  border-right: 2px solid var(--ink);
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--faint) 0 1px,
+    transparent 1px 25%
+  );
+}
+
+/* ---------- 数据行 ---------- */
+
+.board-rows {
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--card);
+  list-style: none;
+}
+
+.board-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--cols);
+  grid-template-rows: auto auto;
+  gap: 5px var(--gap);
+  align-items: center;
+  padding: 11px 18px 10px;
+}
+
+.board-row + .board-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+/* 前三名走左缘色脊；榜首另加极浅黄色晕，与站内 top3 卡一致 */
+.board-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
+  background: transparent;
+}
+
+.board-row.is-1 { background: linear-gradient(90deg, rgba(248, 211, 77, 0.18), transparent 42%); }
+.board-row.is-1::before { background: var(--action); }
+.board-row.is-2::before { background: var(--ink); }
+.board-row.is-3::before { background: var(--muted); }
+
+.cell-rank {
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.rank-num {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 27px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.cell-rank .percentile {
+  margin-top: 3px;
+  font-size: 10.5px;
+}
+
+.cell-id {
+  min-width: 0;
+}
+
+.cell-id strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-id em {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-id em b {
+  color: var(--steel);
+  font-weight: 700;
+}
+
+/* 条形：满格 = 榜首 DPS，刻度与表头刻度尺同源 */
+.cell-chart {
+  position: relative;
+  height: 12px;
+  background-color: var(--line-soft);
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--line) 0 1px,
+    transparent 1px 25%
+  );
+}
+
+.cell-chart i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: block;
+  background: var(--action); /* 进度/完成度条=黄（官方任务/通行证语法）；名次语义交给左缘色脊与奖牌 */
+}
+
+.cell-dps {
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+  text-align: right;
+}
+
+.cell-time {
+  color: var(--steel);
+  font-family: var(--font-num);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+  text-align: right;
+}
+
+.cell-contract {
+  text-align: right;
+}
+
+/* 合约分数是数据列，不是行动：保持中性数字，黄色只留给榜首与筛选 */
+.cell-contract b {
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.cell-contract span {
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 阵容行：圆头像 + 名称，人的信息保持圆形，不做成方框标签 */
+.cell-team {
+  display: flex;
+  min-width: 0;
+  grid-column: 2 / -1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  padding-top: 1px;
+}
+
+.team-member {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--steel);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.team-member i {
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.team-member .avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.team-member.is-lead {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.team-member.is-lead .avatar {
+  border-color: var(--action);
+  box-shadow: 0 0 0 1px var(--action);
+}
+
+/* ---------- 口径说明 ---------- */
+
+.board-legend {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+}
+
+.board-legend::before {
+  content: "// ";
+  color: var(--faint);
+}

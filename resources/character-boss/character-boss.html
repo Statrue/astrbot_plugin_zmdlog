@@ -5,22 +5,33 @@
 {% include "character-boss/character-boss.css" %}
 {% endblock %}
 
-{% block content %}
-<section class="charboss-hero" aria-label="角色信息">
+{% block hero %}
+<div class="title-block title-block--portrait">
   <span class="avatar avatar--hero">
     {{ page.character_initial }}
     {% if page.character_avatar_url %}
     <img src="{{ page.character_avatar_url }}" alt="" onerror="this.remove()">
     {% endif %}
   </span>
-  <div class="meta-tape charboss-meta">
-    <div class="meta-item meta-item--accent"><span>范围</span><strong>{{ page.range_label }}</strong></div>
-    <div class="meta-item"><span>潜能</span><strong>{{ page.potential_label }}</strong></div>
-    <div class="meta-item"><span>样本</span><strong>{{ page.total_sample_count }}</strong><em>含离群 {{ page.total_outlier_count }}</em></div>
-    <div class="meta-item"><span>覆盖榜单</span><strong>{{ page.included_boss_count }}</strong></div>
+  <h1 class="page-title">
+    <span class="title-bracket" aria-hidden="true">[</span>
+    <span class="title-text">{{ page.header.title }}</span>
+    <span class="title-bracket" aria-hidden="true">]</span>
+  </h1>
+  <div class="title-side">
+    <span class="title-tag">{{ page.header.target_type }}</span>
+    <p class="page-subtitle">{{ page.header.subtitle }}</p>
   </div>
-</section>
+  <div class="hero-facts">
+    <div class="hero-fact hero-fact--key"><span>范围</span><strong>{{ page.range_label }}</strong></div>
+    <div class="hero-fact"><span>潜能</span><strong>{{ page.potential_label }}</strong></div>
+    <div class="hero-fact"><span>样本</span><strong>{{ page.total_sample_count }}</strong><em>含离群 {{ page.total_outlier_count }}</em></div>
+    <div class="hero-fact"><span>覆盖榜单</span><strong>{{ page.included_boss_count }}</strong></div>
+  </div>
+</div>
+{% endblock %}
 
+{% block content %}
 <div class="section-heading">
   <h2>各榜单 DPS 分布</h2>
   <span class="section-note">#N / M = 该角色中位 DPS 在该榜单 M 个达标角色中排第 N（同「角色统计 榜单名」的排名）· 不同首领 DPS 上限差异大，名次比数值更可比 · 盒=P25–P75 · 竖线=中位 · 须=极值</span>

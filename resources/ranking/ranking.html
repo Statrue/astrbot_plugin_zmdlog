@@ -1,130 +1,97 @@
 {% extends "common/base.html" %}
 
-{% block content %}
-{% if page.rows %}
-{% set top = page.rows[0] %}
-<section class="lead-band" aria-label="榜首基准">
-  <span class="avatar">
-    {{ top.character_initial }}
-    {% if top.character_avatar_url %}
-    <img src="{{ top.character_avatar_url }}" alt="" onerror="this.remove()">
-    {% endif %}
-  </span>
-  <div class="lead-cell lead-cell--text lead-cell--grow">
-    <span>{% if page.character_filter %}筛选最佳 · 全榜第 {{ top.rank }} 名{% else %}榜首基准 · 第 {{ top.rank }} 名{% endif %}</span>
-    <strong><span class="ranking-account">{{ top.account_display_name }}</span> · 主C {{ top.character_name }}</strong>
-  </div>
-  <div class="lead-divider" aria-hidden="true"></div>
-  <div class="lead-cell lead-cell--hero"><span>DPS</span><strong>{{ top.dps }}</strong></div>
-  <div class="lead-cell"><span>用时</span><strong>{{ top.duration }}</strong></div>
-  {% if page.show_contract_score and top.contract_score is not none %}
-  <div class="lead-cell"><span>合约分数</span><strong>{{ top.contract_score }} 分</strong></div>
-  {% endif %}
-</section>
-{% endif %}
+{% block extra_styles %}{% include "ranking/ranking.css" %}{% endblock %}
 
-<section class="ranking-meta" aria-label="榜单信息">
-  <code>{{ page.boss_slug }}</code>
-  {% if page.character_filter %}
-  <span class="ranking-filter">主C：{{ page.character_filter }}</span>
-  <span class="ranking-count">
-    筛选出 {{ page.filtered_count }} 条{% if page.rows|length < page.filtered_count %} · 展示前 {{ page.rows|length }} 名{% endif %} · 共 {{ page.row_count }} 条公开排名
-  </span>
-  {% else %}
-  <span class="ranking-count">
-    {% if page.rows|length < page.row_count %}
-    展示前 {{ page.rows|length }} 名 · 共 {{ page.row_count }} 条公开排名
-    {% else %}
-    {{ page.row_count }} 条公开排名
-    {% endif %}
-  </span>
-  {% endif %}
-</section>
-
-{% if page.rows %}
-<div class="ranking-table-wrap">
-  <table class="ranking-table">
-    <colgroup>
-      {% if page.show_contract_score %}
-      <col style="width: 9%">
-      <col style="width: 17%">
-      <col style="width: 36%">
-      <col style="width: 15%">
-      <col style="width: 12%">
-      <col style="width: 11%">
-      {% else %}
-      <col style="width: 10%">
-      <col style="width: 19%">
-      <col style="width: 41%">
-      <col style="width: 17%">
-      <col style="width: 13%">
-      {% endif %}
-    </colgroup>
-    <thead>
-      <tr>
-        <th>排名</th>
-        <th>公开账户</th>
-        <th>主要角色与阵容</th>
-        <th>DPS</th>
-        <th>用时</th>
-        {% if page.show_contract_score %}
-        <th>合约分数</th>
-        {% endif %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in page.rows %}
-      <tr{% if row.rank <= 3 %} class="rank-{{ row.rank }}"{% endif %}>
-        <td>
-          <span class="ranking-position">{{ row.rank }}</span>
-          <span class="percentile">{{ row.percentile }}</span>
-        </td>
-        <td class="ranking-account">{{ row.account_display_name }}</td>
-        <td>
-          <div class="ranking-character">
-            <span class="avatar">
-              {{ row.character_initial }}
-              {% if row.character_avatar_url %}
-              <img src="{{ row.character_avatar_url }}" alt="" onerror="this.remove()">
-              {% endif %}
-            </span>
-            <span>
-              <strong>{{ row.character_name }}</strong>
-              <span class="cell-subtitle">{{ row.character_profession }}</span>
-            </span>
-          </div>
-          {% if row.roster %}
-          <div class="roster-list">
-            {% for member in row.roster %}
-            <span class="roster-chip">
-              {{ member.character_name }}{% if member.profession %} · {{ member.profession }}{% endif %}
-            </span>
-            {% endfor %}
-          </div>
-          {% endif %}
-        </td>
-        <td>
-          <strong class="ranking-dps">{{ row.dps }}</strong>
-          <span class="rel-bar" aria-hidden="true"><i style="width: {{ row.score_bar_width }}%;"></i></span>
-        </td>
-        <td>
-          <span class="ranking-duration">{{ row.duration }}</span>
-        </td>
-        {% if page.show_contract_score %}
-        <td>
-          {% if row.contract_score is not none %}
-          <span class="contract-value">{{ row.contract_score }} 分</span>
-          {% else %}
-          <span class="cell-subtitle">—</span>
-          {% endif %}
-        </td>
-        {% endif %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+{% block hero_facts %}
+{% if page.top_dps %}
+<div class="hero-facts">
+  <div class="hero-fact"><span>公开排名</span><strong>{{ page.row_count }}</strong></div>
+  <div class="hero-fact hero-fact--key"><span>榜首 DPS ＝ 刻度 100%</span><strong>{{ page.top_dps }}</strong></div>
 </div>
-{% else %}
-<div class="empty-ranking">{% if page.character_filter %}该榜单没有以 {{ page.character_filter }} 为主C的公开排名{% else %}该榜单暂无公开排名{% endif %}</div>
 {% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="board{% if page.show_contract_score %} board--contract{% endif %}">
+  <div class="board-benchmark">
+    <span class="bm-tag">榜单基准</span>
+    <span class="bm-slug">{{ page.boss_slug }}</span>
+    {% if page.character_filter %}
+    <span class="bm-filter">主 C {{ page.character_filter }}</span>
+    {% endif %}
+    <span class="bm-count">
+      {% if page.character_filter %}
+      筛选出 {{ page.filtered_count }} 条{% if page.rows|length < page.filtered_count %} · 展示前 {{ page.rows|length }} 名{% endif %} · 共 {{ page.row_count }} 条公开排名
+      {% elif page.rows|length < page.row_count %}
+      展示前 {{ page.rows|length }} 名 · 共 {{ page.row_count }} 条公开排名
+      {% else %}
+      {{ page.row_count }} 条公开排名
+      {% endif %}
+    </span>
+  </div>
+
+  {% if page.rows %}
+  <div class="board-head">
+    <span>名次</span>
+    <span>公开账户 · 主 C</span>
+    <span class="head-axis">
+      <span class="axis-caption">相对榜首 DPS<i>100%</i></span>
+      <span class="axis-ruler"></span>
+    </span>
+    <span class="head-right">DPS</span>
+    {% if page.show_contract_score %}
+    <span class="head-right">合约分数</span>
+    {% endif %}
+    <span class="head-right">用时</span>
+  </div>
+
+  <ol class="board-rows">
+    {% for row in page.rows %}
+    <li class="board-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
+      <div class="cell-rank">
+        <span class="rank-num">{{ row.rank }}</span>
+        <span class="percentile">{{ row.percentile }}</span>
+      </div>
+      <div class="cell-id">
+        <strong>{{ row.account_display_name }}</strong>
+        <em>主 C <b>{{ row.character_name }}</b></em>
+      </div>
+      <div class="cell-chart" aria-hidden="true"><i style="width: {{ row.score_bar_width }}%;"></i></div>
+      <div class="cell-dps">{{ row.dps }}</div>
+      {% if page.show_contract_score %}
+      <div class="cell-contract">
+        {% if row.contract_score is not none %}
+        <b>{{ row.contract_score }}</b>
+        {% else %}
+        <span>—</span>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="cell-time">{{ row.duration }}</div>
+      {% if row.roster %}
+      <div class="cell-team">
+        {% for member in row.roster %}
+        <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}">
+          <span class="avatar">
+            {{ member.character_initial }}
+            {% if member.avatar_url %}
+            <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
+            {% endif %}
+          </span>
+          {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+
+  <p class="board-legend">
+    条形长度为该记录 DPS 相对榜首 {{ page.top_dps }} 的比例；名次下方为 ZMDLogs 公开排名的百分位；黄圈头像为该场主 C。
+  </p>
+  {% else %}
+  <div class="empty-ranking">{% if page.character_filter %}该榜单没有以 {{ page.character_filter }} 为主C的公开排名{% else %}该榜单暂无公开排名{% endif %}</div>
+  {% endif %}
+</section>
 {% endblock %}
