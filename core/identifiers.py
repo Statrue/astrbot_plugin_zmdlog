@@ -108,7 +108,13 @@ def _trusted_path_segments(value: str, *, web_base_url: str) -> tuple[str, ...]:
         return ()
     if trusted.scheme not in {"http", "https"} or not trusted.netloc:
         return ()
-    if _origin(parsed) != _origin(trusted):
+    try:
+        # ``.port`` raises ValueError for ":abc" or ":99999"; that is simply
+        # not a trusted link, and one bad character in web_base_url must not
+        # turn every link parse into an unhandled error either.
+        if _origin(parsed) != _origin(trusted):
+            return ()
+    except ValueError:
         return ()
 
     trusted_prefix = tuple(segment for segment in trusted.path.split("/") if segment)
@@ -118,5 +124,13 @@ def _trusted_path_segments(value: str, *, web_base_url: str) -> tuple[str, ...]:
     return path_segments[len(trusted_prefix) :]
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
 def _origin(parsed) -> tuple[str, str, int | None]:
-    return parsed.scheme.casefold(), (parsed.hostname or "").casefold(), parsed.port
+    scheme = parsed.scheme.casefold()
+    port = parsed.port
+    if port is None:
+        # ``https://host:443/...`` and ``https://host/...`` are the same origin.
+        port = _DEFAULT_PORTS.get(scheme)
+    return scheme, (parsed.hostname or "").casefold(), port

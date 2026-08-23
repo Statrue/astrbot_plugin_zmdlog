@@ -79,6 +79,19 @@ class RoutingTests(unittest.TestCase):
                     parse_zmdlog_payload(payload)
 
 
+class TopOptionBoundsTests(unittest.TestCase):
+    def test_absurd_top_values_are_rejected_as_route_errors(self) -> None:
+        from core.routing import RouteParseError
+
+        # int() raises a plain ValueError past 4300 digits, which no handler
+        # guard would catch; the bound must trip first.
+        for raw in ("9" * 4301, "9" * 5000, "0031", "1" * 10):
+            with self.subTest(raw=raw):
+                with self.assertRaises(RouteParseError):
+                    parse_zmdlog_payload(f"罗丹 --top {raw}")
+        self.assertEqual(parse_zmdlog_payload("罗丹 --top 030").ranking_top, 30)
+
+
 class HelpTests(unittest.TestCase):
     def test_help_uses_prefix_and_lists_help_before_query_forms(self) -> None:
         page = build_help_page("!")

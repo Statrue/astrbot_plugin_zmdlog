@@ -41,6 +41,26 @@ def _aliases():
 
 
 class MatcherTests(unittest.TestCase):
+    def test_over_long_queries_skip_the_fuzzy_scan(self) -> None:
+        # The sliding-window similarity is linear in the query and runs on the
+        # event loop; a multi-kilobyte message must not turn into seconds of
+        # matching (or be echoed back). Nothing real is longer than the cap.
+        import time
+
+        from core.matcher import MAX_QUERY_LENGTH
+
+        matcher = RankingMatcher(_cards(), _aliases())
+        started = time.perf_counter()
+        result = matcher.match("首" * (MAX_QUERY_LENGTH + 1))
+        elapsed = time.perf_counter() - started
+
+        self.assertIs(result.status, MatchStatus.NOT_FOUND)
+        self.assertLess(elapsed, 0.05)
+        # Garbage exactly at the cap still gets the full (bounded) treatment.
+        started = time.perf_counter()
+        matcher.match("首" * MAX_QUERY_LENGTH)
+        self.assertLess(time.perf_counter() - started, 2.0)
+
     def test_normalization_handles_chinese_phase_and_punctuation(self) -> None:
         self.assertEqual(
             normalize_search_text(" 影拓丰碑四期 · 榜单 "),

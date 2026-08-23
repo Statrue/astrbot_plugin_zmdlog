@@ -671,10 +671,21 @@ class LongImageRenderer:
             await route.continue_()
             return
         origin = f"{parsed.scheme.casefold()}://{parsed.netloc.casefold()}"
-        if request.resource_type == "image" and origin in self.allowed_image_origins:
-            await route.continue_()
+        if request.resource_type != "image" or origin not in self.allowed_image_origins:
+            await route.abort()
             return
-        await route.abort()
+        # Fetch here instead of letting Chromium follow the request: this
+        # handler only ever sees the first hop, so a redirect served by an
+        # allowed origin would otherwise pull the image from anywhere.
+        try:
+            response = await route.fetch(max_redirects=0)
+        except Exception:
+            await route.abort()
+            return
+        if 300 <= response.status < 400:
+            await route.abort()
+            return
+        await route.fulfill(response=response)
 
     async def _settle_page(self, page) -> None:
         await page.evaluate(

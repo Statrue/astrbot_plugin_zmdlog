@@ -42,6 +42,9 @@ class PendingCandidates:
     ranking_top: int | None
     created_at: float
     view: CandidateView = CandidateView.RANKING
+    # The chat the list was posted in. A code is only honoured from the same
+    # chat, so a code learned elsewhere cannot select on someone else's behalf.
+    origin: str = ""
     character_filter: str | None = None
     stats_range: str = "all"
     stats_potential: str = "all"
@@ -72,6 +75,7 @@ class CandidateStore:
         stats_range: str = "all",
         stats_potential: str = "all",
         battle_rank: int = 1,
+        origin: str = "",
         now: float | None = None,
     ) -> PendingCandidates:
         timestamp = time.monotonic() if now is None else now
@@ -88,6 +92,7 @@ class CandidateStore:
             stats_range=stats_range,
             stats_potential=stats_potential,
             battle_rank=battle_rank,
+            origin=origin,
         )
         self._entries[code] = entry
         return entry
@@ -97,13 +102,21 @@ class CandidateStore:
         code: str,
         selection: str,
         *,
+        origin: str | None = None,
         now: float | None = None,
     ) -> tuple[PendingCandidates, MatchChoice] | None:
+        """Pick ``selection`` from the list ``code`` names.
+
+        With ``origin`` given, the list must have been posted in that chat.
+        """
+
         timestamp = time.monotonic() if now is None else now
         self._prune(timestamp)
         entry = self._entries.get(code.upper())
         index = parse_selection(selection)
         if entry is None or index is None or index > len(entry.choices):
+            return None
+        if origin is not None and entry.origin != origin:
             return None
         return entry, entry.choices[index - 1]
 
@@ -127,12 +140,17 @@ class CandidateStore:
 
 
 def extract_code(text: str | None) -> str | None:
-    """Find the ``候选编号 XXXX`` marker inside a quoted candidate message."""
+    """Find the ``候选编号 XXXX`` marker inside a quoted candidate message.
+
+    The real marker is always the last line the bot wrote, after the choice
+    lines. Those lines carry upstream nicknames, which could themselves spell
+    a marker, so the last match wins rather than the first.
+    """
 
     if not text:
         return None
-    match = _CODE_RE.search(text)
-    return match.group(1) if match else None
+    matches = _CODE_RE.findall(text)
+    return matches[-1] if matches else None
 
 
 def parse_selection(text: str) -> int | None:
@@ -165,7 +183,9 @@ def format_candidates(
 def describe_choice(choice: MatchChoice) -> str:
     target = choice.target
     if target.target_type is TargetType.ACCOUNT:
-        return f"{target.name} · 公开账号"
+        # Upstream nicknames are arbitrary text; keep them on one line so they
+        # cannot imitate the list structure.
+        return f"{' '.join(target.name.split())} · 公开账号"
     if target.target_type is TargetType.BOARD:
         dungeon = target.dungeon_names[0] if target.dungeon_names else ""
         label = f"{target.name} · 榜单"

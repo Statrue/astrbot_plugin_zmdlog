@@ -301,7 +301,9 @@ def _split_battle_rank(remainder: str) -> tuple[str, int]:
 
 
 def _parse_top(raw_top: str) -> int:
-    if not raw_top.isascii() or not raw_top.isdecimal():
+    # int() raises a plain ValueError past ~4300 digits; the maximum is two
+    # digits, so anything longer is rejected before conversion.
+    if not raw_top.isascii() or not raw_top.isdecimal() or len(raw_top) > 3:
         raise RouteParseError("--top 只支持 1–30 的整数。")
     ranking_top = int(raw_top)
     if not MIN_RANKING_TOP <= ranking_top <= MAX_RANKING_TOP:

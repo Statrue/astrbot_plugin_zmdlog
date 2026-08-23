@@ -8,6 +8,60 @@ from core.identifiers import (
 )
 
 
+class PortHandlingTests(unittest.TestCase):
+    BASE = "https://zmdlogs.com"
+
+    def test_a_malformed_port_is_an_untrusted_link_not_a_crash(self) -> None:
+        # urlsplit(...).port raises ValueError; that must surface as the
+        # normal "not a reference" error the callers already handle.
+        for url in (
+            "https://zmdlogs.com:99999/records/usr_1234567890abcdef",
+            "https://zmdlogs.com:abc/records/usr_1234567890abcdef",
+            "https://zmdlogs.com:99999/battle/btl_upload_abcdef123456",
+        ):
+            with self.subTest(url=url):
+                with self.assertRaises(PublicReferenceError):
+                    parse_account_reference(url, web_base_url=self.BASE)
+                with self.assertRaises(PublicReferenceError):
+                    parse_battle_reference(url, web_base_url=self.BASE)
+        # A message carrying such a link is simply not a battle reference.
+        self.assertEqual(
+            extract_battle_references(
+                "look https://zmdlogs.com:99999/battle/btl_upload_abcdef123456",
+                web_base_url=self.BASE,
+            ),
+            (),
+        )
+
+    def test_a_malformed_configured_base_url_never_raises(self) -> None:
+        with self.assertRaises(PublicReferenceError):
+            parse_battle_reference(
+                "https://zmdlogs.com/battle/btl_upload_abcdef123456",
+                web_base_url="https://zmdlogs.com:70000",
+            )
+
+    def test_default_ports_are_the_same_origin(self) -> None:
+        self.assertEqual(
+            parse_battle_reference(
+                "https://zmdlogs.com:443/battle/btl_upload_abcdef123456",
+                web_base_url=self.BASE,
+            ),
+            "btl_upload_abcdef123456",
+        )
+        self.assertEqual(
+            parse_account_reference(
+                "http://zmdlogs.com:80/records/usr_1234567890abcdef",
+                web_base_url="http://zmdlogs.com",
+            ),
+            "usr_1234567890abcdef",
+        )
+        with self.assertRaises(PublicReferenceError):
+            parse_battle_reference(
+                "https://zmdlogs.com:8443/battle/btl_upload_abcdef123456",
+                web_base_url=self.BASE,
+            )
+
+
 class PublicReferenceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.base_url = "https://zmdlogs.com"

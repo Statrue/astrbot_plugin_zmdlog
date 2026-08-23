@@ -3,6 +3,7 @@
 import asyncio
 import random
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -137,6 +138,11 @@ _PLUGIN_DATA_NAME = "astrbot_plugin_zmdlog"
 _HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
 _RENDER_FAILURE_MESSAGE = "图片生成失败，请稍后重试。"
 _UNEXPECTED_FAILURE_MESSAGE = "ZmdLogBot 暂时无法完成查询，请稍后重试。"
+_UPSTREAM_UNAVAILABLE_MESSAGE = "ZMDLogs 暂时不可用，请稍后重试。"
+_ACCOUNT_NOT_FOUND_MESSAGE = "没有找到这个公开账号，或该账号暂无公开榜单记录。"
+# User text echoed back into a reply is cut here; the matcher already ignores
+# anything longer, and a reply must never repeat a multi-kilobyte message.
+_ECHO_LIMIT = 40
 _BATTLE_LINK_FILTER = (
     r"https?://[^\s<>\"']+/(?:battle|share|axis)/btl_[A-Za-z0-9_-]+"
 )
@@ -219,13 +225,15 @@ class ZmdLogBotPlugin(Star):
         )
         self._rank_watch_task: asyncio.Task | None = None
         self._rank_snapshot_write_failed = False
-        self.fuzzy_match_threshold = self.config.get(
-            "fuzzy_match_threshold",
+        self.fuzzy_match_threshold = _ratio_or_default(
+            self.config.get("fuzzy_match_threshold", 0.65),
             0.65,
+            "fuzzy_match_threshold",
         )
-        self.ambiguity_score_gap = self.config.get(
-            "ambiguity_score_gap",
+        self.ambiguity_score_gap = _ratio_or_default(
+            self.config.get("ambiguity_score_gap", 0.08),
             0.08,
+            "ambiguity_score_gap",
         )
         cache_ttl_seconds = self.config.get(
             "ranking_cache_ttl_seconds",
@@ -361,6 +369,11 @@ class ZmdLogBotPlugin(Star):
         except RouteParseError as exc:
             yield event.plain_result(str(exc))
             return
+        except ValueError:
+            # Defence in depth: a parse-layer ValueError that is not a
+            # RouteParseError must still answer briefly, never as a traceback.
+            yield event.plain_result("指令参数无法解析，请检查后重试。")
+            return
         if route.kind in _ALIAS_ROUTES or route.kind in _WATCH_ROUTES:
             # These reply in text and never reach _dispatch, so they need their
             # own guard: an unexpected error must not surface as a traceback.
@@ -373,42 +386,22 @@ class ZmdLogBotPlugin(Star):
                 logger.warning(
                     "ZmdLogBot request failed: %s", type(exc).__name__
                 )
-                message = "ZMDLogs 暂时不可用，请稍后重试。"
+                message = _UPSTREAM_UNAVAILABLE_MESSAGE
             except Exception:
                 logger.exception("ZmdLogBot unexpected command failure")
                 message = _UNEXPECTED_FAILURE_MESSAGE
             yield event.plain_result(message)
             return
-        try:
-            outcome = await self._dispatch(
+        outcome, _ = await self._run_guarded(
+            lambda: self._dispatch(
                 route,
                 command_prefix=self._command_prefix(event),
-            )
-        except ZmdLogsAPIError as exc:
-            logger.warning("ZmdLogBot API request failed: %s", exc.code)
-            yield event.plain_result(self._api_error_message(route, exc))
-            return
-        except ZmdLogsClientError as exc:
-            logger.warning("ZmdLogBot request failed: %s", type(exc).__name__)
-            yield event.plain_result("ZMDLogs 暂时不可用，请稍后重试。")
-            return
-        except RenderError as exc:
-            logger.error("ZmdLogBot image rendering failed: %s", type(exc).__name__)
-            fallback_path = await self._render_with_astrbot(exc)
-            if fallback_path is not None:
-                yield event.image_result(fallback_path)
-                return
-            yield event.plain_result(_RENDER_FAILURE_MESSAGE)
-            return
-        except Exception:
-            logger.exception("ZmdLogBot unexpected command failure")
-            yield event.plain_result(_UNEXPECTED_FAILURE_MESSAGE)
-            return
-
-        if outcome.image_path is not None:
-            yield event.image_result(outcome.image_path)
-            return
-        yield event.plain_result(outcome.message or "本次查询未产生结果。")
+                origin=self._event_origin(event),
+            ),
+            api_error_message=lambda exc: self._api_error_message(route, exc),
+            failure_label="command",
+        )
+        yield self._outcome_result(event, outcome)
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def pick_candidate(self, event: AstrMessageEvent):
@@ -440,10 +433,11 @@ class ZmdLogBotPlugin(Star):
         if not battle_ids:
             return
         battle_id = battle_ids[0]
-        origin = getattr(event, "unified_msg_origin", "") or "unknown"
+        origin = self._event_origin(event) or "unknown"
         if not await self._claim_auto_expand(origin, battle_id):
             return
-        try:
+
+        async def expand() -> _DispatchOutcome:
             battle = await self._get_battle_detail(battle_id)
             renderer = self._require_renderer()
             image_path = await renderer.render_battle(
@@ -451,47 +445,80 @@ class ZmdLogBotPlugin(Star):
                 query=battle_id,
                 web_base_url=self.web_base_url,
             )
+            return _DispatchOutcome(image_path=image_path)
+
+        outcome, transient = await self._run_guarded(
+            expand,
+            api_error_message=_battle_link_error_message,
+            failure_label="auto-expand",
+        )
+        # The cooldown exists to stop the same link being answered again and
+        # again, so it is released only when nothing useful was sent AND a
+        # repost could plausibly do better. A dead link (404) or an image
+        # delivered through the fallback renderer keeps the claim.
+        if transient:
+            await self._release_auto_expand(origin, battle_id)
+        yield self._outcome_result(event, outcome)
+
+    async def _run_guarded(
+        self,
+        action: Callable[[], Awaitable[_DispatchOutcome]],
+        *,
+        api_error_message: Callable[[ZmdLogsAPIError], str],
+        failure_label: str,
+    ) -> tuple[_DispatchOutcome, bool]:
+        """Run one query action and turn every failure into a short reply.
+
+        This is the single error ladder behind the command, the quoted
+        candidate pick and the auto-expand handler, so the three can never
+        drift apart again. The flag says whether the failure was transient,
+        i.e. a retry could plausibly succeed; only the auto-expand cooldown
+        reads it.
+        """
+
+        try:
+            return await action(), False
         except ZmdLogsAPIError as exc:
-            await self._release_auto_expand(origin, battle_id)
-            logger.warning("ZmdLogBot auto-expand API request failed: %s", exc.code)
-            yield event.plain_result(
-                "链接对应的公开战报不存在、未公开或已删除。"
-                if exc.status_code == 404
-                else "ZMDLogs 暂时不可用，请稍后重试。"
-            )
-            return
-        except ZmdLogsClientError as exc:
-            await self._release_auto_expand(origin, battle_id)
             logger.warning(
-                "ZmdLogBot auto-expand request failed: %s",
+                "ZmdLogBot %s API request failed: %s", failure_label, exc.code
+            )
+            return (
+                _DispatchOutcome(message=api_error_message(exc)),
+                exc.status_code != 404,
+            )
+        except ZmdLogsClientError as exc:
+            logger.warning(
+                "ZmdLogBot %s request failed: %s",
+                failure_label,
                 type(exc).__name__,
             )
-            yield event.plain_result("ZMDLogs 暂时不可用，请稍后重试。")
-            return
+            return _DispatchOutcome(message=_UPSTREAM_UNAVAILABLE_MESSAGE), True
         except RenderError as exc:
-            await self._release_auto_expand(origin, battle_id)
             logger.error(
-                "ZmdLogBot auto-expand rendering failed: %s",
+                "ZmdLogBot %s rendering failed: %s",
+                failure_label,
                 type(exc).__name__,
             )
             fallback_path = await self._render_with_astrbot(exc)
             if fallback_path is not None:
-                yield event.image_result(fallback_path)
-                return
-            yield event.plain_result(_RENDER_FAILURE_MESSAGE)
-            return
+                return _DispatchOutcome(image_path=fallback_path), False
+            return _DispatchOutcome(message=_RENDER_FAILURE_MESSAGE), True
         except Exception:
-            await self._release_auto_expand(origin, battle_id)
-            logger.exception("ZmdLogBot unexpected auto-expand failure")
-            yield event.plain_result(_UNEXPECTED_FAILURE_MESSAGE)
-            return
-        yield event.image_result(image_path)
+            logger.exception("ZmdLogBot unexpected %s failure", failure_label)
+            return _DispatchOutcome(message=_UNEXPECTED_FAILURE_MESSAGE), False
+
+    @staticmethod
+    def _outcome_result(event: AstrMessageEvent, outcome: _DispatchOutcome):
+        if outcome.image_path is not None:
+            return event.image_result(outcome.image_path)
+        return event.plain_result(outcome.message or "本次查询未产生结果。")
 
     async def _dispatch(
         self,
         route: RouteRequest,
         *,
         command_prefix: str,
+        origin: str = "",
     ) -> _DispatchOutcome:
         renderer = self._require_renderer()
         if route.kind is RouteKind.HELP:
@@ -517,7 +544,9 @@ class ZmdLogBotPlugin(Star):
                 )
             except PublicReferenceError:
                 # Not an ID or trusted URL: treat the text as a nickname.
-                outcome = await self._account_search_outcome(route.query)
+                outcome = await self._account_search_outcome(
+                    route.query, origin=origin
+                )
                 if outcome is None:
                     return _DispatchOutcome(
                         message=(
@@ -526,13 +555,9 @@ class ZmdLogBotPlugin(Star):
                         )
                     )
                 return outcome
-            account = await self._get_public_user_rankings(account_id)
-            image_path = await renderer.render_account(
-                account,
-                query=route.query,
-                web_base_url=self.web_base_url,
+            return await self._render_account_outcome(
+                account_id, query=route.query
             )
-            return _DispatchOutcome(image_path=image_path)
 
         if route.kind is RouteKind.BATTLE_QUERY:
             try:
@@ -590,16 +615,23 @@ class ZmdLogBotPlugin(Star):
         # the matcher or the explicit board route.
         match = matcher.match(route.query, allowed_types=_BOARD_QUERY_TARGETS)
 
+        shown_query = _shorten(route.query)
         not_found_message = (
-            f"没有找到与「{route.query}」匹配的榜单。"
+            f"没有找到与「{shown_query}」匹配的榜单。"
             if view in _BOARD_ONLY_VIEWS
-            else f"没有找到与「{route.query}」匹配的榜单或副本。"
+            else f"没有找到与「{shown_query}」匹配的榜单或副本。"
         )
         if match.status is MatchStatus.NOT_FOUND:
             if self._looks_like_direct_slug(route.query):
-                return await self._render_board(
-                    route.query, query=route.query, pending=pending
-                )
+                try:
+                    return await self._render_board(
+                        route.query, query=route.query, pending=pending
+                    )
+                except ZmdLogsAPIError as exc:
+                    if exc.status_code != 404:
+                        raise
+                    # Not a slug after all: nicknames such as Re-Zero or
+                    # xiao_ming pass the slug shape too, so keep looking.
             if view is CandidateView.CHARACTER_STATS:
                 outcome = await self._character_boss_outcome(route.query, pending)
                 if outcome is not None:
@@ -610,7 +642,7 @@ class ZmdLogBotPlugin(Star):
                 and pending.character_filter is None
             ):
                 outcome = await self._account_search_outcome(
-                    route.query, quiet=True
+                    route.query, quiet=True, origin=origin
                 )
                 if outcome is not None:
                     return outcome
@@ -682,6 +714,7 @@ class ZmdLogBotPlugin(Star):
             entry = self.candidates.remember(
                 route.query,
                 candidates,
+                origin=origin,
                 ranking_top=pending.ranking_top,
                 view=pending.view,
                 character_filter=pending.character_filter,
@@ -712,15 +745,11 @@ class ZmdLogBotPlugin(Star):
         query: str,
         pending: PendingCandidates,
     ) -> _DispatchOutcome:
-        renderer = self._require_renderer()
         if choice.target.target_type is TargetType.ACCOUNT:
-            account = await self._get_public_user_rankings(choice.target.key)
-            image_path = await renderer.render_account(
-                account,
-                query=query,
-                web_base_url=self.web_base_url,
+            return await self._render_account_outcome(
+                choice.target.key, query=query
             )
-            return _DispatchOutcome(image_path=image_path)
+        renderer = self._require_renderer()
         if choice.target.target_type is TargetType.BOARD:
             return await self._render_board(
                 choice.target.key, query=query, pending=pending
@@ -752,6 +781,7 @@ class ZmdLogBotPlugin(Star):
         query: str,
         *,
         quiet: bool = False,
+        origin: str = "",
     ) -> _DispatchOutcome | None:
         """Resolve a nickname via upstream search; None means "not applicable".
 
@@ -774,23 +804,16 @@ class ZmdLogBotPlugin(Star):
             if quiet:
                 return None
             return _DispatchOutcome(
-                message=f"没有找到昵称包含「{stripped}」的公开账号。"
+                message=f"没有找到昵称包含「{_shorten(stripped)}」的公开账号。"
             )
         if len(search.accounts) == 1 and not search.has_more:
-            renderer = self._require_renderer()
-            account = await self._get_public_user_rankings(
-                search.accounts[0].account_id
+            return await self._render_account_outcome(
+                search.accounts[0].account_id, query=query
             )
-            image_path = await renderer.render_account(
-                account,
-                query=query,
-                web_base_url=self.web_base_url,
-            )
-            return _DispatchOutcome(image_path=image_path)
         choices = tuple(
             _account_choice(hit, stripped) for hit in search.accounts
         )
-        entry = self.candidates.remember(stripped, choices)
+        entry = self.candidates.remember(stripped, choices, origin=origin)
         return _DispatchOutcome(
             message=format_candidates(
                 entry,
@@ -819,6 +842,35 @@ class ZmdLogBotPlugin(Star):
         except ZmdLogsClientError:
             return ()
         return tuple(_account_choice(hit, stripped) for hit in search.accounts)
+
+    async def _render_account_outcome(
+        self,
+        account_id: str,
+        *,
+        query: str,
+    ) -> _DispatchOutcome:
+        """Render one public account; a 404 answers in account terms.
+
+        The same lookup is reached from the 账号 route, from a nickname pick
+        list and from the smart route, and only the first of those knows from
+        its route kind that an account is meant — so the wording is decided
+        here rather than by whoever catches the error.
+        """
+
+        renderer = self._require_renderer()
+        try:
+            account = await self._get_public_user_rankings(account_id)
+        except ZmdLogsAPIError as exc:
+            if exc.status_code != 404:
+                raise
+            logger.warning("ZmdLogBot API request failed: %s", exc.code)
+            return _DispatchOutcome(message=_ACCOUNT_NOT_FOUND_MESSAGE)
+        image_path = await renderer.render_account(
+            account,
+            query=query,
+            web_base_url=self.web_base_url,
+        )
+        return _DispatchOutcome(image_path=image_path)
 
     async def _character_boss_outcome(
         self,
@@ -987,13 +1039,16 @@ class ZmdLogBotPlugin(Star):
             if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
                 options = " / ".join(resolution.candidates)
                 return _DispatchOutcome(
-                    message=f"「{resolution.query}」可能是：{options}，请写全名。"
+                    message=(
+                        f"「{_shorten(resolution.query)}」可能是：{options}，"
+                        "请写全名。"
+                    )
                 )
             if resolution.status is CharacterResolutionStatus.NOT_FOUND:
                 return _DispatchOutcome(
                     message=(
                         f"「{ranking.boss_name}」的公开排名里没有"
-                        f"「{resolution.query}」。"
+                        f"「{_shorten(resolution.query)}」。"
                     )
                 )
             character_filter = resolution.name
@@ -1025,7 +1080,9 @@ class ZmdLogBotPlugin(Star):
         code: str,
         selection: str,
     ):
-        resolved = self.candidates.resolve(code, selection)
+        resolved = self.candidates.resolve(
+            code, selection, origin=self._event_origin(event)
+        )
         if resolved is None:
             yield event.plain_result("这份候选列表已过期或序号无效，请重新查询。")
             return
@@ -1039,38 +1096,22 @@ class ZmdLogBotPlugin(Star):
                 )
             )
             return
-        try:
+
+        async def render_pick() -> _DispatchOutcome:
             cards = await self._list_hot_bosses()
-            outcome = await self._render_choice(
+            return await self._render_choice(
                 choice,
                 cards,
                 query=entry.query,
                 pending=entry,
             )
-        except ZmdLogsAPIError as exc:
-            logger.warning("ZmdLogBot API request failed: %s", exc.code)
-            yield event.plain_result(self._board_api_error_message(exc))
-            return
-        except ZmdLogsClientError as exc:
-            logger.warning("ZmdLogBot request failed: %s", type(exc).__name__)
-            yield event.plain_result("ZMDLogs 暂时不可用，请稍后重试。")
-            return
-        except RenderError as exc:
-            logger.error("ZmdLogBot image rendering failed: %s", type(exc).__name__)
-            fallback_path = await self._render_with_astrbot(exc)
-            if fallback_path is not None:
-                yield event.image_result(fallback_path)
-                return
-            yield event.plain_result(_RENDER_FAILURE_MESSAGE)
-            return
-        except Exception:
-            logger.exception("ZmdLogBot unexpected candidate failure")
-            yield event.plain_result(_UNEXPECTED_FAILURE_MESSAGE)
-            return
-        if outcome.image_path is not None:
-            yield event.image_result(outcome.image_path)
-            return
-        yield event.plain_result(outcome.message or "本次查询未产生结果。")
+
+        outcome, _ = await self._run_guarded(
+            render_pick,
+            api_error_message=self._board_api_error_message,
+            failure_label="candidate",
+        )
+        yield self._outcome_result(event, outcome)
 
     @staticmethod
     def _quoted_candidate_code(event: AstrMessageEvent) -> str | None:
@@ -1111,7 +1152,7 @@ class ZmdLogBotPlugin(Star):
         if route.kind is RouteKind.ALIAS_REMOVE:
             updated, removed = self.aliases.without_alias(route.query)
             if removed == 0:
-                return f"没有找到自定义别名「{route.query}」。"
+                return f"没有找到自定义别名「{_shorten(route.query)}」。"
             if not self._save_aliases(updated):
                 return "别名文件写入失败，请检查数据目录权限。"
             return f"已删除别名「{route.query}」。"
@@ -1134,7 +1175,10 @@ class ZmdLogBotPlugin(Star):
         )
         choice = match.selected
         if match.status is not MatchStatus.MATCHED or choice is None:
-            return f"没有唯一匹配到「{target_text}」，请用更完整的榜单或副本名。"
+            return (
+                f"没有唯一匹配到「{_shorten(target_text)}」，"
+                "请用更完整的榜单或副本名。"
+            )
         exact_types = frozenset({TargetType.BOARD, TargetType.DUNGEON})
         taken = set()
         for alias in aliases:
@@ -1210,10 +1254,13 @@ class ZmdLogBotPlugin(Star):
             matches = self.watchlist.resolve_matches(origin, route.query)
             if len(matches) > 1:
                 names = "、".join(entry.display_name for entry in matches[:5])
-                return f"「{route.query}」匹配到多个关注：{names}，请改用序号。"
+                return (
+                    f"「{_shorten(route.query)}」匹配到多个关注：{names}，"
+                    "请改用序号。"
+                )
             if not matches:
                 return (
-                    f"关注列表里没有「{route.query}」，"
+                    f"关注列表里没有「{_shorten(route.query)}」，"
                     f"发送 {command} 关注 查看当前列表与序号。"
                 )
             account = matches[0]
@@ -1273,7 +1320,7 @@ class ZmdLogBotPlugin(Star):
             logger.warning("ZmdLogBot request failed: %s", type(exc).__name__)
             return "ZMDLogs 暂时不可用，请稍后重试。"
         if not search.accounts:
-            return f"没有找到昵称包含「{stripped}」的公开账号。"
+            return f"没有找到昵称包含「{_shorten(stripped)}」的公开账号。"
         if len(search.accounts) == 1 and not search.has_more:
             hit = search.accounts[0]
             return await self._remember_watched_account(
@@ -1285,6 +1332,7 @@ class ZmdLogBotPlugin(Star):
             stripped,
             tuple(_account_choice(hit, stripped) for hit in search.accounts),
             view=CandidateView.WATCH,
+            origin=self._event_origin(event),
         )
         return format_candidates(
             entry,
@@ -1605,7 +1653,13 @@ class ZmdLogBotPlugin(Star):
 
     @staticmethod
     def _event_origin(event: AstrMessageEvent) -> str:
-        return getattr(event, "unified_msg_origin", "") or "unknown"
+        """The chat an event came from; empty when the platform gives none.
+
+        Callers decide what an empty origin means for them — the watch routes
+        refuse, the candidate store keys on it, auto-expand only dedupes.
+        """
+
+        return getattr(event, "unified_msg_origin", "") or ""
 
     @staticmethod
     def _event_user_key(event: AstrMessageEvent) -> str:
@@ -1918,6 +1972,40 @@ class ZmdLogBotPlugin(Star):
             if self.renderer is not None:
                 await self.renderer.close()
         logger.info("ZmdLogBot plugin terminated.")
+
+
+def _shorten(text: str, limit: int = _ECHO_LIMIT) -> str:
+    """Cut user text echoed in a reply so a huge message is never repeated."""
+
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _ratio_or_default(value, default: float, name: str) -> float:
+    """Accept a 0–1 ratio, otherwise warn once at load and keep the default.
+
+    The matcher validates the same bound per request; a config typo such as
+    ``65`` (read as a percentage) would then fail every keyword query with a
+    stack trace each time instead of once here.
+    """
+
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not 0 <= value <= 1
+    ):
+        logger.warning(
+            "ZmdLogBot config %s must be between 0 and 1; using %s.",
+            name,
+            default,
+        )
+        return default
+    return float(value)
+
+
+def _battle_link_error_message(error: ZmdLogsAPIError) -> str:
+    if error.status_code == 404:
+        return "链接对应的公开战报不存在、未公开或已删除。"
+    return _UPSTREAM_UNAVAILABLE_MESSAGE
 
 
 def _positive_number(value, default: float, *, minimum: float) -> float:

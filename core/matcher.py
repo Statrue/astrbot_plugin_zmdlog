@@ -12,6 +12,10 @@ from typing import Any
 from .models import HotBossCard
 
 _IGNORED_QUERY_WORDS = ("排行榜", "榜单", "排行", "排名", "副本", "榜", "dps")
+# No board, dungeon or alias name comes anywhere near this; the fuzzy
+# fallback slides a window over every search text and its cost is linear
+# in the query, so anything longer is garbage and is not worth scanning.
+MAX_QUERY_LENGTH = 64
 _DIFFICULTY_SUFFIX_RE = re.compile(r"[·・\-–—\s]*(?:苦难|残酷|困难|噩梦|普通|简单)$")
 _NAME_SEPARATOR_RE = re.compile(r"\s*[·・]\s*")
 _ASCII_LETTERS_RE = re.compile(r"^[a-z][a-z0-9]*$")
@@ -217,6 +221,8 @@ class RankingMatcher:
         allowed_types: frozenset[TargetType] | None = None,
     ) -> MatchResult:
         stripped_query = query.strip()
+        if len(stripped_query) > MAX_QUERY_LENGTH:
+            return MatchResult(MatchStatus.NOT_FOUND, stripped_query)
         folded_query = fold_text(stripped_query)
         compact_query = normalize_search_text(stripped_query)
         if not compact_query:

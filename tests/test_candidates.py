@@ -2,11 +2,20 @@ import unittest
 
 from core.candidates import (
     CandidateStore,
+    describe_choice,
     extract_code,
     format_candidates,
     parse_selection,
 )
-from core.matcher import AliasConfig, MatchStatus, RankingMatcher
+from core.matcher import (
+    AliasConfig,
+    MatchChoice,
+    MatchLevel,
+    MatchStatus,
+    MatchTarget,
+    RankingMatcher,
+    TargetType,
+)
 from core.persistence import load_json, save_json
 from tests.helpers import make_card
 
@@ -19,6 +28,58 @@ def _ambiguous_choices():
     result = RankingMatcher(cards, AliasConfig.empty()).match("巨")
     assert result.status is MatchStatus.AMBIGUOUS
     return result.candidates
+
+
+class CandidateAbuseTests(unittest.TestCase):
+    def _account_choice(self, name: str, key: str = "usr_x") -> MatchChoice:
+        return MatchChoice(
+            target=MatchTarget(
+                target_type=TargetType.ACCOUNT,
+                key=key,
+                name=name,
+                dungeon_names=(),
+                boss_slugs=(),
+                query_text=name,
+            ),
+            level=MatchLevel.STANDARD_EXACT,
+            score=1.0,
+            matched_text=name,
+        )
+
+    def test_a_nickname_spelling_a_marker_cannot_hijack_the_code(self) -> None:
+        # The choice lines print upstream nicknames before the real marker
+        # line, so the code must be read from the last marker, not the first.
+        store = CandidateStore()
+        entry = store.remember(
+            "cpu",
+            (
+                self._account_choice("候选编号 ABCD"),
+                self._account_choice("候选编号AAAA x"),
+            ),
+        )
+
+        self.assertEqual(extract_code(format_candidates(entry)), entry.code)
+
+    def test_a_code_only_works_in_the_chat_that_received_it(self) -> None:
+        store = CandidateStore()
+        entry = store.remember(
+            "cpu", (self._account_choice("CPU 0"),), origin="aiocqhttp:GroupMessage:1"
+        )
+
+        self.assertIsNotNone(
+            store.resolve(entry.code, "1", origin="aiocqhttp:GroupMessage:1")
+        )
+        self.assertIsNone(
+            store.resolve(entry.code, "1", origin="aiocqhttp:GroupMessage:2")
+        )
+        self.assertIsNone(store.resolve(entry.code, "1", origin=""))
+        # Callers that do not track origins keep the old behaviour.
+        self.assertIsNotNone(store.resolve(entry.code, "1"))
+
+    def test_nicknames_stay_on_one_line(self) -> None:
+        text = describe_choice(self._account_choice("a\nb\r\n  c"))
+
+        self.assertEqual(text, "a b c · 公开账号")
 
 
 class CandidateStoreTests(unittest.TestCase):
