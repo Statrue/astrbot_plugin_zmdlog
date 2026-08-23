@@ -195,15 +195,15 @@ Docker 用户还应确认容器内 `/AstrBot/data` 可写，并在安装后完�
 
 ### 提示“ZMDLogs 暂时不可用”
 
-优先检查 AstrBot 所在机器或容器到 `https://zmdlogs.com` 的网络连通性，并查看 AstrBot 日志中的 `ZmdLogBot ranking request failed` 记录。
+优先检查 AstrBot 所在机器或容器到 `https://zmdlogs.com` 的网络连通性，并查看 AstrBot 日志中的 `ZmdLogBot … request failed` 记录。
 
 ### `--top` 没有效果
 
 `--top` 只作用于具体榜单，允许值为 1–30；全部榜单和副本范围页面仍固定展示各榜单前三名。
 
-### 输入昵称无法查询账号
+### 输入昵称查不到账号
 
-当前版本只接受精确 `accountId` 或 `https://zmdlogs.com/records/<accountId>` 账号主页链接；昵称搜索等待上游公开查询能力稳定后再接入。
+昵称需要 2–64 个字符，只能搜到有公开榜单记录的账号；多个结果时回复序号选择。查不到时可改用 `accountId` 或 `https://zmdlogs.com/records/<accountId>` 账号主页链接。
 
 ## 开发与测试
 
@@ -211,7 +211,7 @@ Docker 用户还应确认容器内 `/AstrBot/data` 可写，并在安装后完�
 python -m unittest discover -s tests -v
 ```
 
-测试覆盖指令路由、帮助页、别名与模糊匹配、缓存并发、API 重试、协议校验和模板渲染边界。
+测试覆盖指令路由、帮助页、别名与模糊匹配、候选列表、缓存并发、API 重试、协议校验、名次通报逻辑和模板渲染边界；`tests/test_main_handlers.py` 用假事件直接驱动 `main.py` 的处理器，需要本地环境装有 AstrBot，否则自动跳过。
 
 视觉资源说明见 [resources/common/ASSETS.md](resources/common/ASSETS.md)；内嵌字体由 `tools/build_fonts.py` 从上游字体子集化生成。
 
