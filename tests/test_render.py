@@ -21,6 +21,7 @@ from core.presentation import (
     format_number,
 )
 from core.render import (
+    AssetCache,
     LongImageRenderer,
     RenderError,
     TemplateConfigurationError,
@@ -31,6 +32,51 @@ from tests.helpers import (
     make_card,
     public_user_rankings_payload,
 )
+
+
+class AssetCacheTests(unittest.TestCase):
+    def _put(self, cache, url, size=4, now=0.0, status=200):
+        cache.put(
+            url,
+            status=status,
+            content_type="image/png",
+            body=b"x" * size,
+            now=now,
+        )
+
+    def test_entries_expire_by_ttl(self) -> None:
+        cache = AssetCache(ttl_seconds=10)
+        self._put(cache, "u", now=0.0)
+
+        self.assertIsNotNone(cache.get("u", now=9.9))
+        self.assertIsNone(cache.get("u", now=10.0))
+        self.assertEqual(len(cache), 0)
+
+    def test_total_byte_cap_evicts_oldest_first(self) -> None:
+        cache = AssetCache(max_total_bytes=10, max_item_bytes=10)
+        self._put(cache, "a", size=4, now=0.0)
+        self._put(cache, "b", size=4, now=1.0)
+        self._put(cache, "c", size=4, now=2.0)
+
+        self.assertIsNone(cache.get("a", now=2.0))
+        self.assertIsNotNone(cache.get("b", now=2.0))
+        self.assertIsNotNone(cache.get("c", now=2.0))
+        self.assertEqual(cache.total_bytes, 8)
+
+    def test_an_oversized_item_is_not_stored(self) -> None:
+        cache = AssetCache(max_item_bytes=3)
+        self._put(cache, "big", size=4)
+
+        self.assertIsNone(cache.get("big", now=0.0))
+        self.assertEqual(cache.total_bytes, 0)
+
+    def test_overwriting_a_url_replaces_its_bytes(self) -> None:
+        cache = AssetCache()
+        self._put(cache, "u", size=4, now=0.0)
+        self._put(cache, "u", size=6, now=1.0)
+
+        self.assertEqual(cache.total_bytes, 6)
+        self.assertEqual(len(cache), 1)
 
 
 class TemplateRendererTests(unittest.TestCase):
@@ -44,7 +90,7 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("!zmdlog [help]", html)
         self.assertIn("!zmdlog 榜单", html)
         self.assertIn("ZmdLogBot", html)
-        self.assertIn("v0.5.0", html)
+        self.assertIn("v0.5.1", html)
         self.assertIn("data:image/svg+xml;base64,", html)
         self.assertIn("@font-face", html)
         self.assertNotIn("astrbot_plugin_zmdlog", html)

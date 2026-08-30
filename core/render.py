@@ -7,6 +7,8 @@ import struct
 import tempfile
 import time
 import uuid
+from collections import OrderedDict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -267,6 +269,89 @@ class TemplateRenderer:
         )
 
 
+_ASSET_CACHE_TTL_SECONDS = 6 * 3600.0
+_ASSET_CACHE_MAX_TOTAL_BYTES = 32 * 1024 * 1024
+_ASSET_CACHE_MAX_ITEM_BYTES = 2 * 1024 * 1024
+
+
+@dataclass(slots=True)
+class CachedAsset:
+    status: int
+    content_type: str
+    body: bytes
+    expires_at: float
+
+
+class AssetCache:
+    """In-memory byte cache for upstream avatars fetched during capture.
+
+    Every capture runs in a fresh incognito browser context, so Chromium's own
+    cache never helps: without this, each rendered page re-downloads its whole
+    avatar set from upstream. The avatar catalog is small and static, hence
+    the long TTL. Insertion-ordered eviction under a total-byte cap; anything
+    over the per-item cap is simply not stored.
+    """
+
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = _ASSET_CACHE_TTL_SECONDS,
+        max_total_bytes: int = _ASSET_CACHE_MAX_TOTAL_BYTES,
+        max_item_bytes: int = _ASSET_CACHE_MAX_ITEM_BYTES,
+    ) -> None:
+        self.ttl_seconds = float(ttl_seconds)
+        self.max_total_bytes = int(max_total_bytes)
+        self.max_item_bytes = int(max_item_bytes)
+        self._entries: OrderedDict[str, CachedAsset] = OrderedDict()
+        self._total_bytes = 0
+
+    def get(self, url: str, *, now: float | None = None) -> CachedAsset | None:
+        timestamp = time.monotonic() if now is None else now
+        entry = self._entries.get(url)
+        if entry is None:
+            return None
+        if entry.expires_at <= timestamp:
+            self._drop(url)
+            return None
+        return entry
+
+    def put(
+        self,
+        url: str,
+        *,
+        status: int,
+        content_type: str,
+        body: bytes,
+        now: float | None = None,
+    ) -> None:
+        if len(body) > self.max_item_bytes:
+            return
+        timestamp = time.monotonic() if now is None else now
+        self._drop(url)
+        self._entries[url] = CachedAsset(
+            status=status,
+            content_type=content_type,
+            body=body,
+            expires_at=timestamp + self.ttl_seconds,
+        )
+        self._total_bytes += len(body)
+        while self._total_bytes > self.max_total_bytes and self._entries:
+            oldest = next(iter(self._entries))
+            self._drop(oldest)
+
+    def _drop(self, url: str) -> None:
+        entry = self._entries.pop(url, None)
+        if entry is not None:
+            self._total_bytes -= len(entry.body)
+
+    @property
+    def total_bytes(self) -> int:
+        return self._total_bytes
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
 class LongImageRenderer:
     """Capture every result as one complete 1280px-wide PNG."""
 
@@ -317,6 +402,7 @@ class LongImageRenderer:
             )
         )
         self._output_lock = asyncio.Lock()
+        self._asset_cache = AssetCache()
         self._created_files: set[Path] = set()
         self._active_outputs: set[Path] = set()
         self._cleanup_task: asyncio.Task[None] | None = None
@@ -674,6 +760,14 @@ class LongImageRenderer:
         if request.resource_type != "image" or origin not in self.allowed_image_origins:
             await route.abort()
             return
+        cached = self._asset_cache.get(request.url)
+        if cached is not None:
+            await route.fulfill(
+                status=cached.status,
+                content_type=cached.content_type,
+                body=cached.body,
+            )
+            return
         # Fetch here instead of letting Chromium follow the request: this
         # handler only ever sees the first hop, so a redirect served by an
         # allowed origin would otherwise pull the image from anywhere.
@@ -685,7 +779,26 @@ class LongImageRenderer:
         if 300 <= response.status < 400:
             await route.abort()
             return
-        await route.fulfill(response=response)
+        try:
+            body = await response.body()
+        except Exception:
+            await route.abort()
+            return
+        content_type = response.headers.get(
+            "content-type", "application/octet-stream"
+        )
+        if response.status == 200:
+            self._asset_cache.put(
+                request.url,
+                status=response.status,
+                content_type=content_type,
+                body=body,
+            )
+        await route.fulfill(
+            status=response.status,
+            content_type=content_type,
+            body=body,
+        )
 
     async def _settle_page(self, page) -> None:
         await page.evaluate(
