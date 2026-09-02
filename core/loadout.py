@@ -94,12 +94,19 @@ class SkillLevel:
     level: int
 
 
-def skill_display_name(skill_name: str, skill_key: str | None) -> str:
+def skill_display_name(
+    skill_name: str,
+    skill_key: str | None,
+    *,
+    combo_from_key: bool = True,
+) -> str:
     """The name a reader should see for one skill-stat row.
 
     Follows the site's rules (key override, name override, combo detection),
     then tidies raw keys the parser could not name: the character prefix is
-    dropped and underscores become spaces.
+    dropped and underscores become spaces. ``combo_from_key`` is the loose
+    "anything with combo_skill in the key" rule; the cast timeline turns it
+    off because mechanism entities carry such keys too.
     """
 
     if skill_key:
@@ -110,7 +117,7 @@ def skill_display_name(skill_name: str, skill_key: str | None) -> str:
     override = _SKILL_NAME_OVERRIDES.get(name.lower())
     if override:
         return override
-    if skill_key and _COMBO_SKILL_KEY_RE.search(skill_key):
+    if combo_from_key and skill_key and _COMBO_SKILL_KEY_RE.search(skill_key):
         return "连携技"
     if not name:
         return skill_key or "未命名技能"

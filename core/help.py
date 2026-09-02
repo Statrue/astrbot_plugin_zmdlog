@@ -125,7 +125,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         answers="这一场具体是怎么打的？",
                         description=(
                             "填榜单关键词直接看该榜第 N 名的战报，默认第 1 名；"
-                            "卡片底部附每个角色的配装概览和主要伤害来源。"
+                            "卡片中部是施法节奏，底部附每个角色的配装概览和主要伤害来源。"
                         ),
                     ),
                     HelpCommand(
@@ -142,6 +142,15 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         description=(
                             "逐角色列出各技能的次数、总伤、占比、均伤与最高伤害，"
                             "普攻各段合并显示。"
+                        ),
+                    ),
+                    HelpCommand(
+                        command=f"{command} 技能轴 <battleId、链接或榜单关键词 [名次]>",
+                        answers="这一场每个人什么时候放了什么技能？",
+                        description=(
+                            "把战报卡里的施法节奏放大成整页：每个角色一条色轨，"
+                            "招式按时长占一段，普攻按连段折叠。别名 排轴 / 时间轴；"
+                            "旧版客户端上传的战斗没有施法序列。"
                         ),
                     ),
                 ),

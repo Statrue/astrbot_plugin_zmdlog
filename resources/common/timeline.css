@@ -1,0 +1,326 @@
+/* ---------- 施法节奏：每个角色一条有宽度的色轨，招式按时长占一段 ---------- */
+
+.rail-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  color: var(--steel);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rail-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rail-legend b {
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.rail-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  background: var(--faint);
+}
+
+.rail-legend .is-ultimate i { background: var(--action); }
+.rail-legend .is-skill i { background: var(--blue); }
+.rail-legend .is-combo i { background: var(--info); }
+.rail-legend .is-heavy i { background: var(--notify); }
+
+.rail-legend .is-normal i {
+  background: var(--line-soft);
+  box-shadow: inset 3px 0 0 var(--steel);
+}
+
+.rail-legend .is-other i { background: var(--faint); }
+
+.rail-legend .is-summon i {
+  width: 8px;
+  background-color: var(--line-soft);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(28, 28, 28, 0.35) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+.rail-legend .is-energy i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--action);
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.rail-chart {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+
+.rail-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card-soft);
+}
+
+.rail-head--time,
+.rail-foot--time {
+  justify-content: center;
+  padding: 8px 4px;
+  color: var(--faint);
+  font-family: var(--font-num);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.rail-head .avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+}
+
+.rail-head-text {
+  min-width: 0;
+}
+
+.rail-head-text strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-head-text span {
+  display: block;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.rail-time {
+  position: relative;
+  border-right: 1px solid var(--line);
+  background: var(--card-soft);
+}
+
+.rail-tick {
+  position: absolute;
+  right: 7px;
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+.rail-tick.is-major {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.rail-tick::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -7px;
+  width: 6px;
+  height: 1px;
+  background: var(--faint);
+}
+
+.rail-tick.is-first {
+  transform: translateY(1px);
+}
+
+.rail-tick.is-last {
+  transform: translateY(calc(-100% - 1px));
+}
+
+.rail-lane {
+  position: relative;
+  overflow: hidden;
+  border-left: 1px solid var(--line-soft);
+}
+
+.rail-grid {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+/* the idle rail down the middle of the track */
+.rail-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 37px;
+  width: 2px;
+  background: var(--line);
+}
+
+/* a move occupies the track for as long as it lasts */
+.rail-block {
+  position: absolute;
+  box-sizing: border-box;
+  background: var(--faint);
+  border-top: 1px solid var(--card);
+}
+
+.rail-block.is-ultimate { background: var(--action); }
+.rail-block.is-skill { background: var(--blue); }
+.rail-block.is-combo { background: var(--info); }
+.rail-block.is-heavy { background: var(--notify); }
+
+.rail-block.is-normal {
+  background: var(--line-soft);
+  box-shadow: inset 3px 0 0 var(--steel);
+}
+
+.rail-block.is-other {
+  background: var(--faint);
+}
+
+/* summoned entities keep to a hatched strip beside the track */
+.rail-block.is-summon {
+  left: 4px;
+  width: 8px;
+  background-color: var(--line-soft);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(28, 28, 28, 0.35) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+/* the landmark on a 终结技 */
+.rail-mark {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--ink);
+  background: var(--action);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.rail-energy {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--action);
+  box-shadow: 0 0 0 1.5px var(--ink);
+  transform: translate(-50%, 3px);
+}
+
+.rail-label {
+  position: absolute;
+  right: 6px;
+  left: 68px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.rail-label em {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 10px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.rail-label b {
+  overflow: hidden;
+  min-width: 0;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.rail-label small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.rail-label.is-ultimate b {
+  padding: 0 4px;
+  background: linear-gradient(transparent 55%, var(--action) 55%, var(--action) 95%, transparent 95%);
+}
+
+.rail-label.is-normal,
+.rail-label.is-summon {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.rail-label.is-normal b,
+.rail-label.is-summon b {
+  font-weight: 700;
+}
+
+.rail-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--card-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.rail-foot b {
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.rail-note {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px dashed var(--line);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}

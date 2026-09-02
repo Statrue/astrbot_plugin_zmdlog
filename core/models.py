@@ -247,6 +247,45 @@ class BattleDetailSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class BattleCast:
+    """One cast from the public export: who cast what, from when to when."""
+
+    character_key: str
+    skill_key: str
+    skill_name: str
+    start_ms: int
+    # Missing when the parser never saw the cast end.
+    end_ms: int | None = None
+    # ``Summon`` marks a summoned entity's cast (sheep, swords, ...).
+    source: str | None = None
+    recovers_energy: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ExportRosterEntry:
+    slot: int
+    character_name: str
+    character_key: str | None = None
+    character_level: int | None = None
+    character_potential: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BattleExport:
+    """``GET /api/v1/battles/{id}/export``: the cast sequence of one battle."""
+
+    battle_id: str
+    boss_name: str
+    dungeon_name: str
+    duration_ms: int
+    roster: tuple[ExportRosterEntry, ...]
+    casts: tuple[BattleCast, ...]
+    boss_slug: str | None = None
+    battle_end_at: str | None = None
+    parser_version: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CharacterStatisticsRow:
     character_key: str
     character_name: str
@@ -719,6 +758,75 @@ def parse_battle_detail(payload: Any) -> BattleDetailSummary:
         skill_stats=tuple(
             _parse_skill_stat(value, f"battle-detail.roleSkillStats[{index}]")
             for index, value in enumerate(skill_items)
+        ),
+    )
+
+
+def parse_battle_export(payload: Any) -> BattleExport:
+    """Adapt the public export (schema v1); only what the timeline needs."""
+
+    path = "battle-export"
+    item = _mapping(payload, path)
+    dungeon = _mapping(item.get("dungeon"), f"{path}.dungeon")
+    roster = _list(item.get("roster", []), f"{path}.roster")
+    casts = _list(item.get("casts", []), f"{path}.casts")
+    return BattleExport(
+        battle_id=_string(item.get("battleId"), f"{path}.battleId"),
+        boss_name=_string(dungeon.get("bossName"), f"{path}.dungeon.bossName"),
+        dungeon_name=_string(
+            dungeon.get("dungeonName"), f"{path}.dungeon.dungeonName"
+        ),
+        duration_ms=_non_negative(item.get("durationMs"), f"{path}.durationMs"),
+        roster=tuple(
+            _parse_export_roster_entry(entry, f"{path}.roster[{index}]")
+            for index, entry in enumerate(roster)
+        ),
+        casts=tuple(
+            _parse_battle_cast(cast, f"{path}.casts[{index}]")
+            for index, cast in enumerate(casts)
+        ),
+        boss_slug=_optional_string(
+            dungeon.get("dungeonSlug"), f"{path}.dungeon.dungeonSlug"
+        ),
+        battle_end_at=_optional_string(
+            item.get("battleEndAt"), f"{path}.battleEndAt"
+        ),
+        parser_version=_optional_string(
+            item.get("parserVersion"), f"{path}.parserVersion"
+        ),
+    )
+
+
+def _parse_export_roster_entry(value: Any, path: str) -> ExportRosterEntry:
+    item = _mapping(value, path)
+    return ExportRosterEntry(
+        slot=_integer(item.get("slot"), f"{path}.slot"),
+        character_name=_string(item.get("characterName"), f"{path}.characterName"),
+        character_key=_optional_string(
+            item.get("characterKey"), f"{path}.characterKey"
+        ),
+        character_level=_optional_integer(
+            item.get("characterLevel"), f"{path}.characterLevel"
+        ),
+        character_potential=_optional_integer(
+            item.get("characterPotential"), f"{path}.characterPotential"
+        ),
+    )
+
+
+def _parse_battle_cast(value: Any, path: str) -> BattleCast:
+    item = _mapping(value, path)
+    skill_key = _string(item.get("skillKey"), f"{path}.skillKey")
+    skill_name = _optional_string(item.get("skillName"), f"{path}.skillName")
+    return BattleCast(
+        character_key=_string(item.get("characterKey"), f"{path}.characterKey"),
+        skill_key=skill_key,
+        skill_name=skill_name or skill_key,
+        start_ms=_integer(item.get("tsMsFromStart"), f"{path}.tsMsFromStart"),
+        end_ms=_optional_integer(item.get("endMsFromStart"), f"{path}.endMsFromStart"),
+        source=_optional_string(item.get("skillSource"), f"{path}.skillSource"),
+        recovers_energy=bool(
+            _optional_boolean(item.get("recoversEnergy"), f"{path}.recoversEnergy")
         ),
     )
 

@@ -27,6 +27,7 @@ from .history import AccountHistory
 from .matcher import MatchChoice
 from .models import (
     BattleDetailSummary,
+    BattleExport,
     BossRanking,
     CharacterBossStatistics,
     CharacterStatistics,
@@ -44,6 +45,7 @@ from .presentation import (
     build_ranking_page,
     build_roster_page,
     build_skill_page,
+    build_timeline_page,
     build_trend_page,
 )
 from .routing import DEFAULT_RANKING_TOP
@@ -66,6 +68,7 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
         "loadout",
         "skills",
         "trend",
+        "timeline",
         "warmup",
     }
 )
@@ -257,11 +260,15 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str,
+        export: BattleExport | None = None,
+        export_note: str | None = None,
     ) -> str:
         page = build_battle_page(
             battle,
             query=query,
             web_base_url=web_base_url,
+            export=export,
+            export_note=export_note,
         )
         return self._render("battle/battle.html", page, "battle")
 
@@ -310,6 +317,20 @@ class TemplateRenderer:
             last_checked=last_checked,
         )
         return self._render("trend/trend.html", page, "trend")
+
+    def render_timeline(
+        self,
+        export: BattleExport,
+        *,
+        query: str,
+        web_base_url: str,
+    ) -> str:
+        page = build_timeline_page(
+            export,
+            query=query,
+            web_base_url=web_base_url,
+        )
+        return self._render("timeline/timeline.html", page, "timeline")
 
     def _render(self, template_name: str, page, page_kind: str) -> str:
         template = self.environment.get_template(template_name)
@@ -604,12 +625,16 @@ class LongImageRenderer:
         *,
         query: str,
         web_base_url: str,
+        export: BattleExport | None = None,
+        export_note: str | None = None,
     ) -> str:
         try:
             html = self.templates.render_battle(
                 battle,
                 query=query,
                 web_base_url=web_base_url,
+                export=export,
+                export_note=export_note,
             )
         except Exception as exc:
             raise RenderError("battle template rendering failed") from exc
@@ -669,6 +694,23 @@ class LongImageRenderer:
         except Exception as exc:
             raise RenderError("trend template rendering failed") from exc
         return await self._capture(html, "trend")
+
+    async def render_timeline(
+        self,
+        export: BattleExport,
+        *,
+        query: str,
+        web_base_url: str,
+    ) -> str:
+        try:
+            html = self.templates.render_timeline(
+                export,
+                query=query,
+                web_base_url=web_base_url,
+            )
+        except Exception as exc:
+            raise RenderError("timeline template rendering failed") from exc
+        return await self._capture(html, "timeline")
 
     async def warm_up(self) -> None:
         """Launch Chromium and render one page so the first query is fast."""

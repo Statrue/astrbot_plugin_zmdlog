@@ -76,6 +76,7 @@ from .core.matcher import (
 )
 from .core.models import (
     BattleDetailSummary,
+    BattleExport,
     BossRanking,
     CharacterBossStatistics,
     CharacterStatistics,
@@ -177,10 +178,20 @@ _BATTLE_LINK_FILTER = (
 # 战报 / 配装 / 技能 share one argument shape and one lookup; only the page
 # drawn from the battle differs.
 _BATTLE_STYLE_ROUTES = frozenset(
-    {RouteKind.BATTLE_QUERY, RouteKind.LOADOUT_QUERY, RouteKind.SKILL_QUERY}
+    {
+        RouteKind.BATTLE_QUERY,
+        RouteKind.LOADOUT_QUERY,
+        RouteKind.SKILL_QUERY,
+        RouteKind.TIMELINE_QUERY,
+    }
 )
 _BATTLE_VIEWS = frozenset(
-    {CandidateView.BATTLE, CandidateView.LOADOUT, CandidateView.SKILLS}
+    {
+        CandidateView.BATTLE,
+        CandidateView.LOADOUT,
+        CandidateView.SKILLS,
+        CandidateView.TIMELINE,
+    }
 )
 _BOARD_ONLY_VIEWS = (
     frozenset({CandidateView.CHARACTER_STATS, CandidateView.ROSTER})
@@ -189,6 +200,9 @@ _BOARD_ONLY_VIEWS = (
 _CHARACTER_STATS_UNAVAILABLE = "character_statistics_not_available"
 _NO_LOADOUT_MESSAGE = "这份战报没有记录阵容配装。"
 _NO_SKILL_STATS_MESSAGE = "这份战报没有技能统计数据。"
+_NO_TIMELINE_MESSAGE = "这条战斗由旧版客户端上传，没有完整施法序列，画不了技能轴。"
+_TIMELINE_RATE_LIMITED_MESSAGE = "技能轴接口请求过于频繁，请稍后再试。"
+_EXPORT_UNSUPPORTED = "battle_export_unsupported"
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,6 +350,9 @@ class ZmdLogBotPlugin(Star):
             character_stats_cache_ttl_seconds,
         )
         self.battle_cache = AsyncTTLCache[str, BattleDetailSummary](
+            battle_cache_ttl_seconds,
+        )
+        self.battle_export_cache = AsyncTTLCache[str, BattleExport](
             battle_cache_ttl_seconds,
         )
         self.web_base_url = self.config.get(
@@ -498,11 +515,14 @@ class ZmdLogBotPlugin(Star):
 
         async def expand() -> _DispatchOutcome:
             battle = await self._get_battle_detail(battle_id)
+            export, note = await self._battle_export_for_card(battle_id)
             renderer = self._require_renderer()
             image_path = await renderer.render_battle(
                 battle,
                 query=battle_id,
                 web_base_url=self.web_base_url,
+                export=export,
+                export_note=note,
             )
             return _DispatchOutcome(image_path=image_path)
 
@@ -629,9 +649,8 @@ class ZmdLogBotPlugin(Star):
                 # a board keyword whose rank-N battle should be shown.
                 battle_id = None
             if battle_id is not None:
-                battle = await self._get_battle_detail(battle_id)
                 return await self._render_battle_view(
-                    battle, _route_view(route), query=route.query
+                    battle_id, _route_view(route), query=route.query
                 )
 
         if route.kind is RouteKind.TREND_QUERY:
@@ -1199,9 +1218,8 @@ class ZmdLogBotPlugin(Star):
                         f"没有第 {pending.battle_rank} 名。"
                     )
                 )
-            battle = await self._get_battle_detail(row.battle_id)
             return await self._render_battle_view(
-                battle, pending.view, query=query
+                row.battle_id, pending.view, query=query
             )
         if pending.view is CandidateView.ROSTER:
             image_path = await renderer.render_roster(
@@ -1259,18 +1277,35 @@ class ZmdLogBotPlugin(Star):
 
     async def _render_battle_view(
         self,
-        battle: BattleDetailSummary,
+        battle_id: str,
         view: CandidateView,
         *,
         query: str,
     ) -> _DispatchOutcome:
-        """Draw the page a 战报 / 配装 / 技能 request asked for from one battle.
+        """Draw the page a 战报 / 配装 / 技能 / 技能轴 request asked for.
 
-        Older uploads carry no roster loadout or skill statistics; those get a
-        short text instead of an empty page.
+        The timeline reads the public export, the other three the battle
+        detail. Older uploads carry no roster loadout, skill statistics or
+        cast sequence; those get a short text instead of an empty page.
         """
 
         renderer = self._require_renderer()
+        if view is CandidateView.TIMELINE:
+            try:
+                export = await self._get_battle_export(battle_id)
+            except ZmdLogsAPIError as exc:
+                if exc.status_code == 422 and exc.code == _EXPORT_UNSUPPORTED:
+                    logger.warning("ZmdLogBot API request failed: %s", exc.code)
+                    return _DispatchOutcome(message=_NO_TIMELINE_MESSAGE)
+                if exc.status_code == 429:
+                    logger.warning("ZmdLogBot API request failed: %s", exc.code)
+                    return _DispatchOutcome(message=_TIMELINE_RATE_LIMITED_MESSAGE)
+                raise
+            image_path = await renderer.render_timeline(
+                export, query=query, web_base_url=self.web_base_url
+            )
+            return _DispatchOutcome(image_path=image_path)
+        battle = await self._get_battle_detail(battle_id)
         if view is CandidateView.LOADOUT:
             if not battle.roster:
                 return _DispatchOutcome(message=_NO_LOADOUT_MESSAGE)
@@ -1284,10 +1319,41 @@ class ZmdLogBotPlugin(Star):
                 battle, query=query, web_base_url=self.web_base_url
             )
         else:
+            export, note = await self._battle_export_for_card(battle_id)
             image_path = await renderer.render_battle(
-                battle, query=query, web_base_url=self.web_base_url
+                battle,
+                query=query,
+                web_base_url=self.web_base_url,
+                export=export,
+                export_note=note,
             )
         return _DispatchOutcome(image_path=image_path)
+
+    async def _battle_export_for_card(
+        self,
+        battle_id: str,
+    ) -> tuple[BattleExport | None, str | None]:
+        """The cast sequence for the battle card, or a one-line reason without.
+
+        Best effort: the card must never fail because the export did. An old
+        upload and a rate limit get a note the card can print; anything else
+        is logged and the section is simply left out.
+        """
+
+        try:
+            return await self._get_battle_export(battle_id), None
+        except ZmdLogsAPIError as exc:
+            logger.warning("ZmdLogBot battle export unavailable: %s", exc.code)
+            if exc.status_code == 422 and exc.code == _EXPORT_UNSUPPORTED:
+                return None, _NO_TIMELINE_MESSAGE
+            if exc.status_code == 429:
+                return None, _TIMELINE_RATE_LIMITED_MESSAGE
+            return None, None
+        except ZmdLogsClientError as exc:
+            logger.warning(
+                "ZmdLogBot battle export unavailable: %s", type(exc).__name__
+            )
+            return None, None
 
     async def _reply_with_candidate(
         self,
@@ -2351,6 +2417,13 @@ class ZmdLogBotPlugin(Star):
         )
         return result.value
 
+    async def _get_battle_export(self, battle_id: str) -> BattleExport:
+        result = await self.battle_export_cache.get_or_load(
+            battle_id,
+            lambda: self.client.get_battle_export(battle_id),
+        )
+        return result.value
+
     async def _claim_auto_expand(self, origin: str, battle_id: str) -> bool:
         now = time.monotonic()
         key = (origin, battle_id)
@@ -2430,6 +2503,7 @@ class ZmdLogBotPlugin(Star):
         await self.boss_ranking_cache.close()
         await self.account_cache.close()
         await self.battle_cache.close()
+        await self.battle_export_cache.close()
         await self.character_stats_cache.close()
         await self.character_boss_cache.close()
         try:
@@ -2519,6 +2593,8 @@ def _route_view(route: RouteRequest) -> CandidateView:
         return CandidateView.LOADOUT
     if route.kind is RouteKind.SKILL_QUERY:
         return CandidateView.SKILLS
+    if route.kind is RouteKind.TIMELINE_QUERY:
+        return CandidateView.TIMELINE
     if route.kind is RouteKind.TREND_QUERY:
         return CandidateView.TREND
     return CandidateView.RANKING

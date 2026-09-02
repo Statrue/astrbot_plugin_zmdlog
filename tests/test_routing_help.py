@@ -121,6 +121,7 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog 战报 <battleId、链接或榜单关键词 [名次]>",
                 "!zmdlog 配装 <battleId、链接或榜单关键词 [名次]>",
                 "!zmdlog 技能 <battleId、链接或榜单关键词 [名次]>",
+                "!zmdlog 技能轴 <battleId、链接或榜单关键词 [名次]>",
                 "!zmdlog 关注 <昵称、accountId或主页链接>",
                 "!zmdlog 关注 榜单 <榜单关键词>",
                 "!zmdlog 关注",

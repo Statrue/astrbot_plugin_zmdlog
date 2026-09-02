@@ -86,6 +86,7 @@ class RouteKind(str, Enum):
     # Same argument shape as 战报; they differ only in which page is drawn.
     LOADOUT_QUERY = "loadout_query"
     SKILL_QUERY = "skill_query"
+    TIMELINE_QUERY = "timeline_query"
     SMART_QUERY = "smart_query"
     CHARACTER_STATS = "character_stats"
     ROSTER_QUERY = "roster_query"
@@ -107,6 +108,9 @@ _BATTLE_STYLE_COMMANDS.update(
         "装备": RouteKind.LOADOUT_QUERY,
         "技能": RouteKind.SKILL_QUERY,
         "技能统计": RouteKind.SKILL_QUERY,
+        "技能轴": RouteKind.TIMELINE_QUERY,
+        "排轴": RouteKind.TIMELINE_QUERY,
+        "时间轴": RouteKind.TIMELINE_QUERY,
     }
 )
 

@@ -12,6 +12,7 @@ from .identifiers import is_valid_account_id, is_valid_battle_id
 from .models import (
     AccountSearch,
     BattleDetailSummary,
+    BattleExport,
     BossRanking,
     CharacterBossStatistics,
     CharacterStatistics,
@@ -20,6 +21,7 @@ from .models import (
     PublicUserRankings,
     parse_account_search,
     parse_battle_detail,
+    parse_battle_export,
     parse_boss_ranking,
     parse_character_boss_statistics,
     parse_character_statistics,
@@ -245,6 +247,22 @@ class ZmdLogsClient:
             return parse_battle_detail(payload)
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError("battle detail response is invalid") from exc
+
+    async def get_battle_export(self, battle_id: str) -> BattleExport:
+        """Return the cast sequence of one public battle.
+
+        The export endpoint is the read-only contract upstream keeps for
+        external axis tools: public battles only, per-IP rate limited, and a
+        422 ``battle_export_unsupported`` for uploads too old to carry casts.
+        """
+
+        if not is_valid_battle_id(battle_id):
+            raise InvalidPublicIdentifierError("invalid battle id")
+        payload = await self._get_json(f"api/v1/battles/{battle_id}/export")
+        try:
+            return parse_battle_export(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError("battle export response is invalid") from exc
 
     async def close(self) -> None:
         """Close the underlying connection pool."""

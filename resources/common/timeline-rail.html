@@ -1,0 +1,48 @@
+{% macro render_rail(view) -%}
+<ul class="rail-legend" aria-label="图例">
+  {% for item in view.legend %}
+  <li class="is-{{ item.css }}"><i></i>{{ item.label }}<b>{{ item.count }}</b></li>
+  {% endfor %}
+  {% if view.has_summon %}<li class="is-summon"><i></i>召唤物</li>{% endif %}
+  {% if view.has_energy %}<li class="is-energy"><i></i>回复技力</li>{% endif %}
+</ul>
+<section class="rail-chart" aria-label="施法节奏" style="grid-template-columns: 52px repeat({{ view.lanes|length }}, minmax(0, 1fr));">
+  <div class="rail-head rail-head--time"><span>START</span></div>
+  {% for lane in view.lanes %}
+  <div class="rail-head">
+    <span class="avatar">{{ lane.character_initial }}{% if lane.character_avatar_url %}<img src="{{ lane.character_avatar_url }}" alt="" onerror="this.remove()">{% endif %}</span>
+    <div class="rail-head-text">
+      <strong>{{ lane.character_name }}</strong>
+      <span>{{ lane.cast_count }} 次施法</span>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="rail-time" style="height: {{ view.chart_height }}px;">
+    {% for tick in view.ticks %}
+    <span class="rail-tick{% if tick.major %} is-major{% endif %}{% if loop.first %} is-first{% elif loop.last and tick.top >= view.chart_height - 8 %} is-last{% endif %}" style="top: {{ tick.top }}px;">{{ tick.label }}</span>
+    {% endfor %}
+  </div>
+  {% for lane in view.lanes %}
+  <div class="rail-lane" style="height: {{ view.chart_height }}px;">
+    {% for tick in view.ticks %}{% if not loop.first %}<i class="rail-grid" style="top: {{ tick.top }}px;"></i>{% endif %}{% endfor %}
+    <i class="rail-line"></i>
+    {% for event in lane.events %}
+    {% if event.summon %}
+    <i class="rail-block is-summon" style="top: {{ event.top }}px; height: {{ event.height }}px;"></i>
+    {% else %}
+    <i class="rail-block is-{{ event.category }}" style="top: {{ event.top }}px; height: {{ event.height }}px; left: {{ 16 + event.left }}px; width: {{ event.width }}px;"></i>
+    {% endif %}
+    {% endfor %}
+    {% for event in lane.events %}
+    {% if event.shape == "diamond" %}<i class="rail-mark" style="top: {{ event.top }}px; left: {{ 16 + event.left + event.width // 2 }}px;"></i>{% endif %}
+    {% if event.energy and not event.summon %}<i class="rail-energy" style="top: {{ event.top }}px; left: {{ 16 + event.left + event.width }}px;"></i>{% endif %}
+    {% if event.label_visible %}
+    <span class="rail-label is-{{ event.category }}{% if event.summon %} is-summon{% endif %}" style="top: {{ event.label_top }}px;"><em>{{ event.time_label }}</em><b>{{ event.name }}</b>{% if event.count > 1 %}<small>×{{ event.count }}</small>{% endif %}</span>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <div class="rail-foot rail-foot--time"><span>END</span></div>
+  <div class="rail-foot" style="grid-column: 2 / -1;"><b>{{ view.duration_label }}</b><span>{{ view.scale_label }}{% if view.hidden_count %} · 已隐藏 {{ view.hidden_count }} 条冲刺、闪避等移动动作{% endif %}{% if view.clipped_count %} · {{ view.clipped_count }} 条动作超出战斗计时，已裁剪{% endif %}</span></div>
+</section>
+{%- endmacro %}

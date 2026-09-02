@@ -24,6 +24,7 @@ class CandidateView(str, Enum):
     BATTLE = "battle"
     LOADOUT = "loadout"
     SKILLS = "skills"
+    TIMELINE = "timeline"
     WATCH = "watch"
     WATCH_BOARD = "watch_board"
     TREND = "trend"
@@ -36,6 +37,7 @@ _VIEW_TITLES = {
     CandidateView.BATTLE: "的战报查询匹配到 {count} 个榜单",
     CandidateView.LOADOUT: "的配装查询匹配到 {count} 个榜单",
     CandidateView.SKILLS: "的技能统计查询匹配到 {count} 个榜单",
+    CandidateView.TIMELINE: "的技能轴查询匹配到 {count} 个榜单",
     CandidateView.WATCH: "匹配到 {count} 个公开账号，选一个关注",
     CandidateView.WATCH_BOARD: "匹配到 {count} 个榜单，选一个关注",
     CandidateView.TREND: "匹配到 {count} 个公开账号，选一个看名次趋势",

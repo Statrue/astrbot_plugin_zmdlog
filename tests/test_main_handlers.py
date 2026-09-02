@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 from tests.helpers import (
     battle_detail_payload,
+    battle_export_payload,
     hot_bosses_payload,
     public_user_rankings_payload,
     ranking_payload_with_rows,
@@ -42,6 +43,7 @@ if astrbot is not None:
     from astrbot_plugin_zmdlog.core.history import record_rankings
     from astrbot_plugin_zmdlog.core.models import (
         parse_battle_detail,
+        parse_battle_export,
         parse_boss_ranking,
         parse_hot_bosses,
         parse_public_user_rankings,
@@ -106,6 +108,9 @@ class FakeRenderer:
     async def render_trend(self, history, **kwargs):
         return "/tmp/trend.png"
 
+    async def render_timeline(self, export, **kwargs):
+        return "/tmp/timeline.png"
+
     async def render_account(self, account, **kwargs):
         return "/tmp/account.png"
 
@@ -140,7 +145,13 @@ class HandlerTests(unittest.TestCase):
         async def list_hot_bosses():
             return self.cards
 
+        async def no_export(battle_id):
+            # The battle card asks for the export on every render; without
+            # this stub the real client would go to the network.
+            raise ZmdLogsClientError("offline")
+
         self.plugin._list_hot_bosses = list_hot_bosses
+        self.plugin._get_battle_export = no_export
 
     def tearDown(self) -> None:
         plugin_main.StarTools = self._star_tools
@@ -552,6 +563,95 @@ class HandlerTests(unittest.TestCase):
         (_, removed), = self._zmdlog("zmdlog 取关 1")
         self.assertIn("已取消关注", removed)
         self.assertNotIn(account_id, self.plugin.rank_history)
+
+    # --- 技能轴 reads the export, not the detail --------------------------------
+
+    def test_timeline_uses_the_export_of_the_ranked_battle(self) -> None:
+        exported: list[str] = []
+
+        async def ranking(boss_slug):
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        async def export(battle_id):
+            exported.append(battle_id)
+            return parse_battle_export(battle_export_payload())
+
+        async def unexpected(battle_id):
+            raise AssertionError("the timeline must not fetch the battle detail")
+
+        self.plugin._get_boss_ranking = ranking
+        self.plugin._get_battle_export = export
+        self.plugin._get_battle_detail = unexpected
+
+        (kind, result), = self._zmdlog("zmdlog 技能轴 三位一体 2")
+        self.assertEqual((kind, result), ("image", "/tmp/timeline.png"))
+        self.assertEqual(exported, ["btl_upload_000000000002"])
+        (kind, result), = self._zmdlog("zmdlog 排轴 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/timeline.png"))
+
+    def test_the_battle_card_takes_the_export_when_it_can_get_one(self) -> None:
+        received: list[dict] = []
+
+        async def detail(battle_id):
+            return parse_battle_detail(battle_detail_payload())
+
+        async def export(battle_id):
+            return parse_battle_export(battle_export_payload())
+
+        async def render_battle(battle, **kwargs):
+            received.append(kwargs)
+            return "/tmp/battle.png"
+
+        self.plugin._get_battle_detail = detail
+        self.plugin._get_battle_export = export
+        self.plugin.renderer.render_battle = render_battle
+
+        (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
+        self.assertEqual(received[-1]["export"].battle_id, "btl_upload_abcdef123456")
+        self.assertIsNone(received[-1]["export_note"])
+
+        async def old_upload(battle_id):
+            raise ZmdLogsAPIError(422, "battle_export_unsupported", "old")
+
+        self.plugin._get_battle_export = old_upload
+        (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
+        self.assertIsNone(received[-1]["export"])
+        self.assertIn("旧版客户端", received[-1]["export_note"])
+
+        async def offline(battle_id):
+            raise ZmdLogsClientError("offline")
+
+        self.plugin._get_battle_export = offline
+        (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
+        self.assertEqual(
+            (received[-1]["export"], received[-1]["export_note"]), (None, None)
+        )
+
+    def test_timeline_explains_old_uploads_and_rate_limits(self) -> None:
+        answers = {
+            "btl_upload_old000000001": ZmdLogsAPIError(
+                422, "battle_export_unsupported", "old"
+            ),
+            "btl_upload_busy00000001": ZmdLogsAPIError(429, "rate_limited", "busy"),
+            "btl_upload_gone00000001": ZmdLogsAPIError(404, "battle_not_found", "gone"),
+        }
+
+        async def export(battle_id):
+            raise answers[battle_id]
+
+        self.plugin._get_battle_export = export
+
+        (kind, reply), = self._zmdlog("zmdlog 技能轴 btl_upload_old000000001")
+        self.assertEqual(kind, "plain")
+        self.assertIn("旧版客户端", reply)
+        (kind, reply), = self._zmdlog("zmdlog 技能轴 btl_upload_busy00000001")
+        self.assertEqual(kind, "plain")
+        self.assertIn("过于频繁", reply)
+        (kind, reply), = self._zmdlog("zmdlog 技能轴 btl_upload_gone00000001")
+        self.assertEqual((kind, reply), ("plain", "战报不存在、未公开或已删除。"))
 
     def test_a_dead_battle_is_reported_the_same_way_for_every_page(self) -> None:
         async def missing(battle_id):

@@ -1,0 +1,27 @@
+{% extends "common/base.html" %}
+{% from "common/timeline-rail.html" import render_rail %}
+
+{% block extra_styles %}{% include "battle/battle.css" %}{% include "common/timeline.css" %}{% endblock %}
+
+{% block hero_facts %}
+<div class="hero-facts">
+  <div class="hero-fact hero-fact--key"><span>战斗时长</span><strong>{{ page.timeline.duration_label }}</strong></div>
+  <div class="hero-fact"><span>施法次数</span><strong>{{ page.timeline.cast_count }}</strong></div>
+  <div class="hero-fact"><span>终结技</span><strong>{{ page.timeline.ultimate_count }}</strong></div>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="battle-identity" aria-label="战报信息">
+  <div><span>battleId</span><code>{{ page.battle_id }}</code></div>
+  <div><span>刻度</span><strong>{{ page.timeline.scale_label }}</strong></div>
+  <div class="battle-link"><span>完整战报</span><code>{{ page.report_url }}</code></div>
+</section>
+
+<div class="section-heading">
+  <h2>技能轴</h2>
+  <span class="section-note">时间自上而下，每个角色一条轨；招式是轨上的节点，持续的招在轨上留下颜色，普攻按连段折叠</span>
+</div>
+
+{{ render_rail(page.timeline) }}
+{% endblock %}

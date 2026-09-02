@@ -291,6 +291,98 @@ def battle_detail_payload() -> dict:
     }
 
 
+def battle_export_payload() -> dict:
+    """Public export (schema v1): two characters, a summon, noise, edge cases."""
+
+    def cast(
+        key: str,
+        name: str,
+        start: int,
+        end: int | None,
+        *,
+        character: str = "chr_0028_wulfa",
+        source: str | None = "unknown",
+        energy: bool = False,
+    ) -> dict:
+        return {
+            "tsMsFromStart": start,
+            "endMsFromStart": end,
+            "characterKey": character,
+            "skillKey": key,
+            "skillName": name,
+            "skillSource": source,
+            "recoversEnergy": energy,
+        }
+
+    kamiu = "chr_0031_kamiu"
+    return {
+        "schemaVersion": 1,
+        "battleId": "btl_upload_abcdef123456",
+        "parserVersion": "raw-log-parser-v46",
+        "rulesVersion": "raw-log-parser-v40",
+        "dungeon": {
+            "dungeonSlug": "dung01_group_bossrush01",
+            "dungeonName": "危境再现·罗丹",
+            "bossKey": "eny_0051_rodin",
+            "bossName": "“碾骨之拳”罗丹",
+        },
+        "durationMs": 25_000,
+        "battleStartAt": "2026-07-13T22:00:11+08:00",
+        "battleEndAt": "2026-07-13T22:00:36+08:00",
+        "roster": [
+            {
+                "slot": 2,
+                "characterKey": kamiu,
+                "characterName": "卡缪",
+                "characterLevel": 80,
+                "characterPotential": 0,
+            },
+            {
+                "slot": 1,
+                "characterKey": "chr_0028_wulfa",
+                "characterName": "洛茜",
+                "characterLevel": 90,
+                "characterPotential": 5,
+            },
+        ],
+        "casts": [
+            cast("chr_0028_wulfa_ultimate_skill", "终结技", 1_000, 4_000),
+            cast("chr_0028_wulfa_attack1", "A1", 4_000, 4_500),
+            cast("chr_0028_wulfa_attack2", "A2", 4_500, 5_100),
+            cast("chr_0028_wulfa_power_attack", "重击", 5_100, 6_000, energy=True),
+            cast("chr_0028_wulfa_normal_skill", "战技", 6_000, 8_000),
+            cast("chr_0028_wulfa_combo_skill", "连携技", 8_000, 9_000),
+            # Movement noise, hidden.
+            cast("chr_0028_wulfa_dash", "通用 / character / ai / 冲刺", 9_000, 9_300),
+            # End never seen: an instant mark.
+            cast("chr_0028_wulfa_attack3", "A3", 12_000, None),
+            # Runs past the recorded end of the fight: clipped.
+            cast("chr_0028_wulfa_skill_9001", "血红之影", 18_000, 27_000),
+            # Stamped before the timer: dropped.
+            cast("chr_0028_wulfa_attack1", "A1", -500, -100),
+            # 卡缪: an own skill, a long summon, and a mechanism entity whose
+            # key merely contains combo_skill.
+            cast(f"{kamiu}_normal_skill", "战技", 3_000, 4_000, character=kamiu),
+            cast(
+                f"{kamiu}_normal_skill_pet",
+                "召唤 / pet",
+                3_000,
+                15_000,
+                character=kamiu,
+                source="Summon",
+            ),
+            cast(
+                f"{kamiu}_combo_skill_water_gene",
+                "河水 / water / gene",
+                2_000,
+                22_000,
+                character=kamiu,
+            ),
+            cast(f"{kamiu}_ultimate_skill", "终结技", 21_000, 23_000, character=kamiu),
+        ],
+    }
+
+
 def character_statistics_payload(*, scope: str = "boss", metric: str = "dps") -> dict:
     def row(
         name: str,
