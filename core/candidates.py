@@ -22,7 +22,11 @@ class CandidateView(str, Enum):
     CHARACTER_STATS = "character_stats"
     ROSTER = "roster"
     BATTLE = "battle"
+    LOADOUT = "loadout"
+    SKILLS = "skills"
     WATCH = "watch"
+    WATCH_BOARD = "watch_board"
+    TREND = "trend"
 
 
 _VIEW_TITLES = {
@@ -30,7 +34,11 @@ _VIEW_TITLES = {
     CandidateView.CHARACTER_STATS: "的角色统计匹配到 {count} 个榜单",
     CandidateView.ROSTER: "的阵容查询匹配到 {count} 个榜单",
     CandidateView.BATTLE: "的战报查询匹配到 {count} 个榜单",
+    CandidateView.LOADOUT: "的配装查询匹配到 {count} 个榜单",
+    CandidateView.SKILLS: "的技能统计查询匹配到 {count} 个榜单",
     CandidateView.WATCH: "匹配到 {count} 个公开账号，选一个关注",
+    CandidateView.WATCH_BOARD: "匹配到 {count} 个榜单，选一个关注",
+    CandidateView.TREND: "匹配到 {count} 个公开账号，选一个看名次趋势",
 }
 
 

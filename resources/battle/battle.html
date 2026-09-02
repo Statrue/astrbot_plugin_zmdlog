@@ -1,6 +1,6 @@
 {% extends "common/base.html" %}
 
-{% block extra_styles %}{% include "battle/battle.css" %}{% endblock %}
+{% block extra_styles %}{% include "battle/battle.css" %}{% include "common/loadout.css" %}{% endblock %}
 
 {% block hero_facts %}
 <div class="hero-facts">
@@ -72,6 +72,48 @@
   </article>
   {% endfor %}
 </section>
+
+{% if page.loadouts %}
+<div class="section-heading">
+  <h2>阵容与配装</h2>
+  <span class="section-note">按上场槽位 · 等级 / 潜能 / 精炼 / 套装{% if page.skill_stats_available %} · 底部为该角色的主要伤害来源及其占该角色技能统计总伤的比例{% else %} · 本场没有技能统计{% endif %}</span>
+</div>
+
+<section class="loadout-grid" aria-label="阵容与配装">
+  {% for load in page.loadouts %}
+  <article class="loadout-card">
+    <header class="loadout-head">
+      <span class="avatar">{{ load.character_initial }}{% if load.character_avatar_url %}<img src="{{ load.character_avatar_url }}" alt="" onerror="this.remove()">{% endif %}</span>
+      <div class="loadout-id">
+        <strong>{{ load.character_name }}</strong>
+        <span>{{ load.profession }}{% if load.element %} · {{ load.element }}{% endif %}{% if load.damage_share %} · 伤害 {{ load.damage_share }}{% endif %}</span>
+      </div>
+    </header>
+    <div class="loadout-pills">
+      {% if load.level_label %}<span class="pill">{{ load.level_label }}</span>{% endif %}
+      {% if load.potential_label %}<span class="pill pill--accent">{{ load.potential_label }}</span>{% endif %}
+      {% if load.weapon and load.weapon.refine_label %}<span class="pill pill--ink">{{ load.weapon.refine_label }}</span>{% endif %}
+    </div>
+    <dl class="loadout-lines">
+      <div><dt>武器</dt>{% if load.weapon %}<dd>{{ load.weapon.name }}</dd>{% else %}<dd class="is-muted">未记录</dd>{% endif %}</div>
+      {% for equip in load.equips %}
+      <div><dt>{{ equip.part_name }}</dt><dd>{{ equip.compact_label }}</dd></div>
+      {% endfor %}
+      {% if load.skill_levels %}
+      <div><dt>技能</dt><dd>{% for level in load.skill_levels %}{{ level.label }} {{ level.level }}{% if not loop.last %} · {% endif %}{% endfor %}</dd></div>
+      {% endif %}
+    </dl>
+    {% if load.top_skills %}
+    <ul class="loadout-skills">
+      {% for row in load.top_skills %}
+      <li><span class="skill-cat">{{ row.category }}</span><span class="skill-name">{{ row.name }}</span><span class="skill-share">{{ row.share }}</span><i style="width: {{ row.share_width }}%"></i></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
 
 <section class="battle-id-row"><span>battleId</span><code>{{ page.battle_id }}</code></section>
 {% endblock %}

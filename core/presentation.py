@@ -3,13 +3,27 @@
 import math
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import quote, urljoin, urlsplit
 
 from .characters import CharacterFilterScope
+from .history import AccountHistory, BoardHistory, RankPoint, trend_points, window_start
+from .loadout import (
+    CharacterSkillDamage,
+    element_label,
+    group_skill_damage,
+    infer_suit_names,
+    is_raw_item_name,
+    skill_level_summary,
+    stat_label,
+    suit_token,
+    weapon_skill_levels,
+)
 from .matcher import MatchChoice, TargetType
 from .models import (
     BattleDetailSummary,
+    BattleEquip,
+    BattleWeapon,
     BossRanking,
     BossRankingRosterEntry,
     BossRankingRow,
@@ -23,6 +37,7 @@ from .routing import (
     MAX_RANKING_TOP,
     MIN_RANKING_TOP,
 )
+from .timestamps import parse_timestamp
 
 # Temporary presentation compatibility: upstream currently exposes the
 # contract board as bossName="破潮之像", while the public site labels the
@@ -298,6 +313,155 @@ class BattleParticipantView:
 
 
 @dataclass(frozen=True, slots=True)
+class EquipStatView:
+    name: str
+    value: str
+    is_main: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EquipView:
+    part_name: str
+    # The real piece name, or a placeholder when upstream only had the item id.
+    piece_label: str
+    suit_label: str | None
+    # The suit was read off a named sibling piece, not from this piece itself.
+    inferred_suit: bool
+    icon_url: str | None
+    enhance_label: str | None
+    stats: tuple[EquipStatView, ...]
+    # One-line form for the compact card, e.g. "动火用 · 护甲".
+    compact_label: str
+
+
+@dataclass(frozen=True, slots=True)
+class WeaponView:
+    name: str
+    icon_url: str | None
+    refine_label: str | None
+    level_label: str | None
+    skill_label: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SkillLevelView:
+    label: str
+    level: int
+
+
+@dataclass(frozen=True, slots=True)
+class SkillRowView:
+    category: str
+    name: str
+    cast_count: int
+    total_damage: str
+    avg_damage: str
+    max_damage: str
+    # Share of this character's own skill-stat total.
+    share: str
+    share_width: float
+    merged: bool
+
+
+@dataclass(frozen=True, slots=True)
+class LoadoutView:
+    slot: int
+    character_name: str
+    character_initial: str
+    character_avatar_url: str | None
+    profession: str
+    element: str | None
+    level_label: str | None
+    potential_label: str | None
+    weapon: WeaponView | None
+    equips: tuple[EquipView, ...]
+    skill_levels: tuple[SkillLevelView, ...]
+    # Heaviest damage sources of this character, for the compact card.
+    top_skills: tuple[SkillRowView, ...]
+    damage_share: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class LoadoutPage:
+    header: PageHeader
+    battle_id: str
+    report_url: str
+    uploader_display_name: str
+    duration: str
+    total_dps: str
+    total_damage: str
+    battle_date: str
+    loadouts: tuple[LoadoutView, ...]
+    stat_lines_available: bool
+    has_inferred_suit: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SkillGroupView:
+    character_name: str
+    character_initial: str
+    character_avatar_url: str | None
+    profession: str
+    total_damage: str
+    team_share: str
+    team_share_width: float
+    rows: tuple[SkillRowView, ...]
+    hidden_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class SkillPage:
+    header: PageHeader
+    battle_id: str
+    report_url: str
+    uploader_display_name: str
+    duration: str
+    total_dps: str
+    total_damage: str
+    battle_date: str
+    groups: tuple[SkillGroupView, ...]
+    has_merged_rows: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TrendRowView:
+    boss_name: str
+    dungeon_name: str
+    current_rank: int
+    start_rank: int
+    delta_label: str
+    # "up" (rank improved), "down" (rank worsened) or "flat".
+    delta_kind: str
+    best_rank: int
+    worst_rank: int
+    # Stepped polyline in a 100×44 viewBox; time left to right, best rank up.
+    polyline: str
+    # Change points as (left %, top %) for HTML-positioned dots.
+    dots: tuple[tuple[float, float], ...]
+    axis_top: str
+    axis_bottom: str
+    last_change: str
+    point_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class TrendPage:
+    header: PageHeader
+    account_id: str
+    account_url: str
+    display_name: str
+    range_label: str
+    tracked_since: str
+    tracked_days: str
+    last_checked: str
+    board_count: int
+    best_rank: str
+    improved_count: int
+    declined_count: int
+    rows: tuple[TrendRowView, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BattlePage:
     header: PageHeader
     battle_id: str
@@ -313,6 +477,8 @@ class BattlePage:
     integrity_label: str
     contract_score: str | None
     participants: tuple[BattleParticipantView, ...]
+    loadouts: tuple[LoadoutView, ...] = ()
+    skill_stats_available: bool = False
 
 
 def build_all_top3_page(
@@ -997,6 +1163,12 @@ def build_battle_page(
             if battle.contract_tag_score is not None
             else None
         ),
+        loadouts=_build_loadouts(
+            battle,
+            web_base_url=web_base_url,
+            top_skills=_MAX_CARD_SKILLS,
+        ),
+        skill_stats_available=bool(battle.skill_stats),
         participants=tuple(
             BattleParticipantView(
                 character_name=participant.character_name,
@@ -1043,6 +1215,413 @@ def build_battle_page(
             for participant in participants
         ),
     )
+
+
+_MAX_CARD_SKILLS = 3
+_MAX_SKILL_ROWS = 12
+_TREND_CHART_TOP = 6.0
+_TREND_CHART_BOTTOM = 38.0
+_TREND_CHART_HEIGHT = 44.0
+
+
+def build_trend_page(
+    history: AccountHistory,
+    *,
+    query: str,
+    web_base_url: str,
+    time_range: str = "30d",
+    now: datetime | None = None,
+    last_checked: str | None = None,
+) -> TrendPage:
+    """One stepped line per board from the ranks the watch cycle recorded."""
+
+    current_time = now if now is not None else datetime.now(UTC)
+    start = window_start(time_range, now=current_time)
+    stamps = [
+        stamp
+        for board in history.boards
+        for point in board.points
+        if (stamp := parse_timestamp(point.checked_at)) is not None
+    ]
+    first_seen = min(stamps) if stamps else None
+    axis_start = start if start is not None else (first_seen or current_time)
+    rows: list[TrendRowView] = []
+    for board in history.boards:
+        points = trend_points(board, start=start)
+        if not points:
+            continue
+        rows.append(_trend_row(board, points, axis_start=axis_start, now=current_time))
+    rows.sort(key=lambda row: (row.current_rank, row.boss_name))
+    tracked_days = (
+        (current_time - first_seen).days if first_seen is not None else None
+    )
+    return TrendPage(
+        header=PageHeader(
+            title=history.display_name,
+            subtitle="关注期间的名次变化",
+            query=query,
+            matched_name=history.account_id,
+            target_type="名次趋势",
+            footer_note="公开账号 · 名次通报记录的名次变化",
+        ),
+        account_id=history.account_id,
+        account_url=public_url(web_base_url, "records", history.account_id),
+        display_name=history.display_name,
+        range_label=_RANGE_LABELS.get(time_range, time_range),
+        tracked_since=(
+            _format_date(first_seen.isoformat()) if first_seen is not None else "—"
+        ),
+        tracked_days=(
+            "—"
+            if tracked_days is None
+            else (f"{tracked_days} 天" if tracked_days >= 1 else "不足 1 天")
+        ),
+        last_checked=_format_datetime(last_checked or current_time.isoformat()),
+        board_count=len(rows),
+        best_rank=f"#{min(row.current_rank for row in rows)}" if rows else "—",
+        improved_count=sum(1 for row in rows if row.delta_kind == "up"),
+        declined_count=sum(1 for row in rows if row.delta_kind == "down"),
+        rows=tuple(rows),
+    )
+
+
+def _trend_row(
+    board: BoardHistory,
+    points: tuple[RankPoint, ...],
+    *,
+    axis_start: datetime,
+    now: datetime,
+) -> TrendRowView:
+    ranks = [point.rank for point in points]
+    best, worst = min(ranks), max(ranks)
+    span = (now - axis_start).total_seconds()
+
+    def x_of(point: RankPoint) -> float:
+        stamp = parse_timestamp(point.checked_at) or axis_start
+        if span <= 0:
+            return 0.0
+        ratio = (stamp - axis_start).total_seconds() / span
+        return round(max(0.0, min(100.0, ratio * 100)), 2)
+
+    def y_of(rank: int) -> float:
+        if best == worst:
+            return round(_TREND_CHART_HEIGHT / 2, 2)
+        scale = (_TREND_CHART_BOTTOM - _TREND_CHART_TOP) / (worst - best)
+        return round(_TREND_CHART_TOP + (rank - best) * scale, 2)
+
+    coords: list[tuple[float, float]] = []
+    for index, point in enumerate(points):
+        x, y = x_of(point), y_of(point.rank)
+        if index > 0:
+            # Hold the previous rank until the moment it changed.
+            coords.append((x, coords[-1][1]))
+        coords.append((x, y))
+    coords.append((100.0, coords[-1][1]))
+    start_rank, current_rank = points[0].rank, points[-1].rank
+    delta = start_rank - current_rank
+    if delta > 0:
+        kind, label = "up", f"上升 {delta}"
+    elif delta < 0:
+        kind, label = "down", f"下降 {-delta}"
+    else:
+        kind, label = "flat", "持平"
+    return TrendRowView(
+        boss_name=board.boss_name,
+        dungeon_name=board.dungeon_name,
+        current_rank=current_rank,
+        start_rank=start_rank,
+        delta_label=label,
+        delta_kind=kind,
+        best_rank=best,
+        worst_rank=worst,
+        polyline=" ".join(f"{x},{y}" for x, y in coords),
+        dots=tuple(
+            (x_of(point), round(y_of(point.rank) / _TREND_CHART_HEIGHT * 100, 2))
+            for point in points
+        ),
+        axis_top=f"#{best}",
+        axis_bottom=f"#{worst}",
+        last_change=_format_date(points[-1].checked_at),
+        point_count=len(points),
+    )
+
+
+def build_loadout_page(
+    battle: BattleDetailSummary,
+    *,
+    query: str,
+    web_base_url: str,
+) -> LoadoutPage:
+    """Every deployed character's weapon, gear lines and skill levels."""
+
+    loadouts = _build_loadouts(
+        battle,
+        web_base_url=web_base_url,
+        top_skills=_MAX_CARD_SKILLS,
+    )
+    return LoadoutPage(
+        header=PageHeader(
+            title=battle.boss_name,
+            subtitle=battle.dungeon_name,
+            query=query,
+            matched_name=battle.battle_id,
+            target_type="战报配装",
+            footer_note="公开战报 · 上传时记录的阵容配装",
+        ),
+        battle_id=battle.battle_id,
+        report_url=public_url(web_base_url, "battle", battle.battle_id),
+        uploader_display_name=battle.uploader_display_name,
+        duration=format_duration(battle.duration_ms),
+        total_dps=format_number(battle.total_dps),
+        total_damage=format_number(battle.total_damage),
+        battle_date=_format_datetime(battle.battle_end_at),
+        loadouts=loadouts,
+        stat_lines_available=any(
+            equip.stats for load in loadouts for equip in load.equips
+        ),
+        has_inferred_suit=any(
+            equip.inferred_suit for load in loadouts for equip in load.equips
+        ),
+    )
+
+
+def build_skill_page(
+    battle: BattleDetailSummary,
+    *,
+    query: str,
+    web_base_url: str,
+) -> SkillPage:
+    """Per-character damage by skill, heaviest first."""
+
+    groups = group_skill_damage(battle.skill_stats)
+    grand_total = sum(group.total_damage for group in groups)
+    identities = _roster_identities(battle)
+    views: list[SkillGroupView] = []
+    for group in groups:
+        avatar_url, profession = identities.get(group.character_name, (None, ""))
+        rows = _skill_rows(group, limit=_MAX_SKILL_ROWS)
+        views.append(
+            SkillGroupView(
+                character_name=group.character_name,
+                character_initial=_initial(group.character_name),
+                character_avatar_url=_safe_asset_url(
+                    avatar_url, base_url=web_base_url
+                ),
+                profession=profession,
+                total_damage=format_number(group.total_damage),
+                team_share=_share(group.total_damage, grand_total),
+                team_share_width=_bar_width(group.total_damage, grand_total),
+                rows=rows,
+                hidden_count=max(0, len(group.rows) - len(rows)),
+            )
+        )
+    return SkillPage(
+        header=PageHeader(
+            title=battle.boss_name,
+            subtitle=battle.dungeon_name,
+            query=query,
+            matched_name=battle.battle_id,
+            target_type="技能统计",
+            footer_note="公开战报 · 各角色技能伤害统计",
+        ),
+        battle_id=battle.battle_id,
+        report_url=public_url(web_base_url, "battle", battle.battle_id),
+        uploader_display_name=battle.uploader_display_name,
+        duration=format_duration(battle.duration_ms),
+        total_dps=format_number(battle.total_dps),
+        total_damage=format_number(battle.total_damage),
+        battle_date=_format_datetime(battle.battle_end_at),
+        groups=tuple(views),
+        has_merged_rows=any(
+            row.merged_count > 1 for group in groups for row in group.rows
+        ),
+    )
+
+
+def _build_loadouts(
+    battle: BattleDetailSummary,
+    *,
+    web_base_url: str | None,
+    top_skills: int,
+) -> tuple[LoadoutView, ...]:
+    suits = infer_suit_names(battle.roster)
+    groups = {
+        group.character_name: group
+        for group in group_skill_damage(battle.skill_stats)
+    }
+    damage = {
+        participant.character_name: participant.total_damage
+        for participant in battle.participants
+    }
+    views: list[LoadoutView] = []
+    for entry in sorted(battle.roster, key=lambda item: item.slot):
+        group = groups.get(entry.character_name)
+        dealt = damage.get(entry.character_name)
+        views.append(
+            LoadoutView(
+                slot=entry.slot,
+                character_name=entry.character_name,
+                character_initial=_initial(entry.character_name),
+                character_avatar_url=_safe_asset_url(
+                    entry.character_avatar_url, base_url=web_base_url
+                ),
+                profession=_clean_text(entry.character_profession),
+                element=element_label(entry.character_element),
+                level_label=(
+                    f"Lv.{entry.character_level}"
+                    if entry.character_level is not None
+                    else None
+                ),
+                potential_label=(
+                    f"潜能 {entry.character_potential}"
+                    if entry.character_potential is not None
+                    else None
+                ),
+                weapon=(
+                    _weapon_view(entry.weapon, web_base_url=web_base_url)
+                    if entry.weapon is not None
+                    else None
+                ),
+                equips=tuple(
+                    _equip_view(equip, suits, web_base_url=web_base_url)
+                    for equip in sorted(entry.equips, key=lambda item: item.slot)
+                ),
+                skill_levels=tuple(
+                    SkillLevelView(label=level.label, level=level.level)
+                    for level in skill_level_summary(entry)
+                ),
+                top_skills=(
+                    _skill_rows(group, limit=top_skills) if group else ()
+                ),
+                damage_share=(
+                    _share(dealt, battle.total_damage)
+                    if dealt is not None and battle.total_damage > 0
+                    else None
+                ),
+            )
+        )
+    return tuple(views)
+
+
+def _weapon_view(weapon: BattleWeapon, *, web_base_url: str | None) -> WeaponView:
+    own_level, affix_levels = weapon_skill_levels(weapon)
+    parts: list[str] = []
+    if own_level is not None:
+        parts.append(f"武器技能 {own_level}")
+    if affix_levels:
+        parts.append("词条 " + " / ".join(str(level) for level in affix_levels))
+    return WeaponView(
+        name=_clean_text(weapon.name) or "未知武器",
+        icon_url=_safe_asset_url(weapon.icon_url, base_url=web_base_url),
+        refine_label=f"精炼 {weapon.refine}" if weapon.refine is not None else None,
+        level_label=f"Lv.{weapon.level}" if weapon.level else None,
+        skill_label=" · ".join(parts) if parts else None,
+    )
+
+
+def _equip_view(
+    equip: BattleEquip,
+    suits: dict[str, str],
+    *,
+    web_base_url: str | None,
+) -> EquipView:
+    part_name = _clean_text(equip.part_name) or "装备"
+    raw_name = is_raw_item_name(equip.piece_name, equip.item_id)
+    suit_name = _clean_text(equip.suit_name)
+    inferred = False
+    if not suit_name:
+        token = suit_token(equip.item_id)
+        guess = suits.get(token) if token else None
+        if guess:
+            suit_name, inferred = guess, True
+    piece_label = "名称未收录" if raw_name else _clean_text(equip.piece_name)
+    if suit_name:
+        compact_label = f"{suit_name} · {part_name}"
+    elif raw_name:
+        compact_label = f"{part_name}（未收录）"
+    else:
+        compact_label = piece_label
+    levels = tuple(level for _, level in equip.enhance_levels)
+    return EquipView(
+        part_name=part_name,
+        piece_label=piece_label,
+        suit_label=suit_name or None,
+        inferred_suit=inferred,
+        icon_url=_safe_asset_url(equip.icon_url, base_url=web_base_url),
+        enhance_label=(
+            "强化 " + " / ".join(f"+{level}" for level in levels)
+            if levels
+            else None
+        ),
+        stats=tuple(
+            EquipStatView(
+                name=stat_label(stat.name),
+                value=_format_stat_value(stat.value),
+                is_main=stat.slot == "main",
+            )
+            for stat in equip.stats
+        ),
+        compact_label=compact_label,
+    )
+
+
+def _skill_rows(
+    group: CharacterSkillDamage,
+    *,
+    limit: int,
+) -> tuple[SkillRowView, ...]:
+    return tuple(
+        SkillRowView(
+            category=row.category.value,
+            name=row.name,
+            cast_count=row.cast_count,
+            total_damage=format_number(row.total_damage),
+            avg_damage=format_number(round(row.avg_damage)),
+            max_damage=format_number(row.max_damage),
+            share=_share(row.total_damage, group.total_damage),
+            share_width=_bar_width(row.total_damage, group.total_damage),
+            merged=row.merged_count > 1,
+        )
+        for row in group.rows[:limit]
+    )
+
+
+def _roster_identities(
+    battle: BattleDetailSummary,
+) -> dict[str, tuple[str | None, str]]:
+    """Avatar and profession by character name, roster first, participants next."""
+
+    identities: dict[str, tuple[str | None, str]] = {}
+    for entry in battle.roster:
+        identities.setdefault(
+            entry.character_name,
+            (entry.character_avatar_url, _clean_text(entry.character_profession)),
+        )
+    for participant in battle.participants:
+        identities.setdefault(
+            participant.character_name,
+            (
+                participant.character_avatar_url,
+                _clean_text(participant.character_profession),
+            ),
+        )
+    return identities
+
+
+def _format_stat_value(value: float) -> str:
+    """Ratios arrive as fractions (0.1495), flat stats as plain numbers."""
+
+    if 0 < abs(value) < 1:
+        return f"{format_number(round(value * 100, 1))}%"
+    return format_number(round(value, 1))
+
+
+def _clean_text(value: str | None) -> str:
+    """Collapse whitespace; upstream piece names can carry a stray newline."""
+
+    return " ".join(value.split()) if value else ""
+
+
 def format_duration(duration_ms: int) -> str:
     """Format milliseconds as ``minutes:seconds.milliseconds``."""
 

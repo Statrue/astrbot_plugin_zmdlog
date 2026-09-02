@@ -9,6 +9,7 @@ pure core tests cannot reach.
 
 import asyncio
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -38,6 +39,7 @@ if astrbot is not None:
         ZmdLogsAPIError,
         ZmdLogsClientError,
     )
+    from astrbot_plugin_zmdlog.core.history import record_rankings
     from astrbot_plugin_zmdlog.core.models import (
         parse_battle_detail,
         parse_boss_ranking,
@@ -45,6 +47,8 @@ if astrbot is not None:
         parse_public_user_rankings,
     )
     from astrbot_plugin_zmdlog.core.render import RenderError
+    from astrbot_plugin_zmdlog.core.watch import BoardSnapshot
+    from astrbot_plugin_zmdlog.core.watchlist import WatchedAccount, WatchedBoard
 
 GROUP = "aiocqhttp:GroupMessage:1"
 OTHER_GROUP = "aiocqhttp:GroupMessage:2"
@@ -92,6 +96,15 @@ class FakeContext:
 class FakeRenderer:
     async def render_battle(self, battle, **kwargs):
         return "/tmp/battle.png"
+
+    async def render_loadout(self, battle, **kwargs):
+        return "/tmp/loadout.png"
+
+    async def render_skills(self, battle, **kwargs):
+        return "/tmp/skills.png"
+
+    async def render_trend(self, history, **kwargs):
+        return "/tmp/trend.png"
 
     async def render_account(self, account, **kwargs):
         return "/tmp/account.png"
@@ -300,6 +313,259 @@ class HandlerTests(unittest.TestCase):
         (kind, result), = self._zmdlog("zmdlog 三位一体")
 
         self.assertEqual((kind, result), ("image", "/tmp/ranking.png"))
+
+    # --- 配装 / 技能 share the 战报 lookup ------------------------------------
+
+    def test_loadout_and_skill_commands_pick_the_ranked_battle(self) -> None:
+        fetched: list[str] = []
+
+        async def ranking(boss_slug):
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        async def detail(battle_id):
+            fetched.append(battle_id)
+            return parse_battle_detail(battle_detail_payload())
+
+        self.plugin._get_boss_ranking = ranking
+        self.plugin._get_battle_detail = detail
+
+        (kind, result), = self._zmdlog("zmdlog 配装 三位一体 2")
+        self.assertEqual((kind, result), ("image", "/tmp/loadout.png"))
+        self.assertEqual(fetched, ["btl_upload_000000000002"])
+
+        (kind, result), = self._zmdlog("zmdlog 技能 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/skills.png"))
+        self.assertEqual(fetched[-1], "btl_upload_abcdef123456")
+
+        (kind, reply), = self._zmdlog("zmdlog 技能 三位一体 9")
+        self.assertEqual(kind, "plain")
+        self.assertIn("没有第 9 名", reply)
+
+    def test_a_battle_without_skill_stats_answers_in_text(self) -> None:
+        async def detail(battle_id):
+            payload = battle_detail_payload()
+            payload["roleSkillStats"] = []
+            payload["battle"]["roster"] = []
+            return parse_battle_detail(payload)
+
+        self.plugin._get_battle_detail = detail
+
+        (kind, reply), = self._zmdlog("zmdlog 技能 btl_upload_abcdef123456")
+        self.assertEqual((kind, reply), ("plain", "这份战报没有技能统计数据。"))
+        (kind, reply), = self._zmdlog("zmdlog 配装 btl_upload_abcdef123456")
+        self.assertEqual((kind, reply), ("plain", "这份战报没有记录阵容配装。"))
+        # The summary card itself keeps working without loadout data.
+        (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
+
+    # --- board watch ----------------------------------------------------------
+
+    def _enable_watch_storage(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        self.plugin.rank_watch_enabled = True
+        self.plugin.watchlist_path = root / "watchlist.json"
+        self.plugin.rank_snapshot_path = root / "rank-snapshot.json"
+        self.plugin.board_snapshot_path = root / "board-snapshot.json"
+        self.plugin.rank_history_path = root / "rank-history.json"
+
+    def _hot_bosses_with_run(self, battle_id: str, nickname: str):
+        payload = hot_bosses_payload()
+        payload[0]["topSpeedRuns"] = [
+            {
+                "battleId": battle_id,
+                "durationMs": 9_771,
+                "uploaderNickname": nickname,
+                "characterName": "诀",
+            }
+        ]
+        return parse_hot_bosses(payload), payload
+
+    def test_boards_can_be_followed_listed_and_unfollowed(self) -> None:
+        self._enable_watch_storage()
+        slug = "dung01_group_bossrush02"
+
+        (kind, reply), = self._zmdlog("zmdlog 关注 榜单 三位一体")
+        self.assertEqual(kind, "plain")
+        self.assertIn("已关注榜单「危境再现 · 测试区 · 三位一体」，序号 1", reply)
+        self.assertIn(slug, self.plugin.board_snapshots)
+        self.assertTrue(self.plugin.board_snapshot_path.exists())
+
+        (_, again), = self._zmdlog("zmdlog 关注 榜单 三位一体")
+        self.assertIn("已经在关注列表里", again)
+        (_, listing), = self._zmdlog("zmdlog 关注")
+        self.assertIn("当前关注的榜单", listing)
+        self.assertIn("1. 危境再现 · 测试区 · 三位一体", listing)
+        (_, missing), = self._zmdlog("zmdlog 关注 榜单 完全无关的关键词")
+        self.assertIn("没有找到", missing)
+
+        (_, removed), = self._zmdlog("zmdlog 取关 榜单 1")
+        self.assertIn("已取消关注榜单", removed)
+        self.assertNotIn(slug, self.plugin.board_snapshots)
+        self.assertEqual(self.plugin.watchlist.boards_for(GROUP), ())
+
+    def test_board_watch_cycle_reports_a_new_top_run_once(self) -> None:
+        self._enable_watch_storage()
+        slug = "dung01_group_bossrush02"
+        (_, reply), = self._zmdlog("zmdlog 关注 榜单 三位一体")
+        self.assertIn("已关注榜单", reply)
+        fresh = self._hot_bosses_with_run("btl_upload_new000000001", "shiki")
+        sent: list[tuple[str, str]] = []
+
+        async def fetch():
+            return fresh
+
+        async def send(origin, text):
+            sent.append((origin, text))
+
+        self.plugin.client.list_hot_bosses_with_payload = fetch
+        self.plugin._send_notice = send
+
+        run(self.plugin._run_board_watch_cycle())
+
+        self.assertEqual(len(sent), 1)
+        origin, text = sent[0]
+        self.assertEqual(origin, GROUP)
+        self.assertIn("前三名有新纪录", text)
+        self.assertIn("第 1 名 · shiki · 主C 诀 · 用时 0:09.771", text)
+        self.assertIn("https://zmdlogs.com/battle/btl_upload_new000000001", text)
+        self.assertEqual(
+            self.plugin.board_snapshots[slug].runs[0].battle_id,
+            "btl_upload_new000000001",
+        )
+
+        run(self.plugin._run_board_watch_cycle())
+        self.assertEqual(len(sent), 1)
+
+    def test_a_stale_board_baseline_is_reseeded_silently(self) -> None:
+        self._enable_watch_storage()
+        slug = "dung01_group_bossrush02"
+        self.plugin.watchlist, _ = self.plugin.watchlist.with_board(
+            GROUP,
+            WatchedBoard(
+                boss_slug=slug,
+                boss_name="危境再现·三位一体",
+                dungeon_name="危境再现 · 测试区",
+                added_by="aiocqhttp:111",
+                added_at="2026-08-22T10:00:00+00:00",
+            ),
+        )
+        self.plugin.board_snapshots = {
+            slug: BoardSnapshot(runs=(), checked_at="2020-01-01T00:00:00+00:00")
+        }
+        fresh = self._hot_bosses_with_run("btl_upload_new000000002", "shiki")
+        sent: list[tuple[str, str]] = []
+
+        async def fetch():
+            return fresh
+
+        async def send(origin, text):
+            sent.append((origin, text))
+
+        self.plugin.client.list_hot_bosses_with_payload = fetch
+        self.plugin._send_notice = send
+
+        run(self.plugin._run_board_watch_cycle())
+
+        self.assertEqual(sent, [])
+        self.assertEqual(
+            self.plugin.board_snapshots[slug].runs[0].battle_id,
+            "btl_upload_new000000002",
+        )
+
+    # --- 趋势 -----------------------------------------------------------------
+
+    def _seed_history(self, name: str = "测试账号") -> None:
+        payload = public_user_rankings_payload()
+        payload["accountDisplayName"] = name
+        account = parse_public_user_rankings(payload)
+        self.plugin.rank_history, _ = record_rankings(
+            {}, account, checked_at="2026-09-01T00:00:00+00:00"
+        )
+
+    def test_trend_renders_from_local_history_without_a_request(self) -> None:
+        self._seed_history()
+
+        async def unexpected(*args, **kwargs):
+            raise AssertionError("no upstream request expected")
+
+        self.plugin.client.search_public_accounts = unexpected
+        self.plugin._get_public_user_rankings = unexpected
+
+        (kind, result), = self._zmdlog("zmdlog 趋势 usr_1234567890abcdef")
+        self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
+        (kind, result), = self._zmdlog("zmdlog 趋势 测试账号 --范围 7d")
+        self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
+        (kind, result), = self._zmdlog(
+            "zmdlog 趋势 https://zmdlogs.com/records/usr_1234567890abcdef"
+        )
+        self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
+
+    def test_trend_searches_upstream_for_unknown_nicknames(self) -> None:
+        self._seed_history()
+        hits = {"CPU 0": "usr_1234567890abcdef", "路人甲": "usr_a"}
+
+        async def search(query, *, limit):
+            return SimpleNamespace(
+                query=query,
+                has_more=False,
+                accounts=(
+                    SimpleNamespace(account_id=hits[query], account_display_name=query),
+                ),
+            )
+
+        self.plugin.client.search_public_accounts = search
+
+        (kind, result), = self._zmdlog("zmdlog 趋势 CPU 0")
+        self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
+        (kind, reply), = self._zmdlog("zmdlog 趋势 路人甲")
+        self.assertEqual(kind, "plain")
+        self.assertIn("还没有名次记录", reply)
+
+    def test_rank_watch_cycle_records_history_and_unfollowing_drops_it(self) -> None:
+        self._enable_watch_storage()
+        account_id = "usr_1234567890abcdef"
+        self.plugin.watchlist, _ = self.plugin.watchlist.with_account(
+            GROUP,
+            WatchedAccount(
+                account_id=account_id,
+                display_name="测试账号",
+                added_by="aiocqhttp:111",
+                added_at="2026-08-22T10:00:00+00:00",
+            ),
+        )
+
+        async def account(requested_id):
+            return parse_public_user_rankings(public_user_rankings_payload())
+
+        self.plugin._get_public_user_rankings = account
+
+        run(self.plugin._run_rank_watch_cycle())
+
+        trace = self.plugin.rank_history[account_id]
+        self.assertEqual(trace.board("dung01_group_bossrush01").points[0].rank, 2)
+        self.assertTrue(self.plugin.rank_history_path.exists())
+        run(self.plugin._run_rank_watch_cycle())
+        self.assertEqual(len(trace.board("dung01_group_bossrush01").points), 1)
+
+        (_, removed), = self._zmdlog("zmdlog 取关 1")
+        self.assertIn("已取消关注", removed)
+        self.assertNotIn(account_id, self.plugin.rank_history)
+
+    def test_a_dead_battle_is_reported_the_same_way_for_every_page(self) -> None:
+        async def missing(battle_id):
+            raise ZmdLogsAPIError(404, "battle_not_found", "gone")
+
+        self.plugin._get_battle_detail = missing
+
+        for command in ("战报", "配装", "技能"):
+            with self.subTest(command=command):
+                (kind, reply), = self._zmdlog(
+                    f"zmdlog {command} btl_upload_abcdef123456"
+                )
+                self.assertEqual(kind, "plain")
+                self.assertEqual(reply, "战报不存在、未公开或已删除。")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,72 @@
+{% extends "common/base.html" %}
+
+{% block extra_styles %}{% include "battle/battle.css" %}{% include "common/loadout.css" %}{% include "skills/skills.css" %}{% endblock %}
+
+{% block hero_facts %}
+<div class="hero-facts">
+  <div class="hero-fact hero-fact--key"><span>通关时间</span><strong>{{ page.duration }}</strong></div>
+  <div class="hero-fact"><span>总 DPS</span><strong>{{ page.total_dps }}</strong></div>
+  <div class="hero-fact"><span>总伤害</span><strong>{{ page.total_damage }}</strong></div>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="battle-identity" aria-label="战报信息">
+  <div><span>上传者</span><strong>{{ page.uploader_display_name }}</strong></div>
+  <div><span>战斗时间</span><strong>{{ page.battle_date }}</strong></div>
+  <div><span>battleId</span><code>{{ page.battle_id }}</code></div>
+  <div class="battle-link"><span>完整战报</span><code>{{ page.report_url }}</code></div>
+</section>
+
+<div class="section-heading">
+  <h2>技能伤害统计</h2>
+  <span class="section-note">角色按技能统计总伤排序 · 占比为该项占该角色技能统计总伤的比例{% if page.has_merged_rows %} · 普攻各段与同名子段已合并{% endif %}</span>
+</div>
+
+{% for group in page.groups %}
+<section class="skill-group" aria-label="{{ group.character_name }} 的技能统计">
+  <header class="skill-group-head">
+    <span class="avatar">{{ group.character_initial }}{% if group.character_avatar_url %}<img src="{{ group.character_avatar_url }}" alt="" onerror="this.remove()">{% endif %}</span>
+    <div class="loadout-id">
+      <strong>{{ group.character_name }}</strong>
+      <span>{{ group.profession }}</span>
+    </div>
+    <div class="skill-group-total">
+      <span>技能统计总伤 · 占全队 {{ group.team_share }}</span>
+      <strong>{{ group.total_damage }}</strong>
+      <span class="share-track"><i style="width: {{ group.team_share_width }}%"></i></span>
+    </div>
+  </header>
+  <table class="skill-table">
+    <thead>
+      <tr>
+        <th class="col-cat">类别</th>
+        <th>技能</th>
+        <th class="num">次数</th>
+        <th class="num">总伤害</th>
+        <th class="col-share">占比</th>
+        <th class="num">均伤</th>
+        <th class="num">最高</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in group.rows %}
+      <tr>
+        <td><span class="skill-cat">{{ row.category }}</span></td>
+        <td><div class="skill-cell"><strong>{{ row.name }}</strong>{% if row.merged %}<i>合并</i>{% endif %}</div></td>
+        <td class="num">{{ row.cast_count }}</td>
+        <td class="num is-total">{{ row.total_damage }}</td>
+        <td class="share"><span class="share-track"><i style="width: {{ row.share_width }}%"></i></span><b>{{ row.share }}</b></td>
+        <td class="num">{{ row.avg_damage }}</td>
+        <td class="num">{{ row.max_damage }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if group.hidden_count %}<p class="skill-more">另有 {{ group.hidden_count }} 项伤害来源未列出</p>{% endif %}
+</section>
+{% endfor %}
+{% if not page.groups %}
+<div class="empty-ranking">这份战报没有技能统计数据</div>
+{% endif %}
+{% endblock %}

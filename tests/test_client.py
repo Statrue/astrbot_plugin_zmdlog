@@ -172,8 +172,10 @@ class ZmdLogsClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(battle.uploader_display_name, "测试账号")
         self.assertEqual(battle.total_dps, 110_061.2)
-        self.assertEqual(len(battle.participants), 1)
+        self.assertEqual(len(battle.participants), 2)
         self.assertEqual(battle.participants[0].rdps, 26_428.42)
+        self.assertEqual(len(battle.roster), 2)
+        self.assertEqual(len(battle.skill_stats), 9)
         self.assertTrue(battle.integrity_verified)
 
     async def test_invalid_public_ids_are_rejected_before_request(self) -> None:

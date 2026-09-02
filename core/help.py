@@ -124,14 +124,31 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         command=f"{command} 战报 <battleId、链接或榜单关键词 [名次]>",
                         answers="这一场具体是怎么打的？",
                         description=(
-                            "填榜单关键词直接看该榜第 N 名的战报，默认第 1 名。"
+                            "填榜单关键词直接看该榜第 N 名的战报，默认第 1 名；"
+                            "卡片底部附每个角色的配装概览和主要伤害来源。"
+                        ),
+                    ),
+                    HelpCommand(
+                        command=f"{command} 配装 <battleId、链接或榜单关键词 [名次]>",
+                        answers="这一场每个人用的什么武器、装备和词条？",
+                        description=(
+                            "逐角色列出等级、潜能、武器精炼与技能等级，"
+                            "四件装备的套装、强化和词条数值。"
+                        ),
+                    ),
+                    HelpCommand(
+                        command=f"{command} 技能 <battleId、链接或榜单关键词 [名次]>",
+                        answers="这一场每个技能各打了多少伤害？",
+                        description=(
+                            "逐角色列出各技能的次数、总伤、占比、均伤与最高伤害，"
+                            "普攻各段合并显示。"
                         ),
                     ),
                 ),
             ),
             HelpSection(
                 title="名次通报",
-                summary="被人顶下去了想第一时间知道，用这一组",
+                summary="被人顶下去了、榜首换人了想第一时间知道，用这一组",
                 commands=(
                     HelpCommand(
                         command=f"{command} 关注 <昵称、accountId或主页链接>",
@@ -142,14 +159,40 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
+                        command=f"{command} 关注 榜单 <榜单关键词>",
+                        answers="怎么让机器人盯着一个榜单的新纪录？",
+                        description=(
+                            "该榜前三名出现新纪录时在这里通报，"
+                            "并说明谁跌出了前三。"
+                        ),
+                    ),
+                    HelpCommand(
                         command=f"{command} 关注",
-                        answers="本群现在盯着哪些账号？",
-                        description="列出关注列表与序号，取关时用这个序号。",
+                        answers="本群现在盯着哪些账号和榜单？",
+                        description="分别列出关注的账号与榜单及序号，取关时用这个序号。",
                     ),
                     HelpCommand(
                         command=f"{command} 取关 <序号或昵称>",
-                        answers="怎么不盯了？",
+                        answers="怎么不盯这个账号了？",
                         description="添加这条关注的人和机器人管理员可以取消它。",
+                    ),
+                    HelpCommand(
+                        command=f"{command} 取关 榜单 <序号或榜单关键词>",
+                        answers="怎么不盯这个榜单了？",
+                        description=(
+                            "序号见 关注 列表的榜单一栏；同样限添加者或管理员。"
+                        ),
+                    ),
+                    HelpCommand(
+                        command=(
+                            f"{command} 趋势 <昵称、accountId或主页链接> "
+                            "[--范围 7d|14d|30d|all]"
+                        ),
+                        answers="这个账号最近各榜名次是涨是跌？",
+                        description=(
+                            "只有关注过的账号才有记录：名次通报每轮记一次，"
+                            "只在名次变化时留点；默认看近 30 天。"
+                        ),
                     ),
                 ),
             ),

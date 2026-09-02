@@ -4,15 +4,29 @@ import copy
 import unittest
 from dataclasses import replace
 
-from core.models import parse_boss_ranking, parse_public_user_rankings
+from core.models import (
+    HotBossCard,
+    HotBossRun,
+    parse_boss_ranking,
+    parse_public_user_rankings,
+)
 from core.watch import (
     AccountSnapshot,
+    BoardSnapshot,
+    BoardTopRun,
     board_label,
+    board_snapshot_is_usable,
+    board_snapshot_payload,
+    build_board_snapshot,
     build_snapshot,
     find_new_record_above,
     find_rank_drops,
+    find_top_run_changes,
+    format_board_notice,
     format_rank_drop_notice,
+    join_board_notices,
     join_rank_drop_notices,
+    parse_board_snapshot_payload,
     parse_snapshot_payload,
     parse_timestamp,
     snapshot_is_usable,
@@ -21,6 +35,7 @@ from core.watch import (
 )
 from core.watchlist import (
     WatchedAccount,
+    WatchedBoard,
     WatchList,
     format_watchlist,
     parse_watchlist,
@@ -91,6 +106,41 @@ def board(*rows: tuple[int, str, str]):
 
 def snapshot(ranks: dict[str, int], checked_at: str | None = CHECKED):
     return AccountSnapshot(ranks=ranks, checked_at=checked_at)
+
+
+def board_entry(
+    slug: str,
+    boss: str | None = None,
+    dungeon: str | None = None,
+    added_by: str = "aiocqhttp:111",
+) -> WatchedBoard:
+    return WatchedBoard(
+        boss_slug=slug,
+        boss_name=boss or f"首领 {slug}",
+        dungeon_name=dungeon or f"副本 {slug}",
+        added_by=added_by,
+        added_at="2026-08-22T10:00:00+00:00",
+    )
+
+
+def card(slug: str, *runs: tuple[str, str, str, int]) -> HotBossCard:
+    """A hot-bosses card from (battleId, nickname, character, durationMs) runs."""
+
+    return HotBossCard(
+        boss_slug=slug,
+        boss_key=f"key-{slug}",
+        boss_name=f"首领 {slug}",
+        dungeon_name=f"副本 {slug}",
+        top_speed_runs=tuple(
+            HotBossRun(
+                battle_id=battle_id,
+                duration_ms=duration_ms,
+                uploader_nickname=nickname,
+                character_name=character,
+            )
+            for battle_id, nickname, character, duration_ms in runs
+        ),
+    )
 
 
 class WatchListTests(unittest.TestCase):
@@ -532,6 +582,269 @@ class BoardLabelTests(unittest.TestCase):
             "危境再现 · 罗丹 · “碾骨之拳”罗丹",
         )
         self.assertEqual(board_label("危机合约", "破潮之像"), "危机合约 · 破潮之像")
+
+
+class BoardWatchListTests(unittest.TestCase):
+    def test_boards_are_kept_apart_from_accounts(self) -> None:
+        watchlist, added = WatchList.empty().with_board(GROUP, board_entry("slug_a"))
+        self.assertTrue(added)
+        watchlist, added = watchlist.with_board(
+            GROUP, board_entry("slug_a", boss="改名", added_by="aiocqhttp:999")
+        )
+        self.assertFalse(added)
+        self.assertEqual(watchlist.boards_for(GROUP)[0].boss_name, "改名")
+        self.assertEqual(watchlist.boards_for(GROUP)[0].added_by, "aiocqhttp:111")
+        watchlist, _ = watchlist.with_board(OTHER_GROUP, board_entry("slug_a"))
+        watchlist, _ = watchlist.with_account(GROUP, account())
+
+        self.assertEqual(watchlist.origins_by_board(), {"slug_a": (GROUP, OTHER_GROUP)})
+        self.assertEqual(watchlist.total_boards, 2)
+        self.assertEqual(watchlist.total_accounts, 1)
+        without = watchlist.without_board(GROUP, "slug_a")
+        self.assertEqual(without.boards_for(GROUP), ())
+        self.assertEqual(without.accounts_for(GROUP)[0].account_id, "usr_1")
+        self.assertEqual(without.boards_for(OTHER_GROUP)[0].boss_slug, "slug_a")
+        self.assertEqual(without.origins_by_board(), {"slug_a": (OTHER_GROUP,)})
+
+    def test_board_selectors_accept_index_slug_and_names(self) -> None:
+        watchlist, _ = WatchList.empty().with_board(
+            GROUP, board_entry("slug_a", boss="“碾骨之拳”罗丹", dungeon="危境再现·罗丹")
+        )
+        watchlist, _ = watchlist.with_board(
+            GROUP,
+            board_entry(
+                "slug_b", boss="山中见犼·苦难", dungeon="影拓丰碑4期 · 山中见犼"
+            ),
+        )
+
+        self.assertEqual(watchlist.resolve_board(GROUP, "2").boss_slug, "slug_b")
+        self.assertEqual(watchlist.resolve_board(GROUP, "slug_a").boss_slug, "slug_a")
+        self.assertEqual(
+            watchlist.resolve_board(GROUP, "山中见犼·苦难").boss_slug, "slug_b"
+        )
+        self.assertEqual(watchlist.resolve_board(GROUP, "罗丹").boss_slug, "slug_a")
+        self.assertIsNone(watchlist.resolve_board(GROUP, "3"))
+        self.assertIsNone(watchlist.resolve_board(GROUP, "查无此榜"))
+        self.assertIsNone(watchlist.resolve_board(OTHER_GROUP, "1"))
+        self.assertEqual(watchlist.resolve_board_matches(GROUP, "9" * 4400), ())
+        self.assertEqual(len(watchlist.resolve_board_matches(GROUP, "见犼")), 1)
+
+    def test_payload_round_trip_and_version_one_files_still_load(self) -> None:
+        watchlist, _ = WatchList.empty().with_account(GROUP, account())
+        watchlist, _ = watchlist.with_board(GROUP, board_entry("slug_a"))
+        watchlist, _ = watchlist.with_board(OTHER_GROUP, board_entry("slug_b"))
+
+        payload = watchlist.to_payload()
+
+        self.assertEqual(payload["version"], 2)
+        self.assertEqual(parse_watchlist(payload), watchlist)
+        legacy = parse_watchlist(
+            {"groups": {GROUP: [{"accountId": "usr_1", "displayName": "CPU 0"}]}}
+        )
+        self.assertEqual(legacy.accounts_for(GROUP)[0].display_name, "CPU 0")
+        self.assertEqual(legacy.boards_for(GROUP), ())
+        salvaged = parse_watchlist(
+            {
+                "groups": {
+                    GROUP: {
+                        "accounts": "不是列表",
+                        "boards": [
+                            {"bossSlug": "s"},
+                            {"bossSlug": "s", "bossName": "重复"},
+                            {"bossName": "没有 slug"},
+                            1,
+                        ],
+                    }
+                }
+            }
+        )
+        self.assertEqual(
+            [board.boss_slug for board in salvaged.boards_for(GROUP)], ["s"]
+        )
+        self.assertEqual(salvaged.boards_for(GROUP)[0].boss_name, "s")
+        self.assertEqual(salvaged.accounts_for(GROUP), ())
+
+    def test_list_text_shows_both_sections(self) -> None:
+        watchlist, _ = WatchList.empty().with_account(GROUP, account())
+        watchlist, _ = watchlist.with_board(
+            GROUP,
+            board_entry(
+                "slug_a", boss="山中见犼·苦难", dungeon="影拓丰碑4期 · 山中见犼"
+            ),
+        )
+
+        text = format_watchlist(
+            watchlist.accounts_for(GROUP), boards=watchlist.boards_for(GROUP)
+        )
+
+        self.assertIn("1. CPU 0（usr_1）", text)
+        self.assertIn("1. 影拓丰碑4期 · 山中见犼 · 苦难", text)
+        boards_only = format_watchlist((), boards=watchlist.boards_for(GROUP))
+        self.assertNotIn("当前关注的账号", boards_only)
+        self.assertIn("榜单", format_watchlist(()))
+
+
+class BoardDiffTests(unittest.TestCase):
+    def test_first_sighting_and_an_unchanged_top_are_silent(self) -> None:
+        current = card(
+            "slug_a", ("btl_a", "甲", "诀", 9771), ("btl_b", "乙", "洛茜", 10000)
+        )
+        baseline = build_board_snapshot(current, checked_at=CHECKED)
+
+        self.assertIsNone(find_top_run_changes(None, current))
+        self.assertIsNone(find_top_run_changes(baseline, current))
+        self.assertEqual([run.battle_id for run in baseline.runs], ["btl_a", "btl_b"])
+        self.assertEqual(baseline.runs[0].uploader_nickname, "甲")
+        self.assertEqual(baseline.checked_at, CHECKED)
+
+    def test_a_new_record_reports_the_entry_and_who_fell_out(self) -> None:
+        previous = build_board_snapshot(
+            card(
+                "slug_a",
+                ("btl_a", "甲", "诀", 9771),
+                ("btl_b", "乙", "洛茜", 10000),
+                ("btl_c", "丙", "卡缪", 11000),
+            ),
+            checked_at=CHECKED,
+        )
+        current = card(
+            "slug_a",
+            ("btl_new", "丁", "黎风", 9000),
+            ("btl_a", "甲", "诀", 9771),
+            ("btl_b", "乙", "洛茜", 10000),
+        )
+
+        change = find_top_run_changes(previous, current)
+
+        self.assertEqual(
+            [(entry.rank, entry.run.battle_id) for entry in change.new_runs],
+            [(1, "btl_new")],
+        )
+        self.assertEqual(
+            [
+                (entry.rank, entry.run.uploader_nickname)
+                for entry in change.dropped_runs
+            ],
+            [(3, "丙")],
+        )
+        self.assertEqual(change.boss_name, "首领 slug_a")
+
+    def test_a_deleted_record_is_not_news(self) -> None:
+        previous = build_board_snapshot(
+            card("slug_a", ("btl_a", "甲", "诀", 9771), ("btl_b", "乙", "洛茜", 10000)),
+            checked_at=CHECKED,
+        )
+
+        shrunken = card("slug_a", ("btl_b", "乙", "洛茜", 10000))
+
+        self.assertIsNone(find_top_run_changes(previous, shrunken))
+
+    def test_board_baseline_freshness(self) -> None:
+        fresh = BoardSnapshot(runs=(), checked_at=CHECKED)
+
+        self.assertTrue(
+            board_snapshot_is_usable(fresh, now=AFTER, max_age_seconds=86_400)
+        )
+        self.assertFalse(
+            board_snapshot_is_usable(fresh, now=AFTER, max_age_seconds=3_600)
+        )
+        self.assertFalse(
+            board_snapshot_is_usable(None, now=AFTER, max_age_seconds=86_400)
+        )
+        self.assertFalse(
+            board_snapshot_is_usable(
+                BoardSnapshot(runs=(), checked_at=None),
+                now=AFTER,
+                max_age_seconds=86_400,
+            )
+        )
+
+
+class BoardNoticeTests(unittest.TestCase):
+    def test_notice_lists_new_runs_with_links_then_the_displaced(self) -> None:
+        previous = build_board_snapshot(
+            card(
+                "slug_a",
+                ("btl_a", "甲", "诀", 9771),
+                ("btl_b", "乙", "洛茜", 10000),
+                ("btl_c", "丙", "卡缪", 11000),
+            ),
+            checked_at=CHECKED,
+        )
+        current = card(
+            "slug_a",
+            ("btl_new1", "丁", "黎风", 9000),
+            ("btl_new2", "戊", "余烬", 9500),
+            ("btl_a", "甲", "诀", 9771),
+        )
+
+        notice = format_board_notice(
+            find_top_run_changes(previous, current), web_base_url="https://zmdlogs.com"
+        )
+
+        self.assertIn("「副本 slug_a · 首领 slug_a」前三名有新纪录", notice)
+        self.assertIn("第 1 名 · 丁 · 主C 黎风 · 用时 0:09.000", notice)
+        self.assertIn("第 2 名 · 戊 · 主C 余烬 · 用时 0:09.500", notice)
+        self.assertIn("https://zmdlogs.com/battle/btl_new1", notice)
+        self.assertIn("https://zmdlogs.com/battle/btl_new2", notice)
+        self.assertIn(
+            "跌出前三：乙（原第 2 · 主C 洛茜）、丙（原第 3 · 主C 卡缪）", notice
+        )
+        self.assertNotIn("超", notice)
+
+    def test_a_new_record_on_an_empty_board_has_nobody_to_displace(self) -> None:
+        previous = BoardSnapshot(runs=(), checked_at=CHECKED)
+        notice = format_board_notice(
+            find_top_run_changes(previous, card("slug_a", ("btl_a", "甲", "诀", 9771))),
+            web_base_url="https://zmdlogs.com",
+        )
+
+        self.assertIn("第 1 名 · 甲", notice)
+        self.assertNotIn("跌出前三", notice)
+
+    def test_board_notices_merge_per_chat(self) -> None:
+        notices = tuple(f"🏁 榜单{index}" for index in range(5))
+
+        merged = join_board_notices(notices)
+
+        self.assertEqual(merged.count("🏁"), 3)
+        self.assertIn("另有 2 个关注的榜单也有新纪录。", merged)
+        self.assertEqual(join_board_notices(notices[:1]), "🏁 榜单0")
+
+
+class BoardSnapshotPayloadTests(unittest.TestCase):
+    def test_round_trip_and_garbage(self) -> None:
+        snapshots = {
+            "slug_a": build_board_snapshot(
+                card("slug_a", ("btl_a", "甲", "诀", 9771)), checked_at=CHECKED
+            )
+        }
+
+        self.assertEqual(
+            parse_board_snapshot_payload(board_snapshot_payload(snapshots)), snapshots
+        )
+        self.assertEqual(parse_board_snapshot_payload(None), {})
+        self.assertEqual(parse_board_snapshot_payload({"boards": []}), {})
+        parsed = parse_board_snapshot_payload(
+            {
+                "boards": {
+                    "slug_a": {
+                        "checkedAt": CHECKED,
+                        "runs": [
+                            {"battleId": "btl_a", "durationMs": "x"},
+                            {"nope": 1},
+                            "junk",
+                        ],
+                    },
+                    "slug_b": {"runs": "junk"},
+                    "slug_c": {"checkedAt": None, "runs": []},
+                }
+            }
+        )
+        self.assertEqual(parsed["slug_a"].runs, (BoardTopRun("btl_a", "", "", 0),))
+        self.assertEqual(parsed["slug_a"].checked_at, CHECKED)
+        self.assertNotIn("slug_b", parsed)
+        self.assertEqual(parsed["slug_c"], BoardSnapshot(runs=(), checked_at=None))
 
 
 class SnapshotPayloadTests(unittest.TestCase):

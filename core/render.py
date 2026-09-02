@@ -23,6 +23,7 @@ from markupsafe import Markup
 
 from .characters import CharacterFilterScope
 from .help import build_help_page
+from .history import AccountHistory
 from .matcher import MatchChoice
 from .models import (
     BattleDetailSummary,
@@ -39,8 +40,11 @@ from .presentation import (
     build_character_boss_page,
     build_character_stats_page,
     build_dungeon_top3_page,
+    build_loadout_page,
     build_ranking_page,
     build_roster_page,
+    build_skill_page,
+    build_trend_page,
 )
 from .routing import DEFAULT_RANKING_TOP
 
@@ -59,6 +63,9 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
         "character-stats",
         "character-boss",
         "roster",
+        "loadout",
+        "skills",
+        "trend",
         "warmup",
     }
 )
@@ -257,6 +264,52 @@ class TemplateRenderer:
             web_base_url=web_base_url,
         )
         return self._render("battle/battle.html", page, "battle")
+
+    def render_loadout(
+        self,
+        battle: BattleDetailSummary,
+        *,
+        query: str,
+        web_base_url: str,
+    ) -> str:
+        page = build_loadout_page(
+            battle,
+            query=query,
+            web_base_url=web_base_url,
+        )
+        return self._render("loadout/loadout.html", page, "loadout")
+
+    def render_skills(
+        self,
+        battle: BattleDetailSummary,
+        *,
+        query: str,
+        web_base_url: str,
+    ) -> str:
+        page = build_skill_page(
+            battle,
+            query=query,
+            web_base_url=web_base_url,
+        )
+        return self._render("skills/skills.html", page, "skills")
+
+    def render_trend(
+        self,
+        history: AccountHistory,
+        *,
+        query: str,
+        web_base_url: str,
+        time_range: str = "30d",
+        last_checked: str | None = None,
+    ) -> str:
+        page = build_trend_page(
+            history,
+            query=query,
+            web_base_url=web_base_url,
+            time_range=time_range,
+            last_checked=last_checked,
+        )
+        return self._render("trend/trend.html", page, "trend")
 
     def _render(self, template_name: str, page, page_kind: str) -> str:
         template = self.environment.get_template(template_name)
@@ -561,6 +614,61 @@ class LongImageRenderer:
         except Exception as exc:
             raise RenderError("battle template rendering failed") from exc
         return await self._capture(html, "battle")
+
+    async def render_loadout(
+        self,
+        battle: BattleDetailSummary,
+        *,
+        query: str,
+        web_base_url: str,
+    ) -> str:
+        try:
+            html = self.templates.render_loadout(
+                battle,
+                query=query,
+                web_base_url=web_base_url,
+            )
+        except Exception as exc:
+            raise RenderError("loadout template rendering failed") from exc
+        return await self._capture(html, "loadout")
+
+    async def render_skills(
+        self,
+        battle: BattleDetailSummary,
+        *,
+        query: str,
+        web_base_url: str,
+    ) -> str:
+        try:
+            html = self.templates.render_skills(
+                battle,
+                query=query,
+                web_base_url=web_base_url,
+            )
+        except Exception as exc:
+            raise RenderError("skills template rendering failed") from exc
+        return await self._capture(html, "skills")
+
+    async def render_trend(
+        self,
+        history: AccountHistory,
+        *,
+        query: str,
+        web_base_url: str,
+        time_range: str = "30d",
+        last_checked: str | None = None,
+    ) -> str:
+        try:
+            html = self.templates.render_trend(
+                history,
+                query=query,
+                web_base_url=web_base_url,
+                time_range=time_range,
+                last_checked=last_checked,
+            )
+        except Exception as exc:
+            raise RenderError("trend template rendering failed") from exc
+        return await self._capture(html, "trend")
 
     async def warm_up(self) -> None:
         """Launch Chromium and render one page so the first query is fast."""

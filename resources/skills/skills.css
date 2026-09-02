@@ -1,0 +1,183 @@
+.skill-group {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+
+.skill-group:first-of-type {
+  margin-top: 0;
+}
+
+.skill-group-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--card-soft);
+}
+
+.skill-group-head .avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 15px;
+}
+
+.skill-group-head .loadout-id {
+  flex: 1 1 auto;
+}
+
+.skill-group-total {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.skill-group-total span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.skill-group-total strong {
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.skill-group-total strong b {
+  margin-left: 6px;
+  padding: 0 5px;
+  background: var(--action);
+  font-size: 13px;
+}
+
+.skill-group-total .share-track {
+  width: 220px;
+}
+
+.share-track {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  background: var(--line-soft);
+  transform: skewX(-12deg);
+}
+
+.share-track i {
+  display: block;
+  height: 100%;
+  background: var(--action);
+}
+
+.skill-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.skill-table th,
+.skill-table td {
+  padding: 7px 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.skill-table th {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.skill-table tbody tr + tr td {
+  border-top: 1px solid var(--line-soft);
+}
+
+.skill-table tbody tr:nth-child(even) {
+  background: var(--card-soft);
+}
+
+.skill-table .col-cat {
+  width: 68px;
+}
+
+.skill-table .col-share {
+  width: 190px;
+}
+
+.skill-table .num {
+  width: 110px;
+  text-align: right;
+}
+
+.skill-table td.num {
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.skill-table td.num.is-total {
+  font-weight: 800;
+}
+
+.skill-table .skill-cell {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.skill-table .skill-cell strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-table .skill-cell i {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.skill-table td.share {
+  padding-right: 16px;
+}
+
+.skill-table td.share .share-track {
+  margin-bottom: 4px;
+}
+
+.skill-table td.share b {
+  color: var(--steel);
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.skill-more {
+  margin: 0;
+  padding: 8px 16px 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}

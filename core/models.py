@@ -143,6 +143,86 @@ class BattleParticipant:
 
 
 @dataclass(frozen=True, slots=True)
+class BattleWeaponSkill:
+    """One weapon affix and its level (``sk_wpn_*`` is the weapon's own skill)."""
+
+    skill_key: str
+    level: int | None = None
+    potential_level: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BattleWeapon:
+    name: str
+    template: str | None = None
+    level: int | None = None
+    refine: int | None = None
+    icon_url: str | None = None
+    skills: tuple[BattleWeaponSkill, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class BattleEquipStat:
+    """One gear stat line; upstream leaves these untyped, so fields are lenient."""
+
+    name: str
+    value: float
+    slot: str | None = None
+    level: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BattleEquip:
+    slot: int
+    # Falls back to the raw item id upstream when the piece name is unknown.
+    piece_name: str
+    item_id: str | None = None
+    suit_name: str | None = None
+    part_name: str | None = None
+    icon_url: str | None = None
+    # (affix index, enhancement level) pairs in index order; untyped upstream.
+    enhance_levels: tuple[tuple[int, int], ...] = ()
+    stats: tuple[BattleEquipStat, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class BattleRosterSkill:
+    skill_key: str
+    level: int
+
+
+@dataclass(frozen=True, slots=True)
+class BattleRosterEntry:
+    """One deployed character with the loadout recorded at upload time."""
+
+    slot: int
+    character_name: str
+    account_display_name: str
+    character_key: str | None = None
+    character_profession: str | None = None
+    character_avatar_url: str | None = None
+    character_element: str | None = None
+    character_level: int | None = None
+    character_potential: int | None = None
+    weapon: BattleWeapon | None = None
+    equips: tuple[BattleEquip, ...] = ()
+    skills: tuple[BattleRosterSkill, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class BattleSkillStat:
+    """Damage of one skill (or damage source) of one character in a battle."""
+
+    character_name: str
+    skill_name: str
+    cast_count: int
+    total_damage: int
+    avg_damage: float
+    max_damage: int
+    skill_key: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class BattleDetailSummary:
     battle_id: str
     uploader_user_id: str
@@ -162,6 +242,8 @@ class BattleDetailSummary:
     integrity_verified: bool
     contract_tag_score: int | None = None
     contract_tags: tuple[ContractTag, ...] = ()
+    roster: tuple[BattleRosterEntry, ...] = ()
+    skill_stats: tuple[BattleSkillStat, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -563,6 +645,10 @@ def parse_battle_detail(payload: Any) -> BattleDetailSummary:
         "battle-detail.battle.uploaderUserId",
     )
     integrity = _mapping(root.get("integrity"), "battle-detail.integrity")
+    skill_items = _list(
+        root.get("roleSkillStats", []),
+        "battle-detail.roleSkillStats",
+    )
     return BattleDetailSummary(
         battle_id=_string(battle.get("id"), "battle-detail.battle.id"),
         uploader_user_id=uploader_user_id,
@@ -624,6 +710,190 @@ def parse_battle_detail(payload: Any) -> BattleDetailSummary:
             battle.get("contractTags", []),
             "battle-detail.battle.contractTags",
         ),
+        roster=tuple(
+            _parse_battle_roster_entry(
+                value, f"battle-detail.battle.roster[{index}]"
+            )
+            for index, value in enumerate(roster_items)
+        ),
+        skill_stats=tuple(
+            _parse_skill_stat(value, f"battle-detail.roleSkillStats[{index}]")
+            for index, value in enumerate(skill_items)
+        ),
+    )
+
+
+def _parse_battle_roster_entry(value: Any, path: str) -> BattleRosterEntry:
+    item = _mapping(value, path)
+    weapon = item.get("weapon")
+    equips = _list(item.get("equips", []), f"{path}.equips")
+    skills = _list(item.get("skills", []), f"{path}.skills")
+    return BattleRosterEntry(
+        slot=_integer(item.get("slot"), f"{path}.slot"),
+        character_name=_string(item.get("characterName"), f"{path}.characterName"),
+        account_display_name=_string(
+            item.get("accountDisplayName"),
+            f"{path}.accountDisplayName",
+        ),
+        character_key=_optional_string(
+            item.get("characterKey"),
+            f"{path}.characterKey",
+        ),
+        character_profession=_optional_string(
+            item.get("characterProfession"),
+            f"{path}.characterProfession",
+        ),
+        character_avatar_url=_optional_string(
+            item.get("characterAvatarUrl"),
+            f"{path}.characterAvatarUrl",
+        ),
+        character_element=_optional_string(
+            item.get("characterElement"),
+            f"{path}.characterElement",
+        ),
+        character_level=_optional_integer(
+            item.get("characterLevel"),
+            f"{path}.characterLevel",
+        ),
+        character_potential=_optional_integer(
+            item.get("characterPotential"),
+            f"{path}.characterPotential",
+        ),
+        weapon=(
+            None
+            if weapon is None
+            else _parse_battle_weapon(weapon, f"{path}.weapon")
+        ),
+        equips=tuple(
+            _parse_battle_equip(equip, f"{path}.equips[{index}]")
+            for index, equip in enumerate(equips)
+        ),
+        skills=tuple(
+            _parse_roster_skill(skill, f"{path}.skills[{index}]")
+            for index, skill in enumerate(skills)
+        ),
+    )
+
+
+def _parse_battle_weapon(value: Any, path: str) -> BattleWeapon:
+    item = _mapping(value, path)
+    skills = _list(item.get("skills", []), f"{path}.skills")
+    return BattleWeapon(
+        name=_string(item.get("weaponName"), f"{path}.weaponName"),
+        template=_optional_string(
+            item.get("weaponTemplate"),
+            f"{path}.weaponTemplate",
+        ),
+        level=_optional_integer(item.get("weaponLevel"), f"{path}.weaponLevel"),
+        refine=_optional_integer(
+            item.get("weaponRefine"),
+            f"{path}.weaponRefine",
+        ),
+        icon_url=_optional_string(item.get("iconUrl"), f"{path}.iconUrl"),
+        skills=tuple(
+            _parse_weapon_skill(skill, f"{path}.skills[{index}]")
+            for index, skill in enumerate(skills)
+        ),
+    )
+
+
+def _parse_weapon_skill(value: Any, path: str) -> BattleWeaponSkill:
+    item = _mapping(value, path)
+    return BattleWeaponSkill(
+        skill_key=_string(item.get("skillKey"), f"{path}.skillKey"),
+        level=_optional_integer(item.get("level"), f"{path}.level"),
+        potential_level=_optional_integer(
+            item.get("potentialLevel"),
+            f"{path}.potentialLevel",
+        ),
+    )
+
+
+def _parse_battle_equip(value: Any, path: str) -> BattleEquip:
+    item = _mapping(value, path)
+    return BattleEquip(
+        slot=_integer(item.get("slot"), f"{path}.slot"),
+        piece_name=_string(item.get("pieceName"), f"{path}.pieceName"),
+        item_id=_optional_string(item.get("itemId"), f"{path}.itemId"),
+        suit_name=_optional_string(item.get("suitName"), f"{path}.suitName"),
+        part_name=_optional_string(item.get("partName"), f"{path}.partName"),
+        icon_url=_optional_string(item.get("iconUrl"), f"{path}.iconUrl"),
+        enhance_levels=_parse_enhance_levels(item.get("enhanceLevels")),
+        stats=_parse_equip_stats(item.get("stats")),
+    )
+
+
+def _parse_enhance_levels(value: Any) -> tuple[tuple[int, int], ...]:
+    """Keep the well-formed ``{index, level}`` pairs; the list is untyped upstream."""
+
+    if not isinstance(value, list):
+        return ()
+    levels: dict[int, int] = {}
+    for entry in value:
+        if not isinstance(entry, dict):
+            continue
+        index = entry.get("index")
+        level = entry.get("level")
+        if not _is_plain_int(index) or not _is_plain_int(level):
+            continue
+        levels[index] = level
+    return tuple(sorted(levels.items()))
+
+
+def _parse_equip_stats(value: Any) -> tuple[BattleEquipStat, ...]:
+    """Keep the stat lines that carry a name and a number; skip the rest.
+
+    The upstream schema types these as bare dicts, so a malformed line must
+    not fail the whole battle the way a typed field would.
+    """
+
+    if not isinstance(value, list):
+        return ()
+    stats: list[BattleEquipStat] = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        raw_value = entry.get("value")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if isinstance(raw_value, bool) or not isinstance(raw_value, int | float):
+            continue
+        slot = entry.get("slot")
+        level = entry.get("level")
+        stats.append(
+            BattleEquipStat(
+                name=name.strip(),
+                value=float(raw_value),
+                slot=slot if isinstance(slot, str) else None,
+                level=level if _is_plain_int(level) else None,
+            )
+        )
+    return tuple(stats)
+
+
+def _is_plain_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _parse_roster_skill(value: Any, path: str) -> BattleRosterSkill:
+    item = _mapping(value, path)
+    return BattleRosterSkill(
+        skill_key=_string(item.get("skillKey"), f"{path}.skillKey"),
+        level=_integer(item.get("level"), f"{path}.level"),
+    )
+
+
+def _parse_skill_stat(value: Any, path: str) -> BattleSkillStat:
+    item = _mapping(value, path)
+    return BattleSkillStat(
+        character_name=_string(item.get("characterName"), f"{path}.characterName"),
+        skill_name=_string(item.get("skillName"), f"{path}.skillName"),
+        cast_count=_non_negative(item.get("castCount"), f"{path}.castCount"),
+        total_damage=_integer(item.get("totalDamage"), f"{path}.totalDamage"),
+        avg_damage=_number(item.get("avgDamage"), f"{path}.avgDamage"),
+        max_damage=_integer(item.get("maxDamage"), f"{path}.maxDamage"),
+        skill_key=_optional_string(item.get("skillKey"), f"{path}.skillKey"),
     )
 
 

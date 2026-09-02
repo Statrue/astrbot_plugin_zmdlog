@@ -74,6 +74,33 @@ def public_user_rankings_payload() -> dict:
 
 
 def battle_detail_payload() -> dict:
+    def skill(key: str, level: int) -> dict:
+        return {"skillKey": key, "level": level}
+
+    def stat(slot: str, name: str, value: float, level: int | None = 3) -> dict:
+        return {"slot": slot, "name": name, "value": value, "level": level}
+
+    def equip_icon(item_id: str) -> str:
+        return f"/images/equip/iconbig/{item_id}.png"
+
+    def skill_stat(
+        character: str,
+        key: str | None,
+        name: str,
+        casts: int,
+        total: int,
+        maximum: int,
+    ) -> dict:
+        return {
+            "characterName": character,
+            "skillKey": key,
+            "skillName": name,
+            "castCount": casts,
+            "totalDamage": total,
+            "avgDamage": round(total / casts, 2) if casts else 0.0,
+            "maxDamage": maximum,
+        }
+
     return {
         "battle": {
             "id": "btl_upload_abcdef123456",
@@ -86,9 +113,124 @@ def battle_detail_payload() -> dict:
             "totalDps": 110_061.2,
             "roster": [
                 {
+                    "slot": 1,
+                    "characterKey": "chr_0028_wulfa",
                     "characterName": "洛茜",
+                    "characterProfession": "近卫",
+                    "characterAvatarUrl": "/images/character/luoxi.png",
+                    "characterElement": "fire",
                     "accountDisplayName": "测试账号",
-                }
+                    "characterLevel": 90,
+                    "characterPotential": 5,
+                    "weapon": {
+                        "weaponTemplate": "wpn_sword_0021",
+                        "weaponName": "宏愿",
+                        "weaponLevel": 90,
+                        "weaponRefine": 3,
+                        "iconUrl": "/images/weapon/icon/wpn_sword_0021.png",
+                        "skills": [
+                            {"skillKey": "sk_wpn_sword_0021", "level": 9,
+                             "potentialLevel": 5},
+                            {"skillKey": "wpn_attr_str_high", "level": 9,
+                             "potentialLevel": 5},
+                            {"skillKey": "wpn_sp_attr_atk_high", "level": 7,
+                             "potentialLevel": 5},
+                        ],
+                    },
+                    "equips": [
+                        {
+                            "slot": 0,
+                            "itemId": "item_equip_t4_suit_phy01_hand_01",
+                            "pieceName": "点剑护手",
+                            "suitName": "点剑",
+                            "partName": "护手",
+                            "iconUrl": equip_icon("item_equip_t4_suit_phy01_hand_01"),
+                            "enhanceLevels": [
+                                {"index": 1, "level": 3},
+                                {"index": 2, "level": 3},
+                                {"index": 3, "level": 2},
+                            ],
+                            "stats": [
+                                stat("main", "防御力", 30.0, None),
+                                stat("sub1", "力量", 61.0),
+                                stat("sub2", "物理伤害提升", 0.1495),
+                                stat("sub3", "Main", 0.269123),
+                            ],
+                        },
+                        {
+                            # Upstream fell back to the item id: no piece or
+                            # suit name, and the untyped lists carry junk.
+                            "slot": 1,
+                            "itemId": "item_equip_t4_suit_phy01_body_02",
+                            "pieceName": "item_equip_t4_suit_phy01_body_02",
+                            "suitName": None,
+                            "partName": "护甲",
+                            "iconUrl": None,
+                            "enhanceLevels": [
+                                {"index": 1, "level": 3},
+                                {"bad": True},
+                                "junk",
+                            ],
+                            "stats": [
+                                {"name": "防御力", "value": "56"},
+                                {"slot": "sub1", "name": "", "value": 1},
+                                "junk",
+                            ],
+                        },
+                        {
+                            "slot": 2,
+                            "itemId": "item_equip_t4_suit_phy01_edc_03",
+                            "pieceName": "点剑火石",
+                            "suitName": "点剑",
+                            "partName": "配件",
+                            "iconUrl": equip_icon("item_equip_t4_suit_phy01_edc_03"),
+                            "enhanceLevels": [],
+                            "stats": [],
+                        },
+                        {
+                            "slot": 3,
+                            "itemId": "item_equip_t4_suit_phy01_edc_03",
+                            "pieceName": "点剑火石",
+                            "suitName": "点剑",
+                            "partName": "配件",
+                            "iconUrl": equip_icon("item_equip_t4_suit_phy01_edc_03"),
+                            "enhanceLevels": [],
+                            "stats": [],
+                        },
+                    ],
+                    "skills": [
+                        skill("chr_0028_wulfa_attack1", 12),
+                        skill("chr_0028_wulfa_attack2", 12),
+                        skill("chr_0028_wulfa_attack3", 12),
+                        skill("chr_0028_wulfa_normal_skill", 12),
+                        skill("chr_0028_wulfa_normal_skill_combo", 1),
+                        skill("chr_0028_wulfa_combo_skill", 9),
+                        skill("chr_0028_wulfa_ultimate_skill", 12),
+                        skill("chr_0028_wulfa_passive", 1),
+                    ],
+                },
+                {
+                    # A support with no gear recorded beyond the weapon.
+                    "slot": 2,
+                    "characterKey": "chr_0031_kamiu",
+                    "characterName": "卡缪",
+                    "characterProfession": "术士",
+                    "characterAvatarUrl": None,
+                    "characterElement": None,
+                    "accountDisplayName": "测试账号",
+                    "characterLevel": 80,
+                    "characterPotential": 0,
+                    "weapon": {
+                        "weaponTemplate": None,
+                        "weaponName": "悼亡诗",
+                        "weaponLevel": None,
+                        "weaponRefine": 6,
+                        "iconUrl": None,
+                        "skills": [],
+                    },
+                    "equips": [],
+                    "skills": [],
+                },
             ],
             "parserVersion": "raw-log-parser-v34",
             "rulesVersion": "raw-log-parser-v31",
@@ -110,10 +252,41 @@ def battle_detail_payload() -> dict:
                 "rdps": 26_428.42,
                 "maxHit": 381_016,
                 "critRate": 0.8125,
-            }
+            },
+            {
+                "characterKey": "chr_0031_kamiu",
+                "characterName": "卡缪",
+                "characterProfession": "术士",
+                "characterAvatarUrl": None,
+                "accountDisplayName": "测试账号",
+                "totalDamage": 265_333,
+                "dps": 12_736.19,
+                "rdps": 83_632.78,
+                "maxHit": None,
+                "critRate": None,
+            },
         ],
         "timelineEvents": [{"ignored": True}],
-        "roleSkillStats": [{"ignored": True}],
+        "roleSkillStats": [
+            skill_stat("洛茜", "chr_0028_wulfa_ultimate_skill", "终结技",
+                       2, 1_200_000, 700_000),
+            skill_stat("洛茜", "chr_0028_wulfa_attack1", "绯红刃舞",
+                       20, 200_000, 15_000),
+            skill_stat("洛茜", "chr_0028_wulfa_attack2", "绯红刃舞",
+                       18, 180_000, 14_000),
+            skill_stat("洛茜", "chr_0028_wulfa_attack3", "绯红刃舞",
+                       10, 120_000, 20_000),
+            skill_stat("洛茜", "chr_0028_wulfa_normal_skill", "战技",
+                       4, 250_000, 90_000),
+            skill_stat("洛茜", "chr_0028_wulfa_skill_3090",
+                       "chr_0028_wulfa_skill_3090", 1, 60_000, 60_000),
+            skill_stat("洛茜", "buff_common_burning_status", "burning status",
+                       9, 17_572, 4_000),
+            skill_stat("卡缪", "chr_0031_kamiu_combo_skill", "连携·潮汐",
+                       6, 200_333, 50_000),
+            skill_stat("卡缪", "chr_0031_kamiu_attack1", "A1",
+                       30, 65_000, 3_000),
+        ],
         "integrity": {"verified": True},
     }
 

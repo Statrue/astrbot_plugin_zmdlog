@@ -1,0 +1,95 @@
+{% extends "common/base.html" %}
+
+{% block extra_styles %}{% include "battle/battle.css" %}{% include "common/loadout.css" %}{% include "loadout/loadout.css" %}{% endblock %}
+
+{% block hero_facts %}
+<div class="hero-facts">
+  <div class="hero-fact hero-fact--key"><span>通关时间</span><strong>{{ page.duration }}</strong></div>
+  <div class="hero-fact"><span>总 DPS</span><strong>{{ page.total_dps }}</strong></div>
+  <div class="hero-fact"><span>总伤害</span><strong>{{ page.total_damage }}</strong></div>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="battle-identity" aria-label="战报信息">
+  <div><span>上传者</span><strong>{{ page.uploader_display_name }}</strong></div>
+  <div><span>战斗时间</span><strong>{{ page.battle_date }}</strong></div>
+  <div><span>battleId</span><code>{{ page.battle_id }}</code></div>
+  <div class="battle-link"><span>完整战报</span><code>{{ page.report_url }}</code></div>
+</section>
+
+<div class="section-heading">
+  <h2>阵容配装</h2>
+  <span class="section-note">按上场槽位 · 词条为上传时记录的数值{% if not page.stat_lines_available %} · 本场未记录词条数值{% endif %}{% if page.has_inferred_suit %} · 标注「推断」的套装名来自同场同款装备{% endif %}</span>
+</div>
+
+{% for load in page.loadouts %}
+<article class="loadout-detail" aria-label="{{ load.character_name }} 的配装">
+  <div class="loadout-detail-side">
+    <header class="loadout-head">
+      <span class="avatar">{{ load.character_initial }}{% if load.character_avatar_url %}<img src="{{ load.character_avatar_url }}" alt="" onerror="this.remove()">{% endif %}</span>
+      <div class="loadout-id">
+        <strong>{{ load.character_name }}</strong>
+        <span>{{ load.profession }}{% if load.element %} · {{ load.element }}{% endif %}{% if load.damage_share %} · 伤害占比 {{ load.damage_share }}{% endif %}</span>
+      </div>
+    </header>
+    <div class="loadout-pills">
+      <span class="pill">槽位 {{ load.slot }}</span>
+      {% if load.level_label %}<span class="pill">{{ load.level_label }}</span>{% endif %}
+      {% if load.potential_label %}<span class="pill pill--accent">{{ load.potential_label }}</span>{% endif %}
+    </div>
+    <div class="weapon-block">
+      <span class="gear-icon">武{% if load.weapon and load.weapon.icon_url %}<img src="{{ load.weapon.icon_url }}" alt="" onerror="this.remove()">{% endif %}</span>
+      <div class="weapon-text">
+        {% if load.weapon %}
+        <strong>{{ load.weapon.name }}</strong>
+        {% if load.weapon.refine_label or load.weapon.level_label %}
+        <span>{% if load.weapon.refine_label %}{{ load.weapon.refine_label }}{% endif %}{% if load.weapon.refine_label and load.weapon.level_label %} · {% endif %}{% if load.weapon.level_label %}{{ load.weapon.level_label }}{% endif %}</span>
+        {% endif %}
+        {% if load.weapon.skill_label %}<em>{{ load.weapon.skill_label }}</em>{% endif %}
+        {% else %}
+        <strong>武器未记录</strong>
+        {% endif %}
+      </div>
+    </div>
+    {% if load.skill_levels %}
+    <ul class="skill-levels" aria-label="技能等级">
+      {% for level in load.skill_levels %}
+      <li><span>{{ level.label }}</span><b>{{ level.level }}</b></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  <div class="equip-grid">
+    {% for equip in load.equips %}
+    <div class="equip-card">
+      <div class="equip-head">
+        <span class="gear-icon">{{ equip.part_name[:1] }}{% if equip.icon_url %}<img src="{{ equip.icon_url }}" alt="" onerror="this.remove()">{% endif %}</span>
+        <div class="equip-text">
+          <span class="equip-part">{{ equip.part_name }}</span>
+          <strong>{{ equip.piece_label }}</strong>
+          {% if equip.suit_label %}<em>{{ equip.suit_label }}{% if equip.inferred_suit %}（推断）{% endif %}</em>{% endif %}
+        </div>
+      </div>
+      {% if equip.enhance_label %}<p class="equip-enhance">{{ equip.enhance_label }}</p>{% endif %}
+      {% if equip.stats %}
+      <ul class="stat-list">
+        {% for stat in equip.stats %}
+        <li{% if stat.is_main %} class="is-main"{% endif %}><span>{{ stat.name }}</span><b>{{ stat.value }}</b></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="equip-empty">未记录词条</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if not load.equips %}
+    <p class="equip-empty equip-empty--wide">本场未记录装备</p>
+    {% endif %}
+  </div>
+</article>
+{% endfor %}
+{% if not page.loadouts %}
+<div class="empty-ranking">这份战报没有记录阵容</div>
+{% endif %}
+{% endblock %}

@@ -119,9 +119,14 @@ class HelpTests(unittest.TestCase):
                 ),
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 "!zmdlog 战报 <battleId、链接或榜单关键词 [名次]>",
+                "!zmdlog 配装 <battleId、链接或榜单关键词 [名次]>",
+                "!zmdlog 技能 <battleId、链接或榜单关键词 [名次]>",
                 "!zmdlog 关注 <昵称、accountId或主页链接>",
+                "!zmdlog 关注 榜单 <榜单关键词>",
                 "!zmdlog 关注",
                 "!zmdlog 取关 <序号或昵称>",
+                "!zmdlog 取关 榜单 <序号或榜单关键词>",
+                "!zmdlog 趋势 <昵称、accountId或主页链接> [--范围 7d|14d|30d|all]",
                 "!zmdlog 别名",
                 "!zmdlog 别名 添加 <榜单或副本> <别名...>",
                 "!zmdlog 别名 删除 <别名>",
@@ -180,6 +185,29 @@ class WatchRouteTests(unittest.TestCase):
             parse_zmdlog_payload("取消关注 CPU").kind, RouteKind.WATCH_REMOVE
         )
         for payload in ("取关", "关注 CPU --top 3", "取关 1 --角色 黎风"):
+            with self.subTest(payload=payload):
+                with self.assertRaises(RouteParseError):
+                    parse_zmdlog_payload(payload)
+
+    def test_board_watch_subcommands(self) -> None:
+        from core.routing import RouteParseError
+
+        board = parse_zmdlog_payload("关注 榜单 罗丹")
+        self.assertEqual(board.kind, RouteKind.WATCH_BOARD_ADD)
+        self.assertEqual(board.query, "罗丹")
+        self.assertEqual(
+            parse_zmdlog_payload("盯 榜单 丰碑4").kind, RouteKind.WATCH_BOARD_ADD
+        )
+        remove = parse_zmdlog_payload("取关 榜单 2")
+        self.assertEqual(remove.kind, RouteKind.WATCH_BOARD_REMOVE)
+        self.assertEqual(remove.query, "2")
+        self.assertEqual(
+            parse_zmdlog_payload("取消关注 榜单 罗丹").kind,
+            RouteKind.WATCH_BOARD_REMOVE,
+        )
+        # A nickname that merely starts with 榜单 still means an account.
+        self.assertEqual(parse_zmdlog_payload("关注 榜单侠").kind, RouteKind.WATCH_ADD)
+        for payload in ("关注 榜单", "取关 榜单", "关注 榜单 罗丹 --top 3"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)

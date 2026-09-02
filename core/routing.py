@@ -12,6 +12,8 @@ STATS_RANGES = ("7d", "14d", "30d", "all")
 STATS_POTENTIALS = ("0", "1-5", "all")
 DEFAULT_STATS_RANGE = "all"
 DEFAULT_STATS_POTENTIAL = "all"
+# The trend page reads a local trace, so a month is a sensible default view.
+DEFAULT_TREND_RANGE = "30d"
 
 _BATTLE_RANK_RE = re.compile(r"^(?:第|#)?([0-9]{1,3})(?:名)?$")
 
@@ -59,13 +61,18 @@ _OPTION_LABEL = {
 _OPTION_USAGE = {
     "top": "--top 仅适用于具体榜单和阵容查询。",
     "character": "--角色 仅适用于具体榜单查询，例如：罗丹 --角色 黎风。",
-    "range": "--范围 仅适用于角色统计，例如：角色统计 罗丹 --范围 7d。",
+    "range": "--范围 仅适用于角色统计和名次趋势，例如：角色统计 罗丹 --范围 7d。",
     "potential": "--潜能 仅适用于角色统计，例如：角色统计 罗丹 --潜能 0。",
 }
 
 
 class RouteParseError(ValueError):
     """Raised when a public command option is malformed or unsupported."""
+
+
+# Commands that take "<battleId, link or board keyword [rank]>"; the kind
+# decides which page of that battle is drawn.
+_BATTLE_STYLE_COMMANDS: dict[str, "RouteKind"] = {}
 
 
 class RouteKind(str, Enum):
@@ -76,6 +83,9 @@ class RouteKind(str, Enum):
     RANKING_QUERY = "ranking_query"
     ACCOUNT_QUERY = "account_query"
     BATTLE_QUERY = "battle_query"
+    # Same argument shape as 战报; they differ only in which page is drawn.
+    LOADOUT_QUERY = "loadout_query"
+    SKILL_QUERY = "skill_query"
     SMART_QUERY = "smart_query"
     CHARACTER_STATS = "character_stats"
     ROSTER_QUERY = "roster_query"
@@ -85,6 +95,20 @@ class RouteKind(str, Enum):
     WATCH_LIST = "watch_list"
     WATCH_ADD = "watch_add"
     WATCH_REMOVE = "watch_remove"
+    WATCH_BOARD_ADD = "watch_board_add"
+    WATCH_BOARD_REMOVE = "watch_board_remove"
+    TREND_QUERY = "trend_query"
+
+
+_BATTLE_STYLE_COMMANDS.update(
+    {
+        "战报": RouteKind.BATTLE_QUERY,
+        "配装": RouteKind.LOADOUT_QUERY,
+        "装备": RouteKind.LOADOUT_QUERY,
+        "技能": RouteKind.SKILL_QUERY,
+        "技能统计": RouteKind.SKILL_QUERY,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,17 +184,31 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
             raise RouteParseError("请提供 accountId 或 ZMDLogs 账号主页链接。")
         return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder)
 
-    if command == "战报":
+    battle_kind = _BATTLE_STYLE_COMMANDS.get(command)
+    if battle_kind is not None:
         options.reject_except()
         if not separator or not remainder:
             raise RouteParseError(
-                "请提供 battleId、战报链接，或榜单关键词（可加名次，如：战报 罗丹 3）。"
+                "请提供 battleId、战报链接，或榜单关键词"
+                f"（可加名次，如：{command} 罗丹 3）。"
             )
         query, battle_rank = _split_battle_rank(remainder)
+        return RouteRequest(battle_kind, query, battle_rank=battle_rank)
+
+    if command in {"趋势", "名次趋势"}:
+        options.reject_except("range")
+        if not separator or not remainder:
+            raise RouteParseError(
+                "请提供公开昵称、accountId 或 ZMDLogs 账号主页链接，例如：趋势 CPU 0。"
+            )
         return RouteRequest(
-            RouteKind.BATTLE_QUERY,
-            query,
-            battle_rank=battle_rank,
+            RouteKind.TREND_QUERY,
+            remainder,
+            stats_range=(
+                options.stats_range
+                if "range" in options.present
+                else DEFAULT_TREND_RANGE
+            ),
         )
 
     if command in {"角色统计", "角色"}:
@@ -213,12 +251,25 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         options.reject_except()
         if not remainder:
             return RouteRequest(RouteKind.WATCH_LIST)
+        board_query = _board_watch_argument(remainder)
+        if board_query is not None:
+            if not board_query:
+                raise RouteParseError("用法：关注 榜单 <榜单关键词>")
+            return RouteRequest(RouteKind.WATCH_BOARD_ADD, board_query)
         return RouteRequest(RouteKind.WATCH_ADD, remainder)
 
     if command in {"取关", "取消关注", "不盯"}:
         options.reject_except()
         if not remainder:
-            raise RouteParseError("用法：取关 <序号或昵称>，序号见 关注 列表。")
+            raise RouteParseError(
+                "用法：取关 <序号或昵称> 或 取关 榜单 <序号或榜单关键词>，"
+                "序号见 关注 列表。"
+            )
+        board_query = _board_watch_argument(remainder)
+        if board_query is not None:
+            if not board_query:
+                raise RouteParseError("用法：取关 榜单 <序号或榜单关键词>")
+            return RouteRequest(RouteKind.WATCH_BOARD_REMOVE, board_query)
         return RouteRequest(RouteKind.WATCH_REMOVE, remainder)
 
     options.reject_except("top", "character")
@@ -279,6 +330,15 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
         ),
         present=frozenset(values),
     )
+
+
+def _board_watch_argument(remainder: str) -> str | None:
+    """The text after a leading 榜单 marker; None when an account is meant."""
+
+    head, _, rest = remainder.partition(" ")
+    if head != "榜单":
+        return None
+    return rest.strip()
 
 
 def _split_battle_rank(remainder: str) -> tuple[str, int]:

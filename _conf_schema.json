@@ -78,13 +78,13 @@
     "description": "开启名次通报（顶屁股提醒）",
     "type": "bool",
     "default": true,
-    "hint": "开启后用 /zmdlog 关注 <昵称或accountId> 把公开账号加入本群关注列表；它掉出原名次时机器人在群里通报。只读取公开榜单数据。"
+    "hint": "开启后用 /zmdlog 关注 <昵称或accountId> 把公开账号加入本群关注列表，它掉出原名次时机器人在群里通报；/zmdlog 关注 榜单 <关键词> 则在该榜前三名出现新纪录时通报。只读取公开榜单数据。"
   },
   "rank_watch_interval_seconds": {
     "description": "名次检查间隔（秒）",
     "type": "int",
     "default": 900,
-    "hint": "每轮对每个被关注账号发一个请求，最低 120 秒。"
+    "hint": "每轮对每个被关注账号发一个请求，关注了榜单时整轮再多一个请求，最低 120 秒。"
   },
   "rank_watch_rank_threshold": {
     "description": "只通报原名次在前几名以内的下降",
