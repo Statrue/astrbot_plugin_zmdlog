@@ -118,6 +118,16 @@
   border-top: 2px dashed var(--ink);
 }
 
+/* Swatches match the lines. Written with two classes on purpose: the
+   generic `.curve-legend i` rule above would otherwise outrank the
+   single-class colour keys from battle.css and leave every swatch grey. */
+.curve-legend .share-seg--1 { background: var(--yellow-deep); }
+.curve-legend .share-seg--2 { background: var(--ink); }
+.curve-legend .share-seg--3 { background: var(--blue); }
+.curve-legend .share-seg--4 { background: var(--info); }
+.curve-legend .share-seg--5 { background: var(--special); }
+.curve-legend .share-seg--6 { background: var(--notify); }
+
 .curve-legend b {
   overflow: hidden;
   min-width: 0;

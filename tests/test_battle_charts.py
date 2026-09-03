@@ -310,6 +310,28 @@ class ChartTemplateTests(unittest.TestCase):
         self.assertNotIn("buff_wpn_sword_0021_up", html)
         self.assertNotIn("ignored", html)
 
+    def test_legend_swatches_carry_the_line_colours(self) -> None:
+        # A generic `.curve-legend i` rule outranks the one-class colour keys
+        # from battle.css; the stylesheet must restate the colours with two
+        # classes or every swatch renders grey (a real regression).
+        css = (
+            Path(__file__).parents[1] / "resources" / "common" / "battle-charts.css"
+        ).read_text(encoding="utf-8")
+
+        for index, token in enumerate(
+            ("yellow-deep", "ink", "blue", "info", "special", "notify"), start=1
+        ):
+            with self.subTest(index=index):
+                self.assertRegex(
+                    css,
+                    rf"\.curve-legend \.share-seg--{index}\s*\{{\s*background:"
+                    rf"\s*var\(--{token}\);",
+                )
+                self.assertRegex(
+                    css,
+                    rf"\.share-line--{index}\s*\{{\s*stroke:\s*var\(--{token}\);",
+                )
+
     def test_card_omits_the_sections_without_telemetry(self) -> None:
         payload = battle_detail_payload()
         payload["timelineEvents"] = []
