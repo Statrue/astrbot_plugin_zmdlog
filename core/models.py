@@ -223,6 +223,37 @@ class BattleSkillStat:
 
 
 @dataclass(frozen=True, slots=True)
+class BattleDamagePoint:
+    """One damage tick: when it landed, who dealt it, how much."""
+
+    at_ms: int
+    character_name: str
+    value: int
+
+
+@dataclass(frozen=True, slots=True)
+class BattleBuffEffect:
+    """One effect of a buff (``zone`` is upstream's slot, ``rate`` a fraction)."""
+
+    zone: str | None = None
+    element: str | None = None
+    rate: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BattleBuff:
+    """One buff application recorded on a character."""
+
+    name: str
+    target_name: str
+    start_ms: int
+    event_key: str | None = None
+    source_name: str | None = None
+    duration_ms: int | None = None
+    effects: tuple[BattleBuffEffect, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class BattleDetailSummary:
     battle_id: str
     uploader_user_id: str
@@ -244,6 +275,11 @@ class BattleDetailSummary:
     contract_tags: tuple[ContractTag, ...] = ()
     roster: tuple[BattleRosterEntry, ...] = ()
     skill_stats: tuple[BattleSkillStat, ...] = ()
+    # Optional telemetry read from ``timelineEvents`` / ``characterStates``.
+    # Both are parsed leniently: they only add sections to a card that must
+    # keep rendering when upstream changes their shape.
+    damage_points: tuple[BattleDamagePoint, ...] = ()
+    buffs: tuple[BattleBuff, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -759,6 +795,112 @@ def parse_battle_detail(payload: Any) -> BattleDetailSummary:
             _parse_skill_stat(value, f"battle-detail.roleSkillStats[{index}]")
             for index, value in enumerate(skill_items)
         ),
+        damage_points=_parse_damage_points(root.get("timelineEvents")),
+        buffs=_parse_character_state_buffs(root.get("characterStates")),
+    )
+
+
+def _parse_damage_points(value: Any) -> tuple[BattleDamagePoint, ...]:
+    """Read the damage ticks out of ``timelineEvents``, skipping the rest.
+
+    Deliberately lenient: this feeds the DPS curve, an extra section, so one
+    odd event must never cost the whole battle card. Everything the curve
+    needs (timestamp, dealer, amount) has to be present and sane, otherwise
+    the event is dropped.
+    """
+
+    if not isinstance(value, list):
+        return ()
+    points: list[BattleDamagePoint] = []
+    for item in value:
+        if not isinstance(item, dict) or item.get("laneType") != "skill":
+            continue
+        at_ms = item.get("tsMsFromStart")
+        amount = item.get("value")
+        name = item.get("sourceCharacterName")
+        if (
+            not isinstance(at_ms, int)
+            or isinstance(at_ms, bool)
+            or not isinstance(amount, int)
+            or isinstance(amount, bool)
+            or amount <= 0
+            or not isinstance(name, str)
+            or not name.strip()
+        ):
+            continue
+        points.append(
+            BattleDamagePoint(
+                at_ms=at_ms, character_name=name.strip(), value=amount
+            )
+        )
+    return tuple(points)
+
+
+def _parse_character_state_buffs(value: Any) -> tuple[BattleBuff, ...]:
+    """Read the buffs upstream already grouped per character, leniently."""
+
+    if not isinstance(value, list):
+        return ()
+    buffs: list[BattleBuff] = []
+    for state in value:
+        if not isinstance(state, dict):
+            continue
+        received = state.get("buffsReceived")
+        if not isinstance(received, list):
+            continue
+        for item in received:
+            buff = _parse_buff(item)
+            if buff is not None:
+                buffs.append(buff)
+    return tuple(buffs)
+
+
+def _parse_buff(value: Any) -> BattleBuff | None:
+    if not isinstance(value, dict):
+        return None
+    start = value.get("startTsMsFromStart")
+    target = value.get("targetCharacterName")
+    name = value.get("eventName")
+    if (
+        not isinstance(start, int)
+        or isinstance(start, bool)
+        or not isinstance(target, str)
+        or not target.strip()
+    ):
+        return None
+    duration = value.get("durationMs")
+    effects = []
+    for effect in value.get("effects") or ():
+        if not isinstance(effect, dict):
+            continue
+        rate = effect.get("rate")
+        effects.append(
+            BattleBuffEffect(
+                zone=effect.get("zone")
+                if isinstance(effect.get("zone"), str)
+                else None,
+                element=effect.get("element")
+                if isinstance(effect.get("element"), str)
+                else None,
+                rate=float(rate)
+                if isinstance(rate, int | float) and not isinstance(rate, bool)
+                else None,
+            )
+        )
+    return BattleBuff(
+        name=name.strip() if isinstance(name, str) else "",
+        target_name=target.strip(),
+        start_ms=start,
+        event_key=value.get("eventKey")
+        if isinstance(value.get("eventKey"), str)
+        else None,
+        source_name=value.get("sourceCharacterName")
+        if isinstance(value.get("sourceCharacterName"), str)
+        else None,
+        duration_ms=duration
+        if isinstance(duration, int) and not isinstance(duration, bool)
+        else None,
+        effects=tuple(effects),
     )
 
 

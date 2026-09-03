@@ -1,0 +1,335 @@
+/* ---------- 横向时间图共用骨架：左栏 | 轨道 | 右槽 ----------
+   DPS 曲线与增益覆盖上下相邻，三列等宽，所以两张图的刻度线落在同一 x。 */
+
+.hchart-row {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr) 40px;
+  gap: 10px;
+  align-items: center;
+}
+
+.hchart-row--ruler {
+  margin-top: 4px;
+}
+
+.hchart-side-note {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hchart-ruler {
+  position: relative;
+  height: 14px;
+}
+
+.hchart-tick {
+  position: absolute;
+  top: 0;
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.hchart-tick.is-major {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.hchart-tick:first-child {
+  transform: none;
+}
+
+.hchart-tick:last-child {
+  transform: translateX(-100%);
+}
+
+.hchart-grid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(28, 28, 28, 0.05);
+}
+
+.hchart-grid.is-major {
+  background: rgba(28, 28, 28, 0.1);
+}
+
+.hchart-gutter {
+  min-width: 0;
+}
+
+/* ---------- DPS 曲线 ---------- */
+
+.curve-panel {
+  padding: 14px 16px 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+
+.curve-side {
+  position: relative;
+  height: 200px;
+  padding-right: 54px;
+}
+
+.curve-legend {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--steel);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.curve-legend li {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.curve-legend i {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 14px;
+  height: 4px;
+  background: var(--faint);
+}
+
+.curve-legend .is-team i {
+  height: 0;
+  border-top: 2px dashed var(--ink);
+}
+
+.curve-legend b {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.curve-legend span {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.curve-legend em {
+  flex: 0 0 34px;
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 10.5px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+}
+
+.curve-legend .is-team em {
+  display: none;
+}
+
+.curve-axis {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  bottom: 0;
+  display: flex;
+  width: 44px;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+}
+
+.curve-axis span {
+  line-height: 1;
+  transform: translateY(-50%);
+}
+
+.curve-axis span:first-child {
+  transform: none;
+}
+
+.curve-axis span:last-child {
+  transform: translateY(-100%);
+}
+
+.curve-box {
+  position: relative;
+  height: 200px;
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--card-soft);
+}
+
+.curve-grid {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: rgba(28, 28, 28, 0.05);
+}
+
+.curve-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.curve-line {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.curve-line.is-team {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.share-line--1 { stroke: var(--yellow-deep); }
+.share-line--2 { stroke: var(--ink); }
+.share-line--3 { stroke: var(--blue); }
+.share-line--4 { stroke: var(--info); }
+.share-line--5 { stroke: var(--special); }
+.share-line--6 { stroke: var(--notify); }
+
+/* ---------- 增益覆盖 ---------- */
+
+.buff-band {
+  padding: 10px 16px 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+
+.buff-band .hchart-row--ruler {
+  margin: 0 0 4px;
+}
+
+.buff-row + .buff-row {
+  margin-top: 3px;
+}
+
+.buff-label {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.buff-zone {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  color: #fff;
+  background: var(--steel);
+  font-family: var(--font-num);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.buff-zone.is-atk { background: var(--data); }
+.buff-zone.is-dmg_inc { background: var(--notify); }
+.buff-zone.is-amp { background: var(--special); }
+.buff-zone.is-combo { background: var(--info); }
+
+.buff-label b {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.buff-label em {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.buff-track {
+  position: relative;
+  height: 15px;
+  border: 1px solid var(--line-soft);
+  background: var(--card-soft);
+}
+
+.buff-span {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: var(--faint);
+}
+
+.buff-span.is-atk { background: var(--data); }
+.buff-span.is-dmg_inc { background: var(--notify); }
+.buff-span.is-amp { background: var(--special); }
+.buff-span.is-combo { background: var(--info); }
+
+/* one application covering the whole team reads as a solid band */
+.buff-span.is-team {
+  top: 0;
+  bottom: 0;
+}
+
+.buff-coverage {
+  color: var(--steel);
+  font-family: var(--font-num);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: right;
+}
+
+.buff-coverage--head {
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.buff-more {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}

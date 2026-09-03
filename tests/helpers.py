@@ -73,6 +73,43 @@ def public_user_rankings_payload() -> dict:
     }
 
 
+def damage_tick(at_ms: int, character: str, value: int) -> dict:
+    """One ``timelineEvents`` damage row, trimmed to what the curve reads."""
+
+    return {
+        "tsMsFromStart": at_ms,
+        "laneType": "skill",
+        "sourceCharacterName": character,
+        "eventName": "伤害",
+        "value": value,
+    }
+
+
+def effect(zone: str, element: str, rate: float) -> dict:
+    return {"zone": zone, "element": element, "rate": rate}
+
+
+def buff(
+    key: str,
+    name: str,
+    source: str,
+    target: str,
+    start_ms: int,
+    duration_ms: int | None,
+    effects: list[dict],
+) -> dict:
+    return {
+        "eventKey": key,
+        "eventName": name,
+        "sourceCharacterName": source,
+        "targetCharacterName": target,
+        "startTsMsFromStart": start_ms,
+        "durationMs": duration_ms,
+        "effects": effects,
+        "dynamicEffects": [],
+    }
+
+
 def battle_detail_payload() -> dict:
     def skill(key: str, level: int) -> dict:
         return {"skillKey": key, "level": level}
@@ -266,7 +303,59 @@ def battle_detail_payload() -> dict:
                 "critRate": None,
             },
         ],
-        "timelineEvents": [{"ignored": True}],
+        # Damage ticks the DPS curve reads, plus rows it must skip: a buff-lane
+        # event, a cast with no damage, a malformed one and an unknown shape.
+        "timelineEvents": [
+            damage_tick(1_000, "洛茜", 900_000),
+            damage_tick(4_000, "卡缪", 200_000),
+            damage_tick(11_000, "洛茜", 1_127_572),
+            damage_tick(20_833, "卡缪", 65_333),
+            {**damage_tick(5_000, "洛茜", 10), "laneType": "buff"},
+            {**damage_tick(6_000, "洛茜", 0), "value": None},
+            {**damage_tick(7_000, "洛茜", 10), "tsMsFromStart": "7000"},
+            {"ignored": True},
+        ],
+        # Buffs as upstream groups them per character; the same buff reaches
+        # both characters (one application) and is later refreshed.
+        "characterStates": [
+            {
+                "characterKey": "chr_0028_wulfa",
+                "characterName": "洛茜",
+                "buffsReceived": [
+                    buff("buff_chr_0031_kamiu_atkup", "攻击提升", "卡缪", "洛茜",
+                         1_000, 9_000, [effect("atk", "all", 0.16)]),
+                    buff("buff_chr_0031_kamiu_atkup", "攻击提升", "卡缪", "洛茜",
+                         12_000, 9_000, [effect("atk", "all", 0.16)]),
+                    buff("buff_wpn_sword_0021_up", "buff_wpn_sword_0021_up",
+                         "洛茜", "洛茜", 2_000, 18_000,
+                         [effect("amp", "fire", 0.4)]),
+                    # Zones outside the damage set are dropped.
+                    buff("buff_speed", "疾行", "洛茜", "洛茜", 0, 5_000,
+                         [effect("speedup", "all", 0.2)]),
+                    # No duration: nothing to draw.
+                    buff("buff_flat", "无时长", "洛茜", "洛茜", 0, None,
+                         [effect("atk", "all", 0.1)]),
+                    "不是字典",
+                ],
+                "buffsGiven": [],
+                "debuffsApplied": [],
+            },
+            {
+                "characterKey": "chr_0031_kamiu",
+                "characterName": "卡缪",
+                "buffsReceived": [
+                    buff("buff_chr_0031_kamiu_atkup_owner", "攻击提升", "卡缪",
+                         "卡缪", 1_040, 9_000, [effect("atk", "all", 0.16)]),
+                    # A target outside the roster is ignored.
+                    buff("buff_chr_0031_kamiu_atkup", "攻击提升", "卡缪", "旁人",
+                         1_000, 9_000, [effect("atk", "all", 0.16)]),
+                ],
+                "buffsGiven": [],
+                "debuffsApplied": [],
+            },
+            {"characterName": "无增益"},
+            "不是字典",
+        ],
         "roleSkillStats": [
             skill_stat("洛茜", "chr_0028_wulfa_ultimate_skill", "终结技",
                        2, 1_200_000, 700_000),

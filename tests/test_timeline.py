@@ -397,9 +397,13 @@ class BattleCardIntegrationTests(unittest.TestCase):
         self.assertIn('class="rail-note">旧版客户端上传', html)
         self.assertNotIn('class="rail-chart"', html)
 
+        # Buffs have their own section now; without an export or a note the
+        # 施法节奏 section is simply absent.
         html = self.renderer.render_battle(self.battle, query="q", web_base_url=WEB)
+        self.assertIn("<h2>增益覆盖</h2>", html)
         self.assertNotIn("<h2>施法节奏</h2>", html)
         self.assertNotIn('class="rail-chart"', html)
+        self.assertNotIn('class="rail-note"', html)
 
     def test_standalone_page_renders_the_same_rail_at_full_height(self) -> None:
         page = build_timeline_page(self.export, query="技能轴 罗丹", web_base_url=WEB)

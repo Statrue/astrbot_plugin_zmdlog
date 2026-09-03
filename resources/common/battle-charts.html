@@ -1,0 +1,75 @@
+{#
+  Two horizontal-time charts that stack on the battle card. Both use the same
+  three columns (side | track | gutter), so the tick lines of one fall exactly
+  under the other and a buff bar can be read against the curve above it.
+#}
+{% macro render_dps_curve(curve) -%}
+<section class="curve-panel" aria-label="DPS 曲线">
+  <div class="hchart-row">
+    <div class="curve-side">
+      <ul class="curve-legend">
+        <li class="is-team"><i></i><b>全队</b><span>{{ curve.team_dps }}</span></li>
+        {% for series in curve.series %}
+        <li><i class="share-seg--{{ series.colour_index }}"></i><b>{{ series.character_name }}</b><span>{{ series.final_dps }}</span><em>{{ series.damage_share }}</em></li>
+        {% endfor %}
+      </ul>
+      <div class="curve-axis">
+        {% for label in curve.axis_labels %}<span>{{ label }}</span>{% endfor %}
+      </div>
+    </div>
+    <div class="curve-box">
+      {% for label in curve.axis_labels %}{% if not loop.first and not loop.last %}<i class="curve-grid" style="top: {{ loop.index0 * 25 }}%;"></i>{% endif %}{% endfor %}
+      {% for tick in curve.ticks %}{% if not loop.first %}<i class="hchart-grid{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;"></i>{% endif %}{% endfor %}
+      <svg class="curve-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <polyline class="curve-line is-team" points="{{ curve.team_polyline }}" vector-effect="non-scaling-stroke"/>
+        {% for series in curve.series %}
+        <polyline class="curve-line share-line--{{ series.colour_index }}" points="{{ series.polyline }}" vector-effect="non-scaling-stroke"/>
+        {% endfor %}
+      </svg>
+    </div>
+    <div class="hchart-gutter"></div>
+  </div>
+  <div class="hchart-row hchart-row--ruler">
+    <div class="hchart-side-note">峰值 {{ curve.peak_label }} · 每 {{ curve.bucket_label }}一桶</div>
+    <div class="hchart-ruler">
+      {% for tick in curve.ticks %}
+      <span class="hchart-tick{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;">{{ tick.label }}</span>
+      {% endfor %}
+    </div>
+    <div class="hchart-gutter"></div>
+  </div>
+</section>
+{%- endmacro %}
+
+{% macro render_buff_band(band) -%}
+<section class="buff-band" aria-label="增益覆盖">
+  <div class="hchart-row hchart-row--ruler">
+    <div class="hchart-side-note">{{ band.rows|length }} 条增益 · 覆盖率为在场时段占全场比例</div>
+    <div class="hchart-ruler">
+      {% for tick in band.ticks %}
+      <span class="hchart-tick{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;">{{ tick.label }}</span>
+      {% endfor %}
+    </div>
+    <div class="hchart-gutter buff-coverage--head">覆盖</div>
+  </div>
+  {% for row in band.rows %}
+  <div class="hchart-row buff-row">
+    <div class="buff-label">
+      <span class="buff-zone is-{{ row.zone }}">{{ row.effect_label }}</span>
+      {% if row.name %}<b>{{ row.name }}</b>{% endif %}
+      <em>{{ row.source_name }} → {{ row.target_label }}</em>
+    </div>
+    <div class="buff-track">
+      {% for tick in band.ticks %}{% if not loop.first %}<i class="hchart-grid{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;"></i>{% endif %}{% endfor %}
+      {% for span in row.spans %}
+      <i class="buff-span is-{{ row.zone }}{% if row.team_wide %} is-team{% endif %}" style="left: {{ span.left }}%; width: {{ span.width }}%;"></i>
+      {% endfor %}
+    </div>
+    <div class="hchart-gutter buff-coverage">{{ row.coverage_label }}</div>
+  </div>
+  {% endfor %}
+  {% if band.hidden_rows %}
+  <p class="buff-more">另有 {{ band.hidden_rows }} 条覆盖更短的增益未列出</p>
+  {% endif %}
+</section>
+{%- endmacro %}

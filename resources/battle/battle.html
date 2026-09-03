@@ -1,7 +1,8 @@
 {% extends "common/base.html" %}
 {% from "common/timeline-rail.html" import render_rail %}
+{% from "common/battle-charts.html" import render_dps_curve, render_buff_band %}
 
-{% block extra_styles %}{% include "battle/battle.css" %}{% include "common/loadout.css" %}{% include "common/timeline.css" %}{% endblock %}
+{% block extra_styles %}{% include "battle/battle.css" %}{% include "common/loadout.css" %}{% include "common/timeline.css" %}{% include "common/battle-charts.css" %}{% endblock %}
 
 {% block hero_facts %}
 <div class="hero-facts">
@@ -74,10 +75,26 @@
   {% endfor %}
 </section>
 
+{% if page.dps_curve %}
+<div class="section-heading">
+  <h2>DPS 曲线</h2>
+  <span class="section-note">时间自左向右 · 累计伤害折算成到当前时刻为止的平均 DPS，与榜单口径一致；每条线的终点就是上表里那个人的 DPS</span>
+</div>
+{{ render_dps_curve(page.dps_curve) }}
+{% endif %}
+
+{% if page.buff_band %}
+<div class="section-heading">
+  <h2>增益覆盖</h2>
+  <span class="section-note">与上图共用横轴 · 每行一个增益，条形是它在场的时段，同一次施放覆盖全队时画成整条</span>
+</div>
+{{ render_buff_band(page.buff_band) }}
+{% endif %}
+
 {% if page.timeline or page.timeline_note %}
 <div class="section-heading">
   <h2>施法节奏</h2>
-  <span class="section-note">时间自上而下，每个角色一条轨；招式从轨上伸出色条，长度是时长、宽度是层级（终结技最宽、普攻最窄），瞬时动作是圆点，普攻按连段折叠</span>
+  <span class="section-note">时间自上而下 · 每个角色一条轨，招式从轨上伸出色条，长度是时长、宽度是层级（终结技最宽、普攻最窄），瞬时动作是圆点，普攻按连段折叠</span>
 </div>
 {% if page.timeline %}
 {{ render_rail(page.timeline) }}
