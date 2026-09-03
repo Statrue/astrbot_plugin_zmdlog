@@ -3,6 +3,7 @@
   {% for item in view.legend %}
   <li class="is-{{ item.css }}"><i></i>{{ item.label }}<b>{{ item.count }}</b></li>
   {% endfor %}
+  {% if view.has_instant %}<li class="is-instant"><i></i>瞬时动作</li>{% endif %}
   {% if view.has_summon %}<li class="is-summon"><i></i>召唤物</li>{% endif %}
   {% if view.has_energy %}<li class="is-energy"><i></i>回复技力</li>{% endif %}
 </ul>
@@ -24,20 +25,25 @@
   </div>
   {% for lane in view.lanes %}
   <div class="rail-lane" style="height: {{ view.chart_height }}px;">
-    {% for tick in view.ticks %}{% if not loop.first %}<i class="rail-grid" style="top: {{ tick.top }}px;"></i>{% endif %}{% endfor %}
+    {% for tick in view.ticks %}{% if not loop.first %}<i class="rail-grid{% if tick.major %} is-major{% endif %}" style="top: {{ tick.top }}px;"></i>{% endif %}{% endfor %}
     <i class="rail-line"></i>
     {% for event in lane.events %}
     {% if event.summon %}
-    <i class="rail-block is-summon" style="top: {{ event.top }}px; height: {{ event.height }}px;"></i>
-    {% else %}
-    <i class="rail-block is-{{ event.category }}" style="top: {{ event.top }}px; height: {{ event.height }}px; left: {{ 16 + event.left }}px; width: {{ event.width }}px;"></i>
+    <i class="rail-summon" style="top: {{ event.top }}px; height: {{ event.height }}px;"></i>
+    {% elif event.shape == "bar" %}
+    <i class="rail-bar is-{{ event.category }}" style="top: {{ event.top }}px; height: {{ event.height }}px; left: {{ 15 + event.left }}px; width: {{ event.width }}px;"></i>
     {% endif %}
     {% endfor %}
     {% for event in lane.events %}
-    {% if event.shape == "diamond" %}<i class="rail-mark" style="top: {{ event.top }}px; left: {{ 16 + event.left + event.width // 2 }}px;"></i>{% endif %}
-    {% if event.energy and not event.summon %}<i class="rail-energy" style="top: {{ event.top }}px; left: {{ 16 + event.left + event.width }}px;"></i>{% endif %}
+    {% if event.lead_width %}<i class="rail-lead" style="top: {{ event.lead_top }}px; left: {{ event.lead_left }}px; width: {{ event.lead_width }}px;"></i>{% endif %}
+    {% if event.shape == "dot" %}
+    <i class="rail-dot is-{{ event.category }}{% if event.landmark %} is-landmark{% endif %}" style="top: {{ event.top }}px; left: {{ 16 + event.left }}px;"></i>
+    {% elif event.landmark %}
+    <i class="rail-mark" style="top: {{ event.top }}px; left: {{ 15 + event.left + event.width // 2 }}px;"></i>
+    {% endif %}
+    {% if event.energy and not event.summon %}<i class="rail-energy" style="top: {{ event.top }}px; left: {{ 15 + event.left + event.width }}px;"></i>{% endif %}
     {% if event.label_visible %}
-    <span class="rail-label is-{{ event.category }}{% if event.summon %} is-summon{% endif %}" style="top: {{ event.label_top }}px;"><em>{{ event.time_label }}</em><b>{{ event.name }}</b>{% if event.count > 1 %}<small>×{{ event.count }}</small>{% endif %}</span>
+    <span class="rail-label is-{{ event.category }}{% if event.summon %} is-summon{% endif %}" style="top: {{ event.label_top }}px; left: {{ lane.label_left }}px;"><em>{{ event.time_label }}</em><b>{{ event.name }}</b>{% if event.count > 1 %}<small>×{{ event.count }}</small>{% endif %}</span>
     {% endif %}
     {% endfor %}
   </div>

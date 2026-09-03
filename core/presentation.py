@@ -466,23 +466,31 @@ class TrendPage:
 
 @dataclass(frozen=True, slots=True)
 class RailEventView:
-    """One block on a character's track, placed in pixels from the chart top."""
+    """One move on a character's rail, placed in pixels from the chart top."""
 
     top: int
+    # Bar length along the rail; 0 for an instant, which is drawn as a dot.
     height: int
-    # Column inside the track when the character's own moves overlap.
+    # Horizontal offset of the column this move sits in (overlapping moves
+    # step right) and the bar width its importance earns.
     left: int
     width: int
-    # diamond marks a 终结技 on top of its block; block is everything else.
+    # bar (a move with a known end) or dot (an instant).
     shape: str
+    # A 终结技 also gets a diamond landmark.
+    landmark: bool
     # CSS modifier: ultimate / skill / combo / heavy / normal / other.
     category: str
     name: str
     count: int
     time_label: str
     label_visible: bool
-    # Labels slide down when neighbours are too close; the block never moves.
+    # Labels slide down when neighbours are too close; the bar never moves.
     label_top: int
+    # A thin leader from a narrow bar to its label; width 0 draws none.
+    lead_top: int
+    lead_left: int
+    lead_width: int
     summon: bool
     energy: bool
 
@@ -493,6 +501,8 @@ class RailLaneView:
     character_initial: str
     character_avatar_url: str | None
     cast_count: int
+    # Where labels start; further right when the lane needed extra columns.
+    label_left: int
     events: tuple[RailEventView, ...]
 
 
@@ -526,6 +536,7 @@ class TimelineView:
     clipped_count: int
     has_summon: bool
     has_energy: bool
+    has_instant: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -1326,8 +1337,24 @@ _RAIL_MIN_HEIGHT_PX = 200
 _RAIL_LINE_PX = 15
 _RAIL_TICK_MIN_PX = 34.0
 _RAIL_TICK_STEPS_MS = (1_000, 2_000, 5_000, 10_000, 30_000, 60_000)
-# The coloured track beside every character's rail line.
-_RAIL_TRACK_PX = 44
+# Geometry of one lane in CSS pixels: a 2 px rail line at _RAIL_X_PX, bars
+# growing rightwards from it by an importance-graded width (the rail line
+# carries continuity, the bar length the duration, the bar width and colour
+# the kind of move, a dot an instant), labels starting at _RAIL_LABEL_LEFT_PX
+# and further right when overlapping moves needed extra columns.
+_RAIL_X_PX = 15
+_RAIL_BAR_PX = {
+    SkillCategory.NORMAL: 8,
+    SkillCategory.OTHER: 12,
+    SkillCategory.SKILL: 16,
+    SkillCategory.COMBO: 16,
+    SkillCategory.HEAVY: 16,
+    SkillCategory.ULTIMATE: 20,
+}
+_RAIL_DOT_PX = 7
+_RAIL_COLUMN_STEP_PX = 22
+_RAIL_LABEL_LEFT_PX = 44
+_RAIL_LEAD_MIN_PX = 6
 _RAIL_MAX_COLUMNS = 3
 _RAIL_BLOCK_MIN_PX = 5
 # How far a label may be pushed below its node before it is dropped instead.
@@ -1448,6 +1475,9 @@ def build_timeline_view(
         clipped_count=timeline.clipped_count,
         has_summon=any(block.summon for block in timeline.blocks),
         has_energy=any(block.recovers_energy for block in timeline.blocks),
+        has_instant=any(
+            block.instant and not block.summon for block in timeline.blocks
+        ),
     )
 
 
@@ -1459,30 +1489,39 @@ def _rail_lane_view(
     web_base_url: str,
 ) -> RailLaneView:
     # Own moves that overlap in time (a long-lived entity beside the
-    # character's own casts) split the track into narrower columns. Summon
-    # casts keep to their own strip beside the track. Both share one label
-    # column, so they are laid out together in time order, and a summoned
-    # entity is named once per lane.
+    # character's own casts) step right into further columns. Summon casts
+    # keep to their own strip beside the rail. Both share one label column,
+    # so they are laid out together in time order, and a summoned entity is
+    # named once per lane.
     lowest = chart_height - _RAIL_LINE_PX
     columns, column_count = _rail_columns(lane.events)
-    column_width = _RAIL_TRACK_PX // column_count
+    label_left = _RAIL_LABEL_LEFT_PX + (column_count - 1) * _RAIL_COLUMN_STEP_PX
     stream = sorted(
         (
             *(
-                (event, False, index * column_width, column_width)
+                (event, False, index * _RAIL_COLUMN_STEP_PX)
                 for event, index in zip(lane.events, columns, strict=True)
             ),
-            *((event, True, 0, _RAIL_TRACK_PX) for event in lane.summon_events),
+            *((event, True, 0) for event in lane.summon_events),
         ),
         key=lambda item: (item[0].start_ms, item[1]),
     )
     named_summons: set[str] = set()
     views: list[RailEventView] = []
     next_free = -_RAIL_LINE_PX
-    for event, is_summon, left, width in stream:
+    for event, is_summon, left in stream:
         top = y(event.start_ms)
-        height = max(_RAIL_BLOCK_MIN_PX, y(event.end_ms) - top)
-        height = max(1, min(height, chart_height - top))
+        instant = event.instant and not is_summon
+        if instant:
+            height = 0
+        else:
+            height = max(_RAIL_BLOCK_MIN_PX, y(event.end_ms) - top)
+            height = max(1, min(height, chart_height - top))
+        width = (
+            0
+            if is_summon
+            else _RAIL_BAR_PX.get(event.category, _RAIL_BAR_PX[SkillCategory.OTHER])
+        )
         wants_label = True
         slack = _RAIL_LABEL_SLACK_PX.get(event.category, 16)
         if is_summon:
@@ -1499,23 +1538,37 @@ def _rail_lane_view(
             label_visible = label_top >= next_free
         if label_visible:
             next_free = label_top + _RAIL_LINE_PX
+        # A narrow bar sits well left of the label column; a hairline leader
+        # ties the two together, but only while the label is still level
+        # with the move it names.
+        lead_top = lead_left = lead_width = 0
+        if label_visible and not is_summon:
+            right = _RAIL_X_PX + left + (_RAIL_DOT_PX - 2 if instant else width)
+            lead_left = right + 2
+            lead_width = label_left - 2 - lead_left
+            lead_top = label_top + _RAIL_LINE_PX // 2
+            level = (
+                abs(lead_top - top) <= 8 if instant else top <= lead_top <= top + height
+            )
+            if lead_width < _RAIL_LEAD_MIN_PX or not level:
+                lead_top = lead_left = lead_width = 0
         views.append(
             RailEventView(
                 top=top,
                 height=height,
                 left=left,
                 width=width,
-                shape=(
-                    "diamond"
-                    if event.category is SkillCategory.ULTIMATE and not is_summon
-                    else "block"
-                ),
+                shape="dot" if instant else "bar",
+                landmark=event.category is SkillCategory.ULTIMATE and not is_summon,
                 category=_RAIL_CATEGORY_CSS.get(event.category, "other"),
                 name=event.name,
                 count=event.count,
                 time_label=_cast_time_label(event.start_ms),
                 label_visible=label_visible,
                 label_top=label_top if label_visible else top,
+                lead_top=lead_top,
+                lead_left=lead_left,
+                lead_width=lead_width,
                 summon=is_summon,
                 energy=event.recovers_energy,
             )
@@ -1532,6 +1585,7 @@ def _rail_lane_view(
             else None
         ),
         cast_count=lane.cast_count,
+        label_left=label_left,
         events=tuple(views),
     )
 

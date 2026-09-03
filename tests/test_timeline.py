@@ -247,28 +247,40 @@ class RailViewTests(unittest.TestCase):
             luoxi.character_avatar_url,
             f"{WEB}/images/character/charremoteicon/icon_chr_0028_wulfa.png",
         )
+        self.assertEqual(luoxi.label_left, 44)
         ultimate, run, heavy, skill, combo, lone, other = luoxi.events
         self.assertEqual((ultimate.top, ultimate.height), (40, 120))
-        self.assertEqual((ultimate.left, ultimate.width), (0, 44))
-        self.assertEqual((ultimate.shape, ultimate.category), ("diamond", "ultimate"))
+        # The widest bar, with the diamond landmark on top.
+        self.assertEqual((ultimate.left, ultimate.width), (0, 20))
+        self.assertEqual((ultimate.shape, ultimate.category), ("bar", "ultimate"))
+        self.assertTrue(ultimate.landmark)
         self.assertEqual(ultimate.time_label, "1.0s")
         self.assertTrue(ultimate.label_visible)
         self.assertEqual(ultimate.label_top, 33)
-        self.assertEqual((run.top, run.height, run.shape), (160, 44, "block"))
+        # Too close to the label column to need a leader.
+        self.assertEqual(ultimate.lead_width, 0)
+        self.assertEqual((run.top, run.height, run.shape), (160, 44, "bar"))
         self.assertEqual((run.category, run.name, run.count), ("normal", "普攻", 2))
+        self.assertEqual(run.width, 8)
+        self.assertEqual((run.lead_top, run.lead_left, run.lead_width), (160, 25, 17))
         self.assertTrue(heavy.energy)
-        self.assertEqual(skill.category, "skill")
+        self.assertEqual((skill.category, skill.width), ("skill", 16))
+        self.assertEqual((skill.lead_left, skill.lead_width), (33, 9))
         self.assertEqual(combo.category, "combo")
-        # An instant cast still gets a visible sliver.
-        self.assertEqual((lone.top, lone.height), (480, 5))
+        # An instant cast is a dot, not a bar.
+        self.assertEqual((lone.top, lone.height, lone.shape), (480, 0, "dot"))
+        self.assertFalse(lone.landmark)
+        self.assertEqual((lone.lead_left, lone.lead_width), (22, 20))
         self.assertEqual((other.top, other.height, other.category), (720, 280, "other"))
-        # 卡缪: the entity overlaps her own casts, so the track splits in two.
-        # The stream is in time order, so the summon (3.0 s) precedes the
-        # ultimate (21.0 s).
+        self.assertEqual(other.width, 12)
+        # 卡缪: the entity overlaps her own casts, so her moves step right into
+        # a second column and her labels move with them. The stream is in
+        # time order, so the summon (3.0 s) precedes the ultimate (21.0 s).
+        self.assertEqual(kamiu.label_left, 66)
         entity, own_skill, pet, own_ultimate = kamiu.events
-        self.assertEqual((entity.left, entity.width), (0, 22))
-        self.assertEqual((own_skill.left, own_skill.width), (22, 22))
-        self.assertEqual((own_ultimate.left, own_ultimate.width), (22, 22))
+        self.assertEqual((entity.left, entity.width), (0, 12))
+        self.assertEqual((own_skill.left, own_skill.width), (22, 16))
+        self.assertEqual((own_ultimate.left, own_ultimate.width), (22, 20))
         self.assertEqual(entity.category, "other")
         self.assertTrue(pet.summon)
         # The summon appears on the same instant as her 战技, whose label wins
@@ -365,10 +377,14 @@ class BattleCardIntegrationTests(unittest.TestCase):
         )
         self.assertIn("<h2>施法节奏</h2>", html)
         self.assertIn('class="rail-chart"', html)
-        self.assertIn("rail-block is-ultimate", html)
-        self.assertIn("rail-block is-summon", html)
+        self.assertIn("rail-bar is-ultimate", html)
+        self.assertIn("rail-bar is-normal", html)
+        self.assertIn('class="rail-summon"', html)
+        self.assertIn('class="rail-dot is-normal"', html)
         self.assertIn('class="rail-mark"', html)
+        self.assertIn('class="rail-lead"', html)
         self.assertIn('class="rail-energy"', html)
+        self.assertIn("瞬时动作", html)
         self.assertIn("<small>×2</small>", html)
         self.assertIn("已隐藏 1 条冲刺、闪避等移动动作", html)
         self.assertNotIn("chr_0028_wulfa_dash", html)

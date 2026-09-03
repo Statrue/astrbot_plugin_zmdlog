@@ -1,4 +1,7 @@
-/* ---------- 施法节奏：每个角色一条有宽度的色轨，招式按时长占一段 ---------- */
+/* ---------- 施法节奏 ----------
+   线管连续，长度管时长，宽度与颜色管招式层级，节点管瞬时。
+   每个角色一条 2px 的轨道线；招式从轨道线向右伸出一段色条：普攻最窄、
+   战技 / 连携 / 重击居中、终结技最宽并带菱形地标；瞬时动作是圆点。 */
 
 .rail-legend {
   display: flex;
@@ -27,29 +30,43 @@
 
 .rail-legend i {
   display: inline-block;
-  width: 14px;
+  width: 16px;
   height: 10px;
   background: var(--faint);
 }
 
-.rail-legend .is-ultimate i { background: var(--action); }
+.rail-legend .is-ultimate i {
+  width: 20px;
+  background: var(--action);
+}
+
 .rail-legend .is-skill i { background: var(--blue); }
 .rail-legend .is-combo i { background: var(--info); }
 .rail-legend .is-heavy i { background: var(--notify); }
 
 .rail-legend .is-normal i {
-  background: var(--line-soft);
-  box-shadow: inset 3px 0 0 var(--steel);
+  width: 8px;
+  background: var(--line);
 }
 
-.rail-legend .is-other i { background: var(--faint); }
+.rail-legend .is-other i {
+  width: 12px;
+  background: var(--faint);
+}
+
+.rail-legend .is-instant i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--steel);
+}
 
 .rail-legend .is-summon i {
   width: 8px;
   background-color: var(--line-soft);
   background-image: repeating-linear-gradient(
     -45deg,
-    rgba(28, 28, 28, 0.35) 0 2px,
+    rgba(28, 28, 28, 0.22) 0 2px,
     transparent 2px 4px
   );
 }
@@ -75,7 +92,7 @@
   min-width: 0;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 8px 16px;
+  padding: 8px 10px 8px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--card-soft);
 }
@@ -166,65 +183,84 @@
   border-left: 1px solid var(--line-soft);
 }
 
+/* grid lines sit well below everything else; the 5-second ones a touch darker */
 .rail-grid {
   position: absolute;
   right: 0;
   left: 0;
   height: 1px;
-  background: var(--line-soft);
+  background: rgba(28, 28, 28, 0.045);
 }
 
-/* the idle rail down the middle of the track */
+.rail-grid.is-major {
+  background: rgba(28, 28, 28, 0.1);
+}
+
+/* the rail: continuity only */
 .rail-line {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 37px;
+  left: 15px;
   width: 2px;
   background: var(--line);
 }
 
-/* a move occupies the track for as long as it lasts */
-.rail-block {
+/* a move with a known end: a bar as long as it lasts, as wide as it matters */
+.rail-bar {
   position: absolute;
   box-sizing: border-box;
   background: var(--faint);
   border-top: 1px solid var(--card);
 }
 
-.rail-block.is-ultimate { background: var(--action); }
-.rail-block.is-skill { background: var(--blue); }
-.rail-block.is-combo { background: var(--info); }
-.rail-block.is-heavy { background: var(--notify); }
+.rail-bar.is-ultimate { background: var(--action); }
+.rail-bar.is-skill { background: var(--blue); }
+.rail-bar.is-combo { background: var(--info); }
+.rail-bar.is-heavy { background: var(--notify); }
+.rail-bar.is-normal { background: var(--line); }
+.rail-bar.is-other { background: var(--faint); }
 
-.rail-block.is-normal {
-  background: var(--line-soft);
-  box-shadow: inset 3px 0 0 var(--steel);
-}
-
-.rail-block.is-other {
-  background: var(--faint);
-}
-
-/* summoned entities keep to a hatched strip beside the track */
-.rail-block.is-summon {
+/* summoned entities keep to a hatched strip left of the rail */
+.rail-summon {
+  position: absolute;
   left: 4px;
   width: 8px;
   background-color: var(--line-soft);
   background-image: repeating-linear-gradient(
     -45deg,
-    rgba(28, 28, 28, 0.35) 0 2px,
+    rgba(28, 28, 28, 0.22) 0 2px,
     transparent 2px 4px
   );
 }
 
-/* the landmark on a 终结技 */
+/* an instant: a dot on the rail, a diamond when it is a 终结技 */
+.rail-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+  box-shadow: 0 0 0 1.5px var(--card);
+  transform: translate(-50%, -50%);
+}
+
+.rail-dot.is-ultimate { background: var(--action); }
+.rail-dot.is-skill { background: var(--blue); }
+.rail-dot.is-combo { background: var(--info); }
+.rail-dot.is-heavy { background: var(--notify); }
+.rail-dot.is-normal { background: var(--steel); }
+.rail-dot.is-other { background: var(--faint); }
+
+.rail-dot.is-landmark,
 .rail-mark {
   position: absolute;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border: 1.5px solid var(--ink);
+  border-radius: 0;
   background: var(--action);
+  box-shadow: none;
   transform: translate(-50%, -50%) rotate(45deg);
 }
 
@@ -238,10 +274,16 @@
   transform: translate(-50%, 3px);
 }
 
+/* hairline from a narrow bar to its label */
+.rail-lead {
+  position: absolute;
+  height: 1px;
+  background: var(--line);
+}
+
 .rail-label {
   position: absolute;
   right: 6px;
-  left: 68px;
   display: flex;
   align-items: baseline;
   gap: 5px;
@@ -260,7 +302,7 @@
   font-size: 10px;
   font-style: normal;
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .rail-label b {
@@ -283,16 +325,22 @@
   background: linear-gradient(transparent 55%, var(--action) 55%, var(--action) 95%, transparent 95%);
 }
 
+/* text hierarchy follows the bar hierarchy */
+.rail-label.is-other b {
+  color: var(--steel);
+  font-weight: 700;
+}
+
 .rail-label.is-normal,
 .rail-label.is-summon {
   color: var(--muted);
   font-size: 10.5px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .rail-label.is-normal b,
 .rail-label.is-summon b {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .rail-foot {
