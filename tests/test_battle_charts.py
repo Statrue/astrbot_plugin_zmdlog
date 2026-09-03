@@ -38,14 +38,25 @@ class TelemetryParseTests(unittest.TestCase):
                 (20_833, "卡缪", 65_333),
             ],
         )
-        # Seven buff rows survive; the string entry and the unknown state do not.
-        self.assertEqual(len(battle.buffs), 7)
+        # Ten rows survive; the string entry and the unknown state do not.
+        self.assertEqual(len(battle.buffs), 10)
         first = battle.buffs[0]
         self.assertEqual((first.source_name, first.target_name), ("卡缪", "洛茜"))
         self.assertEqual((first.start_ms, first.duration_ms), (1_000, 9_000))
+        self.assertFalse(first.on_enemy)
         self.assertEqual(
             [(item.zone, item.element, item.rate) for item in first.effects],
             [("atk", "all", 0.16)],
+        )
+        # Debuffs are read too, flagged as landing on the boss.
+        debuffs = [item for item in battle.buffs if item.on_enemy]
+        self.assertEqual(
+            [(item.name, item.target_name) for item in debuffs],
+            [
+                ("脆弱", "“碾骨之拳”罗丹"),
+                ("腐蚀 / 减抗", "eny_0051_rodin"),
+                ("错误区域", "eny_0051_rodin"),
+            ],
         )
 
     def test_missing_or_malformed_sections_parse_to_nothing(self) -> None:
@@ -152,11 +163,81 @@ class BuffCoverageTests(unittest.TestCase):
             ),
         )
 
+    def test_enemy_debuffs_are_their_own_rows_after_the_team_buffs(self) -> None:
+        coverage = self.coverage()
+
+        self.assertEqual(
+            [(row.effect_label, row.on_enemy) for row in coverage.rows],
+            [
+                ("攻击 +16%", False),
+                ("增幅灼热 +40%", False),
+                ("脆弱法术 +28%", True),
+                ("减抗 +3.6%", True),
+            ],
+        )
+        fragile = coverage.rows[2]
+        self.assertEqual(fragile.zone, "fragile")
+        self.assertFalse(fragile.team_wide)
+        self.assertEqual(fragile.spans[0].targets, ("“碾骨之拳”罗丹",))
+        # An attack buff cannot land on the boss; such a row is dropped rather
+        # than labelled as if the boss got stronger.
+        self.assertNotIn("错误区域", [row.name for row in coverage.rows])
+        for row in coverage.rows:
+            with self.subTest(effect=row.effect_label):
+                allowed = (
+                    {"fragile", "vuln_taken", "res", "dmg_inc"}
+                    if row.on_enemy
+                    else {"atk", "dmg_inc", "amp", "combo", "res"}
+                )
+                self.assertIn(row.zone, allowed)
+
+    def test_rare_zones_read_correctly_for_their_direction(self) -> None:
+        # Seen in a 135-battle sample: an elemental reaction that makes the
+        # boss take more damage (dmg_inc on a debuff), a talent that ignores
+        # resistance (res on the player's own buff), and buffs carrying two
+        # damage effects at once.
+        payload = battle_detail_payload()
+        payload["characterStates"] = [
+            {
+                "characterName": "洛茜",
+                "buffsReceived": [
+                    buff("buff_chr_0028_ignore_resist", "减抗", "洛茜", "洛茜",
+                         1_000, 5_000, [effect("res", "fire", 0.2)]),
+                    buff("buff_pair", "攻击提升 / 增伤", "卡缪", "洛茜",
+                         2_000, 5_000,
+                         [effect("atk", "all", 0.16), effect("dmg_inc", "all", 0.2)]),
+                    # A self-inflicted vulnerability is a debuff on the player,
+                    # not damage output; it stays off the band.
+                    buff("buff_chr_0028_talent_0", "易伤", "洛茜", "洛茜",
+                         1_000, 5_000, [effect("vuln_taken", "physical", 0.2)]),
+                ],
+                "debuffsApplied": [
+                    buff("buff_common_cryst_natural_triggered", "增伤", "洛茜",
+                         "“碾骨之拳”罗丹", 3_000, 4_000,
+                         [effect("dmg_inc", "all", 0.22)]),
+                ],
+            }
+        ]
+
+        coverage = self.coverage(parse_battle_detail(payload))
+
+        self.assertEqual(
+            [(row.effect_label, row.on_enemy) for row in coverage.rows],
+            [
+                ("减抗灼热 +20%", False),
+                ("攻击 +16% · 增伤 +20%", False),
+                ("承伤 +22%", True),
+            ],
+        )
+        # The reaction's upstream name is "增伤" (the attacker's view); beside
+        # the boss the row is named after what the boss experiences.
+        self.assertEqual(coverage.rows[2].name, "承伤")
+
     def test_rows_merge_variants_and_keep_uptime(self) -> None:
         coverage = self.coverage()
 
-        self.assertEqual(len(coverage.rows), 2)
-        attack, amp = coverage.rows
+        self.assertEqual(len(coverage.rows), 4)
+        attack, amp = coverage.rows[:2]
         # The caster and owner variants of one buff are one row, covering the
         # whole roster, with the refresh as a second span.
         self.assertEqual(attack.effect_label, "攻击 +16%")
@@ -184,14 +265,15 @@ class BuffCoverageTests(unittest.TestCase):
         self.assertTrue(all("加速" not in label for label in labels))
         for row in coverage.rows:
             for span in row.spans:
-                self.assertTrue(set(span.targets) <= set(self.roster))
+                if not row.on_enemy:
+                    self.assertTrue(set(span.targets) <= set(self.roster))
                 self.assertLessEqual(span.end_ms, self.battle.duration_ms)
 
     def test_rows_past_the_cap_are_counted_not_dropped_silently(self) -> None:
         rows = [
             buff(f"buff_{index}", f"增益{index}", "洛茜", "洛茜",
                  index * 100, 1_000 + index, [effect("atk", "all", 0.01 * (index + 1))])
-            for index in range(16)
+            for index in range(18)
         ]
         payload = battle_detail_payload()
         payload["characterStates"] = [
@@ -200,7 +282,7 @@ class BuffCoverageTests(unittest.TestCase):
 
         coverage = self.coverage(parse_battle_detail(payload))
 
-        self.assertEqual(len(coverage.rows), 12)
+        self.assertEqual(len(coverage.rows), 14)
         self.assertEqual(coverage.hidden_rows, 4)
         # Kept by coverage, then shown in the order they landed.
         starts = [row.spans[0].start_ms for row in coverage.rows]
@@ -263,7 +345,12 @@ class ChartViewTests(unittest.TestCase):
         self.assertEqual(view.ticks[0].label, "0s")
         self.assertEqual(view.ticks[-1].label, "20s")
         self.assertTrue(all(0 <= tick.top <= 100 for tick in view.ticks))
-        attack, amp = view.rows
+        attack, amp, fragile, res = view.rows
+        # The boss is named when upstream gave a name, 敌方 when it gave a key.
+        self.assertTrue(fragile.on_enemy)
+        self.assertEqual(fragile.target_label, "“碾骨之拳”罗丹")
+        self.assertEqual((res.on_enemy, res.target_label), (True, "敌方"))
+        self.assertFalse(attack.on_enemy)
         self.assertEqual(attack.zone, "atk")
         self.assertEqual(attack.target_label, "全队")
         self.assertEqual(attack.coverage_label, "86%")

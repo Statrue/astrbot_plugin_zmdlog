@@ -26,19 +26,34 @@ CURVE_BUCKET_MS = 1000
 # The same buff landing on several characters within this window is one
 # application (upstream uses the same 80 ms for its own buff axis).
 TEAM_MERGE_GAP_MS = 80
-MAX_BUFF_ROWS = 12
+MAX_BUFF_ROWS = 14
 # Zones that describe damage output; the rest (speed, shields) would only add
-# rows nobody reads on a damage report.
-_DAMAGE_ZONES = ("atk", "dmg_inc", "amp", "combo")
+# rows nobody reads on a damage report. A debuff on the boss amplifies damage
+# through its own set of zones, so the two directions allow different ones.
+# Surveyed over the top-3 battles of every board (135 fights, 2026-09-04):
+# a team buff carries atk / dmg_inc / amp / combo, plus res for one talent
+# that ignores resistance; a debuff on the boss carries 脆弱 / 易伤 / 减抗,
+# plus dmg_inc for the elemental reactions that make the boss take more
+# damage. amp never appears on a boss, and a self-inflicted 易伤 on a player
+# is a drawback rather than damage output, so both stay out. speedup / slow
+# are not damage either.
+_PLAYER_ZONES = ("atk", "dmg_inc", "amp", "combo", "res")
+_ENEMY_ZONES = ("fragile", "vuln_taken", "res", "dmg_inc")
+# On the boss, "more damage" means more damage *taken*; the label must say so.
+_ENEMY_ZONE_LABELS = {"dmg_inc": "承伤"}
+_MAX_EFFECTS_PER_LABEL = 2
 _ZONE_LABELS = {
     "atk": "攻击",
     "dmg_inc": "增伤",
     "amp": "增幅",
     "combo": "连击",
+    "fragile": "脆弱",
+    "vuln_taken": "易伤",
+    "res": "减抗",
 }
 # An effect that applies to everything carries no element in its label.
 _ANY_ELEMENTS = frozenset({"all", "any", "unknown", ""})
-_EXTRA_ELEMENTS = {"spell": "法术"}
+_EXTRA_ELEMENTS = {"spell": "法术", "crystal": "寒冷"}
 _RAW_BUFF_NAME_RE = re.compile(r"^(?:buff|chr|wpn|sk|item|skill)_", re.IGNORECASE)
 
 
@@ -88,6 +103,8 @@ class BuffRow:
     # True when one application covered the whole roster at once.
     team_wide: bool
     max_targets: int
+    # A debuff put on the boss rather than a buff the team received.
+    on_enemy: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,9 +214,11 @@ def build_buff_coverage(
     # and who applied it. Upstream splits the same buff across several event
     # keys (a caster variant, an owner variant, a weapon tag), which would
     # otherwise draw three identical rows instead of one uptime bar.
-    grouped: dict[tuple[str, str, str], list[BattleBuff]] = {}
+    grouped: dict[tuple[bool, str, str, str], list[BattleBuff]] = {}
     for buff in buffs:
-        if buff.target_name not in roster:
+        # A team buff has to land on someone in the roster; a debuff lands on
+        # whatever the boss happens to be called this fight.
+        if not buff.on_enemy and buff.target_name not in roster:
             continue
         if buff.duration_ms is None or buff.duration_ms <= 0:
             continue
@@ -209,9 +228,10 @@ def build_buff_coverage(
         if effect is None:
             continue
         name = _buff_name(buff, effect)
-        grouped.setdefault((name, effect, buff.source_name or ""), []).append(buff)
+        key = (buff.on_enemy, name, effect, buff.source_name or "")
+        grouped.setdefault(key, []).append(buff)
     rows: list[BuffRow] = []
-    for (name, effect, _), entries in grouped.items():
+    for (on_enemy, name, effect, _), entries in grouped.items():
         spans = _merge_spans(entries, duration=duration)
         if not spans:
             continue
@@ -225,10 +245,10 @@ def build_buff_coverage(
                 source_name=first.source_name or "未记录",
                 spans=spans,
                 covered_ms=sum(span.end_ms - span.start_ms for span in spans),
-                team_wide=any(
-                    len(span.targets) >= len(roster) for span in spans
-                ),
+                team_wide=not on_enemy
+                and any(len(span.targets) >= len(roster) for span in spans),
                 max_targets=max(len(span.targets) for span in spans),
+                on_enemy=on_enemy,
             )
         )
     if not rows:
@@ -236,7 +256,10 @@ def build_buff_coverage(
     kept = sorted(rows, key=lambda row: (-row.covered_ms, row.effect_label))[
         :max_rows
     ]
-    kept.sort(key=lambda row: (row.spans[0].start_ms, row.effect_label))
+    # Team buffs first, boss debuffs after, each in the order they landed:
+    # "what we gained" then "what the boss took" reads better than one
+    # interleaved list.
+    kept.sort(key=lambda row: (row.on_enemy, row.spans[0].start_ms, row.effect_label))
     return BuffCoverage(
         duration_ms=duration,
         rows=tuple(kept),
@@ -287,28 +310,39 @@ def _merge_spans(
 
 
 def _effect_label(buff: BattleBuff) -> str | None:
-    """``攻击 +16%`` for the first damage-related effect, else None."""
+    """``攻击 +16%``, or ``攻击 +16% · 增伤 +20%`` for a buff with two damage
+    effects; None when nothing on it changes damage."""
 
+    allowed = _ENEMY_ZONES if buff.on_enemy else _PLAYER_ZONES
+    parts: list[str] = []
     for effect in buff.effects:
         zone = (effect.zone or "").lower()
-        if zone not in _DAMAGE_ZONES or effect.rate is None:
+        if zone not in allowed or effect.rate is None:
             continue
         raw = (effect.element or "").lower()
         if raw in _ANY_ELEMENTS:
             element = ""
         else:
             element = _EXTRA_ELEMENTS.get(raw) or element_label(effect.element) or ""
-        return (
-            f"{_ZONE_LABELS[zone]}{element} "
+        label = (
+            _ENEMY_ZONE_LABELS.get(zone, _ZONE_LABELS[zone])
+            if buff.on_enemy
+            else _ZONE_LABELS[zone]
+        )
+        parts.append(
+            f"{label}{element} "
             f"{'+' if effect.rate >= 0 else ''}{_format_rate(effect.rate)}"
         )
-    return None
+        if len(parts) == _MAX_EFFECTS_PER_LABEL:
+            break
+    return " · ".join(parts) if parts else None
 
 
 def _leading_zone(buff: BattleBuff) -> str | None:
+    allowed = _ENEMY_ZONES if buff.on_enemy else _PLAYER_ZONES
     for effect in buff.effects:
         zone = (effect.zone or "").lower()
-        if zone in _DAMAGE_ZONES and effect.rate is not None:
+        if zone in allowed and effect.rate is not None:
             return zone
     return None
 
@@ -329,4 +363,8 @@ def _buff_name(buff: BattleBuff, effect: str) -> str:
     name = " ".join((buff.name or "").split())
     if not name or name == buff.event_key or _RAW_BUFF_NAME_RE.match(name):
         return ""
+    if buff.on_enemy and name == "增伤":
+        # Upstream names the reaction debuff from the attacker's point of
+        # view; beside the boss it has to read as damage taken.
+        return _ENEMY_ZONE_LABELS["dmg_inc"]
     return name

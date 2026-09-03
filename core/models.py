@@ -242,7 +242,7 @@ class BattleBuffEffect:
 
 @dataclass(frozen=True, slots=True)
 class BattleBuff:
-    """One buff application recorded on a character."""
+    """One buff a character received, or one debuff they put on an enemy."""
 
     name: str
     target_name: str
@@ -251,6 +251,8 @@ class BattleBuff:
     source_name: str | None = None
     duration_ms: int | None = None
     effects: tuple[BattleBuffEffect, ...] = ()
+    # True for ``debuffsApplied``: the target is the boss, not a teammate.
+    on_enemy: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -837,7 +839,12 @@ def _parse_damage_points(value: Any) -> tuple[BattleDamagePoint, ...]:
 
 
 def _parse_character_state_buffs(value: Any) -> tuple[BattleBuff, ...]:
-    """Read the buffs upstream already grouped per character, leniently."""
+    """Read the buffs upstream already grouped per character, leniently.
+
+    Both directions are kept: what the character received, and the debuffs
+    they put on the enemy (脆弱 / 易伤 / 减抗), which amplify damage just as
+    much as a team buff does.
+    """
 
     if not isinstance(value, list):
         return ()
@@ -845,17 +852,18 @@ def _parse_character_state_buffs(value: Any) -> tuple[BattleBuff, ...]:
     for state in value:
         if not isinstance(state, dict):
             continue
-        received = state.get("buffsReceived")
-        if not isinstance(received, list):
-            continue
-        for item in received:
-            buff = _parse_buff(item)
-            if buff is not None:
-                buffs.append(buff)
+        for field, on_enemy in (("buffsReceived", False), ("debuffsApplied", True)):
+            entries = state.get(field)
+            if not isinstance(entries, list):
+                continue
+            for item in entries:
+                buff = _parse_buff(item, on_enemy=on_enemy)
+                if buff is not None:
+                    buffs.append(buff)
     return tuple(buffs)
 
 
-def _parse_buff(value: Any) -> BattleBuff | None:
+def _parse_buff(value: Any, *, on_enemy: bool = False) -> BattleBuff | None:
     if not isinstance(value, dict):
         return None
     start = value.get("startTsMsFromStart")
@@ -901,6 +909,7 @@ def _parse_buff(value: Any) -> BattleBuff | None:
         if isinstance(duration, int) and not isinstance(duration, bool)
         else None,
         effects=tuple(effects),
+        on_enemy=on_enemy,
     )
 
 

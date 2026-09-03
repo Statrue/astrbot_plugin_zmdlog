@@ -338,7 +338,20 @@ def battle_detail_payload() -> dict:
                     "不是字典",
                 ],
                 "buffsGiven": [],
-                "debuffsApplied": [],
+                # A debuff on the boss: a different zone set, and the target is
+                # sometimes the raw enemy key rather than a display name.
+                "debuffsApplied": [
+                    buff("buff_chr_0028_wulfa_fragile", "脆弱", "洛茜",
+                         "“碾骨之拳”罗丹", 3_000, 8_000,
+                         [effect("fragile", "spell", 0.28)]),
+                    buff("buff_common_res_down", "腐蚀 / 减抗", "洛茜",
+                         "eny_0051_rodin", 5_000, 6_000,
+                         [effect("res", "all", 0.036)]),
+                    # atk is a team zone, never an enemy one.
+                    buff("buff_wrong_zone", "错误区域", "洛茜",
+                         "eny_0051_rodin", 1_000, 5_000,
+                         [effect("atk", "all", 0.2)]),
+                ],
             },
             {
                 "characterKey": "chr_0031_kamiu",

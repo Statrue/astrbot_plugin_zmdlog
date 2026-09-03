@@ -277,6 +277,15 @@
 .buff-zone.is-dmg_inc { background: var(--notify); }
 .buff-zone.is-amp { background: var(--special); }
 .buff-zone.is-combo { background: var(--info); }
+.buff-zone.is-res { background: var(--steel); }
+
+/* Debuffs on the boss: the direction picks the danger-coloured family (as
+   upstream draws them), the zone only the shade — so a damage-taken debuff
+   never borrows the orange of a team damage buff. */
+.buff-row.is-enemy .buff-zone { background: var(--danger); }
+.buff-row.is-enemy .buff-zone.is-vuln_taken { background: #b0322f; }
+.buff-row.is-enemy .buff-zone.is-res,
+.buff-row.is-enemy .buff-zone.is-dmg_inc { background: #8c2c2a; }
 
 .buff-label b {
   overflow: hidden;
@@ -313,6 +322,36 @@
 .buff-span.is-dmg_inc { background: var(--notify); }
 .buff-span.is-amp { background: var(--special); }
 .buff-span.is-combo { background: var(--info); }
+.buff-span.is-res { background: var(--steel); }
+
+.buff-row.is-enemy .buff-span { background: var(--danger); }
+.buff-row.is-enemy .buff-span.is-vuln_taken { background: #b0322f; }
+.buff-row.is-enemy .buff-span.is-res,
+.buff-row.is-enemy .buff-span.is-dmg_inc { background: #8c2c2a; }
+
+/* the boss's own rows sit on a faintly warmer track */
+.buff-row.is-enemy .buff-track {
+  background: #faf3f2;
+  border-color: #eddedc;
+}
+
+.buff-split {
+  margin-top: 9px;
+  margin-bottom: 4px;
+}
+
+.buff-split-label {
+  color: var(--danger);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: right;
+}
+
+.buff-split-rule {
+  height: 1px;
+  background: #eddedc;
+}
 
 /* one application covering the whole team reads as a solid band */
 .buff-span.is-team {

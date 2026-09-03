@@ -44,7 +44,7 @@
 {% macro render_buff_band(band) -%}
 <section class="buff-band" aria-label="增益覆盖">
   <div class="hchart-row hchart-row--ruler">
-    <div class="hchart-side-note">{{ band.rows|length }} 条增益 · 覆盖率为在场时段占全场比例</div>
+    <div class="hchart-side-note">{{ band.rows|length }} 条 · 覆盖率为在场时段占全场比例</div>
     <div class="hchart-ruler">
       {% for tick in band.ticks %}
       <span class="hchart-tick{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;">{{ tick.label }}</span>
@@ -53,7 +53,14 @@
     <div class="hchart-gutter buff-coverage--head">覆盖</div>
   </div>
   {% for row in band.rows %}
-  <div class="hchart-row buff-row">
+  {% if row.on_enemy and not loop.first and not band.rows[loop.index0 - 1].on_enemy %}
+  <div class="hchart-row buff-split">
+    <div class="buff-split-label">敌方减益</div>
+    <div class="buff-split-rule"></div>
+    <div class="hchart-gutter"></div>
+  </div>
+  {% endif %}
+  <div class="hchart-row buff-row{% if row.on_enemy %} is-enemy{% endif %}">
     <div class="buff-label">
       <span class="buff-zone is-{{ row.zone }}">{{ row.effect_label }}</span>
       {% if row.name %}<b>{{ row.name }}</b>{% endif %}

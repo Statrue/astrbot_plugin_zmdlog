@@ -581,6 +581,8 @@ class BuffRowView:
     coverage_label: str
     target_label: str
     team_wide: bool
+    # A debuff on the boss; drawn in the danger colour, not a team colour.
+    on_enemy: bool
     spans: tuple[BuffSpanView, ...]
 
 
@@ -1258,6 +1260,7 @@ def build_account_page(
 # template; the buff band is HTML positioned by percentages.
 _CURVE_MAX_POINTS = 150
 _BUFF_TICK_MIN_PERCENT = 6.0
+_ENEMY_KEY_RE = re.compile(r"^eny_[A-Za-z0-9_]*$")
 _BUFF_SPAN_MIN_PERCENT = 0.6
 
 
@@ -1348,7 +1351,9 @@ def build_buff_band_view(battle: BattleDetailSummary) -> BuffBandView | None:
                     left=left,
                     width=min(width, round(100.0 - left, 3)),
                     target_label=_buff_target_label(
-                        span.targets, roster_size=roster_size
+                        span.targets,
+                        roster_size=roster_size,
+                        on_enemy=row.on_enemy,
                     ),
                 )
             )
@@ -1366,8 +1371,10 @@ def build_buff_band_view(battle: BattleDetailSummary) -> BuffBandView | None:
                         )
                     ),
                     roster_size=roster_size,
+                    on_enemy=row.on_enemy,
                 ),
                 team_wide=row.team_wide,
+                on_enemy=row.on_enemy,
                 spans=tuple(spans),
             )
         )
@@ -1405,7 +1412,21 @@ def _horizontal_ticks(duration_ms: int) -> tuple[RailTickView, ...]:
     )
 
 
-def _buff_target_label(targets: tuple[str, ...], *, roster_size: int) -> str:
+def _buff_target_label(
+    targets: tuple[str, ...],
+    *,
+    roster_size: int,
+    on_enemy: bool = False,
+) -> str:
+    if on_enemy:
+        # Upstream names the boss inconsistently: sometimes its display name,
+        # sometimes the raw ``eny_*`` key, and a wave fight has several.
+        named = tuple(
+            target for target in targets if not _ENEMY_KEY_RE.match(target)
+        )
+        if len(named) == 1 and len(targets) == 1:
+            return named[0]
+        return "敌方"
     if roster_size and len(targets) >= roster_size:
         return "全队"
     if not targets:
