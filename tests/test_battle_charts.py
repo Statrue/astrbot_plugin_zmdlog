@@ -273,7 +273,7 @@ class BuffCoverageTests(unittest.TestCase):
         rows = [
             buff(f"buff_{index}", f"增益{index}", "洛茜", "洛茜",
                  index * 100, 1_000 + index, [effect("atk", "all", 0.01 * (index + 1))])
-            for index in range(18)
+            for index in range(22)
         ]
         payload = battle_detail_payload()
         payload["characterStates"] = [
@@ -282,7 +282,7 @@ class BuffCoverageTests(unittest.TestCase):
 
         coverage = self.coverage(parse_battle_detail(payload))
 
-        self.assertEqual(len(coverage.rows), 14)
+        self.assertEqual(len(coverage.rows), 18)
         self.assertEqual(coverage.hidden_rows, 4)
         # Kept by coverage, then shown in the order they landed.
         starts = [row.spans[0].start_ms for row in coverage.rows]

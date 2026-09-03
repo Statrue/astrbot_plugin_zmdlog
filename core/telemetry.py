@@ -26,7 +26,9 @@ CURVE_BUCKET_MS = 1000
 # The same buff landing on several characters within this window is one
 # application (upstream uses the same 80 ms for its own buff axis).
 TEAM_MERGE_GAP_MS = 80
-MAX_BUFF_ROWS = 14
+# Rows per fight ran 4 / 16 / 25 (min / median / max) over the 135-battle
+# survey, so 18 leaves most fights complete while still capping the longest.
+MAX_BUFF_ROWS = 18
 # Zones that describe damage output; the rest (speed, shields) would only add
 # rows nobody reads on a damage report. A debuff on the boss amplifies damage
 # through its own set of zones, so the two directions allow different ones.
