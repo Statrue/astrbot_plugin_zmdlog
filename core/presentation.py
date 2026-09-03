@@ -1,6 +1,7 @@
 """Image-template view models for public ZMDLogs ranking data."""
 
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -1386,6 +1387,29 @@ _RAIL_LEGEND = (
 # response uses for character portraits. The template drops the image when it
 # does not load, so a wrong guess only costs the picture.
 _CHARACTER_AVATAR_PATH = "/images/character/charremoteicon/icon_{key}.png"
+# Gear icons follow the same convention, keyed by item id / weapon template.
+# Upstream omits ``iconUrl`` for pieces its catalog does not know yet, while
+# the files themselves exist, so the path is derived when it is missing.
+_EQUIP_ICON_PATH = "/images/equip/iconbig/{item_id}.png"
+_WEAPON_ICON_PATH = "/images/weapon/icon/{template}.png"
+_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,120}$")
+
+
+def _derived_asset_url(
+    explicit: str | None,
+    pattern: str,
+    key: str | None,
+    *,
+    web_base_url: str | None,
+) -> str | None:
+    """The upstream URL when given, else the conventional path for ``key``."""
+
+    if explicit:
+        return _safe_asset_url(explicit, base_url=web_base_url)
+    if not key or not _ASSET_ID_RE.match(key):
+        return None
+    path = pattern.format_map({"item_id": key, "template": key})
+    return _safe_asset_url(path, base_url=web_base_url)
 
 
 def build_timeline_page(
@@ -1925,7 +1949,12 @@ def _weapon_view(weapon: BattleWeapon, *, web_base_url: str | None) -> WeaponVie
         parts.append("词条 " + " / ".join(str(level) for level in affix_levels))
     return WeaponView(
         name=_clean_text(weapon.name) or "未知武器",
-        icon_url=_safe_asset_url(weapon.icon_url, base_url=web_base_url),
+        icon_url=_derived_asset_url(
+            weapon.icon_url,
+            _WEAPON_ICON_PATH,
+            weapon.template,
+            web_base_url=web_base_url,
+        ),
         refine_label=f"精炼 {weapon.refine}" if weapon.refine is not None else None,
         level_label=f"Lv.{weapon.level}" if weapon.level else None,
         skill_label=" · ".join(parts) if parts else None,
@@ -1960,7 +1989,12 @@ def _equip_view(
         piece_label=piece_label,
         suit_label=suit_name or None,
         inferred_suit=inferred,
-        icon_url=_safe_asset_url(equip.icon_url, base_url=web_base_url),
+        icon_url=_derived_asset_url(
+            equip.icon_url,
+            _EQUIP_ICON_PATH,
+            equip.item_id,
+            web_base_url=web_base_url,
+        ),
         enhance_label=(
             "强化 " + " / ".join(f"+{level}" for level in levels)
             if levels

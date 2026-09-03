@@ -241,6 +241,36 @@ class LoadoutPresentationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.battle = parse_battle_detail(battle_detail_payload())
 
+    def test_missing_icons_are_derived_from_ids_but_never_invented(self) -> None:
+        payload = battle_detail_payload()
+        roster = payload["battle"]["roster"][0]
+        roster["weapon"]["iconUrl"] = None
+        roster["equips"][0]["iconUrl"] = None
+        roster["equips"][1]["itemId"] = None
+        roster["equips"][2]["iconUrl"] = None
+        roster["equips"][2]["itemId"] = "../not an id"
+        roster["equips"][3]["iconUrl"] = "/images/equip/iconbig/explicit.png"
+
+        page = build_loadout_page(
+            parse_battle_detail(payload), query="q", web_base_url="https://zmdlogs.com"
+        )
+        luoxi = page.loadouts[0]
+
+        self.assertEqual(
+            luoxi.weapon.icon_url,
+            "https://zmdlogs.com/images/weapon/icon/wpn_sword_0021.png",
+        )
+        hand, body, edc, other = luoxi.equips
+        self.assertEqual(
+            hand.icon_url,
+            "https://zmdlogs.com/images/equip/iconbig/item_equip_t4_suit_phy01_hand_01.png",
+        )
+        self.assertIsNone(body.icon_url)
+        self.assertIsNone(edc.icon_url)
+        self.assertEqual(
+            other.icon_url, "https://zmdlogs.com/images/equip/iconbig/explicit.png"
+        )
+
     def test_loadout_page_formats_gear_and_marks_inferred_suits(self) -> None:
         page = build_loadout_page(
             self.battle, query="配装 罗丹", web_base_url="https://zmdlogs.com"
@@ -280,7 +310,11 @@ class LoadoutPresentationTests(unittest.TestCase):
         self.assertEqual(body.suit_label, "点剑")
         self.assertTrue(body.inferred_suit)
         self.assertEqual(body.compact_label, "点剑 · 护甲")
-        self.assertIsNone(body.icon_url)
+        # Upstream gave no icon for the unknown piece; the path is derived.
+        self.assertEqual(
+            body.icon_url,
+            "https://zmdlogs.com/images/equip/iconbig/item_equip_t4_suit_phy01_body_02.png",
+        )
         self.assertEqual(body.enhance_label, "强化 +3")
         self.assertIsNone(edc.enhance_label)
         self.assertEqual(edc.stats, ())
@@ -379,7 +413,9 @@ class LoadoutTemplateTests(unittest.TestCase):
             html,
         )
         # Raw item ids are never printed as names.
-        self.assertNotIn("item_equip_t4_suit_phy01_body_02", html)
+        # The raw id may only appear inside the derived icon URL, never as text.
+        self.assertNotIn(">item_equip_t4_suit_phy01_body_02", html)
+        self.assertIn("iconbig/item_equip_t4_suit_phy01_body_02.png", html)
         self.assertIn("本场未记录装备", html)
         self.assertIn("潜能 0", html)
 
