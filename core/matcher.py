@@ -3,6 +3,7 @@
 import json
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from enum import Enum, IntEnum
@@ -468,6 +469,56 @@ class RankingMatcher:
         )
 
 
+class MatcherCache:
+    """Reuse one :class:`RankingMatcher` per (cards, aliases) pair.
+
+    Building the index runs pypinyin over every board, dungeon and alias
+    name, which costs tens of milliseconds for a full board list — several
+    times a match — and its inputs only change when hot-bosses refreshes or
+    an alias is edited. Both are compared by identity: the hot-bosses cache
+    hands out the same tuple while its entry is fresh, and an alias edit
+    installs a new :class:`AliasConfig`. Index issues are reported to
+    ``warn`` once per build instead of once per query.
+    """
+
+    def __init__(
+        self,
+        *,
+        fuzzy_threshold: float = 0.65,
+        ambiguity_score_gap: float = 0.08,
+        warn: Callable[[str], None] | None = None,
+    ) -> None:
+        self.fuzzy_threshold = _ratio(fuzzy_threshold, "fuzzy_threshold")
+        self.ambiguity_score_gap = _ratio(
+            ambiguity_score_gap,
+            "ambiguity_score_gap",
+        )
+        self._warn = warn
+        self._cached: (
+            tuple[tuple[HotBossCard, ...], AliasConfig, RankingMatcher] | None
+        ) = None
+
+    def matcher_for(
+        self,
+        cards: tuple[HotBossCard, ...],
+        aliases: AliasConfig,
+    ) -> RankingMatcher:
+        cached = self._cached
+        if cached is not None and cached[0] is cards and cached[1] is aliases:
+            return cached[2]
+        matcher = RankingMatcher(
+            cards,
+            aliases,
+            fuzzy_threshold=self.fuzzy_threshold,
+            ambiguity_score_gap=self.ambiguity_score_gap,
+        )
+        self._cached = (cards, aliases, matcher)
+        if self._warn is not None:
+            for issue in matcher.issues:
+                self._warn(issue)
+        return matcher
+
+
 def fold_text(value: str) -> str:
     """NFKC/case-fold text while preserving internal punctuation and spacing."""
 
@@ -767,20 +818,27 @@ def _search_text(value: str, *, is_alias: bool) -> _SearchText:
 
 
 def _partial_similarity(left: str, right: str) -> float:
+    """Best ratio of the shorter text against every window of the longer one.
+
+    One matcher is reused across the windows, and ``quick_ratio`` — an upper
+    bound on ``ratio`` — skips every window that cannot beat the best so
+    far. The result is exactly the maximum over all windows; only the cost
+    changed (one matcher per window per search text made a 64-character
+    query block the event loop for a quarter of a second).
+    """
+
     if not left or not right:
         return 0.0
     shorter, longer = sorted((left, right), key=len)
-    if len(shorter) == len(longer):
-        return SequenceMatcher(None, shorter, longer, autojunk=False).ratio()
-    return max(
-        SequenceMatcher(
-            None,
-            shorter,
-            longer[index : index + len(shorter)],
-            autojunk=False,
-        ).ratio()
-        for index in range(len(longer) - len(shorter) + 1)
-    )
+    width = len(shorter)
+    matcher = SequenceMatcher(None, shorter, "", autojunk=False)
+    best = 0.0
+    for index in range(len(longer) - width + 1):
+        matcher.set_seq2(longer[index : index + width])
+        if matcher.quick_ratio() <= best:
+            continue
+        best = max(best, matcher.ratio())
+    return best
 
 
 def _phase_family(value: str) -> str | None:

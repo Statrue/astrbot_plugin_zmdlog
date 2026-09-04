@@ -67,10 +67,10 @@ from .core.matcher import (
     AliasConfig,
     AliasConfigError,
     MatchChoice,
+    MatcherCache,
     MatchLevel,
     MatchStatus,
     MatchTarget,
-    RankingMatcher,
     TargetType,
     fold_text,
 )
@@ -319,6 +319,11 @@ class ZmdLogBotPlugin(Star):
             0.08,
             "ambiguity_score_gap",
         )
+        self._matchers = MatcherCache(
+            fuzzy_threshold=self.fuzzy_match_threshold,
+            ambiguity_score_gap=self.ambiguity_score_gap,
+            warn=lambda issue: logger.warning("ZmdLogBot alias index: %s", issue),
+        )
         cache_ttl_seconds = self.config.get(
             "ranking_cache_ttl_seconds",
             60,
@@ -494,10 +499,10 @@ class ZmdLogBotPlugin(Star):
     async def pick_candidate(self, event: AstrMessageEvent):
         """Let a bare ``2`` that quotes a candidate list select that entry."""
 
-        if self._is_command_message(event):
-            return
+        # This handler sees every message in every chat, so the regex runs
+        # first and the prefix lookup only for a message that is a bare number.
         text = event.get_message_str() or ""
-        if parse_selection(text) is None:
+        if parse_selection(text) is None or self._is_command_message(event):
             return
         code = self._quoted_candidate_code(event)
         if code is None:
@@ -758,14 +763,7 @@ class ZmdLogBotPlugin(Star):
                 )
             raise
 
-        matcher = RankingMatcher(
-            cards,
-            self.aliases,
-            fuzzy_threshold=self.fuzzy_match_threshold,
-            ambiguity_score_gap=self.ambiguity_score_gap,
-        )
-        for issue in matcher.issues:
-            logger.warning("ZmdLogBot alias index: %s", issue)
+        matcher = self._matchers.matcher_for(cards, self.aliases)
         # The account version can extend the smart route's set without changing
         # the matcher or the explicit board route.
         match = matcher.match(route.query, allowed_types=_BOARD_QUERY_TARGETS)
@@ -1574,12 +1572,7 @@ class ZmdLogBotPlugin(Star):
             cards = await self._list_hot_bosses()
         except ZmdLogsClientError:
             return "ZMDLogs 暂时不可用，无法核对目标，请稍后重试。"
-        matcher = RankingMatcher(
-            cards,
-            self.aliases,
-            fuzzy_threshold=self.fuzzy_match_threshold,
-            ambiguity_score_gap=self.ambiguity_score_gap,
-        )
+        matcher = self._matchers.matcher_for(cards, self.aliases)
         match = matcher.match(
             target_text,
             allowed_types=frozenset({TargetType.BOARD, TargetType.DUNGEON}),
@@ -1734,12 +1727,7 @@ class ZmdLogBotPlugin(Star):
         except ZmdLogsClientError as exc:
             logger.warning("ZmdLogBot request failed: %s", type(exc).__name__)
             return _UPSTREAM_UNAVAILABLE_MESSAGE
-        matcher = RankingMatcher(
-            cards,
-            self.aliases,
-            fuzzy_threshold=self.fuzzy_match_threshold,
-            ambiguity_score_gap=self.ambiguity_score_gap,
-        )
+        matcher = self._matchers.matcher_for(cards, self.aliases)
         match = matcher.match(query, allowed_types=_BOARD_QUERY_TARGETS)
         if match.status is MatchStatus.AMBIGUOUS:
             choices = match.candidates

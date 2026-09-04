@@ -1,11 +1,15 @@
+import random
 import unittest
+from difflib import SequenceMatcher
 
 from core.matcher import (
     AliasConfig,
+    MatcherCache,
     MatchLevel,
     MatchStatus,
     RankingMatcher,
     TargetType,
+    _partial_similarity,
     normalize_search_text,
 )
 from tests.helpers import make_card
@@ -300,3 +304,76 @@ class HomophoneTests(unittest.TestCase):
         result = matcher.match("完全不")
         self.assertEqual(result.status, MatchStatus.MATCHED)
         self.assertEqual(result.selected.target.key, "only")
+
+
+def _naive_partial_similarity(left: str, right: str) -> float:
+    """The original one-matcher-per-window scan, kept as the oracle."""
+
+    if not left or not right:
+        return 0.0
+    shorter, longer = sorted((left, right), key=len)
+    return max(
+        SequenceMatcher(
+            None,
+            shorter,
+            longer[index : index + len(shorter)],
+            autojunk=False,
+        ).ratio()
+        for index in range(len(longer) - len(shorter) + 1)
+    )
+
+
+class SimilarityTests(unittest.TestCase):
+    def test_bounded_window_scan_returns_the_naive_maximum(self) -> None:
+        # quick_ratio only ever skips windows that cannot beat the best so
+        # far, so the fast scan must agree with the exhaustive one bit for bit.
+        rng = random.Random(20260905)
+        alphabet = "abcdefg山中见犼丰碑影拓罗丹噪雷1234"
+        pairs = [
+            ("", "abc"),
+            ("abc", "abc"),
+            ("罗丹", "罗丹苦难"),
+            ("luodan", "abcdefghijklmnopqrstuvwxyz0123456789" * 2),
+        ]
+        for _ in range(400):
+            pairs.append(
+                (
+                    "".join(rng.choice(alphabet) for _ in range(rng.randint(1, 12))),
+                    "".join(rng.choice(alphabet) for _ in range(rng.randint(1, 40))),
+                )
+            )
+        for left, right in pairs:
+            with self.subTest(left=left, right=right):
+                self.assertEqual(
+                    _partial_similarity(left, right),
+                    _naive_partial_similarity(left, right),
+                )
+
+
+class MatcherCacheTests(unittest.TestCase):
+    def test_matcher_is_reused_until_cards_or_aliases_change(self) -> None:
+        issues: list[str] = []
+        cache = MatcherCache(warn=issues.append)
+        cards = _cards()
+        aliases = AliasConfig(boards={"missing": ("x",)}, dungeons={})
+
+        first = cache.matcher_for(cards, aliases)
+        self.assertIs(cache.matcher_for(cards, aliases), first)
+        # Index problems are reported when the index is built, not per query.
+        self.assertEqual(issues, ["board alias target does not exist: missing"])
+
+        rebuilt = cache.matcher_for(_cards(), aliases)
+        self.assertIsNot(rebuilt, first)
+        self.assertEqual(len(issues), 2)
+
+        # Identity, not equality: an alias edit installs a new AliasConfig.
+        empty = AliasConfig.empty()
+        swapped = cache.matcher_for(rebuilt.cards, empty)
+        self.assertIsNot(swapped, rebuilt)
+        self.assertEqual(len(issues), 2)
+        self.assertIs(cache.matcher_for(rebuilt.cards, empty), swapped)
+        self.assertIsNot(cache.matcher_for(rebuilt.cards, AliasConfig.empty()), swapped)
+
+    def test_thresholds_are_validated_once_at_construction(self) -> None:
+        with self.assertRaises(ValueError):
+            MatcherCache(fuzzy_threshold=65)
