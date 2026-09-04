@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 
-from .matcher import MatchChoice, TargetType
+from .matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
 
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _CODE_RE = re.compile(r"候选编号 ?([A-Z2-9]{4})(?![A-Z2-9])")
@@ -209,3 +209,21 @@ def describe_choice(choice: MatchChoice) -> str:
         return label
     kind = "副本" if target.target_type is TargetType.DUNGEON else "副本系列"
     return f"{target.name} · {kind}（{len(target.boss_slugs)} 个榜单）"
+
+
+def account_choice(account_id: str, display_name: str, *, query: str) -> MatchChoice:
+    """Wrap one public account in the candidate shape the pick list understands."""
+
+    return MatchChoice(
+        target=MatchTarget(
+            target_type=TargetType.ACCOUNT,
+            key=account_id,
+            name=display_name,
+            dungeon_names=(),
+            boss_slugs=(),
+            query_text=query,
+        ),
+        level=MatchLevel.STANDARD_EXACT,
+        score=1.0,
+        matched_text=display_name,
+    )

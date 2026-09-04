@@ -1,10 +1,9 @@
 """AstrBot entry point for ZmdLogBot."""
 
 import asyncio
-import random
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 from astrbot.api import AstrBotConfig, logger
@@ -25,12 +24,13 @@ except ImportError:  # pragma: no cover - depends on host AstrBot version
         # Only rank notices need it; every query must keep working without it.
         Plain = None
 
-from .core.cache import AsyncTTLCache, CacheState
+from .core import messages
 from .core.candidates import (
     MAX_CANDIDATES,
     CandidateStore,
     CandidateView,
     PendingCandidates,
+    account_choice,
     extract_code,
     format_candidates,
     parse_selection,
@@ -49,12 +49,7 @@ from .core.client import (
     ZmdLogsClientError,
     is_valid_boss_slug,
 )
-from .core.history import (
-    AccountHistory,
-    history_payload,
-    parse_history_payload,
-    record_rankings,
-)
+from .core.datasource import ZmdLogsDataSource
 from .core.identifiers import (
     PublicReferenceError,
     extract_battle_references,
@@ -62,27 +57,24 @@ from .core.identifiers import (
     parse_battle_reference,
 )
 from .core.matcher import (
+    BOARD_QUERY_TARGETS,
     AliasConfig,
     AliasConfigError,
     MatchChoice,
     MatcherCache,
     MatchLevel,
     MatchStatus,
-    MatchTarget,
     TargetType,
     fold_text,
 )
+from .core.messages import shorten
 from .core.models import (
     BattleDetailSummary,
     BattleExport,
-    BossRanking,
-    CharacterBossStatistics,
-    CharacterStatistics,
     HotBossCard,
-    PublicUserRankings,
-    parse_hot_bosses,
 )
 from .core.persistence import load_json, save_json
+from .core.rank_watch import RankWatcher
 from .core.render import (
     LongImageRenderer,
     RenderError,
@@ -96,40 +88,7 @@ from .core.routing import (
     parse_zmdlog_payload,
 )
 from .core.settings import load_settings
-from .core.timestamps import utc_now_text
-from .core.watch import (
-    MAX_DROPS_PER_NOTICE,
-    AccountSnapshot,
-    BoardSnapshot,
-    RankDrop,
-    board_snapshot_is_usable,
-    board_snapshot_payload,
-    build_board_snapshot,
-    build_snapshot,
-    find_new_record_above,
-    find_rank_drops,
-    find_top_run_changes,
-    format_board_notice,
-    format_rank_drop_notice,
-    join_board_notices,
-    join_rank_drop_notices,
-    parse_board_snapshot_payload,
-    parse_snapshot_payload,
-    snapshot_is_usable,
-    snapshot_payload,
-)
-from .core.watchlist import (
-    WatchedAccount,
-    WatchedBoard,
-    WatchList,
-    board_label,
-    format_watchlist,
-    parse_watchlist,
-)
 
-_BOARD_QUERY_TARGETS = frozenset(
-    {TargetType.BOARD, TargetType.DUNGEON, TargetType.DUNGEON_SCOPE}
-)
 _ALIAS_ROUTES = frozenset(
     {RouteKind.ALIAS_LIST, RouteKind.ALIAS_ADD, RouteKind.ALIAS_REMOVE}
 )
@@ -142,27 +101,8 @@ _WATCH_ROUTES = frozenset(
         RouteKind.WATCH_BOARD_REMOVE,
     }
 )
-_WATCHLIST_FILE = "watchlist.json"
-_RANK_SNAPSHOT_FILE = "rank-snapshot.json"
-_BOARD_SNAPSHOT_FILE = "board-snapshot.json"
-_RANK_HISTORY_FILE = "rank-history.json"
-_TREND_NO_DATA_MESSAGE = (
-    "这个账号不在任何关注列表里，还没有名次记录；"
-    "用 关注 <昵称或accountId> 关注后会从下一轮检查开始记录。"
-)
-_RANK_WATCH_CONCURRENCY = 2
 _NOTICE_SEND_TIMEOUT_SECONDS = 30.0
-_WATCH_DISABLED_MESSAGE = "本机器人未开启名次通报功能。"
-_NO_ORIGIN_MESSAGE = "无法确定当前会话，关注功能在这里不可用。"
 _PLUGIN_DATA_NAME = "astrbot_plugin_zmdlog"
-_HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
-_RENDER_FAILURE_MESSAGE = "图片生成失败，请稍后重试。"
-_UNEXPECTED_FAILURE_MESSAGE = "ZmdLogBot 暂时无法完成查询，请稍后重试。"
-_UPSTREAM_UNAVAILABLE_MESSAGE = "ZMDLogs 暂时不可用，请稍后重试。"
-_ACCOUNT_NOT_FOUND_MESSAGE = "没有找到这个公开账号，或该账号暂无公开榜单记录。"
-# User text echoed back into a reply is cut here; the matcher already ignores
-# anything longer, and a reply must never repeat a multi-kilobyte message.
-_ECHO_LIMIT = 40
 _BATTLE_LINK_FILTER = (
     r"https?://[^\s<>\"']+/(?:battle|share|axis)/btl_[A-Za-z0-9_-]+"
 )
@@ -190,20 +130,7 @@ _BOARD_ONLY_VIEWS = (
     )
     | _BATTLE_VIEWS
 )
-_COMPARE_REFERENCE_MESSAGE = (
-    "对比两场战报时，两个参数都要是 battleId 或战报链接。"
-)
-_COMPARE_SAME_MESSAGE = "两边是同一场战报，没有可比的。"
-# Every boss has its own rotation, so a comparison across bosses says nothing;
-# the user asked for it to be refused rather than drawn.
-_COMPARE_CROSS_MESSAGE = (
-    "两场不是同一个首领（{first} / {second}），每个首领的排轴都不同，不做跨榜单对比。"
-)
 _CHARACTER_STATS_UNAVAILABLE = "character_statistics_not_available"
-_NO_LOADOUT_MESSAGE = "这份战报没有记录阵容配装。"
-_NO_SKILL_STATS_MESSAGE = "这份战报没有技能统计数据。"
-_NO_TIMELINE_MESSAGE = "这条战斗由旧版客户端上传，没有完整施法序列，画不了技能轴。"
-_TIMELINE_RATE_LIMITED_MESSAGE = "技能轴接口请求过于频繁，请稍后再试。"
 _EXPORT_UNSUPPORTED = "battle_export_unsupported"
 
 
@@ -238,76 +165,23 @@ class ZmdLogBotPlugin(Star):
             ambiguity_score_gap=settings.ambiguity_score_gap,
             warn=lambda issue: logger.warning("ZmdLogBot alias index: %s", issue),
         )
-        self.watchlist_path = (
-            None if self.data_dir is None else self.data_dir / _WATCHLIST_FILE
+        self.data = ZmdLogsDataSource(
+            self.client,
+            settings=settings,
+            data_dir=self.data_dir,
+            logger=logger,
         )
-        self.watchlist = (
-            WatchList.empty()
-            if self.watchlist_path is None
-            else parse_watchlist(load_json(self.watchlist_path))
-        )
-        self.rank_snapshot_path = (
-            None
-            if self.data_dir is None
-            else self.data_dir / _RANK_SNAPSHOT_FILE
-        )
-        self.rank_snapshots = (
-            {}
-            if self.rank_snapshot_path is None
-            else parse_snapshot_payload(load_json(self.rank_snapshot_path))
-        )
-        self.board_snapshot_path = (
-            None
-            if self.data_dir is None
-            else self.data_dir / _BOARD_SNAPSHOT_FILE
-        )
-        self.board_snapshots = (
-            {}
-            if self.board_snapshot_path is None
-            else parse_board_snapshot_payload(load_json(self.board_snapshot_path))
-        )
-        self._board_snapshot_write_failed = False
-        self.rank_history_path = (
-            None if self.data_dir is None else self.data_dir / _RANK_HISTORY_FILE
-        )
-        self.rank_history: dict[str, AccountHistory] = (
-            {}
-            if self.rank_history_path is None
-            else parse_history_payload(load_json(self.rank_history_path))
-        )
-        self._rank_history_write_failed = False
-        self._rank_watch_task: asyncio.Task | None = None
-        self._rank_snapshot_write_failed = False
-        self.hot_boss_cache = AsyncTTLCache[
-            str,
-            tuple[HotBossCard, ...],
-        ](
-            settings.ranking_cache_ttl_seconds,
-            stale_ttl_seconds=settings.ranking_cache_ttl_seconds,
-        )
-        self.boss_ranking_cache = AsyncTTLCache[str, BossRanking](
-            settings.ranking_cache_ttl_seconds,
-        )
-        self.account_cache = AsyncTTLCache[str, PublicUserRankings](
-            settings.account_cache_ttl_seconds,
-        )
-        self.character_stats_cache = AsyncTTLCache[
-            tuple[str, str, str],
-            CharacterStatistics,
-        ](
-            settings.character_stats_cache_ttl_seconds,
-        )
-        self.character_boss_cache = AsyncTTLCache[
-            tuple[str, str, str],
-            CharacterBossStatistics,
-        ](
-            settings.character_stats_cache_ttl_seconds,
-        )
-        self.battle_cache = AsyncTTLCache[str, BattleDetailSummary](
-            settings.battle_cache_ttl_seconds,
-        )
-        self.battle_export_cache = AsyncTTLCache[str, BattleExport](
-            settings.battle_cache_ttl_seconds,
+        self.watcher = RankWatcher(
+            client=self.client,
+            data=self.data,
+            settings=settings,
+            data_dir=self.data_dir,
+            board_matcher=lambda cards: self._matchers.matcher_for(
+                cards, self.aliases
+            ),
+            candidates=self.candidates,
+            notify=self._send_notice,
+            logger=logger,
         )
         self._auto_expand_lock = asyncio.Lock()
         self._auto_expanded_until: dict[tuple[str, str], float] = {}
@@ -333,18 +207,18 @@ class ZmdLogBotPlugin(Star):
 
         ``on_astrbot_loaded`` fires once per process, so a plugin installed from
         the market or reloaded after a config change would never poll if that
-        were the only start path. ``_start_rank_watch`` is idempotent, and the
+        were the only start path. ``RankWatcher.start`` is idempotent, and the
         loop sleeps a full interval before its first cycle, so starting here
         cannot race platform startup.
         """
 
-        self._start_rank_watch()
+        self.watcher.start()
 
     @filter.on_astrbot_loaded()
     async def on_astrbot_ready(self) -> None:
         """Start Chromium and, on a cold boot, the rank watcher."""
 
-        self._start_rank_watch()
+        self.watcher.start()
         if self.renderer is None:
             return
         try:
@@ -387,15 +261,21 @@ class ZmdLogBotPlugin(Star):
                 if route.kind in _ALIAS_ROUTES:
                     message = await self._handle_alias_route(route, event)
                 else:
-                    message = await self._handle_watch_route(route, event)
+                    message = await self.watcher.handle_route(
+                        route,
+                        origin=self._event_origin(event),
+                        requester_key=self._event_user_key(event),
+                        is_admin=self._event_is_admin(event),
+                        command=self._command_prefix(event) + "zmdlog",
+                    )
             except ZmdLogsClientError as exc:
                 logger.warning(
                     "ZmdLogBot request failed: %s", type(exc).__name__
                 )
-                message = _UPSTREAM_UNAVAILABLE_MESSAGE
+                message = messages.UPSTREAM_UNAVAILABLE
             except Exception:
                 logger.exception("ZmdLogBot unexpected command failure")
-                message = _UNEXPECTED_FAILURE_MESSAGE
+                message = messages.UNEXPECTED_FAILURE
             yield event.plain_result(message)
             return
         outcome, _ = await self._run_guarded(
@@ -446,7 +326,7 @@ class ZmdLogBotPlugin(Star):
             return
 
         async def expand() -> _DispatchOutcome:
-            battle = await self._get_battle_detail(battle_id)
+            battle = await self.data.get_battle_detail(battle_id)
             export, note = await self._battle_export_for_card(battle_id)
             renderer = self._require_renderer()
             image_path = await renderer.render_battle(
@@ -503,7 +383,7 @@ class ZmdLogBotPlugin(Star):
                 failure_label,
                 type(exc).__name__,
             )
-            return _DispatchOutcome(message=_UPSTREAM_UNAVAILABLE_MESSAGE), True
+            return _DispatchOutcome(message=messages.UPSTREAM_UNAVAILABLE), True
         except RenderError as exc:
             logger.error(
                 "ZmdLogBot %s rendering failed: %s",
@@ -513,10 +393,10 @@ class ZmdLogBotPlugin(Star):
             fallback_path = await self._render_with_astrbot(exc)
             if fallback_path is not None:
                 return _DispatchOutcome(image_path=fallback_path), False
-            return _DispatchOutcome(message=_RENDER_FAILURE_MESSAGE), True
+            return _DispatchOutcome(message=messages.RENDER_FAILURE), True
         except Exception:
             logger.exception("ZmdLogBot unexpected %s failure", failure_label)
-            return _DispatchOutcome(message=_UNEXPECTED_FAILURE_MESSAGE), False
+            return _DispatchOutcome(message=messages.UNEXPECTED_FAILURE), False
 
     @staticmethod
     def _outcome_result(event: AstrMessageEvent, outcome: _DispatchOutcome):
@@ -539,7 +419,7 @@ class ZmdLogBotPlugin(Star):
             return _DispatchOutcome(image_path=image_path)
 
         if route.kind is RouteKind.ALL_RANKINGS:
-            cards = await self._list_hot_bosses()
+            cards = await self.data.list_hot_bosses()
             image_path = await renderer.render_all_top3(
                 cards,
                 query="榜单",
@@ -560,10 +440,7 @@ class ZmdLogBotPlugin(Star):
                 )
                 if outcome is None:
                     return _DispatchOutcome(
-                        message=(
-                            "请提供公开昵称（至少 2 个字符）、accountId "
-                            "或 ZMDLogs 账号主页链接。"
-                        )
+                        message=messages.ACCOUNT_REFERENCE_NEEDED
                     )
                 return outcome
             return await self._render_account_outcome(
@@ -580,7 +457,7 @@ class ZmdLogBotPlugin(Star):
                     route.compare_target, web_base_url=self.web_base_url
                 )
             except PublicReferenceError:
-                return _DispatchOutcome(message=_COMPARE_REFERENCE_MESSAGE)
+                return _DispatchOutcome(message=messages.COMPARE_REFERENCE_NEEDED)
             return await self._render_compare(
                 first, second, query=f"{route.query} vs {route.compare_target}"
             )
@@ -614,7 +491,7 @@ class ZmdLogBotPlugin(Star):
                 )
             # A watched account is addressable by the nickname its history
             # already holds, with no upstream search at all.
-            local = self._find_history_by_name(route.query)
+            local = self.watcher.history_by_name(route.query)
             if len(local) == 1:
                 return await self._render_trend_outcome(
                     local[0].account_id,
@@ -625,8 +502,10 @@ class ZmdLogBotPlugin(Star):
                 entry = self.candidates.remember(
                     route.query,
                     tuple(
-                        _account_choice_from(
-                            item.account_id, item.display_name, route.query
+                        account_choice(
+                            item.account_id,
+                            item.display_name,
+                            query=route.query,
                         )
                         for item in local[:MAX_CANDIDATES]
                     ),
@@ -647,15 +526,12 @@ class ZmdLogBotPlugin(Star):
             )
             if outcome is None:
                 return _DispatchOutcome(
-                    message=(
-                        "请提供公开昵称（至少 2 个字符）、accountId "
-                        "或 ZMDLogs 账号主页链接。"
-                    )
+                    message=messages.ACCOUNT_REFERENCE_NEEDED
                 )
             return outcome
 
         if route.kind is RouteKind.CHARACTER_STATS and not route.query.strip():
-            stats = await self._get_character_statistics(
+            stats = await self.data.get_character_statistics(
                 None,
                 time_range=route.stats_range,
                 potential=route.stats_potential,
@@ -671,7 +547,7 @@ class ZmdLogBotPlugin(Star):
         pending = _pending_from_route(route)
 
         try:
-            cards = await self._list_hot_bosses()
+            cards = await self.data.list_hot_bosses()
         except ZmdLogsClientError:
             if self._looks_like_direct_slug(route.query):
                 return await self._render_board(
@@ -682,9 +558,9 @@ class ZmdLogBotPlugin(Star):
         matcher = self._matchers.matcher_for(cards, self.aliases)
         # The account version can extend the smart route's set without changing
         # the matcher or the explicit board route.
-        match = matcher.match(route.query, allowed_types=_BOARD_QUERY_TARGETS)
+        match = matcher.match(route.query, allowed_types=BOARD_QUERY_TARGETS)
 
-        shown_query = _shorten(route.query)
+        shown_query = shorten(route.query)
         not_found_message = (
             f"没有找到与「{shown_query}」匹配的榜单。"
             if view in _BOARD_ONLY_VIEWS
@@ -882,7 +758,7 @@ class ZmdLogBotPlugin(Star):
             if quiet:
                 return None
             return _DispatchOutcome(
-                message=f"没有找到昵称包含「{_shorten(stripped)}」的公开账号。"
+                message=f"没有找到昵称包含「{shorten(stripped)}」的公开账号。"
             )
         if len(search.accounts) == 1 and not search.has_more:
             if view is CandidateView.TREND:
@@ -895,7 +771,8 @@ class ZmdLogBotPlugin(Star):
                 search.accounts[0].account_id, query=query
             )
         choices = tuple(
-            _account_choice(hit, stripped) for hit in search.accounts
+            account_choice(hit.account_id, hit.account_display_name, query=stripped)
+            for hit in search.accounts
         )
         entry = self.candidates.remember(
             stripped, choices, origin=origin, view=view, stats_range=stats_range
@@ -927,7 +804,10 @@ class ZmdLogBotPlugin(Star):
             )
         except ZmdLogsClientError:
             return ()
-        return tuple(_account_choice(hit, stripped) for hit in search.accounts)
+        return tuple(
+            account_choice(hit.account_id, hit.account_display_name, query=stripped)
+            for hit in search.accounts
+        )
 
     async def _render_account_outcome(
         self,
@@ -945,12 +825,12 @@ class ZmdLogBotPlugin(Star):
 
         renderer = self._require_renderer()
         try:
-            account = await self._get_public_user_rankings(account_id)
+            account = await self.data.get_public_user_rankings(account_id)
         except ZmdLogsAPIError as exc:
             if exc.status_code != 404:
                 raise
             logger.warning("ZmdLogBot API request failed: %s", exc.code)
-            return _DispatchOutcome(message=_ACCOUNT_NOT_FOUND_MESSAGE)
+            return _DispatchOutcome(message=messages.ACCOUNT_NOT_FOUND)
         image_path = await renderer.render_account(
             account,
             query=query,
@@ -971,52 +851,18 @@ class ZmdLogBotPlugin(Star):
         talks to upstream: an unknown account is answered with how to start.
         """
 
-        history = self.rank_history.get(account_id)
+        history = self.watcher.history_for(account_id)
         if history is None or not history.boards:
-            return _DispatchOutcome(message=_TREND_NO_DATA_MESSAGE)
+            return _DispatchOutcome(message=messages.TREND_NO_DATA)
         renderer = self._require_renderer()
-        snapshot = self.rank_snapshots.get(account_id)
         image_path = await renderer.render_trend(
             history,
             query=query,
             web_base_url=self.web_base_url,
             time_range=time_range,
-            last_checked=snapshot.checked_at if snapshot is not None else None,
+            last_checked=self.watcher.last_checked(account_id),
         )
         return _DispatchOutcome(image_path=image_path)
-
-    def _find_history_by_name(self, query: str) -> tuple[AccountHistory, ...]:
-        """Watched accounts whose recorded nickname matches ``query``."""
-
-        stripped = query.strip()
-        if len(stripped) < MIN_ACCOUNT_SEARCH_LENGTH:
-            return ()
-        folded = fold_text(stripped)
-        entries = tuple(self.rank_history.values())
-        exact = tuple(
-            entry for entry in entries if fold_text(entry.display_name) == folded
-        )
-        if exact:
-            return exact
-        return tuple(
-            entry
-            for entry in entries
-            if folded and folded in fold_text(entry.display_name)
-        )
-
-    def _save_rank_history(self, history: dict[str, AccountHistory]) -> None:
-        self.rank_history = history
-        if self.rank_history_path is None:
-            return
-        if save_json(self.rank_history_path, history_payload(history)):
-            self._rank_history_write_failed = False
-            return
-        if not self._rank_history_write_failed:
-            self._rank_history_write_failed = True
-            logger.warning(
-                "ZmdLogBot could not persist the rank history; "
-                "check the plugin data directory."
-            )
 
     async def _character_boss_outcome(
         self,
@@ -1030,7 +876,7 @@ class ZmdLogBotPlugin(Star):
         """
 
         try:
-            catalog = await self._get_character_statistics(
+            catalog = await self.data.get_character_statistics(
                 None, time_range="all", potential="all"
             )
         except ZmdLogsClientError:
@@ -1049,7 +895,7 @@ class ZmdLogBotPlugin(Star):
             for row in catalog.rows
             if row.character_name == resolution.name
         )
-        stats = await self._get_character_boss_statistics(
+        stats = await self.data.get_character_boss_statistics(
             character_key,
             time_range=pending.stats_range,
             potential=pending.stats_potential,
@@ -1061,24 +907,6 @@ class ZmdLogBotPlugin(Star):
             web_base_url=self.web_base_url,
         )
         return _DispatchOutcome(image_path=image_path)
-
-    async def _get_character_boss_statistics(
-        self,
-        character_key: str,
-        *,
-        time_range: str,
-        potential: str,
-    ) -> CharacterBossStatistics:
-        key = (character_key, time_range, potential)
-        result = await self.character_boss_cache.get_or_load(
-            key,
-            lambda: self.client.get_character_boss_statistics(
-                character_key,
-                time_range=time_range,
-                potential=potential,
-            ),
-        )
-        return result.value
 
     async def _character_name_hint(
         self,
@@ -1093,7 +921,7 @@ class ZmdLogBotPlugin(Star):
         """
 
         try:
-            stats = await self._get_character_statistics(
+            stats = await self.data.get_character_statistics(
                 None, time_range="all", potential="all"
             )
         except ZmdLogsClientError:
@@ -1130,7 +958,7 @@ class ZmdLogBotPlugin(Star):
             else DEFAULT_RANKING_TOP
         )
         if pending.view is CandidateView.CHARACTER_STATS:
-            stats = await self._get_character_statistics(
+            stats = await self.data.get_character_statistics(
                 boss_slug,
                 time_range=pending.stats_range,
                 potential=pending.stats_potential,
@@ -1142,7 +970,7 @@ class ZmdLogBotPlugin(Star):
             )
             return _DispatchOutcome(image_path=image_path)
 
-        ranking = await self._get_boss_ranking(boss_slug)
+        ranking = await self.data.get_boss_ranking(boss_slug)
         if pending.view is CandidateView.COMPARE:
             wanted = (pending.battle_rank, pending.compare_rank)
             rows = {
@@ -1203,7 +1031,7 @@ class ZmdLogBotPlugin(Star):
                     options = " / ".join(resolution.candidates)
                     return _DispatchOutcome(
                         message=(
-                            f"「{_shorten(resolution.query)}」可能是：{options}，"
+                            f"「{shorten(resolution.query)}」可能是：{options}，"
                             "请写全名。"
                         )
                     )
@@ -1211,7 +1039,7 @@ class ZmdLogBotPlugin(Star):
                     return _DispatchOutcome(
                         message=(
                             f"「{ranking.boss_name}」的公开排名里没有"
-                            f"「{_shorten(resolution.query)}」。"
+                            f"「{shorten(resolution.query)}」。"
                         )
                     )
                 if resolution.name not in names:
@@ -1278,14 +1106,14 @@ class ZmdLogBotPlugin(Star):
         renderer = self._require_renderer()
         if view is CandidateView.TIMELINE:
             try:
-                export = await self._get_battle_export(battle_id)
+                export = await self.data.get_battle_export(battle_id)
             except ZmdLogsAPIError as exc:
                 if exc.status_code == 422 and exc.code == _EXPORT_UNSUPPORTED:
                     logger.warning("ZmdLogBot API request failed: %s", exc.code)
-                    return _DispatchOutcome(message=_NO_TIMELINE_MESSAGE)
+                    return _DispatchOutcome(message=messages.NO_TIMELINE)
                 if exc.status_code == 429:
                     logger.warning("ZmdLogBot API request failed: %s", exc.code)
-                    return _DispatchOutcome(message=_TIMELINE_RATE_LIMITED_MESSAGE)
+                    return _DispatchOutcome(message=messages.TIMELINE_RATE_LIMITED)
                 raise
             # The detail only adds the BUFF 覆盖 band; the page stands without.
             image_path = await renderer.render_timeline(
@@ -1295,16 +1123,16 @@ class ZmdLogBotPlugin(Star):
                 battle=await self._battle_detail_if_available(battle_id),
             )
             return _DispatchOutcome(image_path=image_path)
-        battle = await self._get_battle_detail(battle_id)
+        battle = await self.data.get_battle_detail(battle_id)
         if view is CandidateView.LOADOUT:
             if not battle.roster:
-                return _DispatchOutcome(message=_NO_LOADOUT_MESSAGE)
+                return _DispatchOutcome(message=messages.NO_LOADOUT)
             image_path = await renderer.render_loadout(
                 battle, query=query, web_base_url=self.web_base_url
             )
         elif view is CandidateView.SKILLS:
             if not battle.skill_stats:
-                return _DispatchOutcome(message=_NO_SKILL_STATS_MESSAGE)
+                return _DispatchOutcome(message=messages.NO_SKILL_STATS)
             image_path = await renderer.render_skills(
                 battle, query=query, web_base_url=self.web_base_url
             )
@@ -1331,13 +1159,13 @@ class ZmdLogBotPlugin(Star):
         """
 
         try:
-            return await self._get_battle_export(battle_id), None
+            return await self.data.get_battle_export(battle_id), None
         except ZmdLogsAPIError as exc:
             logger.warning("ZmdLogBot battle export unavailable: %s", exc.code)
             if exc.status_code == 422 and exc.code == _EXPORT_UNSUPPORTED:
-                return None, _NO_TIMELINE_MESSAGE
+                return None, messages.NO_TIMELINE
             if exc.status_code == 429:
-                return None, _TIMELINE_RATE_LIMITED_MESSAGE
+                return None, messages.TIMELINE_RATE_LIMITED
             return None, None
         except ZmdLogsClientError as exc:
             logger.warning(
@@ -1357,16 +1185,16 @@ class ZmdLogBotPlugin(Star):
         """Two battles side by side; both details are fetched concurrently."""
 
         if battle_id_a == battle_id_b:
-            return _DispatchOutcome(message=_COMPARE_SAME_MESSAGE)
+            return _DispatchOutcome(message=messages.COMPARE_SAME_BATTLE)
         renderer = self._require_renderer()
         first, second = await asyncio.gather(
-            self._get_battle_detail(battle_id_a),
-            self._get_battle_detail(battle_id_b),
+            self.data.get_battle_detail(battle_id_a),
+            self.data.get_battle_detail(battle_id_b),
         )
         if first.boss_name != second.boss_name:
             return _DispatchOutcome(
-                message=_COMPARE_CROSS_MESSAGE.format(
-                    first=_shorten(first.boss_name), second=_shorten(second.boss_name)
+                message=messages.COMPARE_CROSS_BOSS.format(
+                    first=shorten(first.boss_name), second=shorten(second.boss_name)
                 )
             )
         image_path = await renderer.render_compare(
@@ -1386,7 +1214,7 @@ class ZmdLogBotPlugin(Star):
         """The battle detail for a page that can do without it."""
 
         try:
-            return await self._get_battle_detail(battle_id)
+            return await self.data.get_battle_detail(battle_id)
         except ZmdLogsClientError as exc:
             logger.warning(
                 "ZmdLogBot battle detail unavailable: %s",
@@ -1407,23 +1235,25 @@ class ZmdLogBotPlugin(Star):
             yield event.plain_result("这份候选列表已过期或序号无效，请重新查询。")
             return
         entry, choice = resolved
-        if entry.view is CandidateView.WATCH:
-            yield event.plain_result(
-                await self._remember_watched_account(
-                    event,
+        if entry.view in {CandidateView.WATCH, CandidateView.WATCH_BOARD}:
+            origin = self._event_origin(event)
+            requester = self._event_user_key(event)
+            if entry.view is CandidateView.WATCH:
+                message = await self.watcher.remember_account(
+                    origin,
+                    requester,
                     account_id=choice.target.key,
                     display_name=choice.target.name,
                 )
-            )
-            return
-        if entry.view is CandidateView.WATCH_BOARD:
-            yield event.plain_result(
-                await self._remember_watched_board(event, choice.target.key)
-            )
+            else:
+                message = await self.watcher.remember_board(
+                    origin, requester, choice.target.key
+                )
+            yield event.plain_result(message)
             return
 
         async def render_pick() -> _DispatchOutcome:
-            cards = await self._list_hot_bosses()
+            cards = await self.data.list_hot_bosses()
             return await self._render_choice(
                 choice,
                 cards,
@@ -1466,26 +1296,26 @@ class ZmdLogBotPlugin(Star):
         if route.kind is RouteKind.ALIAS_LIST:
             names: dict[str, str] = {}
             try:
-                cards = await self._list_hot_bosses()
+                cards = await self.data.list_hot_bosses()
             except ZmdLogsClientError:
                 cards = ()
             for card in cards:
                 names[card.boss_slug] = card.boss_name
             return self._format_alias_list(names)
         if not self._event_is_admin(event):
-            return "只有机器人管理员可以修改别名。"
+            return messages.ALIAS_ADMIN_ONLY
         if route.kind is RouteKind.ALIAS_REMOVE:
             updated, removed = self.aliases.without_alias(route.query)
             if removed == 0:
-                return f"没有找到自定义别名「{_shorten(route.query)}」。"
+                return f"没有找到自定义别名「{shorten(route.query)}」。"
             if not self._save_aliases(updated):
-                return "别名文件写入失败，请检查数据目录权限。"
+                return messages.ALIAS_WRITE_FAILED
             return f"已删除别名「{route.query}」。"
 
         target_text, _, alias_text = route.query.partition(" ")
         aliases = tuple(dict.fromkeys(alias_text.split()))
         try:
-            cards = await self._list_hot_bosses()
+            cards = await self.data.list_hot_bosses()
         except ZmdLogsClientError:
             return "ZMDLogs 暂时不可用，无法核对目标，请稍后重试。"
         matcher = self._matchers.matcher_for(cards, self.aliases)
@@ -1496,7 +1326,7 @@ class ZmdLogBotPlugin(Star):
         choice = match.selected
         if match.status is not MatchStatus.MATCHED or choice is None:
             return (
-                f"没有唯一匹配到「{_shorten(target_text)}」，"
+                f"没有唯一匹配到「{shorten(target_text)}」，"
                 "请用更完整的榜单或副本名。"
             )
         exact_types = frozenset({TargetType.BOARD, TargetType.DUNGEON})
@@ -1519,7 +1349,7 @@ class ZmdLogBotPlugin(Star):
             aliases,
         )
         if not self._save_aliases(updated):
-            return "别名文件写入失败，请检查数据目录权限。"
+            return messages.ALIAS_WRITE_FAILED
         label = "榜单" if choice.target.target_type is TargetType.BOARD else "副本"
         return (
             f"已为{label}「{choice.target.name}」添加别名："
@@ -1550,620 +1380,9 @@ class ZmdLogBotPlugin(Star):
         self.aliases = updated
         return True
 
-    async def _handle_watch_route(
-        self,
-        route: RouteRequest,
-        event: AstrMessageEvent,
-    ) -> str:
-        """Maintain the watch list of this chat, in text; nothing is rendered."""
-
-        origin = self._event_origin(event)
-        if not origin:
-            # Without a real origin every chat would share one list and the
-            # notices would have nowhere to go.
-            return _NO_ORIGIN_MESSAGE
-        command = self._command_prefix(event) + "zmdlog"
-        if route.kind is RouteKind.WATCH_LIST:
-            # Reviewing and pruning stay available when polling is switched
-            # off; only adding is refused.
-            return format_watchlist(
-                self.watchlist.accounts_for(origin),
-                command=command,
-                boards=self.watchlist.boards_for(origin),
-            )
-        if route.kind is RouteKind.WATCH_BOARD_REMOVE:
-            boards = self.watchlist.resolve_board_matches(origin, route.query)
-            if len(boards) > 1:
-                names = "、".join(board.label for board in boards[:5])
-                return (
-                    f"「{_shorten(route.query)}」匹配到多个关注的榜单：{names}，"
-                    "请改用序号。"
-                )
-            if not boards:
-                return (
-                    f"关注列表里没有榜单「{_shorten(route.query)}」，"
-                    f"发送 {command} 关注 查看当前列表与序号。"
-                )
-            board = boards[0]
-            if not board.removable_by(
-                self._event_user_key(event),
-                is_admin=self._event_is_admin(event),
-            ):
-                return "只有添加这条关注的人或机器人管理员可以取消它。"
-            if not self._save_watchlist(
-                self.watchlist.without_board(origin, board.boss_slug)
-            ):
-                return "关注列表写入失败，请检查数据目录权限。"
-            self._forget_board_snapshot(board.boss_slug)
-            return f"已取消关注榜单「{board.label}」。"
-        if route.kind is RouteKind.WATCH_REMOVE:
-            matches = self.watchlist.resolve_matches(origin, route.query)
-            if len(matches) > 1:
-                names = "、".join(entry.display_name for entry in matches[:5])
-                return (
-                    f"「{_shorten(route.query)}」匹配到多个关注：{names}，"
-                    "请改用序号。"
-                )
-            if not matches:
-                return (
-                    f"关注列表里没有「{_shorten(route.query)}」，"
-                    f"发送 {command} 关注 查看当前列表与序号。"
-                )
-            account = matches[0]
-            if not account.removable_by(
-                self._event_user_key(event),
-                is_admin=self._event_is_admin(event),
-            ):
-                return "只有添加这条关注的人或机器人管理员可以取消它。"
-            if not self._save_watchlist(
-                self.watchlist.without_account(origin, account.account_id)
-            ):
-                return "关注列表写入失败，请检查数据目录权限。"
-            self._forget_rank_snapshot(account.account_id)
-            return f"已取消关注 {account.display_name}。"
-        if not self.settings.rank_watch_enabled:
-            return _WATCH_DISABLED_MESSAGE
-        if route.kind is RouteKind.WATCH_BOARD_ADD:
-            return await self._add_watched_board(route.query, event)
-        return await self._add_watched_account(route.query, event)
-
-    async def _add_watched_board(
-        self,
-        query: str,
-        event: AstrMessageEvent,
-    ) -> str:
-        """Resolve a board keyword the way queries do, then remember it.
-
-        Dungeon and scope hits are flattened to their boards: the watch is on
-        one board's top three, so several boards become a pick list.
-        """
-
-        try:
-            cards = await self._list_hot_bosses()
-        except ZmdLogsClientError as exc:
-            logger.warning("ZmdLogBot request failed: %s", type(exc).__name__)
-            return _UPSTREAM_UNAVAILABLE_MESSAGE
-        matcher = self._matchers.matcher_for(cards, self.aliases)
-        match = matcher.match(query, allowed_types=_BOARD_QUERY_TARGETS)
-        if match.status is MatchStatus.AMBIGUOUS:
-            choices = match.candidates
-        elif match.status is MatchStatus.MATCHED and match.selected is not None:
-            choices = (match.selected,)
-        else:
-            choices = ()
-        choices = matcher.expand_to_boards(choices)
-        if not choices:
-            return f"没有找到与「{_shorten(query)}」匹配的榜单。"
-        if len(choices) == 1:
-            return await self._remember_watched_board(event, choices[0].target.key)
-        entry = self.candidates.remember(
-            query,
-            choices,
-            view=CandidateView.WATCH_BOARD,
-            origin=self._event_origin(event),
-        )
-        return format_candidates(entry, ttl_seconds=self.candidates.ttl_seconds)
-
-    async def _remember_watched_board(
-        self,
-        event: AstrMessageEvent,
-        boss_slug: str,
-    ) -> str:
-        origin = self._event_origin(event)
-        if not origin:
-            return _NO_ORIGIN_MESSAGE
-        try:
-            cards = await self._list_hot_bosses()
-        except ZmdLogsClientError as exc:
-            logger.warning("ZmdLogBot request failed: %s", type(exc).__name__)
-            return _UPSTREAM_UNAVAILABLE_MESSAGE
-        card = next((card for card in cards if card.boss_slug == boss_slug), None)
-        if card is None:
-            return "没有找到这个榜单，可能已下线或暂未公开。"
-        updated, added = self.watchlist.with_board(
-            origin,
-            WatchedBoard(
-                boss_slug=card.boss_slug,
-                boss_name=card.boss_name,
-                dungeon_name=card.dungeon_name,
-                added_by=self._event_user_key(event),
-                added_at=utc_now_text(),
-            ),
-        )
-        if not self._save_watchlist(updated):
-            return "关注列表写入失败，请检查数据目录权限。"
-        boards = self.watchlist.boards_for(origin)
-        position = next(
-            (
-                index
-                for index, board in enumerate(boards, start=1)
-                if board.boss_slug == boss_slug
-            ),
-            len(boards),
-        )
-        label = board_label(card.dungeon_name, card.boss_name)
-        if not added:
-            return f"榜单「{label}」已经在关注列表里（第 {position} 位）。"
-        self._seed_board_snapshot(card)
-        return (
-            f"已关注榜单「{label}」，序号 {position}。"
-            "前三名有新纪录时会在这里通报。"
-        )
-
-    def _seed_board_snapshot(self, card: HotBossCard) -> None:
-        """Record the current top so the first notice needs one more cycle.
-
-        Only when there is no baseline yet, for the same reason as accounts:
-        another chat may already be waiting on the existing one.
-        """
-
-        if card.boss_slug in self.board_snapshots:
-            return
-        snapshots = dict(self.board_snapshots)
-        snapshots[card.boss_slug] = build_board_snapshot(
-            card, checked_at=utc_now_text()
-        )
-        self._save_board_snapshots(snapshots)
-
-    def _forget_board_snapshot(self, boss_slug: str) -> None:
-        if boss_slug in self.watchlist.origins_by_board():
-            return
-        if boss_slug not in self.board_snapshots:
-            return
-        snapshots = dict(self.board_snapshots)
-        del snapshots[boss_slug]
-        self._save_board_snapshots(snapshots)
-
-    def _save_board_snapshots(self, snapshots: dict[str, BoardSnapshot]) -> None:
-        self.board_snapshots = snapshots
-        if self.board_snapshot_path is None:
-            return
-        if save_json(self.board_snapshot_path, board_snapshot_payload(snapshots)):
-            self._board_snapshot_write_failed = False
-            return
-        if not self._board_snapshot_write_failed:
-            self._board_snapshot_write_failed = True
-            logger.warning(
-                "ZmdLogBot could not persist the board snapshot; "
-                "check the plugin data directory."
-            )
-
-    async def _run_board_watch_cycle(self) -> None:
-        """One fresh ``hot-bosses`` read covers every watched board.
-
-        The read bypasses the query cache on purpose: that cache may serve a
-        stale payload or the on-disk snapshot, and diffing an *older* top list
-        against the baseline would announce records that merely fell out of
-        the top as new.
-        """
-
-        watched = self.watchlist.origins_by_board()
-        if not watched:
-            if self.board_snapshots:
-                self._save_board_snapshots({})
-            return
-        try:
-            cards, _ = await self.client.list_hot_bosses_with_payload()
-        except ZmdLogsClientError as exc:
-            logger.warning(
-                "ZmdLogBot board watch skipped this cycle: %s",
-                type(exc).__name__,
-            )
-            return
-        by_slug = {card.boss_slug: card for card in cards}
-        checked_at = utc_now_text()
-        snapshots: dict[str, BoardSnapshot] = {}
-        pending: dict[str, list[tuple[str, str]]] = {}
-        for boss_slug, origins in watched.items():
-            card = by_slug.get(boss_slug)
-            if card is None:
-                # Gone from the index: keep the baseline, announce nothing.
-                continue
-            previous = self.board_snapshots.get(boss_slug)
-            snapshots[boss_slug] = build_board_snapshot(card, checked_at=checked_at)
-            if not board_snapshot_is_usable(
-                previous,
-                now=checked_at,
-                max_age_seconds=self.settings.rank_snapshot_max_age_seconds,
-            ):
-                continue
-            change = find_top_run_changes(previous, card)
-            if change is None:
-                continue
-            notice = format_board_notice(change, web_base_url=self.web_base_url)
-            for origin in origins:
-                pending.setdefault(origin, []).append((boss_slug, notice))
-        # Same merge-on-live-state rule as the account cycle: 关注 / 取关 may
-        # have run while the request was in flight.
-        watching = self.watchlist.origins_by_board()
-        merged = dict(self.board_snapshots)
-        merged.update(snapshots)
-        self._save_board_snapshots(
-            {slug: snapshot for slug, snapshot in merged.items() if slug in watching}
-        )
-        for origin, entries in pending.items():
-            notices = tuple(
-                notice
-                for boss_slug, notice in entries
-                if origin in watching.get(boss_slug, ())
-            )
-            if notices:
-                await self._send_notice(origin, join_board_notices(notices))
-
-    async def _add_watched_account(
-        self,
-        query: str,
-        event: AstrMessageEvent,
-    ) -> str:
-        """Resolve an id, link, or nickname, then remember it for this chat."""
-
-        try:
-            account_id = parse_account_reference(
-                query,
-                web_base_url=self.web_base_url,
-            )
-        except PublicReferenceError:
-            account_id = None
-        stripped = query.strip()
-        try:
-            if account_id is not None:
-                account = await self._get_public_user_rankings(account_id)
-                return await self._remember_watched_account(
-                    event,
-                    account_id=account.account_id,
-                    display_name=account.account_display_name,
-                )
-            if not MIN_ACCOUNT_SEARCH_LENGTH <= len(stripped) <= 64:
-                return (
-                    "请提供公开昵称（至少 2 个字符）、accountId "
-                    "或 ZMDLogs 账号主页链接。"
-                )
-            search = await self.client.search_public_accounts(
-                stripped,
-                limit=MAX_CANDIDATES,
-            )
-        except ZmdLogsAPIError as exc:
-            logger.warning("ZmdLogBot API request failed: %s", exc.code)
-            if exc.status_code == 404:
-                return "没有找到这个公开账号，或该账号暂无公开榜单记录。"
-            return "ZMDLogs 暂时不可用，请稍后重试。"
-        except ZmdLogsClientError as exc:
-            logger.warning("ZmdLogBot request failed: %s", type(exc).__name__)
-            return "ZMDLogs 暂时不可用，请稍后重试。"
-        if not search.accounts:
-            return f"没有找到昵称包含「{_shorten(stripped)}」的公开账号。"
-        if len(search.accounts) == 1 and not search.has_more:
-            hit = search.accounts[0]
-            return await self._remember_watched_account(
-                event,
-                account_id=hit.account_id,
-                display_name=hit.account_display_name,
-            )
-        entry = self.candidates.remember(
-            stripped,
-            tuple(_account_choice(hit, stripped) for hit in search.accounts),
-            view=CandidateView.WATCH,
-            origin=self._event_origin(event),
-        )
-        return format_candidates(
-            entry,
-            ttl_seconds=self.candidates.ttl_seconds,
-            note=(
-                "还有更多同名结果未列出，可输入更完整的昵称。"
-                if search.has_more
-                else None
-            ),
-        )
-
-    async def _remember_watched_account(
-        self,
-        event: AstrMessageEvent,
-        *,
-        account_id: str,
-        display_name: str,
-    ) -> str:
-        origin = self._event_origin(event)
-        if not origin:
-            return _NO_ORIGIN_MESSAGE
-        updated, added = self.watchlist.with_account(
-            origin,
-            WatchedAccount(
-                account_id=account_id,
-                display_name=display_name,
-                added_by=self._event_user_key(event),
-                added_at=utc_now_text(),
-            ),
-        )
-        if not self._save_watchlist(updated):
-            return "关注列表写入失败，请检查数据目录权限。"
-        accounts = self.watchlist.accounts_for(origin)
-        position = next(
-            (
-                index
-                for index, account in enumerate(accounts, start=1)
-                if account.account_id == account_id
-            ),
-            len(accounts),
-        )
-        if not added:
-            return f"{display_name} 已经在关注列表里（第 {position} 位）。"
-        await self._seed_rank_snapshot(account_id)
-        return (
-            f"已关注 {display_name}（{account_id}），序号 {position}。"
-            "TA 掉出榜单原名次时会在这里通报。"
-        )
-
-    async def _seed_rank_snapshot(self, account_id: str) -> None:
-        """Record current ranks so the first notice needs only one more cycle.
-
-        Only when there is no baseline yet: refreshing an existing one would
-        swallow a drop another chat is already waiting to be told about.
-        """
-
-        if account_id in self.rank_snapshots:
-            return
-        try:
-            account = await self._get_public_user_rankings(account_id)
-        except ZmdLogsClientError as exc:
-            logger.warning(
-                "ZmdLogBot could not seed a rank baseline: %s",
-                type(exc).__name__,
-            )
-            return
-        checked_at = utc_now_text()
-        snapshots = dict(self.rank_snapshots)
-        snapshots[account_id] = build_snapshot(account, checked_at=checked_at)
-        self._save_rank_snapshots(snapshots)
-        # The trace starts with the ranks held at 关注 time, so the trend page
-        # has a left edge before the first move.
-        history, changed = record_rankings(
-            self.rank_history, account, checked_at=checked_at
-        )
-        if changed:
-            self._save_rank_history(history)
-
-    def _forget_rank_snapshot(self, account_id: str) -> None:
-        """Drop the baseline and trace once nobody watches the account."""
-
-        if account_id in self.watchlist.origins_by_account():
-            return
-        if account_id in self.rank_snapshots:
-            snapshots = dict(self.rank_snapshots)
-            del snapshots[account_id]
-            self._save_rank_snapshots(snapshots)
-        if account_id in self.rank_history:
-            history = dict(self.rank_history)
-            del history[account_id]
-            self._save_rank_history(history)
-
-    def _save_watchlist(self, updated: WatchList) -> bool:
-        if self.watchlist_path is None or not save_json(
-            self.watchlist_path,
-            updated.to_payload(),
-        ):
-            return False
-        self.watchlist = updated
-        return True
-
-    def _start_rank_watch(self) -> None:
-        task = self._rank_watch_task
-        if not self.settings.rank_watch_enabled or (
-            task is not None and not task.done()
-        ):
-            return
-        if self.watchlist_path is None:
-            logger.warning(
-                "ZmdLogBot rank watch is off: no writable plugin data directory."
-            )
-            return
-        self._rank_watch_task = asyncio.create_task(self._rank_watch_loop())
-
-    async def _rank_watch_loop(self) -> None:
-        """Poll forever; one failed cycle must never end the loop."""
-
-        while True:
-            interval = self.settings.rank_watch_interval_seconds
-            await asyncio.sleep(interval + random.uniform(0.0, interval * 0.1))
-            try:
-                await self._run_rank_watch_cycle()
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("ZmdLogBot rank watch cycle failed")
-            try:
-                await self._run_board_watch_cycle()
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("ZmdLogBot board watch cycle failed")
-
-    async def _run_rank_watch_cycle(self) -> None:
-        """One pass over every watched account, at most one request each."""
-
-        watched = tuple(self.watchlist.origins_by_account().items())
-        if not watched:
-            if self.rank_snapshots:
-                self._save_rank_snapshots({})
-            return
-        semaphore = asyncio.Semaphore(_RANK_WATCH_CONCURRENCY)
-        results = await asyncio.gather(
-            *(
-                self._poll_watched_account(account_id, semaphore)
-                for account_id, _ in watched
-            ),
-            return_exceptions=True,
-        )
-        snapshots: dict[str, AccountSnapshot] = {}
-        pending: dict[str, list[tuple[str, str]]] = {}
-        live_names: dict[str, str] = {}
-        history = self.rank_history
-        history_changed = False
-        for (account_id, origins), result in zip(watched, results, strict=True):
-            if isinstance(result, tuple):
-                snapshot, notice, account = result
-                snapshots[account_id] = snapshot
-                live_names[account_id] = account.account_display_name
-                history, changed = record_rankings(
-                    history,
-                    account,
-                    checked_at=snapshot.checked_at or utc_now_text(),
-                )
-                history_changed = history_changed or changed
-                if notice is not None:
-                    for origin in origins:
-                        pending.setdefault(origin, []).append(
-                            (account_id, notice)
-                        )
-                continue
-            if isinstance(result, BaseException):
-                logger.warning(
-                    "ZmdLogBot rank watch failed for one account: %s",
-                    type(result).__name__,
-                )
-            # Unreachable this cycle: keep the last known ranks so the next
-            # comparison runs against real data instead of against a gap.
-            previous = self.rank_snapshots.get(account_id)
-            if previous is not None:
-                snapshots[account_id] = previous
-        # 关注 and 取关 can edit both maps while this cycle is awaiting, so
-        # merge on top of the current state instead of installing the map this
-        # cycle started from, and forget whoever is no longer watched.
-        watching = self.watchlist.origins_by_account()
-        merged = dict(self.rank_snapshots)
-        merged.update(snapshots)
-        self._save_rank_snapshots(
-            {
-                account_id: snapshot
-                for account_id, snapshot in merged.items()
-                if account_id in watching
-            }
-        )
-        kept_history = {
-            account_id: entry
-            for account_id, entry in history.items()
-            if account_id in watching
-        }
-        if history_changed or len(kept_history) != len(history):
-            self._save_rank_history(kept_history)
-        renamed, changed = self.watchlist.with_display_names(live_names)
-        if changed:
-            self._save_watchlist(renamed)
-        # One new record demotes every watched account below it, so send each
-        # chat a single merged message instead of a burst of near-identical
-        # ones — skipping anything unfollowed while the cycle was running.
-        for origin, entries in pending.items():
-            notices = tuple(
-                notice
-                for account_id, notice in entries
-                if origin in watching.get(account_id, ())
-            )
-            if notices:
-                await self._send_notice(origin, join_rank_drop_notices(notices))
-
-    async def _poll_watched_account(
-        self,
-        account_id: str,
-        semaphore: asyncio.Semaphore,
-    ) -> tuple[AccountSnapshot, str | None, PublicUserRankings] | None:
-        """Fetch one account and return its ranks, notice text and the response.
-
-        Every request this account needs stays inside the semaphore, and
-        sending is left to the caller so that one chat receives one merged
-        message per cycle rather than one message per watched account.
-        """
-
-        async with semaphore:
-            try:
-                account = await self._get_public_user_rankings(account_id)
-            except ZmdLogsClientError as exc:
-                logger.warning(
-                    "ZmdLogBot rank watch skipped one account: %s",
-                    type(exc).__name__,
-                )
-                return None
-            checked_at = utc_now_text()
-            snapshot = build_snapshot(account, checked_at=checked_at)
-            previous = self.rank_snapshots.get(account_id)
-            if not snapshot_is_usable(
-                previous,
-                now=checked_at,
-                max_age_seconds=self.settings.rank_snapshot_max_age_seconds,
-            ):
-                # Too old to compare against, so re-seed quietly instead of
-                # announcing everything that moved while nobody was looking.
-                return snapshot, None, account
-            drops = find_rank_drops(
-                previous,
-                account,
-                rank_threshold=self.settings.rank_watch_rank_threshold,
-            )
-            if not drops:
-                return snapshot, None, account
-            notice = format_rank_drop_notice(
-                account.account_display_name,
-                await self._describe_drops(
-                    drops,
-                    account_id=account.account_id,
-                    since=previous.checked_at,
-                ),
-                web_base_url=self.web_base_url,
-            )
-        return snapshot, notice, account
-
-    async def _describe_drops(
-        self,
-        drops: tuple[RankDrop, ...],
-        *,
-        account_id: str,
-        since: str | None,
-    ) -> tuple[RankDrop, ...]:
-        """Look up what appeared above the account, for the drops shown.
-
-        Only the boards the notice actually prints are fetched, so one account
-        can never cost more than ``MAX_DROPS_PER_NOTICE`` extra requests.
-        """
-
-        described: list[RankDrop] = []
-        for drop in drops[:MAX_DROPS_PER_NOTICE]:
-            try:
-                ranking = await self._get_boss_ranking(drop.boss_slug)
-            except ZmdLogsClientError:
-                described.append(drop)
-                continue
-            described.append(
-                replace(
-                    drop,
-                    new_record_above=find_new_record_above(
-                        ranking,
-                        account_id=account_id,
-                        fallback_rank=drop.current_rank,
-                        since=since,
-                    ),
-                )
-            )
-        return tuple(described) + drops[MAX_DROPS_PER_NOTICE:]
-
     async def _send_notice(self, origin: str, text: str) -> None:
+        """Deliver one rank-watch notice; the only push path in the plugin."""
+
         if Plain is None:
             logger.warning(
                 "ZmdLogBot cannot build a rank notice on this AstrBot version."
@@ -2188,30 +1407,6 @@ class ZmdLogBotPlugin(Star):
         if delivered is False:
             logger.warning(
                 "ZmdLogBot rank notice was refused; the chat may be gone."
-            )
-
-    def _save_rank_snapshots(
-        self,
-        snapshots: dict[str, AccountSnapshot],
-    ) -> None:
-        """Persist the baseline; a silent failure would replay old notices.
-
-        Written every cycle rather than only when a rank moved: ``checked_at``
-        is what bounds staleness, so a stored baseline that stops advancing
-        would eventually be rejected after a restart and silently re-seeded.
-        """
-
-        self.rank_snapshots = snapshots
-        if self.rank_snapshot_path is None:
-            return
-        if save_json(self.rank_snapshot_path, snapshot_payload(snapshots)):
-            self._rank_snapshot_write_failed = False
-            return
-        if not self._rank_snapshot_write_failed:
-            self._rank_snapshot_write_failed = True
-            logger.warning(
-                "ZmdLogBot could not persist the rank snapshot; "
-                "check the plugin data directory."
             )
 
     @staticmethod
@@ -2369,92 +1564,6 @@ class ZmdLogBotPlugin(Star):
             )
             return None
 
-    async def _list_hot_bosses(self) -> tuple[HotBossCard, ...]:
-        result = await self.hot_boss_cache.get_or_load(
-            "all_board_top3",
-            self._fetch_hot_bosses,
-            allow_stale_on_error=True,
-        )
-        if result.state is CacheState.STALE:
-            logger.warning(
-                "ZmdLogBot is using stale hot-bosses data after refresh failure."
-            )
-        return result.value
-
-    async def _fetch_hot_bosses(self) -> tuple[HotBossCard, ...]:
-        """Fetch the board index; fall back to the on-disk snapshot if needed."""
-
-        snapshot_path = (
-            None if self.data_dir is None else self.data_dir / _HOT_BOSSES_SNAPSHOT
-        )
-        try:
-            cards, payload = await self.client.list_hot_bosses_with_payload()
-        except ZmdLogsClientError as upstream_error:
-            payload = None if snapshot_path is None else load_json(snapshot_path)
-            if payload is None:
-                raise
-            try:
-                cards = parse_hot_bosses(payload)
-            except Exception:
-                # A corrupt snapshot must not mask the real upstream failure.
-                raise upstream_error from None
-            logger.warning(
-                "ZmdLogBot is serving the board index from the local snapshot."
-            )
-            return cards
-        if snapshot_path is not None:
-            save_json(snapshot_path, payload)
-        return cards
-
-    async def _get_boss_ranking(self, boss_slug: str) -> BossRanking:
-        result = await self.boss_ranking_cache.get_or_load(
-            boss_slug,
-            lambda: self.client.get_boss_rankings(boss_slug),
-        )
-        return result.value
-
-    async def _get_character_statistics(
-        self,
-        boss_slug: str | None,
-        *,
-        time_range: str,
-        potential: str,
-    ) -> CharacterStatistics:
-        key = (boss_slug or "all", time_range, potential)
-        result = await self.character_stats_cache.get_or_load(
-            key,
-            lambda: self.client.get_character_statistics(
-                boss_slug,
-                time_range=time_range,
-                potential=potential,
-            ),
-        )
-        return result.value
-
-    async def _get_public_user_rankings(
-        self,
-        account_id: str,
-    ) -> PublicUserRankings:
-        result = await self.account_cache.get_or_load(
-            account_id,
-            lambda: self.client.get_public_user_rankings(account_id),
-        )
-        return result.value
-
-    async def _get_battle_detail(self, battle_id: str) -> BattleDetailSummary:
-        result = await self.battle_cache.get_or_load(
-            battle_id,
-            lambda: self.client.get_battle_detail(battle_id),
-        )
-        return result.value
-
-    async def _get_battle_export(self, battle_id: str) -> BattleExport:
-        result = await self.battle_export_cache.get_or_load(
-            battle_id,
-            lambda: self.client.get_battle_export(battle_id),
-        )
-        return result.value
-
     async def _claim_auto_expand(self, origin: str, battle_id: str) -> bool:
         now = time.monotonic()
         key = (origin, battle_id)
@@ -2493,12 +1602,12 @@ class ZmdLogBotPlugin(Star):
     ) -> str:
         if error.status_code == 404:
             if route.kind in {RouteKind.ACCOUNT_QUERY, RouteKind.TREND_QUERY}:
-                return "没有找到这个公开账号，或该账号暂无公开榜单记录。"
+                return messages.ACCOUNT_NOT_FOUND
             if (
                 route.kind in _BATTLE_STYLE_ROUTES
                 or route.kind is RouteKind.COMPARE_QUERY
             ):
-                return "战报不存在、未公开或已删除。"
+                return messages.BATTLE_NOT_FOUND
             if route.kind in {
                 RouteKind.RANKING_QUERY,
                 RouteKind.SMART_QUERY,
@@ -2506,15 +1615,15 @@ class ZmdLogBotPlugin(Star):
                 RouteKind.ROSTER_QUERY,
             }:
                 return cls._board_api_error_message(error)
-        return "ZMDLogs 暂时不可用，请稍后重试。"
+        return messages.UPSTREAM_UNAVAILABLE
 
     @staticmethod
     def _board_api_error_message(error: ZmdLogsAPIError) -> str:
         if error.status_code == 404:
             if error.code == _CHARACTER_STATS_UNAVAILABLE:
-                return "危机合约不提供角色统计。"
-            return "没有找到这个榜单，可能已下线或暂未公开。"
-        return "ZMDLogs 暂时不可用，请稍后重试。"
+                return messages.CRISIS_CONTRACT_NO_STATISTICS
+            return messages.BOARD_NOT_FOUND
+        return messages.UPSTREAM_UNAVAILABLE
 
     @staticmethod
     def _looks_like_direct_slug(query: str) -> bool:
@@ -2523,23 +1632,8 @@ class ZmdLogBotPlugin(Star):
     async def terminate(self) -> None:
         """Release HTTP, browser, and generated-image resources."""
 
-        task = self._rank_watch_task
-        if task is not None:
-            self._rank_watch_task = None
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                logger.warning("ZmdLogBot rank watch task ended with an error.")
-        await self.hot_boss_cache.close()
-        await self.boss_ranking_cache.close()
-        await self.account_cache.close()
-        await self.battle_cache.close()
-        await self.battle_export_cache.close()
-        await self.character_stats_cache.close()
-        await self.character_boss_cache.close()
+        await self.watcher.stop()
+        await self.data.close()
         try:
             await self.client.close()
         finally:
@@ -2548,42 +1642,10 @@ class ZmdLogBotPlugin(Star):
         logger.info("ZmdLogBot plugin terminated.")
 
 
-def _shorten(text: str, limit: int = _ECHO_LIMIT) -> str:
-    """Cut user text echoed in a reply so a huge message is never repeated."""
-
-    return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
 def _battle_link_error_message(error: ZmdLogsAPIError) -> str:
     if error.status_code == 404:
-        return "链接对应的公开战报不存在、未公开或已删除。"
-    return _UPSTREAM_UNAVAILABLE_MESSAGE
-
-
-def _account_choice(hit, query: str) -> MatchChoice:
-    """Wrap one search hit in the candidate shape the pick list understands."""
-
-    return _account_choice_from(hit.account_id, hit.account_display_name, query)
-
-
-def _account_choice_from(
-    account_id: str,
-    display_name: str,
-    query: str,
-) -> MatchChoice:
-    return MatchChoice(
-        target=MatchTarget(
-            target_type=TargetType.ACCOUNT,
-            key=account_id,
-            name=display_name,
-            dungeon_names=(),
-            boss_slugs=(),
-            query_text=query,
-        ),
-        level=MatchLevel.STANDARD_EXACT,
-        score=1.0,
-        matched_text=display_name,
-    )
+        return messages.BATTLE_LINK_NOT_FOUND
+    return messages.UPSTREAM_UNAVAILABLE
 
 
 def _route_view(route: RouteRequest) -> CandidateView:

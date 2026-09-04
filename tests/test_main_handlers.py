@@ -11,7 +11,6 @@ import asyncio
 import sys
 import tempfile
 import unittest
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -155,8 +154,8 @@ class HandlerTests(unittest.TestCase):
             # this stub the real client would go to the network.
             raise ZmdLogsClientError("offline")
 
-        self.plugin._list_hot_bosses = list_hot_bosses
-        self.plugin._get_battle_export = no_export
+        self.plugin.data.list_hot_bosses = list_hot_bosses
+        self.plugin.data.get_battle_export = no_export
 
     def tearDown(self) -> None:
         plugin_main.StarTools = self._star_tools
@@ -170,7 +169,7 @@ class HandlerTests(unittest.TestCase):
         async def missing(battle_id):
             raise ZmdLogsAPIError(404, "battle_not_found", "gone")
 
-        self.plugin._get_battle_detail = missing
+        self.plugin.data.get_battle_detail = missing
         link = "看 https://zmdlogs.com/battle/btl_upload_abcdef123456"
 
         first = self._expand(link)
@@ -185,7 +184,7 @@ class HandlerTests(unittest.TestCase):
         async def down(battle_id):
             raise ZmdLogsClientError("down")
 
-        self.plugin._get_battle_detail = down
+        self.plugin.data.get_battle_detail = down
         link = "看 https://zmdlogs.com/battle/btl_upload_abcdef123456"
 
         first = self._expand(link)
@@ -204,7 +203,7 @@ class HandlerTests(unittest.TestCase):
         async def fallback(error):
             return "/tmp/fallback.png"
 
-        self.plugin._get_battle_detail = detail
+        self.plugin.data.get_battle_detail = detail
         self.plugin.renderer.render_battle = capture_fails
         self.plugin._render_with_astrbot = fallback
         link = "看 https://zmdlogs.com/battle/btl_upload_abcdef123456"
@@ -235,7 +234,7 @@ class HandlerTests(unittest.TestCase):
             raise ZmdLogsAPIError(404, "account_not_found", "gone")
 
         self.plugin.client.search_public_accounts = search
-        self.plugin._get_public_user_rankings = gone
+        self.plugin.data.get_public_user_rankings = gone
 
         (kind, listing), = self._zmdlog("zmdlog 账号 CPU")
         self.assertEqual(kind, "plain")
@@ -283,9 +282,9 @@ class HandlerTests(unittest.TestCase):
         async def account(account_id):
             return parse_public_user_rankings(public_user_rankings_payload())
 
-        self.plugin._get_boss_ranking = board_missing
+        self.plugin.data.get_boss_ranking = board_missing
         self.plugin.client.search_public_accounts = search
-        self.plugin._get_public_user_rankings = account
+        self.plugin.data.get_public_user_rankings = account
 
         (kind, result), = self._zmdlog("zmdlog Re-Zero")
 
@@ -324,7 +323,7 @@ class HandlerTests(unittest.TestCase):
         async def ranking(boss_slug):
             return parse_boss_ranking(ranking_payload_with_rows())
 
-        self.plugin._get_boss_ranking = ranking
+        self.plugin.data.get_boss_ranking = ranking
 
         (kind, result), = self._zmdlog("zmdlog 三位一体")
 
@@ -342,8 +341,8 @@ class HandlerTests(unittest.TestCase):
             fetched.append(battle_id)
             return parse_battle_detail(battle_detail_payload())
 
-        self.plugin._get_boss_ranking = ranking
-        self.plugin._get_battle_detail = detail
+        self.plugin.data.get_boss_ranking = ranking
+        self.plugin.data.get_battle_detail = detail
 
         (kind, result), = self._zmdlog("zmdlog 配装 三位一体 2")
         self.assertEqual((kind, result), ("image", "/tmp/loadout.png"))
@@ -364,7 +363,7 @@ class HandlerTests(unittest.TestCase):
             payload["battle"]["roster"] = []
             return parse_battle_detail(payload)
 
-        self.plugin._get_battle_detail = detail
+        self.plugin.data.get_battle_detail = detail
 
         (kind, reply), = self._zmdlog("zmdlog 技能 btl_upload_abcdef123456")
         self.assertEqual((kind, reply), ("plain", "这份战报没有技能统计数据。"))
@@ -380,12 +379,12 @@ class HandlerTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
-        # Settings are frozen; swap the whole object to switch the feature on.
-        self.plugin.settings = replace(self.plugin.settings, rank_watch_enabled=True)
-        self.plugin.watchlist_path = root / "watchlist.json"
-        self.plugin.rank_snapshot_path = root / "rank-snapshot.json"
-        self.plugin.board_snapshot_path = root / "board-snapshot.json"
-        self.plugin.rank_history_path = root / "rank-history.json"
+        watcher = self.plugin.watcher
+        watcher.enabled = True
+        watcher.watchlist_store.path = root / "watchlist.json"
+        watcher.rank_snapshot_store.path = root / "rank-snapshot.json"
+        watcher.board_snapshot_store.path = root / "board-snapshot.json"
+        watcher.history_store.path = root / "rank-history.json"
 
     def _hot_bosses_with_run(self, battle_id: str, nickname: str):
         payload = hot_bosses_payload()
@@ -406,8 +405,8 @@ class HandlerTests(unittest.TestCase):
         (kind, reply), = self._zmdlog("zmdlog 关注 榜单 三位一体")
         self.assertEqual(kind, "plain")
         self.assertIn("已关注榜单「危境再现 · 测试区 · 三位一体」，序号 1", reply)
-        self.assertIn(slug, self.plugin.board_snapshots)
-        self.assertTrue(self.plugin.board_snapshot_path.exists())
+        self.assertIn(slug, self.plugin.watcher.board_snapshots)
+        self.assertTrue(self.plugin.watcher.board_snapshot_store.path.exists())
 
         (_, again), = self._zmdlog("zmdlog 关注 榜单 三位一体")
         self.assertIn("已经在关注列表里", again)
@@ -419,8 +418,8 @@ class HandlerTests(unittest.TestCase):
 
         (_, removed), = self._zmdlog("zmdlog 取关 榜单 1")
         self.assertIn("已取消关注榜单", removed)
-        self.assertNotIn(slug, self.plugin.board_snapshots)
-        self.assertEqual(self.plugin.watchlist.boards_for(GROUP), ())
+        self.assertNotIn(slug, self.plugin.watcher.board_snapshots)
+        self.assertEqual(self.plugin.watcher.watchlist.boards_for(GROUP), ())
 
     def test_board_watch_cycle_reports_a_new_top_run_once(self) -> None:
         self._enable_watch_storage()
@@ -437,9 +436,9 @@ class HandlerTests(unittest.TestCase):
             sent.append((origin, text))
 
         self.plugin.client.list_hot_bosses_with_payload = fetch
-        self.plugin._send_notice = send
+        self.plugin.watcher.notify = send
 
-        run(self.plugin._run_board_watch_cycle())
+        run(self.plugin.watcher.run_board_cycle())
 
         self.assertEqual(len(sent), 1)
         origin, text = sent[0]
@@ -448,17 +447,17 @@ class HandlerTests(unittest.TestCase):
         self.assertIn("第 1 名 · shiki · 主C 诀 · 用时 0:09.771", text)
         self.assertIn("https://zmdlogs.com/battle/btl_upload_new000000001", text)
         self.assertEqual(
-            self.plugin.board_snapshots[slug].runs[0].battle_id,
+            self.plugin.watcher.board_snapshots[slug].runs[0].battle_id,
             "btl_upload_new000000001",
         )
 
-        run(self.plugin._run_board_watch_cycle())
+        run(self.plugin.watcher.run_board_cycle())
         self.assertEqual(len(sent), 1)
 
     def test_a_stale_board_baseline_is_reseeded_silently(self) -> None:
         self._enable_watch_storage()
         slug = "dung01_group_bossrush02"
-        self.plugin.watchlist, _ = self.plugin.watchlist.with_board(
+        self.plugin.watcher.watchlist, _ = self.plugin.watcher.watchlist.with_board(
             GROUP,
             WatchedBoard(
                 boss_slug=slug,
@@ -468,7 +467,7 @@ class HandlerTests(unittest.TestCase):
                 added_at="2026-08-22T10:00:00+00:00",
             ),
         )
-        self.plugin.board_snapshots = {
+        self.plugin.watcher.board_snapshots = {
             slug: BoardSnapshot(runs=(), checked_at="2020-01-01T00:00:00+00:00")
         }
         fresh = self._hot_bosses_with_run("btl_upload_new000000002", "shiki")
@@ -481,13 +480,13 @@ class HandlerTests(unittest.TestCase):
             sent.append((origin, text))
 
         self.plugin.client.list_hot_bosses_with_payload = fetch
-        self.plugin._send_notice = send
+        self.plugin.watcher.notify = send
 
-        run(self.plugin._run_board_watch_cycle())
+        run(self.plugin.watcher.run_board_cycle())
 
         self.assertEqual(sent, [])
         self.assertEqual(
-            self.plugin.board_snapshots[slug].runs[0].battle_id,
+            self.plugin.watcher.board_snapshots[slug].runs[0].battle_id,
             "btl_upload_new000000002",
         )
 
@@ -497,7 +496,7 @@ class HandlerTests(unittest.TestCase):
         payload = public_user_rankings_payload()
         payload["accountDisplayName"] = name
         account = parse_public_user_rankings(payload)
-        self.plugin.rank_history, _ = record_rankings(
+        self.plugin.watcher.rank_history, _ = record_rankings(
             {}, account, checked_at="2026-09-01T00:00:00+00:00"
         )
 
@@ -508,7 +507,7 @@ class HandlerTests(unittest.TestCase):
             raise AssertionError("no upstream request expected")
 
         self.plugin.client.search_public_accounts = unexpected
-        self.plugin._get_public_user_rankings = unexpected
+        self.plugin.data.get_public_user_rankings = unexpected
 
         (kind, result), = self._zmdlog("zmdlog 趋势 usr_1234567890abcdef")
         self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
@@ -543,7 +542,7 @@ class HandlerTests(unittest.TestCase):
     def test_rank_watch_cycle_records_history_and_unfollowing_drops_it(self) -> None:
         self._enable_watch_storage()
         account_id = "usr_1234567890abcdef"
-        self.plugin.watchlist, _ = self.plugin.watchlist.with_account(
+        self.plugin.watcher.watchlist, _ = self.plugin.watcher.watchlist.with_account(
             GROUP,
             WatchedAccount(
                 account_id=account_id,
@@ -556,19 +555,19 @@ class HandlerTests(unittest.TestCase):
         async def account(requested_id):
             return parse_public_user_rankings(public_user_rankings_payload())
 
-        self.plugin._get_public_user_rankings = account
+        self.plugin.data.get_public_user_rankings = account
 
-        run(self.plugin._run_rank_watch_cycle())
+        run(self.plugin.watcher.run_account_cycle())
 
-        trace = self.plugin.rank_history[account_id]
+        trace = self.plugin.watcher.rank_history[account_id]
         self.assertEqual(trace.board("dung01_group_bossrush01").points[0].rank, 2)
-        self.assertTrue(self.plugin.rank_history_path.exists())
-        run(self.plugin._run_rank_watch_cycle())
+        self.assertTrue(self.plugin.watcher.history_store.path.exists())
+        run(self.plugin.watcher.run_account_cycle())
         self.assertEqual(len(trace.board("dung01_group_bossrush01").points), 1)
 
         (_, removed), = self._zmdlog("zmdlog 取关 1")
         self.assertIn("已取消关注", removed)
-        self.assertNotIn(account_id, self.plugin.rank_history)
+        self.assertNotIn(account_id, self.plugin.watcher.rank_history)
 
     # --- 技能轴 reads the export, not the detail --------------------------------
 
@@ -591,9 +590,9 @@ class HandlerTests(unittest.TestCase):
             received.append(kwargs)
             return "/tmp/timeline.png"
 
-        self.plugin._get_boss_ranking = ranking
-        self.plugin._get_battle_export = export
-        self.plugin._get_battle_detail = detail
+        self.plugin.data.get_boss_ranking = ranking
+        self.plugin.data.get_battle_export = export
+        self.plugin.data.get_battle_detail = detail
         self.plugin.renderer.render_timeline = render_timeline
 
         (kind, result), = self._zmdlog("zmdlog 技能轴 三位一体 2")
@@ -605,7 +604,7 @@ class HandlerTests(unittest.TestCase):
         async def offline(battle_id):
             raise ZmdLogsClientError("offline")
 
-        self.plugin._get_battle_detail = offline
+        self.plugin.data.get_battle_detail = offline
         (kind, result), = self._zmdlog("zmdlog 排轴 btl_upload_abcdef123456")
         self.assertEqual((kind, result), ("image", "/tmp/timeline.png"))
         # ...and the page still renders without it.
@@ -624,8 +623,8 @@ class HandlerTests(unittest.TestCase):
             received.append(kwargs)
             return "/tmp/battle.png"
 
-        self.plugin._get_battle_detail = detail
-        self.plugin._get_battle_export = export
+        self.plugin.data.get_battle_detail = detail
+        self.plugin.data.get_battle_export = export
         self.plugin.renderer.render_battle = render_battle
 
         (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
@@ -636,7 +635,7 @@ class HandlerTests(unittest.TestCase):
         async def old_upload(battle_id):
             raise ZmdLogsAPIError(422, "battle_export_unsupported", "old")
 
-        self.plugin._get_battle_export = old_upload
+        self.plugin.data.get_battle_export = old_upload
         (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
         self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
         self.assertIsNone(received[-1]["export"])
@@ -645,7 +644,7 @@ class HandlerTests(unittest.TestCase):
         async def offline(battle_id):
             raise ZmdLogsClientError("offline")
 
-        self.plugin._get_battle_export = offline
+        self.plugin.data.get_battle_export = offline
         (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
         self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
         self.assertEqual(
@@ -662,7 +661,7 @@ class HandlerTests(unittest.TestCase):
             received.append(kwargs)
             return "/tmp/ranking.png"
 
-        self.plugin._get_boss_ranking = ranking
+        self.plugin.data.get_boss_ranking = ranking
         self.plugin.renderer.render_ranking = render_ranking
 
         (kind, result), = self._zmdlog("zmdlog 三位一体 --角色 黎风 洁尔佩塔")
@@ -699,8 +698,8 @@ class HandlerTests(unittest.TestCase):
             received.append({"ids": (first.battle_id, second.battle_id), **kwargs})
             return "/tmp/compare.png"
 
-        self.plugin._get_boss_ranking = ranking
-        self.plugin._get_battle_detail = detail
+        self.plugin.data.get_boss_ranking = ranking
+        self.plugin.data.get_battle_detail = detail
         self.plugin.renderer.render_compare = render_compare
 
         (kind, result), = self._zmdlog("zmdlog 对比 三位一体 1 3")
@@ -736,7 +735,7 @@ class HandlerTests(unittest.TestCase):
                 payload["battle"]["bossName"] = "三位一体"
             return parse_battle_detail(payload)
 
-        self.plugin._get_battle_detail = other_boss
+        self.plugin.data.get_battle_detail = other_boss
         (kind, reply), = self._zmdlog(
             "zmdlog 对比 btl_upload_aaaaaaaaaaaa btl_upload_bbbbbbbbbbbb"
         )
@@ -756,7 +755,7 @@ class HandlerTests(unittest.TestCase):
         async def export(battle_id):
             raise answers[battle_id]
 
-        self.plugin._get_battle_export = export
+        self.plugin.data.get_battle_export = export
 
         (kind, reply), = self._zmdlog("zmdlog 技能轴 btl_upload_old000000001")
         self.assertEqual(kind, "plain")
@@ -771,7 +770,7 @@ class HandlerTests(unittest.TestCase):
         async def missing(battle_id):
             raise ZmdLogsAPIError(404, "battle_not_found", "gone")
 
-        self.plugin._get_battle_detail = missing
+        self.plugin.data.get_battle_detail = missing
 
         for command in ("战报", "配装", "技能"):
             with self.subTest(command=command):

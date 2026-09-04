@@ -47,6 +47,12 @@ class TargetType(str, Enum):
     ACCOUNT = "account"
 
 
+# What a board keyword may resolve to; accounts are matched elsewhere.
+BOARD_QUERY_TARGETS = frozenset(
+    {TargetType.BOARD, TargetType.DUNGEON, TargetType.DUNGEON_SCOPE}
+)
+
+
 class MatchStatus(str, Enum):
     MATCHED = "matched"
     AMBIGUOUS = "ambiguous"
