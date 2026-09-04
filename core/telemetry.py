@@ -313,10 +313,16 @@ def _merge_spans(
 
 def _effect_label(buff: BattleBuff) -> str | None:
     """``攻击 +16%``, or ``攻击 +16% · 增伤 +20%`` for a buff with two damage
-    effects; None when nothing on it changes damage."""
+    effects; None when nothing on it changes damage.
+
+    The element goes before the zone (物理增伤, not 增伤物理), and the same
+    zone at the same rate on two elements folds into ``灼热/物理增伤 +67%``
+    rather than repeating the number.
+    """
 
     allowed = _ENEMY_ZONES if buff.on_enemy else _PLAYER_ZONES
-    parts: list[str] = []
+    # (zone label, rate text) -> elements, in first-seen order.
+    groups: dict[tuple[str, str], list[str]] = {}
     for effect in buff.effects:
         zone = (effect.zone or "").lower()
         if zone not in allowed or effect.rate is None:
@@ -331,12 +337,14 @@ def _effect_label(buff: BattleBuff) -> str | None:
             if buff.on_enemy
             else _ZONE_LABELS[zone]
         )
-        parts.append(
-            f"{label}{element} "
-            f"{'+' if effect.rate >= 0 else ''}{_format_rate(effect.rate)}"
-        )
-        if len(parts) == _MAX_EFFECTS_PER_LABEL:
-            break
+        rate = f"{'+' if effect.rate >= 0 else ''}{_format_rate(effect.rate)}"
+        elements = groups.setdefault((label, rate), [])
+        if element and element not in elements:
+            elements.append(element)
+    parts = [
+        f"{'/'.join(elements)}{label} {rate}"
+        for (label, rate), elements in list(groups.items())[:_MAX_EFFECTS_PER_LABEL]
+    ]
     return " · ".join(parts) if parts else None
 
 

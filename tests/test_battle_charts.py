@@ -170,8 +170,8 @@ class BuffCoverageTests(unittest.TestCase):
             [(row.effect_label, row.on_enemy) for row in coverage.rows],
             [
                 ("攻击 +16%", False),
-                ("增幅灼热 +40%", False),
-                ("脆弱法术 +28%", True),
+                ("灼热增幅 +40%", False),
+                ("法术脆弱 +28%", True),
                 ("减抗 +3.6%", True),
             ],
         )
@@ -224,7 +224,7 @@ class BuffCoverageTests(unittest.TestCase):
         self.assertEqual(
             [(row.effect_label, row.on_enemy) for row in coverage.rows],
             [
-                ("减抗灼热 +20%", False),
+                ("灼热减抗 +20%", False),
                 ("攻击 +16% · 增伤 +20%", False),
                 ("承伤 +22%", True),
             ],
@@ -232,6 +232,31 @@ class BuffCoverageTests(unittest.TestCase):
         # The reaction's upstream name is "增伤" (the attacker's view); beside
         # the boss the row is named after what the boss experiences.
         self.assertEqual(coverage.rows[2].name, "承伤")
+
+    def test_same_rate_elements_fold_into_one_label(self) -> None:
+        payload = battle_detail_payload()
+        payload["characterStates"] = [
+            {
+                "characterName": "洛茜",
+                "buffsReceived": [
+                    buff("buff_dual", "增伤", "洛茜", "洛茜", 1_000, 5_000,
+                         [effect("dmg_inc", "fire", 0.672),
+                          effect("dmg_inc", "physical", 0.672)]),
+                    # Different rates stay separate; the cap keeps two.
+                    buff("buff_triple", "增伤", "洛茜", "洛茜", 2_000, 5_000,
+                         [effect("dmg_inc", "fire", 0.1),
+                          effect("dmg_inc", "cryst", 0.2),
+                          effect("atk", "all", 0.3)]),
+                ],
+            }
+        ]
+
+        coverage = self.coverage(parse_battle_detail(payload))
+
+        self.assertEqual(
+            [row.effect_label for row in coverage.rows],
+            ["灼热/物理增伤 +67.2%", "灼热增伤 +10% · 寒冷增伤 +20%"],
+        )
 
     def test_rows_merge_variants_and_keep_uptime(self) -> None:
         coverage = self.coverage()
@@ -251,7 +276,7 @@ class BuffCoverageTests(unittest.TestCase):
         )
         self.assertEqual(attack.covered_ms, 17_873)
         # A raw event key leaves the name empty; the effect already says it.
-        self.assertEqual(amp.effect_label, "增幅灼热 +40%")
+        self.assertEqual(amp.effect_label, "灼热增幅 +40%")
         self.assertEqual(amp.name, "")
         self.assertEqual(amp.zone, "amp")
 
@@ -386,7 +411,7 @@ class ChartTemplateTests(unittest.TestCase):
         self.assertIn("<h2>DPS 曲线</h2>", html)
         self.assertIn('class="curve-line share-line--1"', html)
         self.assertIn("curve-line is-team", html)
-        self.assertIn("<h2>增益覆盖</h2>", html)
+        self.assertIn("<h2>BUFF 覆盖</h2>", html)
         self.assertIn('class="buff-band"', html)
         self.assertIn("buff-span is-atk is-team", html)
         self.assertIn("buff-zone is-amp", html)

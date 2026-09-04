@@ -400,7 +400,7 @@ class BattleCardIntegrationTests(unittest.TestCase):
         # Buffs have their own section now; without an export or a note the
         # 施法节奏 section is simply absent.
         html = self.renderer.render_battle(self.battle, query="q", web_base_url=WEB)
-        self.assertIn("<h2>增益覆盖</h2>", html)
+        self.assertIn("<h2>BUFF 覆盖</h2>", html)
         self.assertNotIn("<h2>施法节奏</h2>", html)
         self.assertNotIn('class="rail-chart"', html)
         self.assertNotIn('class="rail-note"', html)

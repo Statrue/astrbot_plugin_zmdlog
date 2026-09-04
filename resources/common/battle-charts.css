@@ -1,5 +1,5 @@
 /* ---------- 横向时间图共用骨架：左栏 | 轨道 | 右槽 ----------
-   DPS 曲线与增益覆盖上下相邻，三列等宽，所以两张图的刻度线落在同一 x。 */
+   DPS 曲线与BUFF 覆盖上下相邻，三列等宽，所以两张图的刻度线落在同一 x。 */
 
 .hchart-row {
   display: grid;
@@ -236,7 +236,7 @@
 .share-line--5 { stroke: var(--special); }
 .share-line--6 { stroke: var(--notify); }
 
-/* ---------- 增益覆盖 ---------- */
+/* ---------- BUFF 覆盖 ---------- */
 
 .buff-band {
   padding: 10px 16px 12px;

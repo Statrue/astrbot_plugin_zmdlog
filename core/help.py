@@ -125,7 +125,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         answers="这一场具体是怎么打的？",
                         description=(
                             "填榜单关键词直接看该榜第 N 名的战报，默认第 1 名；"
-                            "卡片依次是战斗贡献、DPS 曲线、增益覆盖与施法节奏，"
+                            "卡片依次是战斗贡献、DPS 曲线、BUFF 覆盖与施法节奏，"
                             "底部附每个角色的配装概览和主要伤害来源。"
                         ),
                     ),
