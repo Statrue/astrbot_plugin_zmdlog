@@ -43,8 +43,6 @@ from .core.characters import (
     resolve_character_name,
 )
 from .core.client import (
-    DEFAULT_API_BASE_URL,
-    DEFAULT_REQUEST_TIMEOUT_MS,
     MIN_ACCOUNT_SEARCH_LENGTH,
     ZmdLogsAPIError,
     ZmdLogsClient,
@@ -97,9 +95,9 @@ from .core.routing import (
     RouteRequest,
     parse_zmdlog_payload,
 )
+from .core.settings import load_settings
 from .core.timestamps import utc_now_text
 from .core.watch import (
-    DEFAULT_RANK_THRESHOLD,
     MAX_DROPS_PER_NOTICE,
     AccountSnapshot,
     BoardSnapshot,
@@ -152,14 +150,7 @@ _TREND_NO_DATA_MESSAGE = (
     "这个账号不在任何关注列表里，还没有名次记录；"
     "用 关注 <昵称或accountId> 关注后会从下一轮检查开始记录。"
 )
-# Polling is one request per watched account, so the floor keeps a mistyped
-# interval from turning the watch list into a flood of upstream requests.
-_MIN_RANK_WATCH_INTERVAL_SECONDS = 120.0
 _RANK_WATCH_CONCURRENCY = 2
-# A baseline older than this describes a board that has moved on; diffing
-# against it would replay every rank lost during the downtime as breaking news.
-_MIN_SNAPSHOT_MAX_AGE_SECONDS = 3600.0
-_SNAPSHOT_MAX_AGE_INTERVALS = 3
 _NOTICE_SEND_TIMEOUT_SECONDS = 30.0
 _WATCH_DISABLED_MESSAGE = "本机器人未开启名次通报功能。"
 _NO_ORIGIN_MESSAGE = "无法确定当前会话，关注功能在这里不可用。"
@@ -231,22 +222,22 @@ class ZmdLogBotPlugin(Star):
         config: AstrBotConfig | None = None,
     ) -> None:
         super().__init__(context)
-        self.config = config if config is not None else {}
-        self.api_base_url = self.config.get(
-            "api_base_url",
-            DEFAULT_API_BASE_URL,
-        )
+        self.settings = load_settings(config, warn=logger.warning)
+        settings = self.settings
+        self.web_base_url = settings.web_base_url
         self.client = ZmdLogsClient(
-            api_base_url=self.api_base_url,
-            request_timeout_ms=self.config.get(
-                "request_timeout_ms",
-                DEFAULT_REQUEST_TIMEOUT_MS,
-            ),
+            api_base_url=settings.api_base_url,
+            request_timeout_ms=settings.request_timeout_ms,
         )
         self.data_dir = self._plugin_data_dir()
         self.alias_path = self._resolve_alias_path()
         self.aliases = self._load_aliases()
         self.candidates = CandidateStore()
+        self._matchers = MatcherCache(
+            fuzzy_threshold=settings.fuzzy_match_threshold,
+            ambiguity_score_gap=settings.ambiguity_score_gap,
+            warn=lambda issue: logger.warning("ZmdLogBot alias index: %s", issue),
+        )
         self.watchlist_path = (
             None if self.data_dir is None else self.data_dir / _WATCHLIST_FILE
         )
@@ -285,126 +276,49 @@ class ZmdLogBotPlugin(Star):
             else parse_history_payload(load_json(self.rank_history_path))
         )
         self._rank_history_write_failed = False
-        self.rank_watch_enabled = bool(
-            self.config.get("rank_watch_enabled", True)
-        )
-        self.rank_watch_interval_seconds = _positive_number(
-            self.config.get("rank_watch_interval_seconds", 900),
-            900.0,
-            minimum=_MIN_RANK_WATCH_INTERVAL_SECONDS,
-        )
-        self.rank_watch_rank_threshold = int(
-            _positive_number(
-                self.config.get(
-                    "rank_watch_rank_threshold",
-                    DEFAULT_RANK_THRESHOLD,
-                ),
-                float(DEFAULT_RANK_THRESHOLD),
-                minimum=1.0,
-            )
-        )
-        self._rank_snapshot_max_age_seconds = max(
-            self.rank_watch_interval_seconds * _SNAPSHOT_MAX_AGE_INTERVALS,
-            _MIN_SNAPSHOT_MAX_AGE_SECONDS,
-        )
         self._rank_watch_task: asyncio.Task | None = None
         self._rank_snapshot_write_failed = False
-        self.fuzzy_match_threshold = _ratio_or_default(
-            self.config.get("fuzzy_match_threshold", 0.65),
-            0.65,
-            "fuzzy_match_threshold",
-        )
-        self.ambiguity_score_gap = _ratio_or_default(
-            self.config.get("ambiguity_score_gap", 0.08),
-            0.08,
-            "ambiguity_score_gap",
-        )
-        self._matchers = MatcherCache(
-            fuzzy_threshold=self.fuzzy_match_threshold,
-            ambiguity_score_gap=self.ambiguity_score_gap,
-            warn=lambda issue: logger.warning("ZmdLogBot alias index: %s", issue),
-        )
-        cache_ttl_seconds = self.config.get(
-            "ranking_cache_ttl_seconds",
-            60,
-        )
         self.hot_boss_cache = AsyncTTLCache[
             str,
             tuple[HotBossCard, ...],
         ](
-            cache_ttl_seconds,
-            stale_ttl_seconds=cache_ttl_seconds,
+            settings.ranking_cache_ttl_seconds,
+            stale_ttl_seconds=settings.ranking_cache_ttl_seconds,
         )
         self.boss_ranking_cache = AsyncTTLCache[str, BossRanking](
-            cache_ttl_seconds,
-        )
-        account_cache_ttl_seconds = self.config.get(
-            "account_cache_ttl_seconds",
-            60,
-        )
-        battle_cache_ttl_seconds = self.config.get(
-            "battle_cache_ttl_seconds",
-            300,
+            settings.ranking_cache_ttl_seconds,
         )
         self.account_cache = AsyncTTLCache[str, PublicUserRankings](
-            account_cache_ttl_seconds,
-        )
-        character_stats_cache_ttl_seconds = self.config.get(
-            "character_stats_cache_ttl_seconds",
-            120,
+            settings.account_cache_ttl_seconds,
         )
         self.character_stats_cache = AsyncTTLCache[
             tuple[str, str, str],
             CharacterStatistics,
         ](
-            character_stats_cache_ttl_seconds,
+            settings.character_stats_cache_ttl_seconds,
         )
         self.character_boss_cache = AsyncTTLCache[
             tuple[str, str, str],
             CharacterBossStatistics,
         ](
-            character_stats_cache_ttl_seconds,
+            settings.character_stats_cache_ttl_seconds,
         )
         self.battle_cache = AsyncTTLCache[str, BattleDetailSummary](
-            battle_cache_ttl_seconds,
+            settings.battle_cache_ttl_seconds,
         )
         self.battle_export_cache = AsyncTTLCache[str, BattleExport](
-            battle_cache_ttl_seconds,
-        )
-        self.web_base_url = self.config.get(
-            "web_base_url",
-            DEFAULT_API_BASE_URL,
-        )
-        self.auto_expand_battle_links = bool(
-            self.config.get("auto_expand_battle_links", False)
-        )
-        configured_dedupe_seconds = self.config.get(
-            "battle_link_dedupe_seconds",
-            300,
-        )
-        self.battle_link_dedupe_seconds = (
-            float(configured_dedupe_seconds)
-            if isinstance(configured_dedupe_seconds, int | float)
-            and not isinstance(configured_dedupe_seconds, bool)
-            and configured_dedupe_seconds > 0
-            else 300.0
+            settings.battle_cache_ttl_seconds,
         )
         self._auto_expand_lock = asyncio.Lock()
         self._auto_expanded_until: dict[tuple[str, str], float] = {}
-        self.fallback_to_astrbot_renderer = bool(
-            self.config.get("fallback_to_astrbot_renderer", True)
-        )
         try:
             self.renderer: LongImageRenderer | None = LongImageRenderer(
                 Path(__file__).parent,
-                render_timeout_ms=self.config.get(
-                    "render_timeout_ms",
-                    30_000,
-                ),
+                render_timeout_ms=settings.render_timeout_ms,
                 output_dir=self._render_output_dir(),
                 allowed_image_origins=(
-                    self.api_base_url,
-                    self.web_base_url,
+                    settings.api_base_url,
+                    settings.web_base_url,
                 ),
             )
         except TemplateConfigurationError as exc:
@@ -515,7 +429,9 @@ class ZmdLogBotPlugin(Star):
     async def expand_battle_link(self, event: AstrMessageEvent):
         """Expand the first trusted ZMDLogs battle link in a group message."""
 
-        if not self.auto_expand_battle_links or self._is_command_message(event):
+        if not self.settings.auto_expand_battle_links or self._is_command_message(
+            event
+        ):
             return
         battle_ids = extract_battle_references(
             event.get_message_str(),
@@ -1705,7 +1621,7 @@ class ZmdLogBotPlugin(Star):
                 return "关注列表写入失败，请检查数据目录权限。"
             self._forget_rank_snapshot(account.account_id)
             return f"已取消关注 {account.display_name}。"
-        if not self.rank_watch_enabled:
+        if not self.settings.rank_watch_enabled:
             return _WATCH_DISABLED_MESSAGE
         if route.kind is RouteKind.WATCH_BOARD_ADD:
             return await self._add_watched_board(route.query, event)
@@ -1868,7 +1784,7 @@ class ZmdLogBotPlugin(Star):
             if not board_snapshot_is_usable(
                 previous,
                 now=checked_at,
-                max_age_seconds=self._rank_snapshot_max_age_seconds,
+                max_age_seconds=self.settings.rank_snapshot_max_age_seconds,
             ):
                 continue
             change = find_top_run_changes(previous, card)
@@ -2051,7 +1967,9 @@ class ZmdLogBotPlugin(Star):
 
     def _start_rank_watch(self) -> None:
         task = self._rank_watch_task
-        if not self.rank_watch_enabled or (task is not None and not task.done()):
+        if not self.settings.rank_watch_enabled or (
+            task is not None and not task.done()
+        ):
             return
         if self.watchlist_path is None:
             logger.warning(
@@ -2064,7 +1982,7 @@ class ZmdLogBotPlugin(Star):
         """Poll forever; one failed cycle must never end the loop."""
 
         while True:
-            interval = self.rank_watch_interval_seconds
+            interval = self.settings.rank_watch_interval_seconds
             await asyncio.sleep(interval + random.uniform(0.0, interval * 0.1))
             try:
                 await self._run_rank_watch_cycle()
@@ -2189,7 +2107,7 @@ class ZmdLogBotPlugin(Star):
             if not snapshot_is_usable(
                 previous,
                 now=checked_at,
-                max_age_seconds=self._rank_snapshot_max_age_seconds,
+                max_age_seconds=self.settings.rank_snapshot_max_age_seconds,
             ):
                 # Too old to compare against, so re-seed quietly instead of
                 # announcing everything that moved while nobody was looking.
@@ -2197,7 +2115,7 @@ class ZmdLogBotPlugin(Star):
             drops = find_rank_drops(
                 previous,
                 account,
-                rank_threshold=self.rank_watch_rank_threshold,
+                rank_threshold=self.settings.rank_watch_rank_threshold,
             )
             if not drops:
                 return snapshot, None, account
@@ -2345,7 +2263,7 @@ class ZmdLogBotPlugin(Star):
     def _resolve_alias_path(self) -> Path | None:
         """Editable alias file lives in the data dir; plugin ships defaults."""
 
-        configured = Path(self.config.get("alias_file_path", "aliases.json"))
+        configured = Path(self.settings.alias_file_path)
         if configured.is_absolute():
             return configured
         bundled = Path(__file__).parent / configured
@@ -2425,7 +2343,7 @@ class ZmdLogBotPlugin(Star):
         service when the bundled Chromium capture is unavailable."""
 
         html = error.html
-        if not self.fallback_to_astrbot_renderer or html is None:
+        if not self.settings.fallback_to_astrbot_renderer or html is None:
             return None
         # AstrBot treats the argument as a Jinja template; neutralise delimiters
         # so user-supplied text (nicknames) can never become template code.
@@ -2549,7 +2467,7 @@ class ZmdLogBotPlugin(Star):
             if key in self._auto_expanded_until:
                 return False
             self._auto_expanded_until[key] = (
-                now + self.battle_link_dedupe_seconds
+                now + self.settings.battle_link_dedupe_seconds
             )
             return True
 
@@ -2636,40 +2554,10 @@ def _shorten(text: str, limit: int = _ECHO_LIMIT) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def _ratio_or_default(value, default: float, name: str) -> float:
-    """Accept a 0–1 ratio, otherwise warn once at load and keep the default.
-
-    The matcher validates the same bound per request; a config typo such as
-    ``65`` (read as a percentage) would then fail every keyword query with a
-    stack trace each time instead of once here.
-    """
-
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int | float)
-        or not 0 <= value <= 1
-    ):
-        logger.warning(
-            "ZmdLogBot config %s must be between 0 and 1; using %s.",
-            name,
-            default,
-        )
-        return default
-    return float(value)
-
-
 def _battle_link_error_message(error: ZmdLogsAPIError) -> str:
     if error.status_code == 404:
         return "链接对应的公开战报不存在、未公开或已删除。"
     return _UPSTREAM_UNAVAILABLE_MESSAGE
-
-
-def _positive_number(value, default: float, *, minimum: float) -> float:
-    """Coerce a configured number, falling back when it is unusable."""
-
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return max(default, minimum)
-    return max(float(value), minimum)
 
 
 def _account_choice(hit, query: str) -> MatchChoice:

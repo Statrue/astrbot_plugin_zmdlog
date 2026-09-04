@@ -11,6 +11,7 @@ import asyncio
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -316,8 +317,8 @@ class HandlerTests(unittest.TestCase):
             {"fuzzy_match_threshold": 65, "ambiguity_score_gap": "x"},
         )
 
-        self.assertEqual(plugin.fuzzy_match_threshold, 0.65)
-        self.assertEqual(plugin.ambiguity_score_gap, 0.08)
+        self.assertEqual(plugin.settings.fuzzy_match_threshold, 0.65)
+        self.assertEqual(plugin.settings.ambiguity_score_gap, 0.08)
 
     def test_ranking_fixture_still_renders_through_the_guarded_ladder(self) -> None:
         async def ranking(boss_slug):
@@ -379,7 +380,8 @@ class HandlerTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
-        self.plugin.rank_watch_enabled = True
+        # Settings are frozen; swap the whole object to switch the feature on.
+        self.plugin.settings = replace(self.plugin.settings, rank_watch_enabled=True)
         self.plugin.watchlist_path = root / "watchlist.json"
         self.plugin.rank_snapshot_path = root / "rank-snapshot.json"
         self.plugin.board_snapshot_path = root / "board-snapshot.json"
