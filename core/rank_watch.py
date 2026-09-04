@@ -39,6 +39,7 @@ from .client import (
     ZmdLogsAPIError,
     ZmdLogsClient,
     ZmdLogsClientError,
+    searchable_nickname,
 )
 from .datasource import ZmdLogsDataSource
 from .history import (
@@ -407,7 +408,7 @@ class RankWatcher:
             )
         except PublicReferenceError:
             account_id = None
-        stripped = query.strip()
+        stripped = searchable_nickname(query)
         try:
             if account_id is not None:
                 account = await self._data.get_public_user_rankings(account_id)
@@ -417,7 +418,7 @@ class RankWatcher:
                     account_id=account.account_id,
                     display_name=account.account_display_name,
                 )
-            if not MIN_ACCOUNT_SEARCH_LENGTH <= len(stripped) <= 64:
+            if stripped is None:
                 return messages.ACCOUNT_REFERENCE_NEEDED
             search = await self._client.search_public_accounts(
                 stripped,

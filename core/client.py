@@ -36,6 +36,7 @@ _MAX_REQUEST_ATTEMPTS = 2
 _MAX_TOTAL_WAIT_SECONDS = 15.0
 _STATS_RANGES = frozenset({"7d", "14d", "30d", "all"})
 MIN_ACCOUNT_SEARCH_LENGTH = 2
+MAX_ACCOUNT_SEARCH_LENGTH = 64
 _CHARACTER_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 _STATS_POTENTIALS = frozenset({"0", "1-5", "all"})
 
@@ -64,6 +65,20 @@ class ZmdLogsAPIError(ZmdLogsClientError):
 
 class ZmdLogsProtocolError(ZmdLogsClientError):
     """Raised when a successful response violates the public API contract."""
+
+
+def searchable_nickname(query: str) -> str | None:
+    """The form of ``query`` the account search accepts, or None if it would refuse.
+
+    Upstream measures the NFKC-normalised, stripped text; every caller that
+    decides whether a nickname is worth a request must measure the same way,
+    or a fullwidth nickname passes here and is refused there.
+    """
+
+    normalized = unicodedata.normalize("NFKC", query).strip()
+    if MIN_ACCOUNT_SEARCH_LENGTH <= len(normalized) <= MAX_ACCOUNT_SEARCH_LENGTH:
+        return normalized
+    return None
 
 
 def is_valid_boss_slug(value: str) -> bool:
@@ -171,8 +186,8 @@ class ZmdLogsClient:
     ) -> AccountSearch:
         """Search public accounts by nickname substring (2-64 chars)."""
 
-        normalized = unicodedata.normalize("NFKC", query).strip()
-        if not MIN_ACCOUNT_SEARCH_LENGTH <= len(normalized) <= 64:
+        normalized = searchable_nickname(query)
+        if normalized is None:
             raise InvalidPublicIdentifierError("invalid account search query")
         if not 1 <= limit <= 20:
             raise ValueError("account search limit must be between 1 and 20")
