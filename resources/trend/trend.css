@@ -79,14 +79,17 @@
   clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
 }
 
+/* 红涨绿跌：the user reads rank moves the way the A-share market colours
+   them, so an improvement is red and a drop is green — not the design
+   system's danger red for a drop. */
 .is-up .trend-delta {
   color: #fff;
-  background: var(--data);
+  background: var(--danger);
 }
 
 .is-down .trend-delta {
   color: #fff;
-  background: var(--danger);
+  background: var(--green);
 }
 
 /* ---------- stepped chart ---------- */
@@ -100,11 +103,11 @@
 }
 
 .is-up .trend-chart-wrap {
-  color: var(--data);
+  color: var(--danger);
 }
 
 .is-down .trend-chart-wrap {
-  color: var(--danger);
+  color: var(--green);
 }
 
 .trend-chart-box {

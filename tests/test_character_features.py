@@ -83,7 +83,9 @@ class OptionRoutingTests(unittest.TestCase):
             "角色统计 --潜能 6": "--潜能",
             "罗丹 --范围": "--范围",
             "罗丹 --角色 黎风 --角色 洛茜": "--角色",
-            "罗丹 --角色 黎风 多余": "--角色",
+            # A trailing token after --角色 is a second character name now
+            # (see test_character_intersection); other options stay single.
+            "罗丹 --top 5 多余": "--top",
             "罗丹 --unknown 1": "--unknown",
         }
         for payload, fragment in cases.items():

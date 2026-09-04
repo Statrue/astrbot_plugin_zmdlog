@@ -194,8 +194,19 @@ _BATTLE_VIEWS = frozenset(
     }
 )
 _BOARD_ONLY_VIEWS = (
-    frozenset({CandidateView.CHARACTER_STATS, CandidateView.ROSTER})
+    frozenset(
+        {CandidateView.CHARACTER_STATS, CandidateView.ROSTER, CandidateView.COMPARE}
+    )
     | _BATTLE_VIEWS
+)
+_COMPARE_REFERENCE_MESSAGE = (
+    "对比两场战报时，两个参数都要是 battleId 或战报链接。"
+)
+_COMPARE_SAME_MESSAGE = "两边是同一场战报，没有可比的。"
+# Every boss has its own rotation, so a comparison across bosses says nothing;
+# the user asked for it to be refused rather than drawn.
+_COMPARE_CROSS_MESSAGE = (
+    "两场不是同一个首领（{first} / {second}），每个首领的排轴都不同，不做跨榜单对比。"
 )
 _CHARACTER_STATS_UNAVAILABLE = "character_statistics_not_available"
 _NO_LOADOUT_MESSAGE = "这份战报没有记录阵容配装。"
@@ -638,6 +649,21 @@ class ZmdLogBotPlugin(Star):
                 account_id, query=route.query
             )
 
+        if route.kind is RouteKind.COMPARE_QUERY and route.compare_target:
+            # Two explicit references: no board lookup at all.
+            try:
+                first = parse_battle_reference(
+                    route.query, web_base_url=self.web_base_url
+                )
+                second = parse_battle_reference(
+                    route.compare_target, web_base_url=self.web_base_url
+                )
+            except PublicReferenceError:
+                return _DispatchOutcome(message=_COMPARE_REFERENCE_MESSAGE)
+            return await self._render_compare(
+                first, second, query=f"{route.query} vs {route.compare_target}"
+            )
+
         if route.kind in _BATTLE_STYLE_ROUTES:
             try:
                 battle_id = parse_battle_reference(
@@ -850,6 +876,7 @@ class ZmdLogBotPlugin(Star):
                 stats_range=pending.stats_range,
                 stats_potential=pending.stats_potential,
                 battle_rank=pending.battle_rank,
+                compare_rank=pending.compare_rank,
             )
             return _DispatchOutcome(
                 message=format_candidates(
@@ -1202,6 +1229,26 @@ class ZmdLogBotPlugin(Star):
             return _DispatchOutcome(image_path=image_path)
 
         ranking = await self._get_boss_ranking(boss_slug)
+        if pending.view is CandidateView.COMPARE:
+            wanted = (pending.battle_rank, pending.compare_rank)
+            rows = {
+                entry.rank: entry for entry in ranking.rows if entry.rank in wanted
+            }
+            missing = [rank for rank in wanted if rank not in rows]
+            if missing:
+                return _DispatchOutcome(
+                    message=(
+                        f"「{ranking.boss_name}」公开排名共 {len(ranking.rows)} 条，"
+                        f"没有第 {missing[0]} 名。"
+                    )
+                )
+            return await self._render_compare(
+                rows[wanted[0]].battle_id,
+                rows[wanted[1]].battle_id,
+                query=query,
+                rank_a=wanted[0],
+                rank_b=wanted[1],
+            )
         if pending.view in _BATTLE_VIEWS:
             row = next(
                 (
@@ -1230,41 +1277,66 @@ class ZmdLogBotPlugin(Star):
             )
             return _DispatchOutcome(image_path=image_path)
 
-        character_filter = None
+        character_filter: tuple[str, ...] | None = None
         character_filter_scope = CharacterFilterScope.MAIN
         if pending.character_filter is not None:
-            resolution = resolve_character_name(
-                pending.character_filter,
-                ranking_character_names(ranking),
-            )
-            if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
-                options = " / ".join(resolution.candidates)
-                return _DispatchOutcome(
-                    message=(
-                        f"「{_shorten(resolution.query)}」可能是：{options}，"
-                        "请写全名。"
-                    )
+            names: list[str] = []
+            for wanted in pending.character_filter.split():
+                resolution = resolve_character_name(
+                    wanted, ranking_character_names(ranking)
                 )
-            if resolution.status is CharacterResolutionStatus.NOT_FOUND:
-                return _DispatchOutcome(
-                    message=(
-                        f"「{ranking.boss_name}」的公开排名里没有"
-                        f"「{_shorten(resolution.query)}」。"
+                if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
+                    options = " / ".join(resolution.candidates)
+                    return _DispatchOutcome(
+                        message=(
+                            f"「{_shorten(resolution.query)}」可能是：{options}，"
+                            "请写全名。"
+                        )
                     )
-                )
-            character_filter = resolution.name
-            # No main-C records is the normal case for supports, so widen the
-            # filter to the whole roster instead of answering "nothing found".
-            character_filter_scope = pick_character_filter_scope(
-                ranking, character_filter
-            )
-            if character_filter_scope is CharacterFilterScope.NONE:
-                return _DispatchOutcome(
-                    message=(
-                        f"「{ranking.boss_name}」的公开排名里没有带"
-                        f"「{character_filter}」的记录。"
+                if resolution.status is CharacterResolutionStatus.NOT_FOUND:
+                    return _DispatchOutcome(
+                        message=(
+                            f"「{ranking.boss_name}」的公开排名里没有"
+                            f"「{_shorten(resolution.query)}」。"
+                        )
                     )
+                if resolution.name not in names:
+                    names.append(resolution.name)
+            character_filter = tuple(names)
+            if len(names) == 1:
+                # No main-C records is the normal case for supports, so widen
+                # the filter to the whole roster instead of answering
+                # "nothing found".
+                character_filter_scope = pick_character_filter_scope(
+                    ranking, names[0]
                 )
+                if character_filter_scope is CharacterFilterScope.NONE:
+                    return _DispatchOutcome(
+                        message=(
+                            f"「{ranking.boss_name}」的公开排名里没有带"
+                            f"「{names[0]}」的记录。"
+                        )
+                    )
+            else:
+                # Several names ask for teams fielding all of them; a team has
+                # one main C, so this is a roster question by definition.
+                character_filter_scope = CharacterFilterScope.ROSTER
+                if not any(
+                    all(
+                        any(
+                            entry.character_name == name
+                            for entry in row.roster_entries
+                        )
+                        for name in names
+                    )
+                    for row in ranking.rows
+                ):
+                    return _DispatchOutcome(
+                        message=(
+                            f"「{ranking.boss_name}」的公开排名里没有同时带上"
+                            f"「{'、'.join(names)}」的记录。"
+                        )
+                    )
         image_path = await renderer.render_ranking(
             ranking,
             query=query,
@@ -1301,8 +1373,12 @@ class ZmdLogBotPlugin(Star):
                     logger.warning("ZmdLogBot API request failed: %s", exc.code)
                     return _DispatchOutcome(message=_TIMELINE_RATE_LIMITED_MESSAGE)
                 raise
+            # The detail only adds the BUFF 覆盖 band; the page stands without.
             image_path = await renderer.render_timeline(
-                export, query=query, web_base_url=self.web_base_url
+                export,
+                query=query,
+                web_base_url=self.web_base_url,
+                battle=await self._battle_detail_if_available(battle_id),
             )
             return _DispatchOutcome(image_path=image_path)
         battle = await self._get_battle_detail(battle_id)
@@ -1354,6 +1430,55 @@ class ZmdLogBotPlugin(Star):
                 "ZmdLogBot battle export unavailable: %s", type(exc).__name__
             )
             return None, None
+
+    async def _render_compare(
+        self,
+        battle_id_a: str,
+        battle_id_b: str,
+        *,
+        query: str,
+        rank_a: int | None = None,
+        rank_b: int | None = None,
+    ) -> _DispatchOutcome:
+        """Two battles side by side; both details are fetched concurrently."""
+
+        if battle_id_a == battle_id_b:
+            return _DispatchOutcome(message=_COMPARE_SAME_MESSAGE)
+        renderer = self._require_renderer()
+        first, second = await asyncio.gather(
+            self._get_battle_detail(battle_id_a),
+            self._get_battle_detail(battle_id_b),
+        )
+        if first.boss_name != second.boss_name:
+            return _DispatchOutcome(
+                message=_COMPARE_CROSS_MESSAGE.format(
+                    first=_shorten(first.boss_name), second=_shorten(second.boss_name)
+                )
+            )
+        image_path = await renderer.render_compare(
+            first,
+            second,
+            query=query,
+            web_base_url=self.web_base_url,
+            rank_a=rank_a,
+            rank_b=rank_b,
+        )
+        return _DispatchOutcome(image_path=image_path)
+
+    async def _battle_detail_if_available(
+        self,
+        battle_id: str,
+    ) -> BattleDetailSummary | None:
+        """The battle detail for a page that can do without it."""
+
+        try:
+            return await self._get_battle_detail(battle_id)
+        except ZmdLogsClientError as exc:
+            logger.warning(
+                "ZmdLogBot battle detail unavailable: %s",
+                getattr(exc, "code", type(exc).__name__),
+            )
+            return None
 
     async def _reply_with_candidate(
         self,
@@ -2463,7 +2588,10 @@ class ZmdLogBotPlugin(Star):
         if error.status_code == 404:
             if route.kind in {RouteKind.ACCOUNT_QUERY, RouteKind.TREND_QUERY}:
                 return "没有找到这个公开账号，或该账号暂无公开榜单记录。"
-            if route.kind in _BATTLE_STYLE_ROUTES:
+            if (
+                route.kind in _BATTLE_STYLE_ROUTES
+                or route.kind is RouteKind.COMPARE_QUERY
+            ):
                 return "战报不存在、未公开或已删除。"
             if route.kind in {
                 RouteKind.RANKING_QUERY,
@@ -2595,6 +2723,8 @@ def _route_view(route: RouteRequest) -> CandidateView:
         return CandidateView.SKILLS
     if route.kind is RouteKind.TIMELINE_QUERY:
         return CandidateView.TIMELINE
+    if route.kind is RouteKind.COMPARE_QUERY:
+        return CandidateView.COMPARE
     if route.kind is RouteKind.TREND_QUERY:
         return CandidateView.TREND
     return CandidateView.RANKING
@@ -2614,4 +2744,5 @@ def _pending_from_route(route: RouteRequest) -> PendingCandidates:
         stats_range=route.stats_range,
         stats_potential=route.stats_potential,
         battle_rank=route.battle_rank,
+        compare_rank=route.compare_rank if route.compare_rank is not None else 2,
     )

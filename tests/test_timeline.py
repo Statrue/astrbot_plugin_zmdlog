@@ -409,10 +409,22 @@ class BattleCardIntegrationTests(unittest.TestCase):
         page = build_timeline_page(self.export, query="技能轴 罗丹", web_base_url=WEB)
         self.assertEqual(page.header.target_type, "技能轴")
         self.assertEqual(page.timeline.chart_height, 1_000)
+        self.assertIsNone(page.buff_band)
 
         html = self.renderer.render_timeline(
             self.export, query="技能轴 罗丹", web_base_url=WEB
         )
+        self.assertNotIn("<h2>BUFF 覆盖</h2>", html)
+        # With the detail at hand the page gains the band above the rail.
+        page = build_timeline_page(
+            self.export, query="q", web_base_url=WEB, battle=self.battle
+        )
+        self.assertIsNotNone(page.buff_band)
+        html = self.renderer.render_timeline(
+            self.export, query="技能轴 罗丹", web_base_url=WEB, battle=self.battle
+        )
+        self.assertIn("<h2>BUFF 覆盖</h2>", html)
+        self.assertLess(html.index("<h2>BUFF 覆盖</h2>"), html.index("<h2>技能轴</h2>"))
         self.assertIn('class="rail-chart"', html)
         self.assertIn("每格 1 秒", html)
         self.assertIn("icon_chr_0028_wulfa.png", html)

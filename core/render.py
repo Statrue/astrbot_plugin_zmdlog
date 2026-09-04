@@ -40,6 +40,7 @@ from .presentation import (
     build_battle_page,
     build_character_boss_page,
     build_character_stats_page,
+    build_compare_page,
     build_dungeon_top3_page,
     build_loadout_page,
     build_ranking_page,
@@ -69,6 +70,7 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
         "skills",
         "trend",
         "timeline",
+        "compare",
         "warmup",
     }
 )
@@ -175,7 +177,7 @@ class TemplateRenderer:
         query: str,
         ranking_limit: int = DEFAULT_RANKING_TOP,
         web_base_url: str | None = None,
-        character_filter: str | None = None,
+        character_filter: str | tuple[str, ...] | None = None,
         character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
     ) -> str:
         page = build_ranking_page(
@@ -324,13 +326,35 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str,
+        battle: BattleDetailSummary | None = None,
     ) -> str:
         page = build_timeline_page(
             export,
             query=query,
             web_base_url=web_base_url,
+            battle=battle,
         )
         return self._render("timeline/timeline.html", page, "timeline")
+
+    def render_compare(
+        self,
+        first: BattleDetailSummary,
+        second: BattleDetailSummary,
+        *,
+        query: str,
+        web_base_url: str,
+        rank_a: int | None = None,
+        rank_b: int | None = None,
+    ) -> str:
+        page = build_compare_page(
+            first,
+            second,
+            query=query,
+            web_base_url=web_base_url,
+            rank_a=rank_a,
+            rank_b=rank_b,
+        )
+        return self._render("compare/compare.html", page, "compare")
 
     def _render(self, template_name: str, page, page_kind: str) -> str:
         template = self.environment.get_template(template_name)
@@ -531,7 +555,7 @@ class LongImageRenderer:
         query: str,
         ranking_limit: int = DEFAULT_RANKING_TOP,
         web_base_url: str | None = None,
-        character_filter: str | None = None,
+        character_filter: str | tuple[str, ...] | None = None,
         character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
     ) -> str:
         try:
@@ -701,16 +725,41 @@ class LongImageRenderer:
         *,
         query: str,
         web_base_url: str,
+        battle: BattleDetailSummary | None = None,
     ) -> str:
         try:
             html = self.templates.render_timeline(
                 export,
                 query=query,
                 web_base_url=web_base_url,
+                battle=battle,
             )
         except Exception as exc:
             raise RenderError("timeline template rendering failed") from exc
         return await self._capture(html, "timeline")
+
+    async def render_compare(
+        self,
+        first: BattleDetailSummary,
+        second: BattleDetailSummary,
+        *,
+        query: str,
+        web_base_url: str,
+        rank_a: int | None = None,
+        rank_b: int | None = None,
+    ) -> str:
+        try:
+            html = self.templates.render_compare(
+                first,
+                second,
+                query=query,
+                web_base_url=web_base_url,
+                rank_a=rank_a,
+                rank_b=rank_b,
+            )
+        except Exception as exc:
+            raise RenderError("compare template rendering failed") from exc
+        return await self._capture(html, "compare")
 
     async def warm_up(self) -> None:
         """Launch Chromium and render one page so the first query is fast."""

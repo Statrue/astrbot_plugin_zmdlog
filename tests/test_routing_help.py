@@ -107,7 +107,7 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog [help]",
                 "!zmdlog 榜单",
                 "!zmdlog <榜单关键词> [--top 数量]",
-                "!zmdlog <榜单关键词> --角色 <角色名>",
+                "!zmdlog <榜单关键词> --角色 <角色名> [角色名…]",
                 "!zmdlog 阵容 <榜单关键词> [--top 数量]",
                 (
                     "!zmdlog 角色统计 [榜单关键词] "
@@ -122,6 +122,7 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog 配装 <battleId、链接或榜单关键词 [名次]>",
                 "!zmdlog 技能 <battleId、链接或榜单关键词 [名次]>",
                 "!zmdlog 技能轴 <battleId、链接或榜单关键词 [名次]>",
+                "!zmdlog 对比 <榜单关键词 [名次A 名次B] 或 两个battleId/链接>",
                 "!zmdlog 关注 <昵称、accountId或主页链接>",
                 "!zmdlog 关注 榜单 <榜单关键词>",
                 "!zmdlog 关注",

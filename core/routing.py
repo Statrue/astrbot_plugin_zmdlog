@@ -7,6 +7,8 @@ from enum import Enum
 DEFAULT_RANKING_TOP = 10
 MIN_RANKING_TOP = 1
 MAX_RANKING_TOP = 30
+# A team has four slots, so more names than that can never all be in one.
+MAX_CHARACTER_FILTERS = 4
 
 STATS_RANGES = ("7d", "14d", "30d", "all")
 STATS_POTENTIALS = ("0", "1-5", "all")
@@ -60,7 +62,10 @@ _OPTION_LABEL = {
 # "--潜能 不适用于榜单查询" reads like the option belongs somewhere unknown.
 _OPTION_USAGE = {
     "top": "--top 仅适用于具体榜单和阵容查询。",
-    "character": "--角色 仅适用于具体榜单查询，例如：罗丹 --角色 黎风。",
+    "character": (
+        "--角色 仅适用于具体榜单查询，例如：罗丹 --角色 黎风，"
+        "或 罗丹 --角色 黎风 洛茜（同时带上两人的队伍）。"
+    ),
     "range": "--范围 仅适用于角色统计和名次趋势，例如：角色统计 罗丹 --范围 7d。",
     "potential": "--潜能 仅适用于角色统计，例如：角色统计 罗丹 --潜能 0。",
 }
@@ -87,6 +92,7 @@ class RouteKind(str, Enum):
     LOADOUT_QUERY = "loadout_query"
     SKILL_QUERY = "skill_query"
     TIMELINE_QUERY = "timeline_query"
+    COMPARE_QUERY = "compare_query"
     SMART_QUERY = "smart_query"
     CHARACTER_STATS = "character_stats"
     ROSTER_QUERY = "roster_query"
@@ -144,6 +150,10 @@ class RouteRequest:
     stats_range: str = DEFAULT_STATS_RANGE
     stats_potential: str = DEFAULT_STATS_POTENTIAL
     battle_rank: int = 1
+    # 对比 only: the second battle reference, or the second rank on the same
+    # board when the query is a board keyword.
+    compare_target: str | None = None
+    compare_rank: int | None = None
 
     @property
     def ranking_limit(self) -> int:
@@ -187,6 +197,10 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         if not separator or not remainder:
             raise RouteParseError("请提供 accountId 或 ZMDLogs 账号主页链接。")
         return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder)
+
+    if command in {"对比", "比较"}:
+        options.reject_except()
+        return _parse_compare(remainder)
 
     battle_kind = _BATTLE_STYLE_COMMANDS.get(command)
     if battle_kind is not None:
@@ -313,6 +327,20 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
             raise RouteParseError(f"{label} 参数只能填写一次。")
         if index + 1 >= len(tokens) or tokens[index + 1].startswith("--"):
             raise RouteParseError(f"{label} 后需要填写取值。")
+        if name == "character":
+            # --角色 takes every name up to the next option: ``--角色 黎风 洛茜``
+            # asks for teams fielding both.
+            end = index + 1
+            while end < len(tokens) and not tokens[end].startswith("--"):
+                end += 1
+            names = tuple(dict.fromkeys(tokens[index + 1 : end]))
+            if len(names) > MAX_CHARACTER_FILTERS:
+                raise RouteParseError(
+                    f"--角色 最多写 {MAX_CHARACTER_FILTERS} 个角色。"
+                )
+            values[name] = " ".join(names)
+            index = end
+            continue
         values[name] = tokens[index + 1]
         index += 2
 
@@ -343,6 +371,55 @@ def _board_watch_argument(remainder: str) -> str | None:
     if head != "榜单":
         return None
     return rest.strip()
+
+
+_COMPARE_USAGE = (
+    "用法：对比 <榜单关键词> [名次A] [名次B]（默认第 1 名对第 2 名），"
+    "或 对比 <battleId或链接> <battleId或链接>。"
+)
+_REFERENCE_RE = re.compile(r"^(?:https?://\S+|btl_[A-Za-z0-9_-]+)$")
+
+
+def _parse_compare(remainder: str) -> RouteRequest:
+    """``对比 A B`` for two references, else ``对比 <榜单> [名次] [名次]``.
+
+    Ranks are read off the tail: one rank means "the leader against that
+    rank", none means the top two. Two references are recognised by shape
+    (link or battle id), so a board keyword can never be mistaken for one.
+    """
+
+    tokens = remainder.split()
+    if not tokens:
+        raise RouteParseError(_COMPARE_USAGE)
+    if len(tokens) == 2 and all(_REFERENCE_RE.match(token) for token in tokens):
+        return RouteRequest(
+            RouteKind.COMPARE_QUERY, tokens[0], compare_target=tokens[1]
+        )
+    ranks: list[int] = []
+    while tokens and len(ranks) < 2:
+        match = _BATTLE_RANK_RE.match(tokens[-1])
+        if match is None:
+            break
+        ranks.insert(0, int(match.group(1)))
+        tokens.pop()
+    if not tokens:
+        raise RouteParseError(_COMPARE_USAGE)
+    if any(rank < 1 for rank in ranks):
+        raise RouteParseError("战报名次从 1 开始。")
+    if len(ranks) == 2:
+        first, second = ranks
+    elif len(ranks) == 1:
+        first, second = 1, ranks[0]
+    else:
+        first, second = 1, 2
+    if first == second:
+        raise RouteParseError("两个名次相同，没有可比的。")
+    return RouteRequest(
+        RouteKind.COMPARE_QUERY,
+        " ".join(tokens),
+        battle_rank=first,
+        compare_rank=second,
+    )
 
 
 def _split_battle_rank(remainder: str) -> tuple[str, int]:

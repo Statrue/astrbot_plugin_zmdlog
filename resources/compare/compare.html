@@ -1,0 +1,146 @@
+{% extends "common/base.html" %}
+
+{% block extra_styles %}{% include "battle/battle.css" %}{% include "common/battle-charts.css" %}{% include "compare/compare.css" %}{% endblock %}
+
+{% block hero_facts %}
+<div class="hero-facts">
+  <div class="hero-fact hero-fact--key"><span>A 通关</span><strong>{{ page.sides[0].duration }}</strong><em>{{ page.sides[0].uploader_display_name }}</em></div>
+  <div class="hero-fact"><span>B 通关</span><strong>{{ page.sides[1].duration }}</strong><em>{{ page.sides[1].uploader_display_name }}</em></div>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="cmp-sides" aria-label="两场战报">
+  {% for side in page.sides %}
+  <div class="cmp-side is-{{ side.label|lower }}">
+    <span class="cmp-tag">{{ side.label }}</span>
+    <div class="cmp-side-text">
+      <strong>{{ side.uploader_display_name }}</strong>
+      <span>{% if side.rank_label %}{{ side.rank_label }} · {% endif %}{{ side.battle_date }}</span>
+      <code>{{ side.report_url }}</code>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+<div class="section-heading">
+  <h2>对比摘要</h2>
+  <span class="section-note">黄底为占优的一侧 · 差距按较低的一方计算</span>
+</div>
+<section class="cmp-facts" aria-label="对比摘要">
+  <div class="cmp-fact cmp-fact--head"><span></span><span class="is-a">A</span><span class="is-b">B</span><span>差距</span></div>
+  {% for fact in page.facts %}
+  <div class="cmp-fact">
+    <span class="cmp-fact-label">{{ fact.label }}</span>
+    <b{% if fact.better == "a" %} class="is-better"{% endif %}>{{ fact.a }}</b>
+    <b{% if fact.better == "b" %} class="is-better"{% endif %}>{{ fact.b }}</b>
+    <em>{{ fact.delta_label }}</em>
+  </div>
+  {% endfor %}
+</section>
+
+<div class="section-heading">
+  <h2>阵容与 DPS</h2>
+  <span class="section-note">同一角色两边并排 · 条形为该角色在本方伤害中的占比</span>
+</div>
+<section class="cmp-roster" aria-label="阵容对比">
+  <div class="cmp-roster-row cmp-roster-row--head"><span></span><span class="is-a">A</span><span class="is-b">B</span></div>
+  {% for row in page.roster %}
+  <div class="cmp-roster-row">
+    <div class="cmp-roster-id">
+      <span class="avatar">{{ row.character_initial }}{% if row.character_avatar_url %}<img src="{{ row.character_avatar_url }}" alt="" onerror="this.remove()">{% endif %}</span>
+      <strong>{{ row.character_name }}</strong>
+    </div>
+    {% for cell in (row.a, row.b) %}
+    <div class="cmp-roster-cell is-{{ 'a' if loop.first else 'b' }}{% if not cell %} is-absent{% endif %}">
+      {% if cell %}
+      <b>{{ cell.dps }}</b>
+      <span>{{ cell.character_profession }} · 伤害 {{ cell.damage_share }}</span>
+      <i style="width: {{ cell.dps_share_percent }}%;"></i>
+      {% else %}
+      <span class="cmp-absent">未上场</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</section>
+
+{% if page.curve %}
+<div class="section-heading">
+  <h2>DPS 曲线</h2>
+  <span class="section-note">两场全队的平均 DPS 到当前时刻，共用横轴，先结束的线先停</span>
+</div>
+<section class="curve-panel" aria-label="DPS 曲线对比">
+  <div class="hchart-row">
+    <div class="curve-side">
+      <ul class="curve-legend">
+        <li class="is-a"><i></i><b>A</b><span>{{ page.curve.dps_a }}</span></li>
+        <li class="is-b"><i></i><b>B</b><span>{{ page.curve.dps_b }}</span></li>
+      </ul>
+      <div class="curve-axis">
+        {% for label in page.curve.axis_labels %}<span>{{ label }}</span>{% endfor %}
+      </div>
+    </div>
+    <div class="curve-box">
+      {% for label in page.curve.axis_labels %}{% if not loop.first and not loop.last %}<i class="curve-grid" style="top: {{ loop.index0 * 25 }}%;"></i>{% endif %}{% endfor %}
+      {% for tick in page.curve.ticks %}{% if not loop.first %}<i class="hchart-grid{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;"></i>{% endif %}{% endfor %}
+      <i class="cmp-end is-a" style="left: {{ page.curve.end_a }}%;"></i>
+      <i class="cmp-end is-b" style="left: {{ page.curve.end_b }}%;"></i>
+      <svg class="curve-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <polyline class="curve-line cmp-line-a" points="{{ page.curve.polyline_a }}" vector-effect="non-scaling-stroke"/>
+        <polyline class="curve-line cmp-line-b" points="{{ page.curve.polyline_b }}" vector-effect="non-scaling-stroke"/>
+      </svg>
+    </div>
+    <div class="hchart-gutter"></div>
+  </div>
+  <div class="hchart-row hchart-row--ruler">
+    <div class="hchart-side-note">竖虚线为各自的通关时刻</div>
+    <div class="hchart-ruler">
+      {% for tick in page.curve.ticks %}
+      <span class="hchart-tick{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;">{{ tick.label }}</span>
+      {% endfor %}
+    </div>
+    <div class="hchart-gutter"></div>
+  </div>
+</section>
+{% endif %}
+
+{% if page.loadouts %}
+<div class="section-heading">
+  <h2>配装与伤害来源</h2>
+  <span class="section-note">同一角色逐项对照，两边不同的项标黄线 · 下方为各自前三伤害来源</span>
+</div>
+{% for row in page.loadouts %}
+<section class="cmp-loadout{% if row.only %} is-only-{{ row.only }}{% endif %}" aria-label="{{ row.character_name }} 配装对比">
+  <header class="cmp-loadout-head">
+    <span class="avatar">{{ row.character_initial }}{% if row.character_avatar_url %}<img src="{{ row.character_avatar_url }}" alt="" onerror="this.remove()">{% endif %}</span>
+    <strong>{{ row.character_name }}</strong>
+    {% if row.only %}<em>仅 {{ row.only|upper }} 上场</em>{% endif %}
+  </header>
+  <div class="cmp-gear">
+    <div class="cmp-gear-line cmp-gear-line--head"><span></span><span class="is-a">A</span><span class="is-b">B</span></div>
+    {% for line in row.lines %}
+    <div class="cmp-gear-line{% if line.differs %} is-diff{% endif %}">
+      <span>{{ line.label }}</span>
+      <b>{{ line.a }}</b>
+      <b>{{ line.b }}</b>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="cmp-skills">
+    {% for skills in (row.skills_a, row.skills_b) %}
+    <div class="cmp-skill-col is-{{ 'a' if loop.first else 'b' }}">
+      <span class="cmp-skill-head">{{ 'A' if loop.first else 'B' }} 伤害来源</span>
+      {% for skill in skills %}
+      <div class="cmp-skill"><i>{{ skill.category }}</i><b>{{ skill.name }}</b><em>{{ skill.share }}</em></div>
+      {% else %}
+      <div class="cmp-skill is-empty"><em>无技能统计</em></div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}

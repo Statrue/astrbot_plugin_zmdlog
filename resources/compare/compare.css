@@ -1,0 +1,410 @@
+/* ---------- 战报对比：A 黄、B 蓝，贯穿全页 ---------- */
+
+.cmp-sides {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.cmp-side {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px 10px 0;
+  border: 1px solid var(--line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+}
+
+.cmp-tag {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+}
+
+.cmp-side.is-a .cmp-tag { background: var(--action); }
+.cmp-side.is-b .cmp-tag { background: var(--blue); color: #fff; }
+
+.cmp-side-text {
+  min-width: 0;
+}
+
+.cmp-side-text strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmp-side-text span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.cmp-side-text code {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--steel);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- facts ---------- */
+
+.cmp-facts {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+
+.cmp-fact {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) minmax(0, 1fr) 170px;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 16px;
+}
+
+.cmp-fact + .cmp-fact {
+  border-top: 1px solid var(--line-soft);
+}
+
+.cmp-fact--head {
+  padding: 7px 16px;
+  background: var(--card-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.cmp-fact--head .is-a { color: var(--yellow-deep); }
+.cmp-fact--head .is-b { color: var(--blue); }
+
+.cmp-fact-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cmp-fact b {
+  overflow: hidden;
+  justify-self: start;
+  padding: 1px 6px;
+  margin-left: -6px;
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmp-fact b.is-better {
+  background: linear-gradient(transparent 55%, var(--action) 55%, var(--action) 95%, transparent 95%);
+}
+
+.cmp-fact em {
+  color: var(--steel);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  text-align: right;
+}
+
+/* ---------- roster ---------- */
+
+.cmp-roster {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+
+.cmp-roster-row {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 8px 16px;
+}
+
+.cmp-roster-row + .cmp-roster-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.cmp-roster-row--head {
+  padding: 6px 16px;
+  background: var(--card-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.cmp-roster-row--head .is-a { color: var(--yellow-deep); }
+.cmp-roster-row--head .is-b { color: var(--blue); }
+
+.cmp-roster-id {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.cmp-roster-id .avatar {
+  width: 34px;
+  height: 34px;
+  font-size: 13px;
+}
+
+.cmp-roster-id strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmp-roster-cell {
+  position: relative;
+  min-width: 0;
+  padding: 2px 0 8px;
+}
+
+.cmp-roster-cell b {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.cmp-roster-cell span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cmp-roster-cell i {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  background: var(--faint);
+  transform: skewX(-12deg);
+}
+
+.cmp-roster-cell.is-a i { background: var(--action); }
+.cmp-roster-cell.is-b i { background: var(--blue); }
+
+.cmp-roster-cell.is-absent {
+  padding-bottom: 2px;
+}
+
+.cmp-absent {
+  color: var(--faint);
+  font-weight: 700;
+}
+
+/* ---------- curve overlay ---------- */
+
+.curve-legend .is-a i { background: var(--yellow-deep); }
+.curve-legend .is-b i { background: var(--blue); }
+
+.cmp-line-a { stroke: var(--yellow-deep); stroke-width: 2.5; }
+.cmp-line-b { stroke: var(--blue); stroke-width: 2.5; }
+
+.cmp-end {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed var(--faint);
+}
+
+.cmp-end.is-a { border-left-color: var(--yellow-deep); }
+.cmp-end.is-b { border-left-color: var(--blue); }
+
+/* ---------- loadout pairs ---------- */
+
+.cmp-loadout {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+
+.cmp-loadout:first-of-type {
+  margin-top: 0;
+}
+
+.cmp-loadout-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--card-soft);
+}
+
+.cmp-loadout-head .avatar {
+  width: 34px;
+  height: 34px;
+  font-size: 13px;
+}
+
+.cmp-loadout-head strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.cmp-loadout-head em {
+  margin-left: auto;
+  padding: 2px 8px;
+  color: var(--ink);
+  background: var(--action);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+}
+
+.cmp-loadout.is-only-b .cmp-loadout-head em {
+  color: #fff;
+  background: var(--blue);
+}
+
+.cmp-gear {
+  padding: 4px 0;
+}
+
+.cmp-gear-line {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 5px 16px;
+}
+
+.cmp-gear-line--head {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.cmp-gear-line--head .is-a { color: var(--yellow-deep); }
+.cmp-gear-line--head .is-b { color: var(--blue); }
+
+.cmp-gear-line > span {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.cmp-gear-line b {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a line that differs between the sides */
+.cmp-gear-line.is-diff b {
+  padding: 0 4px;
+  margin-left: -4px;
+  justify-self: start;
+  max-width: 100%;
+  background: linear-gradient(transparent 58%, var(--action) 58%, var(--action) 96%, transparent 96%);
+}
+
+.cmp-skills {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.cmp-skill-head {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.cmp-skill-col.is-a .cmp-skill-head { color: var(--yellow-deep); }
+.cmp-skill-col.is-b .cmp-skill-head { color: var(--blue); }
+
+.cmp-skill {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.cmp-skill i {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  color: var(--ink);
+  background: var(--line-soft);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.cmp-skill b {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmp-skill em {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--steel);
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.cmp-skill.is-empty em {
+  margin-left: 0;
+  color: var(--faint);
+  font-family: var(--font-body);
+  font-weight: 600;
+}

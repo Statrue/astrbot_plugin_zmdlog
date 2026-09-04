@@ -17,6 +17,7 @@
   --red: #d9302c;
   --blue: #2a6fe0;
   --teal: #22b3b9;
+  --green: #2f9e5b;
   /* semantic roles — new css should reference these, not raw hues */
   --action: var(--yellow);
   --notify: var(--orange);

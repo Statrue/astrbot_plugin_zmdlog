@@ -71,12 +71,13 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
-                        command=f"{command} <榜单关键词> --角色 <角色名>",
-                        answers="带上这个角色的队伍，能排到第几？",
+                        command=f"{command} <榜单关键词> --角色 <角色名> [角色名…]",
+                        answers="带上这个角色（或这几个角色）的队伍，能排到第几？",
                         description=(
                             "优先只看以它为主 C 的记录；辅助、重装这类"
                             "从不当主 C 的角色没有主 C 记录，"
                             "会自动改为匹配整个四人阵容。"
+                            "写两个以上角色名时，只看同时带上他们的队伍。"
                         ),
                     ),
                 ),
@@ -152,6 +153,18 @@ def build_help_page(command_prefix: str) -> HelpPage:
                             "把战报卡里的施法节奏放大成整页：每个角色一条色轨，"
                             "招式按时长占一段，普攻按连段折叠。别名 排轴 / 时间轴；"
                             "旧版客户端上传的战斗没有施法序列。"
+                        ),
+                    ),
+                    HelpCommand(
+                        command=(
+                            f"{command} 对比 <榜单关键词 [名次A 名次B] "
+                            "或 两个battleId/链接>"
+                        ),
+                        answers="这两场差在哪？",
+                        description=(
+                            "同一榜单默认比第 1 名和第 2 名，只给一个名次就是榜首对它；"
+                            "并排看通关时间、DPS、阵容、两条 DPS 曲线，"
+                            "以及同一角色的配装差异和主要伤害来源。别名 比较。"
                         ),
                     ),
                 ),

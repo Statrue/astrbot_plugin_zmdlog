@@ -25,6 +25,7 @@ class CandidateView(str, Enum):
     LOADOUT = "loadout"
     SKILLS = "skills"
     TIMELINE = "timeline"
+    COMPARE = "compare"
     WATCH = "watch"
     WATCH_BOARD = "watch_board"
     TREND = "trend"
@@ -38,6 +39,7 @@ _VIEW_TITLES = {
     CandidateView.LOADOUT: "的配装查询匹配到 {count} 个榜单",
     CandidateView.SKILLS: "的技能统计查询匹配到 {count} 个榜单",
     CandidateView.TIMELINE: "的技能轴查询匹配到 {count} 个榜单",
+    CandidateView.COMPARE: "的战报对比匹配到 {count} 个榜单",
     CandidateView.WATCH: "匹配到 {count} 个公开账号，选一个关注",
     CandidateView.WATCH_BOARD: "匹配到 {count} 个榜单，选一个关注",
     CandidateView.TREND: "匹配到 {count} 个公开账号，选一个看名次趋势",
@@ -59,6 +61,7 @@ class PendingCandidates:
     stats_range: str = "all"
     stats_potential: str = "all"
     battle_rank: int = 1
+    compare_rank: int = 2
 
 
 class CandidateStore:
@@ -85,6 +88,7 @@ class CandidateStore:
         stats_range: str = "all",
         stats_potential: str = "all",
         battle_rank: int = 1,
+        compare_rank: int = 2,
         origin: str = "",
         now: float | None = None,
     ) -> PendingCandidates:
@@ -102,6 +106,7 @@ class CandidateStore:
             stats_range=stats_range,
             stats_potential=stats_potential,
             battle_rank=battle_rank,
+            compare_rank=compare_rank,
             origin=origin,
         )
         self._entries[code] = entry

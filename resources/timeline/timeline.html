@@ -1,7 +1,8 @@
 {% extends "common/base.html" %}
 {% from "common/timeline-rail.html" import render_rail %}
+{% from "common/battle-charts.html" import render_buff_band %}
 
-{% block extra_styles %}{% include "battle/battle.css" %}{% include "common/timeline.css" %}{% endblock %}
+{% block extra_styles %}{% include "battle/battle.css" %}{% include "common/battle-charts.css" %}{% include "common/timeline.css" %}{% endblock %}
 
 {% block hero_facts %}
 <div class="hero-facts">
@@ -17,6 +18,14 @@
   <div><span>刻度</span><strong>{{ page.timeline.scale_label }}</strong></div>
   <div class="battle-link"><span>完整战报</span><code>{{ page.report_url }}</code></div>
 </section>
+
+{% if page.buff_band %}
+<div class="section-heading">
+  <h2>BUFF 覆盖</h2>
+  <span class="section-note">时间自左向右 · 每行一个增益，条形是它在场的时段，同一次施放覆盖全队时画成整条</span>
+</div>
+{{ render_buff_band(page.buff_band) }}
+{% endif %}
 
 <div class="section-heading">
   <h2>技能轴</h2>

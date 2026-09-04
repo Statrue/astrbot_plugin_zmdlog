@@ -36,6 +36,7 @@ if astrbot is not None:
     # handlers catch are the package's, not the ``core.*`` modules the rest of
     # the suite imports from the repo root. Use the same identities here.
     from astrbot_plugin_zmdlog import main as plugin_main
+    from astrbot_plugin_zmdlog.core.characters import CharacterFilterScope
     from astrbot_plugin_zmdlog.core.client import (
         ZmdLogsAPIError,
         ZmdLogsClientError,
@@ -110,6 +111,9 @@ class FakeRenderer:
 
     async def render_timeline(self, export, **kwargs):
         return "/tmp/timeline.png"
+
+    async def render_compare(self, first, second, **kwargs):
+        return "/tmp/compare.png"
 
     async def render_account(self, account, **kwargs):
         return "/tmp/account.png"
@@ -576,18 +580,34 @@ class HandlerTests(unittest.TestCase):
             exported.append(battle_id)
             return parse_battle_export(battle_export_payload())
 
-        async def unexpected(battle_id):
-            raise AssertionError("the timeline must not fetch the battle detail")
+        received: list[dict] = []
+
+        async def detail(battle_id):
+            return parse_battle_detail(battle_detail_payload())
+
+        async def render_timeline(export, **kwargs):
+            received.append(kwargs)
+            return "/tmp/timeline.png"
 
         self.plugin._get_boss_ranking = ranking
         self.plugin._get_battle_export = export
-        self.plugin._get_battle_detail = unexpected
+        self.plugin._get_battle_detail = detail
+        self.plugin.renderer.render_timeline = render_timeline
 
         (kind, result), = self._zmdlog("zmdlog 技能轴 三位一体 2")
         self.assertEqual((kind, result), ("image", "/tmp/timeline.png"))
         self.assertEqual(exported, ["btl_upload_000000000002"])
+        # The detail rides along for the BUFF band when it can be fetched...
+        self.assertEqual(received[-1]["battle"].battle_id, "btl_upload_abcdef123456")
+
+        async def offline(battle_id):
+            raise ZmdLogsClientError("offline")
+
+        self.plugin._get_battle_detail = offline
         (kind, result), = self._zmdlog("zmdlog 排轴 btl_upload_abcdef123456")
         self.assertEqual((kind, result), ("image", "/tmp/timeline.png"))
+        # ...and the page still renders without it.
+        self.assertIsNone(received[-1]["battle"])
 
     def test_the_battle_card_takes_the_export_when_it_can_get_one(self) -> None:
         received: list[dict] = []
@@ -629,6 +649,98 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(
             (received[-1]["export"], received[-1]["export_note"]), (None, None)
         )
+
+    def test_several_character_names_filter_the_whole_team(self) -> None:
+        received: list[dict] = []
+
+        async def ranking(boss_slug):
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        async def render_ranking(ranking, **kwargs):
+            received.append(kwargs)
+            return "/tmp/ranking.png"
+
+        self.plugin._get_boss_ranking = ranking
+        self.plugin.renderer.render_ranking = render_ranking
+
+        (kind, result), = self._zmdlog("zmdlog 三位一体 --角色 黎风 洁尔佩塔")
+        self.assertEqual((kind, result), ("image", "/tmp/ranking.png"))
+        self.assertEqual(received[-1]["character_filter"], ("黎风", "洁尔佩塔"))
+        self.assertIs(
+            received[-1]["character_filter_scope"], CharacterFilterScope.ROSTER
+        )
+        # Pinyin initials resolve per name, and a lone name keeps the main-C rule.
+        (kind, result), = self._zmdlog("zmdlog 三位一体 --角色 lf")
+        self.assertEqual(received[-1]["character_filter"], ("黎风",))
+        self.assertIs(
+            received[-1]["character_filter_scope"], CharacterFilterScope.MAIN
+        )
+
+        (kind, reply), = self._zmdlog("zmdlog 三位一体 --角色 黎风 洛茜")
+        self.assertEqual(kind, "plain")
+        self.assertIn("没有同时带上", reply)
+
+    def test_compare_fetches_both_ranked_battles(self) -> None:
+        fetched: list[str] = []
+        received: list[dict] = []
+
+        async def ranking(boss_slug):
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        async def detail(battle_id):
+            fetched.append(battle_id)
+            payload = battle_detail_payload()
+            payload["battle"]["id"] = battle_id
+            return parse_battle_detail(payload)
+
+        async def render_compare(first, second, **kwargs):
+            received.append({"ids": (first.battle_id, second.battle_id), **kwargs})
+            return "/tmp/compare.png"
+
+        self.plugin._get_boss_ranking = ranking
+        self.plugin._get_battle_detail = detail
+        self.plugin.renderer.render_compare = render_compare
+
+        (kind, result), = self._zmdlog("zmdlog 对比 三位一体 1 3")
+        self.assertEqual((kind, result), ("image", "/tmp/compare.png"))
+        self.assertEqual(
+            sorted(fetched), ["btl_upload_000000000001", "btl_upload_000000000003"]
+        )
+        self.assertEqual(
+            received[-1]["ids"], ("btl_upload_000000000001", "btl_upload_000000000003")
+        )
+        self.assertEqual((received[-1]["rank_a"], received[-1]["rank_b"]), (1, 3))
+
+        # Two explicit references skip the board entirely.
+        (kind, result), = self._zmdlog(
+            "zmdlog 对比 btl_upload_aaaaaaaaaaaa btl_upload_bbbbbbbbbbbb"
+        )
+        self.assertEqual((kind, result), ("image", "/tmp/compare.png"))
+        self.assertIsNone(received[-1]["rank_a"])
+
+        (kind, reply), = self._zmdlog("zmdlog 对比 三位一体 1 9")
+        self.assertEqual(kind, "plain")
+        self.assertIn("没有第 9 名", reply)
+        (kind, reply), = self._zmdlog(
+            "zmdlog 对比 btl_upload_aaaaaaaaaaaa btl_upload_aaaaaaaaaaaa"
+        )
+        self.assertEqual((kind, reply), ("plain", "两边是同一场战报，没有可比的。"))
+
+        # Two bosses have two rotations; the comparison is refused in text.
+        async def other_boss(battle_id):
+            payload = battle_detail_payload()
+            payload["battle"]["id"] = battle_id
+            if battle_id.endswith("b"):
+                payload["battle"]["bossName"] = "三位一体"
+            return parse_battle_detail(payload)
+
+        self.plugin._get_battle_detail = other_boss
+        (kind, reply), = self._zmdlog(
+            "zmdlog 对比 btl_upload_aaaaaaaaaaaa btl_upload_bbbbbbbbbbbb"
+        )
+        self.assertEqual(kind, "plain")
+        self.assertIn("不做跨榜单对比", reply)
+        self.assertIn("三位一体", reply)
 
     def test_timeline_explains_old_uploads_and_rate_limits(self) -> None:
         answers = {
