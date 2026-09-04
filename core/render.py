@@ -8,7 +8,9 @@ import tempfile
 import time
 import uuid
 from collections import OrderedDict
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -55,6 +57,11 @@ _VERSION_LINE = re.compile(
     r"^\s*version\s*:\s*(?P<value>[^#]+?)\s*(?:#.*)?$"
 )
 _OUTPUT_FILE_GLOB = "zmd-*.png"
+# The bundled fonts are served to Chromium from memory under this origin
+# (a reserved, unresolvable TLD) instead of being embedded as data URLs:
+# they weigh 3.7 MB base64, and pushing that through set_content plus
+# decoding it cost a third of every capture.
+FONT_ORIGIN = "https://fonts.zmdlog.invalid"
 # Short pages are captured at 2x for legibility on phones; the potentially very
 # long top-3 pages stay at 1x to remain well below Chromium's 16384px limit.
 _HIGH_DPI_PAGE_KINDS = frozenset(
@@ -109,7 +116,9 @@ class TemplateRenderer:
         self.resources_path = resources_path.resolve()
         self.version = read_plugin_version(metadata_path)
         self.background_data_url = _load_background_data_url(background_path)
-        self.font_face_css = _load_font_face_css(fonts_path)
+        self.font_files, self.font_face_css, self.linked_font_face_css = (
+            _load_fonts(fonts_path)
+        )
         self.environment = Environment(
             loader=FileSystemLoader(str(self.resources_path)),
             autoescape=select_autoescape(
@@ -132,9 +141,19 @@ class TemplateRenderer:
             resources_path / "common" / "fonts",
         )
 
-    def render_help(self, *, command_prefix: str) -> str:
+    def render_help(
+        self,
+        *,
+        command_prefix: str,
+        embed_fonts: bool = True,
+    ) -> str:
         page = build_help_page(command_prefix)
-        return self._render("help/help.html", page, "help")
+        return self._render(
+            "help/help.html",
+            page,
+            "help",
+            embed_fonts=embed_fonts,
+        )
 
     def render_all_top3(
         self,
@@ -142,13 +161,19 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str | None = None,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_all_top3_page(
             cards,
             query=query,
             web_base_url=web_base_url,
         )
-        return self._render("all-top3/all-top3.html", page, "all-top3")
+        return self._render(
+            "all-top3/all-top3.html",
+            page,
+            "all-top3",
+            embed_fonts=embed_fonts,
+        )
 
     def render_dungeon_top3(
         self,
@@ -157,6 +182,7 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str | None = None,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_dungeon_top3_page(
             choice,
@@ -168,6 +194,7 @@ class TemplateRenderer:
             "dungeon-top3/dungeon-top3.html",
             page,
             "dungeon-top3",
+            embed_fonts=embed_fonts,
         )
 
     def render_ranking(
@@ -179,6 +206,7 @@ class TemplateRenderer:
         web_base_url: str | None = None,
         character_filter: str | tuple[str, ...] | None = None,
         character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_ranking_page(
             ranking,
@@ -188,7 +216,12 @@ class TemplateRenderer:
             character_filter=character_filter,
             character_filter_scope=character_filter_scope,
         )
-        return self._render("ranking/ranking.html", page, "ranking")
+        return self._render(
+            "ranking/ranking.html",
+            page,
+            "ranking",
+            embed_fonts=embed_fonts,
+        )
 
     def render_character_stats(
         self,
@@ -196,6 +229,7 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str | None = None,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_character_stats_page(
             stats,
@@ -206,6 +240,7 @@ class TemplateRenderer:
             "character-stats/character-stats.html",
             page,
             "character-stats",
+            embed_fonts=embed_fonts,
         )
 
     def render_character_boss(
@@ -214,6 +249,7 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str | None = None,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_character_boss_page(
             stats,
@@ -224,6 +260,7 @@ class TemplateRenderer:
             "character-boss/character-boss.html",
             page,
             "character-boss",
+            embed_fonts=embed_fonts,
         )
 
     def render_roster(
@@ -233,6 +270,7 @@ class TemplateRenderer:
         query: str,
         ranking_limit: int = DEFAULT_RANKING_TOP,
         web_base_url: str | None = None,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_roster_page(
             ranking,
@@ -240,7 +278,12 @@ class TemplateRenderer:
             display_limit=ranking_limit,
             web_base_url=web_base_url,
         )
-        return self._render("roster/roster.html", page, "roster")
+        return self._render(
+            "roster/roster.html",
+            page,
+            "roster",
+            embed_fonts=embed_fonts,
+        )
 
     def render_account(
         self,
@@ -248,13 +291,19 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_account_page(
             account,
             query=query,
             web_base_url=web_base_url,
         )
-        return self._render("account/account.html", page, "account")
+        return self._render(
+            "account/account.html",
+            page,
+            "account",
+            embed_fonts=embed_fonts,
+        )
 
     def render_battle(
         self,
@@ -264,6 +313,7 @@ class TemplateRenderer:
         web_base_url: str,
         export: BattleExport | None = None,
         export_note: str | None = None,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_battle_page(
             battle,
@@ -272,7 +322,12 @@ class TemplateRenderer:
             export=export,
             export_note=export_note,
         )
-        return self._render("battle/battle.html", page, "battle")
+        return self._render(
+            "battle/battle.html",
+            page,
+            "battle",
+            embed_fonts=embed_fonts,
+        )
 
     def render_loadout(
         self,
@@ -280,13 +335,19 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_loadout_page(
             battle,
             query=query,
             web_base_url=web_base_url,
         )
-        return self._render("loadout/loadout.html", page, "loadout")
+        return self._render(
+            "loadout/loadout.html",
+            page,
+            "loadout",
+            embed_fonts=embed_fonts,
+        )
 
     def render_skills(
         self,
@@ -294,13 +355,19 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_skill_page(
             battle,
             query=query,
             web_base_url=web_base_url,
         )
-        return self._render("skills/skills.html", page, "skills")
+        return self._render(
+            "skills/skills.html",
+            page,
+            "skills",
+            embed_fonts=embed_fonts,
+        )
 
     def render_trend(
         self,
@@ -310,6 +377,7 @@ class TemplateRenderer:
         web_base_url: str,
         time_range: str = "30d",
         last_checked: str | None = None,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_trend_page(
             history,
@@ -318,7 +386,12 @@ class TemplateRenderer:
             time_range=time_range,
             last_checked=last_checked,
         )
-        return self._render("trend/trend.html", page, "trend")
+        return self._render(
+            "trend/trend.html",
+            page,
+            "trend",
+            embed_fonts=embed_fonts,
+        )
 
     def render_timeline(
         self,
@@ -327,6 +400,7 @@ class TemplateRenderer:
         query: str,
         web_base_url: str,
         battle: BattleDetailSummary | None = None,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_timeline_page(
             export,
@@ -334,7 +408,12 @@ class TemplateRenderer:
             web_base_url=web_base_url,
             battle=battle,
         )
-        return self._render("timeline/timeline.html", page, "timeline")
+        return self._render(
+            "timeline/timeline.html",
+            page,
+            "timeline",
+            embed_fonts=embed_fonts,
+        )
 
     def render_compare(
         self,
@@ -345,6 +424,7 @@ class TemplateRenderer:
         web_base_url: str,
         rank_a: int | None = None,
         rank_b: int | None = None,
+        embed_fonts: bool = True,
     ) -> str:
         page = build_compare_page(
             first,
@@ -354,16 +434,38 @@ class TemplateRenderer:
             rank_a=rank_a,
             rank_b=rank_b,
         )
-        return self._render("compare/compare.html", page, "compare")
+        return self._render(
+            "compare/compare.html",
+            page,
+            "compare",
+            embed_fonts=embed_fonts,
+        )
 
-    def _render(self, template_name: str, page, page_kind: str) -> str:
+    def _render(
+        self,
+        template_name: str,
+        page,
+        page_kind: str,
+        *,
+        embed_fonts: bool = True,
+    ) -> str:
+        """Render one page; ``embed_fonts`` picks how the fonts are referenced.
+
+        Embedded data URLs make the document self-contained for a renderer
+        that cannot reach this process (AstrBot's fallback); linked fonts on
+        :data:`FONT_ORIGIN` keep it small for the bundled Chromium, whose
+        route handler serves them from memory.
+        """
+
         template = self.environment.get_template(template_name)
         return template.render(
             page=page,
             page_kind=page_kind,
             plugin={"name": "ZmdLogBot", "version": self.version},
             background_data_url=self.background_data_url,
-            font_face_css=self.font_face_css,
+            font_face_css=(
+                self.font_face_css if embed_fonts else self.linked_font_face_css
+            ),
         )
 
 
@@ -450,6 +552,28 @@ class AssetCache:
         return len(self._entries)
 
 
+def _captured(
+    page_kind: str,
+    build_html: Callable[..., str],
+) -> Callable[..., Awaitable[str]]:
+    """Build the :class:`LongImageRenderer` method that captures one page.
+
+    Every caller passes keyword arguments, so the wrapper forwards them to the
+    :class:`TemplateRenderer` method unchanged and adds only the page kind.
+    """
+
+    async def render(self, *args: Any, **kwargs: Any) -> str:
+        return await self._render(
+            page_kind,
+            partial(build_html, self.templates, *args, **kwargs),
+        )
+
+    render.__name__ = build_html.__name__
+    render.__qualname__ = f"LongImageRenderer.{build_html.__name__}"
+    render.__doc__ = build_html.__doc__
+    return render
+
+
 class LongImageRenderer:
     """Capture every result as one complete 1280px-wide PNG."""
 
@@ -505,268 +629,64 @@ class LongImageRenderer:
         self._active_outputs: set[Path] = set()
         self._cleanup_task: asyncio.Task[None] | None = None
 
-    async def render_help(self, *, command_prefix: str) -> str:
-        try:
-            html = self.templates.render_help(command_prefix=command_prefix)
-        except Exception as exc:
-            raise RenderError("help template rendering failed") from exc
-        return await self._capture(html, "help")
-
-    async def render_all_top3(
-        self,
-        cards: tuple[HotBossCard, ...],
-        *,
-        query: str,
-        web_base_url: str | None = None,
-    ) -> str:
-        try:
-            html = self.templates.render_all_top3(
-                cards,
-                query=query,
-                web_base_url=web_base_url,
-            )
-        except Exception as exc:
-            raise RenderError("all-board template rendering failed") from exc
-        return await self._capture(html, "all-top3")
-
-    async def render_dungeon_top3(
-        self,
-        choice: MatchChoice,
-        cards: tuple[HotBossCard, ...],
-        *,
-        query: str,
-        web_base_url: str | None = None,
-    ) -> str:
-        try:
-            html = self.templates.render_dungeon_top3(
-                choice,
-                cards,
-                query=query,
-                web_base_url=web_base_url,
-            )
-        except Exception as exc:
-            raise RenderError("dungeon template rendering failed") from exc
-        return await self._capture(html, "dungeon-top3")
-
-    async def render_ranking(
-        self,
-        ranking: BossRanking,
-        *,
-        query: str,
-        ranking_limit: int = DEFAULT_RANKING_TOP,
-        web_base_url: str | None = None,
-        character_filter: str | tuple[str, ...] | None = None,
-        character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
-    ) -> str:
-        try:
-            html = self.templates.render_ranking(
-                ranking,
-                query=query,
-                ranking_limit=ranking_limit,
-                web_base_url=web_base_url,
-                character_filter=character_filter,
-                character_filter_scope=character_filter_scope,
-            )
-        except Exception as exc:
-            raise RenderError("ranking template rendering failed") from exc
-        return await self._capture(html, "ranking")
-
-    async def render_character_stats(
-        self,
-        stats: CharacterStatistics,
-        *,
-        query: str,
-        web_base_url: str | None = None,
-    ) -> str:
-        try:
-            html = self.templates.render_character_stats(
-                stats,
-                query=query,
-                web_base_url=web_base_url,
-            )
-        except Exception as exc:
-            raise RenderError("character stats template rendering failed") from exc
-        return await self._capture(html, "character-stats")
-
-    async def render_character_boss(
-        self,
-        stats: CharacterBossStatistics,
-        *,
-        query: str,
-        web_base_url: str | None = None,
-    ) -> str:
-        try:
-            html = self.templates.render_character_boss(
-                stats,
-                query=query,
-                web_base_url=web_base_url,
-            )
-        except Exception as exc:
-            raise RenderError(
-                "character boss template rendering failed"
-            ) from exc
-        return await self._capture(html, "character-boss")
-
-    async def render_roster(
-        self,
-        ranking: BossRanking,
-        *,
-        query: str,
-        ranking_limit: int = DEFAULT_RANKING_TOP,
-        web_base_url: str | None = None,
-    ) -> str:
-        try:
-            html = self.templates.render_roster(
-                ranking,
-                query=query,
-                ranking_limit=ranking_limit,
-                web_base_url=web_base_url,
-            )
-        except Exception as exc:
-            raise RenderError("roster template rendering failed") from exc
-        return await self._capture(html, "roster")
-
-    async def render_account(
-        self,
-        account: PublicUserRankings,
-        *,
-        query: str,
-        web_base_url: str,
-    ) -> str:
-        try:
-            html = self.templates.render_account(
-                account,
-                query=query,
-                web_base_url=web_base_url,
-            )
-        except Exception as exc:
-            raise RenderError("account template rendering failed") from exc
-        return await self._capture(html, "account")
-
-    async def render_battle(
-        self,
-        battle: BattleDetailSummary,
-        *,
-        query: str,
-        web_base_url: str,
-        export: BattleExport | None = None,
-        export_note: str | None = None,
-    ) -> str:
-        try:
-            html = self.templates.render_battle(
-                battle,
-                query=query,
-                web_base_url=web_base_url,
-                export=export,
-                export_note=export_note,
-            )
-        except Exception as exc:
-            raise RenderError("battle template rendering failed") from exc
-        return await self._capture(html, "battle")
-
-    async def render_loadout(
-        self,
-        battle: BattleDetailSummary,
-        *,
-        query: str,
-        web_base_url: str,
-    ) -> str:
-        try:
-            html = self.templates.render_loadout(
-                battle,
-                query=query,
-                web_base_url=web_base_url,
-            )
-        except Exception as exc:
-            raise RenderError("loadout template rendering failed") from exc
-        return await self._capture(html, "loadout")
-
-    async def render_skills(
-        self,
-        battle: BattleDetailSummary,
-        *,
-        query: str,
-        web_base_url: str,
-    ) -> str:
-        try:
-            html = self.templates.render_skills(
-                battle,
-                query=query,
-                web_base_url=web_base_url,
-            )
-        except Exception as exc:
-            raise RenderError("skills template rendering failed") from exc
-        return await self._capture(html, "skills")
-
-    async def render_trend(
-        self,
-        history: AccountHistory,
-        *,
-        query: str,
-        web_base_url: str,
-        time_range: str = "30d",
-        last_checked: str | None = None,
-    ) -> str:
-        try:
-            html = self.templates.render_trend(
-                history,
-                query=query,
-                web_base_url=web_base_url,
-                time_range=time_range,
-                last_checked=last_checked,
-            )
-        except Exception as exc:
-            raise RenderError("trend template rendering failed") from exc
-        return await self._capture(html, "trend")
-
-    async def render_timeline(
-        self,
-        export: BattleExport,
-        *,
-        query: str,
-        web_base_url: str,
-        battle: BattleDetailSummary | None = None,
-    ) -> str:
-        try:
-            html = self.templates.render_timeline(
-                export,
-                query=query,
-                web_base_url=web_base_url,
-                battle=battle,
-            )
-        except Exception as exc:
-            raise RenderError("timeline template rendering failed") from exc
-        return await self._capture(html, "timeline")
-
-    async def render_compare(
-        self,
-        first: BattleDetailSummary,
-        second: BattleDetailSummary,
-        *,
-        query: str,
-        web_base_url: str,
-        rank_a: int | None = None,
-        rank_b: int | None = None,
-    ) -> str:
-        try:
-            html = self.templates.render_compare(
-                first,
-                second,
-                query=query,
-                web_base_url=web_base_url,
-                rank_a=rank_a,
-                rank_b=rank_b,
-            )
-        except Exception as exc:
-            raise RenderError("compare template rendering failed") from exc
-        return await self._capture(html, "compare")
+    # One capturing wrapper per page, with the name and signature of the
+    # TemplateRenderer method it runs; the page kind picks the capture scale
+    # and names the output file.
+    render_help = _captured("help", TemplateRenderer.render_help)
+    render_all_top3 = _captured("all-top3", TemplateRenderer.render_all_top3)
+    render_dungeon_top3 = _captured(
+        "dungeon-top3", TemplateRenderer.render_dungeon_top3
+    )
+    render_ranking = _captured("ranking", TemplateRenderer.render_ranking)
+    render_character_stats = _captured(
+        "character-stats", TemplateRenderer.render_character_stats
+    )
+    render_character_boss = _captured(
+        "character-boss", TemplateRenderer.render_character_boss
+    )
+    render_roster = _captured("roster", TemplateRenderer.render_roster)
+    render_account = _captured("account", TemplateRenderer.render_account)
+    render_battle = _captured("battle", TemplateRenderer.render_battle)
+    render_loadout = _captured("loadout", TemplateRenderer.render_loadout)
+    render_skills = _captured("skills", TemplateRenderer.render_skills)
+    render_trend = _captured("trend", TemplateRenderer.render_trend)
+    render_timeline = _captured("timeline", TemplateRenderer.render_timeline)
+    render_compare = _captured("compare", TemplateRenderer.render_compare)
 
     async def warm_up(self) -> None:
         """Launch Chromium and render one page so the first query is fast."""
 
-        html = self.templates.render_help(command_prefix="/")
-        output_path = await self._capture(html, "warmup")
+        output_path = await self._render(
+            "warmup",
+            partial(self.templates.render_help, command_prefix="/"),
+        )
         await self._discard_output(Path(output_path))
+
+    async def _render(
+        self,
+        page_kind: str,
+        build: Callable[..., str],
+    ) -> str:
+        """Render one page with ``build(embed_fonts=...)`` and capture it.
+
+        Chromium gets the small document with linked fonts. When only the
+        capture fails, the error carries a self-contained copy with the
+        fonts embedded, because AstrBot's fallback renderer cannot reach the
+        route handler that serves them.
+        """
+
+        try:
+            html = build(embed_fonts=False)
+        except Exception as exc:
+            raise RenderError(f"{page_kind} template rendering failed") from exc
+        try:
+            return await self._capture(html, page_kind)
+        except RenderError as exc:
+            try:
+                exc.html = build(embed_fonts=True)
+            except Exception:
+                pass  # The linked copy is still a complete page, in system fonts.
+            raise
 
     async def _capture(self, html: str, page_kind: str) -> str:
         async with self._render_semaphore:
@@ -956,6 +876,13 @@ class LongImageRenderer:
             await route.continue_()
             return
         origin = f"{parsed.scheme.casefold()}://{parsed.netloc.casefold()}"
+        if origin == FONT_ORIGIN:
+            body = self.templates.font_files.get(parsed.path.rpartition("/")[2])
+            if body is None:
+                await route.abort()
+                return
+            await route.fulfill(status=200, content_type="font/woff2", body=body)
+            return
         if request.resource_type != "image" or origin not in self.allowed_image_origins:
             await route.abort()
             return
@@ -1141,23 +1068,37 @@ _FONT_FACES = (
 )
 
 
-def _load_font_face_css(fonts_path: Path | None) -> Markup:
+def _load_fonts(
+    fonts_path: Path | None,
+) -> tuple[dict[str, bytes], Markup, Markup]:
+    """Read the bundled subset fonts once.
+
+    Returns the raw files (served to Chromium by the route handler), the
+    ``@font-face`` CSS with the files embedded as data URLs, and the same
+    CSS linking them on :data:`FONT_ORIGIN`.
+    """
+
+    files: dict[str, bytes] = {}
+    embedded: list[str] = []
+    linked: list[str] = []
     if fonts_path is None:
-        return Markup("")
-    rules: list[str] = []
+        return files, Markup(""), Markup("")
     for file_name, family, weight in _FONT_FACES:
         try:
             payload = (fonts_path / file_name).read_bytes()
         except OSError:
             continue
-        encoded = base64.b64encode(payload).decode("ascii")
-        rules.append(
-            "@font-face{"
-            f'font-family:"{family}";font-weight:{weight};font-style:normal;'
-            f"font-display:block;src:url(data:font/woff2;base64,{encoded})"
-            'format("woff2")}'
+        files[file_name] = payload
+        face = (
+            f'@font-face{{font-family:"{family}";font-weight:{weight};'
+            "font-style:normal;font-display:block;src:url("
         )
-    return Markup("\n".join(rules))
+        encoded = base64.b64encode(payload).decode("ascii")
+        embedded.append(
+            f'{face}data:font/woff2;base64,{encoded})format("woff2")}}'
+        )
+        linked.append(f'{face}{FONT_ORIGIN}/{file_name})format("woff2")}}')
+    return files, Markup("\n".join(embedded)), Markup("\n".join(linked))
 
 
 def _read_png_dimensions(path: Path) -> tuple[int, int]:

@@ -4,6 +4,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from core.matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
 from core.models import (
@@ -21,6 +22,7 @@ from core.presentation import (
     format_number,
 )
 from core.render import (
+    FONT_ORIGIN,
     AssetCache,
     LongImageRenderer,
     RenderError,
@@ -541,3 +543,83 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeRoute:
+    def __init__(self, url: str, resource_type: str = "font") -> None:
+        self.request = SimpleNamespace(url=url, resource_type=resource_type)
+        self.fulfilled: dict | None = None
+        self.aborted = False
+
+    async def fulfill(self, **kwargs) -> None:
+        self.fulfilled = kwargs
+
+    async def abort(self) -> None:
+        self.aborted = True
+
+    async def continue_(self) -> None:
+        raise AssertionError("must not continue")
+
+    async def fetch(self, **kwargs):
+        raise AssertionError("must not fetch")
+
+
+class FontDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    """Chromium gets linked fonts served from memory; fallbacks get them embedded."""
+
+    def setUp(self) -> None:
+        self.root = Path(__file__).parents[1]
+        self.templates = TemplateRenderer.from_plugin_root(self.root)
+        if not self.templates.font_files:
+            self.skipTest("bundled fonts are not present")
+
+    def test_linked_fonts_keep_the_document_small(self) -> None:
+        linked = self.templates.render_help(command_prefix="/", embed_fonts=False)
+        embedded = self.templates.render_help(command_prefix="/")
+
+        self.assertIn(f"{FONT_ORIGIN}/MiSans-Regular.woff2", linked)
+        self.assertNotIn("data:font", linked)
+        self.assertIn("data:font/woff2;base64,", embedded)
+        self.assertNotIn(FONT_ORIGIN, embedded)
+        self.assertLess(len(linked), len(embedded) // 10)
+
+    async def test_capture_error_carries_the_self_contained_copy(self) -> None:
+        renderer = LongImageRenderer(self.root)
+        captured: list[str] = []
+
+        async def failing_capture(html: str, page_kind: str) -> str:
+            captured.append(html)
+            raise RenderError("browser capture failed")
+
+        renderer._capture_once = failing_capture
+        with self.assertRaises(RenderError) as context:
+            await renderer.render_help(command_prefix="/")
+
+        # Chromium was handed the small document; the AstrBot fallback cannot
+        # reach the route handler, so its copy embeds the fonts.
+        self.assertIn(FONT_ORIGIN, captured[0])
+        self.assertIn("data:font/woff2", context.exception.html or "")
+        await renderer.close()
+
+    async def test_font_requests_are_served_from_memory(self) -> None:
+        renderer = LongImageRenderer(
+            self.root, allowed_image_origins=("https://zmdlogs.com",)
+        )
+
+        known = FakeRoute(f"{FONT_ORIGIN}/MiSans-Regular.woff2")
+        await renderer._route_asset_request(known)
+        self.assertIsNotNone(known.fulfilled)
+        self.assertEqual(
+            known.fulfilled["body"],
+            renderer.templates.font_files["MiSans-Regular.woff2"],
+        )
+
+        unknown = FakeRoute(f"{FONT_ORIGIN}/other.woff2")
+        await renderer._route_asset_request(unknown)
+        self.assertTrue(unknown.aborted)
+
+        # Only the reserved origin serves fonts; the image origins stay images.
+        elsewhere = FakeRoute("https://zmdlogs.com/MiSans-Regular.woff2")
+        await renderer._route_asset_request(elsewhere)
+        self.assertTrue(elsewhere.aborted)
+        await renderer.close()
