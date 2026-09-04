@@ -93,7 +93,7 @@ class TopOptionBoundsTests(unittest.TestCase):
 
 
 class HelpTests(unittest.TestCase):
-    def test_help_uses_prefix_and_lists_help_before_query_forms(self) -> None:
+    def test_help_uses_prefix_and_keeps_one_row_per_question(self) -> None:
         page = build_help_page("!")
         commands = tuple(
             command.command
@@ -101,39 +101,38 @@ class HelpTests(unittest.TestCase):
             for command in section.commands
         )
 
+        # Commands that share an argument share a row; the page is the answer
+        # to "which commands exist", so there is no row for help itself.
         self.assertEqual(
             commands,
             (
-                "!zmdlog [help]",
+                "!zmdlog <榜单关键词> [--top 数量] [--角色 角色名…]",
                 "!zmdlog 榜单",
-                "!zmdlog <榜单关键词> [--top 数量]",
-                "!zmdlog <榜单关键词> --角色 <角色名> [角色名…]",
                 "!zmdlog 阵容 <榜单关键词> [--top 数量]",
                 (
-                    "!zmdlog 角色统计 [榜单关键词] "
-                    "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
-                ),
-                (
-                    "!zmdlog 角色统计 <角色名> "
+                    "!zmdlog 角色统计 [榜单关键词或角色名] "
                     "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
                 ),
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
-                "!zmdlog 战报 <battleId、链接或榜单关键词 [名次]>",
-                "!zmdlog 配装 <battleId、链接或榜单关键词 [名次]>",
-                "!zmdlog 技能 <battleId、链接或榜单关键词 [名次]>",
-                "!zmdlog 技能轴 <battleId、链接或榜单关键词 [名次]>",
-                "!zmdlog 对比 <榜单关键词 [名次A 名次B] 或 两个battleId/链接>",
-                "!zmdlog 关注 <昵称、accountId或主页链接>",
-                "!zmdlog 关注 榜单 <榜单关键词>",
-                "!zmdlog 关注",
-                "!zmdlog 取关 <序号或昵称>",
-                "!zmdlog 取关 榜单 <序号或榜单关键词>",
-                "!zmdlog 趋势 <昵称、accountId或主页链接> [--范围 7d|14d|30d|all]",
-                "!zmdlog 别名",
-                "!zmdlog 别名 添加 <榜单或副本> <别名...>",
-                "!zmdlog 别名 删除 <别名>",
+                (
+                    "!zmdlog 战报 | 配装 | 技能 | 技能轴 "
+                    "<battleId、链接或榜单关键词 [名次]>"
+                ),
+                "!zmdlog 对比 <榜单关键词 [名次 名次] 或 两个battleId>",
+                "!zmdlog 关注 [<账号> | 榜单 <关键词>]",
+                "!zmdlog 趋势 <账号> [--范围 7d|14d|30d|all]",
+                "!zmdlog 别名 [添加 <榜单或副本> <别名…> | 删除 <别名>]",
             ),
         )
+        self.assertEqual(
+            [section.title for section in page.sections],
+            ["榜单", "战报", "关注", "管理"],
+        )
+        # Every description stays a single line of what the syntax cannot say.
+        for section in page.sections:
+            for command in section.commands:
+                with self.subTest(command=command.command):
+                    self.assertLessEqual(len(command.description), 60)
         visible_text = repr(page)
         self.assertNotIn("固定口径", visible_text)
         self.assertNotIn("智能匹配", visible_text)
@@ -155,9 +154,7 @@ class HelpTests(unittest.TestCase):
         # One board read cannot prove who caused a drop, so the notice only
         # reports the new records above. The help page must promise no more.
         page = build_help_page("/")
-        section = next(
-            entry for entry in page.sections if entry.title == "名次通报"
-        )
+        section = next(entry for entry in page.sections if entry.title == "关注")
 
         self.assertNotIn("超", repr(section))
 
