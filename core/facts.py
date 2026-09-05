@@ -443,6 +443,14 @@ def format_character_standings(
         f"出场 {standings.appearances} 次，分布在 {len(standings.boards)} 个榜；"
         f"{len(standings.absent)} 个榜没有出场。"
     )
+    # "有多少冠军" is answered here, not by counting the lines below, which
+    # stop at ``limit``.
+    lines.append(
+        f"第一名 {standings.first_places} 个榜"
+        f"（其中 {name} 当主C {standings.first_places_as_main} 个）"
+        f" · 前三 {len(standings.boards_within(3))} 个榜"
+        f" · 前十 {len(standings.boards_within(10))} 个榜。"
+    )
     lines.append("")
     for board in standings.boards[: _bounded(limit)]:
         row = board.best

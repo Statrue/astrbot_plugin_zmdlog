@@ -40,6 +40,19 @@ class CharacterStandings:
     def appearances(self) -> int:
         return sum(board.appearances for board in self.boards)
 
+    def boards_within(self, rank: int) -> tuple[BoardStanding, ...]:
+        """Boards where the best record fielding the character ranks ≤ ``rank``."""
+
+        return tuple(board for board in self.boards if board.best.rank <= rank)
+
+    @property
+    def first_places(self) -> int:
+        return len(self.boards_within(1))
+
+    @property
+    def first_places_as_main(self) -> int:
+        return sum(1 for board in self.boards_within(1) if board.best_as_main)
+
 
 def character_standings(
     rankings: Iterable[BossRanking],

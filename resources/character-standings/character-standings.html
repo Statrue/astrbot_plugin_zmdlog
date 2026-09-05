@@ -25,9 +25,9 @@
     <p class="page-subtitle">{{ page.header.subtitle }}</p>
   </div>
   <div class="hero-facts">
-    <div class="hero-fact hero-fact--key"><span>上榜榜单</span><strong>{{ page.board_count }}</strong></div>
+    <div class="hero-fact hero-fact--key"><span>第一名</span><strong>{{ page.first_places }}</strong><em>当主 C {{ page.first_places_as_main }}</em></div>
+    <div class="hero-fact"><span>上榜榜单</span><strong>{{ page.board_count }}</strong><em>未出场 {{ page.absent_count }}</em></div>
     <div class="hero-fact"><span>出场记录</span><strong>{{ page.appearances }}</strong><em>当主 C {{ page.main_appearances }}</em></div>
-    <div class="hero-fact"><span>未出场榜单</span><strong>{{ page.absent_count }}</strong></div>
     {% if page.as_of_label %}
     <div class="hero-fact"><span>时效</span><strong class="standings-asof">{{ page.as_of_label }}</strong></div>
     {% endif %}
@@ -104,7 +104,7 @@
 {% if page.absent %}
 <div class="section-heading section-heading--minor">
   <h2>没有出场</h2>
-  <span class="section-note">这些榜单的公开记录里没有带 {{ page.character_name }} 的队伍</span>
+  <span class="section-note">{{ page.absent_count }} 个榜单的公开记录里没有带 {{ page.character_name }} 的队伍</span>
 </div>
 <div class="stats-insufficient">
   {% for boss_name in page.absent %}

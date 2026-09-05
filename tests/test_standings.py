@@ -75,6 +75,9 @@ class StandingsTests(unittest.TestCase):
         text = facts.format_character_standings(standings, age_seconds=185)
 
         self.assertIn(f"#1/{len(self.first.rows)} 三位一体", text)
+        # The count a model is asked for is stated, not left to be counted.
+        self.assertIn("第一名 2 个榜", text)
+        self.assertIn("前三 2 个榜", text)
         self.assertIn("数据截至 3 分钟前", text)
         self.assertIn("battleId", text)
         self.assertIn("不是角色本身的强度", text)
@@ -106,6 +109,7 @@ class StandingsPageTests(unittest.TestCase):
         self.assertEqual(page.character_name, self.name)
         self.assertEqual(len(page.rows), 2)
         self.assertEqual(page.rows[0].rank, 1)
+        self.assertEqual(page.first_places, 2)
         self.assertEqual(page.rows[0].total_rows, len(self.rankings[0].rows))
         self.assertEqual(len(page.rows[0].roster), 4)
         self.assertEqual(page.as_of_label, "数据截至 1 小时 6 分钟前")

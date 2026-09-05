@@ -37,6 +37,8 @@ class CharacterStandingsPage:
     character_avatar_url: str | None
     appearances: int
     main_appearances: int
+    first_places: int
+    first_places_as_main: int
     board_count: int
     absent_count: int
     as_of_label: str
@@ -105,6 +107,8 @@ def build_character_standings_page(
         character_avatar_url=avatar_url,
         appearances=standings.appearances,
         main_appearances=sum(board.main_appearances for board in standings.boards),
+        first_places=standings.first_places,
+        first_places_as_main=standings.first_places_as_main,
         board_count=len(standings.boards),
         absent_count=len(standings.absent),
         as_of_label=_as_of_label(age_seconds),
