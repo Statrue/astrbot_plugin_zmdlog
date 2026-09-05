@@ -27,6 +27,10 @@ from .settings import PluginSettings
 
 HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
 _HOT_BOSSES_KEY = "all_board_top3"
+# A parsed battle carries its damage points and buff spans and measures
+# 50-130 KB, an order of magnitude more than any other cached value, so the
+# two battle caches get a tighter cap than the shared default.
+BATTLE_CACHE_MAX_ENTRIES = 64
 
 
 class ZmdLogsDataSource:
@@ -64,8 +68,14 @@ class ZmdLogsDataSource:
             tuple[str, str, str],
             CharacterBossStatistics,
         ](stats_ttl)
-        self.battle_cache = AsyncTTLCache[str, BattleDetailSummary](battle_ttl)
-        self.battle_export_cache = AsyncTTLCache[str, BattleExport](battle_ttl)
+        self.battle_cache = AsyncTTLCache[str, BattleDetailSummary](
+            battle_ttl,
+            max_entries=BATTLE_CACHE_MAX_ENTRIES,
+        )
+        self.battle_export_cache = AsyncTTLCache[str, BattleExport](
+            battle_ttl,
+            max_entries=BATTLE_CACHE_MAX_ENTRIES,
+        )
         self._caches = (
             self.hot_boss_cache,
             self.boss_ranking_cache,

@@ -1,7 +1,15 @@
-"""Small async TTL cache with single-flight loading and bounded stale reuse."""
+"""Small async TTL cache with single-flight loading and bounded stale reuse.
+
+The TTL decides whether a value may be *reused*; on its own it never frees
+anything, so a cache keyed by battle id would hold every battle the bot has
+ever been asked about. Entries are therefore dropped once they can no
+longer be served, and the map is capped, evicting whatever was used least
+recently.
+"""
 
 import asyncio
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -9,6 +17,8 @@ from typing import Generic, TypeVar
 
 K = TypeVar("K")
 V = TypeVar("V")
+
+DEFAULT_MAX_ENTRIES = 256
 
 
 class CacheState(str, Enum):
@@ -38,6 +48,7 @@ class AsyncTTLCache(Generic[K, V]):
         ttl_seconds: float,
         *,
         stale_ttl_seconds: float = 0,
+        max_entries: int = DEFAULT_MAX_ENTRIES,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.ttl_seconds = _positive_duration(ttl_seconds, "ttl_seconds")
@@ -45,8 +56,9 @@ class AsyncTTLCache(Generic[K, V]):
             stale_ttl_seconds,
             "stale_ttl_seconds",
         )
+        self.max_entries = _positive_count(max_entries, "max_entries")
         self._clock = clock
-        self._entries: dict[K, _CacheEntry[V]] = {}
+        self._entries: OrderedDict[K, _CacheEntry[V]] = OrderedDict()
         self._inflight: dict[K, asyncio.Task[CacheResult[V]]] = {}
         self._lock = asyncio.Lock()
 
@@ -61,8 +73,10 @@ class AsyncTTLCache(Generic[K, V]):
 
         async with self._lock:
             now = self._clock()
+            self._drop_unusable(now)
             entry = self._entries.get(key)
             if entry is not None and now < entry.fresh_until:
+                self._entries.move_to_end(key)
                 return CacheResult(entry.value, CacheState.HIT)
 
             task = self._inflight.get(key)
@@ -124,11 +138,35 @@ class AsyncTTLCache(Generic[K, V]):
             )
             async with self._lock:
                 self._entries[key] = entry
+                self._entries.move_to_end(key)
+                self._drop_unusable(now)
+                while len(self._entries) > self.max_entries:
+                    self._entries.popitem(last=False)
             return CacheResult(value, CacheState.LOADED)
         finally:
             async with self._lock:
                 if self._inflight.get(key) is current_task:
                     self._inflight.pop(key, None)
+
+
+    def _drop_unusable(self, now: float) -> None:
+        """Forget entries that can no longer be served, fresh or stale."""
+
+        for key in [
+            key
+            for key, entry in self._entries.items()
+            if now >= entry.stale_until
+        ]:
+            del self._entries[key]
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
+def _positive_count(value: int, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
 
 
 def _positive_duration(value: float, name: str) -> float:

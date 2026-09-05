@@ -110,3 +110,67 @@ class AsyncTTLCacheTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CacheEvictionTests(unittest.IsolatedAsyncioTestCase):
+    """A TTL says when a value may be reused; it never frees anything."""
+
+    def _cache(self, **kwargs):
+        self.now = 0.0
+        return AsyncTTLCache[str, str](
+            60.0, clock=lambda: self.now, **kwargs
+        )
+
+    async def _load(self, cache, key):
+        async def value():
+            return key
+
+        return (await cache.get_or_load(key, value)).value
+
+    async def test_expired_entries_are_released(self) -> None:
+        cache = self._cache()
+        for index in range(20):
+            await self._load(cache, f"btl_{index}")
+        self.assertEqual(len(cache), 20)
+
+        self.now += 86_400.0
+        await self._load(cache, "fresh")
+
+        # A cache keyed by battle id would otherwise hold every battle the
+        # bot has ever been asked about.
+        self.assertEqual(len(cache), 1)
+
+    async def test_a_stale_entry_survives_until_its_stale_window_ends(self) -> None:
+        cache = self._cache(stale_ttl_seconds=60.0)
+        await self._load(cache, "boards")
+
+        self.now = 90.0  # fresh window over, stale window still open
+        await self._load(cache, "other")
+        self.assertEqual(len(cache), 2)
+
+        async def failing():
+            raise RuntimeError("upstream down")
+
+        result = await cache.get_or_load("boards", failing, allow_stale_on_error=True)
+        self.assertEqual((result.value, result.state), ("boards", CacheState.STALE))
+
+        # "other" was loaded at t=90, so its own stale window runs to 210.
+        self.now = 250.0
+        await self._load(cache, "later")
+        self.assertEqual(set(cache._entries), {"later"})
+
+    async def test_the_map_is_capped_and_drops_the_least_recently_used(self) -> None:
+        cache = self._cache(max_entries=3)
+        for key in ("a", "b", "c"):
+            await self._load(cache, key)
+        await self._load(cache, "a")  # a hit makes "a" the most recent
+        await self._load(cache, "d")
+
+        self.assertEqual(len(cache), 3)
+        self.assertEqual(set(cache._entries), {"a", "c", "d"})
+
+    async def test_an_unusable_cap_is_refused(self) -> None:
+        for bad in (0, -1, True, 2.5, "8"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    AsyncTTLCache[str, str](60.0, max_entries=bad)
