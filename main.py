@@ -640,13 +640,14 @@ class ZmdLogBotPlugin(Star):
 
     # --- LLM tools ----------------------------------------------------------
     #
-    # Each tool draws the page zmdlog would have drawn and sends it, then
-    # returns the facts behind it as text. The picture carries the numbers so
-    # the model never has to retype them; every docstring says so, because a
-    # model that restates a figure eventually drops a digit.
+    # Four tools, one per subject, never one per feature: AstrBot sends every
+    # active tool's schema with every LLM request, and a model choosing among
+    # overlapping tools picks the wrong one. Each draws the page zmdlog would
+    # have drawn and sends it, then returns the facts behind it as text. The
+    # picture carries the numbers so the model never has to retype them.
 
-    @filter.llm_tool(name="get_endfield_board_ranking")
-    async def get_endfield_board_ranking(
+    @filter.llm_tool(name="query_endfield_board")
+    async def query_endfield_board(
         self,
         event: AstrMessageEvent,
         board: str,
@@ -654,13 +655,15 @@ class ZmdLogBotPlugin(Star):
         limit: str = "",
     ):
         """查询终末地某个首领榜单的公开速通记录：前几名的用时、DPS、主C、
-        完整阵容和 battleId，以及该榜各职业位的角色出场率。已自动发送榜单长图，
-        图里有完整数值，你不要复述数字，只解读。数据只涵盖公开上传的成功记录，
-        没有失败记录，也不代表谁更强。
+        阵容和 battleId，该榜各职业位的角色出场率，以及出现过的阵容组合各几次；
+        给了角色名则只看带这个角色的记录，并统计它最常和谁同队。
+        已自动发送榜单长图，图里有完整数值，你不要复述数字，只解读。
+        数据只有公开上传的成功记录，没有失败样本，出场次数和名次都不代表谁更强。
 
         Args:
-            board(string): 榜单或副本关键词，例如“罗丹”“呼吼炽焰”“影拓丰碑4期”
-            character(string): 只看阵容里带这个角色的记录，例如“提弗洛斯”，不筛选就留空
+            board(string): 榜单或副本关键词，例如“罗丹”“呼吼炽焰”
+            character(string): 只看阵容里带这个角色的记录并统计它的同队伙伴，
+                例如“提弗洛斯”，不筛选就留空
             limit(string): 列出前几名，默认 10，最多 30
         """
 
@@ -673,82 +676,42 @@ class ZmdLogBotPlugin(Star):
             ),
         )
 
-    @filter.llm_tool(name="get_endfield_board_teams")
-    async def get_endfield_board_teams(self, event: AstrMessageEvent, board: str):
-        """统计终末地某个首领榜单的公开记录里出现过哪些阵容、各出现多少次。只是出场次数，
-        不代表哪套阵容更强；上榜记录全是成功的速通，没有失败样本可比。
-
-        Args:
-            board(string): 榜单或副本关键词，例如“罗丹”“呼吼炽焰”
-        """
-
-        return await self._run_tool(event, lambda: self.tools.teams(board))
-
-    @filter.llm_tool(name="get_endfield_character_partners")
-    async def get_endfield_character_partners(
+    @filter.llm_tool(name="query_endfield_battle")
+    async def query_endfield_battle(
         self,
         event: AstrMessageEvent,
-        character: str,
-        scope: str = "",
+        battle: str,
+        compare_with: str = "",
     ):
-        """统计终末地某个角色在公开记录里最常和谁同队、最常见的完整阵容是什么。
-        只是出场次数的统计，不能据此说某个角色或组合更强。读取范围有限，
-        回答时要说明统计了哪些榜单。
-
-        Args:
-            character(string): 角色全名，例如“提弗洛斯”“诀”
-            scope(string): 限定在某个副本或榜单里统计，例如“影拓丰碑4期”，
-                留空则取若干热门榜单
-        """
-
-        return await self._run_tool(
-            event, lambda: self.tools.partners(character, scope)
-        )
-
-    @filter.llm_tool(name="get_endfield_battle")
-    async def get_endfield_battle(self, event: AstrMessageEvent, battle: str):
-        """查询终末地某一场公开战报记录了什么：用时、全队与各角色 DPS 和伤害占比、
-        每人的等级潜能武器精炼技能等级、主要伤害来源、BUFF 覆盖率、
-        各类招式施放次数。已自动发送战报长图，图里有完整数值，你不要复述数字，只解读。
+        """查询终末地某一场公开战报：用时、全队与各角色 DPS 和伤害占比、
+        每人的等级潜能武器精炼技能等级、主要伤害来源、BUFF 覆盖率、各类招式施放次数。
+        给了第二场就改为对比同一首领的两场：用时差、DPS 差、阵容差异、
+        同名角色的养成与装备差异；跨首领没有可比性。已自动发送长图，
+        图里有完整数值，你不要复述数字，只解读。工具只列出记录本身和两份记录的差异，
+        哪一处造成了时间差公开数据无法判定，不要替它下因果结论。
         要按名次找某一场，先用榜单工具拿到那一名的 battleId。
 
         Args:
             battle(string): battleId（形如 btl_upload_xxxx）或 ZMDLogs 战报链接
-        """
-
-        return await self._run_tool(event, lambda: self.tools.battle(battle))
-
-    @filter.llm_tool(name="compare_endfield_battles")
-    async def compare_endfield_battles(
-        self,
-        event: AstrMessageEvent,
-        first: str,
-        second: str,
-    ):
-        """对比终末地两场同一首领的公开战报：用时差、DPS 差、阵容差异、
-        同名角色的养成与装备差异。已自动发送对比长图。工具只列出两份记录的差异本身，
-        哪一处造成了时间差公开数据无法判定，不要替它下因果结论。跨首领没有可比性。
-
-        Args:
-            first(string): 第一场的 battleId 或战报链接
-            second(string): 第二场的 battleId 或战报链接
+            compare_with(string): 要对比的第二场的 battleId 或链接，只看一场就留空
         """
 
         return await self._run_tool(
-            event, lambda: self.tools.compare(first, second)
+            event, lambda: self.tools.battle(battle, compare_with=compare_with)
         )
 
-    @filter.llm_tool(name="get_endfield_character_ranking")
-    async def get_endfield_character_ranking(
+    @filter.llm_tool(name="query_endfield_character")
+    async def query_endfield_character(
         self,
         event: AstrMessageEvent,
         character: str,
         board: str = "",
     ):
-        """查询终末地某个六星干员的公开 DPS 分布：中位数、四分位、样本量，
-        以及在各榜单的名次。已自动发送长图，图里有完整数值，你不要复述数字，只解读。
-        中位数是上游去极值后算的；样本不足的没有名次。这些数字来自公开速通记录，
-        受玩家水平和配装影响，不是角色强度的判据。
+        """查询终末地某个六星干员在公开记录里的 DPS 分布：中位数、四分位、样本量，
+        以及在各榜单的名次；给了榜单则只看那个榜。已自动发送长图，图里有完整数值，
+        你不要复述数字，只解读。名次只看去极值后的正常样本，正常样本不足的角色没有名次，
+        记录多但分布很散时也会这样。这些数字来自公开速通记录，受玩家水平和配装影响，
+        不是角色强度的判据。
 
         Args:
             character(string): 六星干员全名，例如“提弗洛斯”“洛茜”
@@ -759,11 +722,11 @@ class ZmdLogBotPlugin(Star):
             event, lambda: self.tools.character(character, board)
         )
 
-    @filter.llm_tool(name="get_endfield_account")
-    async def get_endfield_account(self, event: AstrMessageEvent, account: str):
+    @filter.llm_tool(name="query_endfield_account")
+    async def query_endfield_account(self, event: AstrMessageEvent, account: str):
         """查询终末地某个公开账号在各首领榜单的最好成绩：名次、用时、DPS、
-        阵容和 battleId。已自动发送账号长图，图里有完整数值，你不要复述数字，
-        只解读。只有把记录设为公开的玩家才查得到。
+        阵容和 battleId。已自动发送账号长图，图里有完整数值，你不要复述数字，只解读。
+        只有把记录设为公开的玩家才查得到。
 
         Args:
             account(string): 公开昵称、accountId 或 ZMDLogs 账号主页链接

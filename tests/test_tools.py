@@ -9,6 +9,7 @@ from core.matcher import AliasConfig, MatcherCache
 from core.models import (
     parse_battle_detail,
     parse_boss_ranking,
+    parse_character_statistics,
     parse_hot_bosses,
     parse_public_user_rankings,
 )
@@ -16,6 +17,7 @@ from core.settings import PluginSettings
 from core.toolbox import ToolAnswer, ToolService
 from tests.helpers import (
     battle_detail_payload,
+    character_statistics_payload,
     hot_bosses_payload,
     public_user_rankings_payload,
     ranking_payload_with_rows,
@@ -112,6 +114,17 @@ class ToolServiceTests(unittest.TestCase):
         # The text names the board and the records; the numbers are in both.
         self.assertIn("公开记录", answer.text)
         self.assertIn("battleId", answer.text)
+        # Team counts ride along instead of being a tool of their own.
+        self.assertIn("常见阵容", answer.text)
+
+    def test_a_character_filter_also_counts_that_characters_partners(self) -> None:
+        name = self.ranking.rows[0].roster_entries[0].character_name
+        answer = run(self.service.board("三位一体", character=name))
+
+        self.assertEqual(answer.image_path, "/tmp/ranking.png")
+        self.assertIn(f"阵容包含「{name}」", answer.text)
+        self.assertIn("最常同队", answer.text)
+        self.assertNotIn("常见阵容（全榜", answer.text)
 
     def test_a_weak_keyword_is_refused_rather_than_guessed(self) -> None:
         # A command shows the closest board and lets the reader judge. A tool
@@ -158,8 +171,8 @@ class ToolServiceTests(unittest.TestCase):
 
     def test_comparing_a_battle_with_itself_is_refused(self) -> None:
         answer = run(
-            self.service.compare(
-                "btl_upload_abcdef123456", "btl_upload_abcdef123456"
+            self.service.battle(
+                "btl_upload_abcdef123456", compare_with="btl_upload_abcdef123456"
             )
         )
 
@@ -167,9 +180,10 @@ class ToolServiceTests(unittest.TestCase):
         self.assertIn("同一场", answer.text)
 
     def test_a_comparison_names_the_differences_but_not_a_cause(self) -> None:
+        # The second reference turns the battle tool into the comparison.
         answer = run(
-            self.service.compare(
-                "btl_upload_abcdef123456", "btl_upload_bbbbbbbbbbbb"
+            self.service.battle(
+                "btl_upload_abcdef123456", compare_with="btl_upload_bbbbbbbbbbbb"
             )
         )
 
@@ -223,6 +237,30 @@ class FactsTests(unittest.TestCase):
                 self.assertGreaterEqual(shown, 1)
                 self.assertLessEqual(shown, facts.MAX_ROW_LIMIT)
 
+    def test_null_quartiles_print_as_missing_not_as_a_crash(self) -> None:
+        # 提弗洛斯 on 呼吼炽焰·苦难: 13 records, 4 survive the IQR filter, so
+        # upstream returns rank null and no quartiles — for the board's top
+        # DPS character. The text must say so rather than fail the tool.
+        payload = character_statistics_payload()
+        row = _first_statistics_row(payload)
+        row.update(
+            {
+                "rank": None,
+                "insufficientSamples": True,
+                "p25": None,
+                "p75": None,
+                "sampleCount": 13,
+                "normalSampleCount": 4,
+            }
+        )
+        stats = parse_character_statistics(payload)
+
+        text = facts.format_character_statistics(stats)
+
+        self.assertIn("样本不足", text)
+        self.assertIn("—", text)
+        self.assertIn("样本 13（去极值后 4）", text)
+
     def test_cross_boss_comparison_is_refused_with_a_reason(self) -> None:
         other = parse_battle_detail(battle_detail_payload())
         object.__setattr__(other, "boss_name", "别的首领")
@@ -230,6 +268,15 @@ class FactsTests(unittest.TestCase):
 
         self.assertIn("不是同一个首领", text)
         self.assertIn("没有可比性", text)
+
+
+def _first_statistics_row(payload: dict) -> dict:
+    """The first per-character row of a statistics payload, wherever it lives."""
+
+    for value in payload.values():
+        if isinstance(value, list) and value and "p25" in value[0]:
+            return value[0]
+    raise AssertionError("statistics payload carries no character rows")
 
 
 class ToolAnswerTests(unittest.TestCase):

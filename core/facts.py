@@ -101,18 +101,26 @@ def format_board_ranking(
         lines.append("")
         lines.append("全榜出场率（按职业位，上游统计）：")
         lines.extend(usage)
+    if character:
+        # The filtered rows above are every team fielding the character; this
+        # is the same information counted, so the model need not count.
+        lines.append("")
+        lines.extend(_cooccurrence_lines(_cooccurrence((ranking,), character)))
+    else:
+        teams = _team_counts(ranking)
+        lines.append("")
+        lines.append(f"常见阵容（全榜 {len(teams)} 种不同阵容）：")
+        for team, count in teams[:_TOP_TEAMS]:
+            lines.append(f"    {count} 次 · {team}")
+        if len(teams) > _TOP_TEAMS:
+            lines.append(f"    （另有 {len(teams) - _TOP_TEAMS} 种各出现较少次数）")
     return "\n".join(lines)
 
 
 def format_board_teams(ranking: BossRanking, *, limit: int = _TOP_TEAMS) -> str:
     """The team combinations this board's public records actually used."""
 
-    teams: dict[str, int] = {}
-    for row in ranking.rows:
-        names = sorted(entry.character_name for entry in row.roster_entries)
-        if names:
-            key = "、".join(names)
-            teams[key] = teams.get(key, 0) + 1
+    teams = _team_counts(ranking)
     lines = [
         f"榜单：{ranking.dungeon_name} · {ranking.boss_name}",
         f"公开记录 {len(ranking.rows)} 条，不同阵容 {len(teams)} 种",
@@ -121,11 +129,10 @@ def format_board_teams(ranking: BossRanking, *, limit: int = _TOP_TEAMS) -> str:
         lines.append("这个榜目前没有公开记录。")
         return "\n".join(lines)
     lines.append("")
-    ordered = sorted(teams.items(), key=lambda item: (-item[1], item[0]))
-    for team, count in ordered[:limit]:
+    for team, count in teams[:limit]:
         lines.append(f"{count} 次 · {team}")
-    if len(ordered) > limit:
-        lines.append(f"（另有 {len(ordered) - limit} 种阵容各出现较少次数）")
+    if len(teams) > limit:
+        lines.append(f"（另有 {len(teams) - limit} 种阵容各出现较少次数）")
     return "\n".join(lines)
 
 
@@ -141,10 +148,36 @@ def format_character_partners(
     evidence that the pair is strong.
     """
 
+    co = _cooccurrence(rankings, character)
+    if not co.appearances:
+        return (
+            f"读过的 {co.total} 条公开记录里没有「{character}」的出场，"
+            "可能是名字不对，或这个范围内没人用。"
+        )
+    lines = [
+        f"「{character}」在读过的 {co.total} 条公开记录里出场 {co.appearances} 次，"
+        f"分布在 {len(co.boards)} 个榜单。",
+        "",
+    ]
+    lines.extend(_cooccurrence_lines(co, limit=limit))
+    return "\n".join(lines)
+
+
+@dataclass(frozen=True, slots=True)
+class _Cooccurrence:
+    """Who one character shared a team with, counted over some rankings."""
+
+    total: int
+    appearances: int
+    boards: frozenset[str]
+    partners: tuple[tuple[str, int], ...]
+    teams: tuple[tuple[str, int], ...]
+
+
+def _cooccurrence(rankings: Iterable[BossRanking], character: str) -> _Cooccurrence:
     partners: dict[str, int] = {}
     teams: dict[str, int] = {}
-    appearances = 0
-    total = 0
+    appearances = total = 0
     boards: set[str] = set()
     for ranking in rankings:
         for row in ranking.rows:
@@ -159,26 +192,40 @@ def format_character_partners(
             for name in names:
                 if name != character:
                     partners[name] = partners.get(name, 0) + 1
-    if not appearances:
-        return (
-            f"读过的 {total} 条公开记录里没有「{character}」的出场，"
-            "可能是名字不对，或这个范围内没人用。"
-        )
-    lines = [
-        f"「{character}」在读过的 {total} 条公开记录里出场 {appearances} 次，"
-        f"分布在 {len(boards)} 个榜单。",
-        "",
-        "最常同队：",
-    ]
-    for name, count in sorted(partners.items(), key=lambda i: (-i[1], i[0]))[:limit]:
-        lines.append(f"    {count} 次 · {name}")
+    return _Cooccurrence(
+        total=total,
+        appearances=appearances,
+        boards=frozenset(boards),
+        partners=_ranked(partners),
+        teams=_ranked(teams),
+    )
+
+
+def _cooccurrence_lines(co: _Cooccurrence, *, limit: int = _TOP_USAGE) -> list[str]:
+    lines = ["最常同队："]
+    lines.extend(f"    {count} 次 · {name}" for name, count in co.partners[:limit])
     lines.append("")
     lines.append("最常见的完整阵容：")
-    for team, count in sorted(teams.items(), key=lambda i: (-i[1], i[0]))[:limit]:
-        lines.append(f"    {count} 次 · {team}")
+    lines.extend(f"    {count} 次 · {team}" for team, count in co.teams[:limit])
     lines.append("")
     lines.append("以上只是出场次数，不代表这些角色或组合更强。")
-    return "\n".join(lines)
+    return lines
+
+
+def _team_counts(ranking: BossRanking) -> tuple[tuple[str, int], ...]:
+    teams: dict[str, int] = {}
+    for row in ranking.rows:
+        names = sorted(entry.character_name for entry in row.roster_entries)
+        if names:
+            key = "、".join(names)
+            teams[key] = teams.get(key, 0) + 1
+    return _ranked(teams)
+
+
+def _ranked(counts: dict[str, int]) -> tuple[tuple[str, int], ...]:
+    """Most frequent first, ties by name so the order is stable."""
+
+    return tuple(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
 def format_battle(
@@ -317,7 +364,8 @@ def format_character_statistics(
     scope = stats.boss_name or "全部副本"
     lines = [
         f"角色 DPS 分布（{scope}，范围 {stats.range} · 潜能 {stats.potential}）",
-        "样本不足的角色没有名次，中位数是上游按 IQR 去极值后算的。",
+        "名次只看去极值后的正常样本，正常样本不足的角色没有名次"
+        "（记录多但分布很散时也会这样）。",
         "",
     ]
     ordered = sorted(
@@ -328,9 +376,9 @@ def format_character_statistics(
         rank = f"#{row.rank}" if row.rank is not None else "样本不足"
         lines.append(
             f"{rank} {row.character_name}（{row.character_profession}）"
-            f" · 中位 DPS {row.median:,.0f}"
-            f" · 四分位 {row.p25:,.0f}–{row.p75:,.0f}"
-            f" · 样本 {row.sample_count}"
+            f" · 中位 DPS {_stat(row.median)}"
+            f" · 四分位 {_stat(row.p25)}–{_stat(row.p75)}"
+            f" · {_samples(row.sample_count, row.normal_sample_count)}"
         )
     return "\n".join(lines)
 
@@ -356,7 +404,8 @@ def format_character_boards(stats: CharacterBossStatistics) -> str:
         )
         lines.append(
             f"{row.dungeon_name} · {row.boss_name}"
-            f" · {rank} · 中位 DPS {row.median:,.0f} · 样本 {row.sample_count}"
+            f" · {rank} · 中位 DPS {_stat(row.median)}"
+            f" · {_samples(row.sample_count, row.normal_sample_count)}"
         )
     return "\n".join(lines)
 
@@ -382,6 +431,18 @@ def format_account(account: PublicUserRankings, *, limit: int = MAX_ROW_LIMIT) -
 
 
 # --- pieces -------------------------------------------------------------------
+
+
+def _stat(value: float | None) -> str:
+    """Upstream leaves a quartile null when too few samples survive."""
+
+    return f"{value:,.0f}" if value is not None else "—"
+
+
+def _samples(sample_count: int, normal_sample_count: int) -> str:
+    if normal_sample_count != sample_count:
+        return f"样本 {sample_count}（去极值后 {normal_sample_count}）"
+    return f"样本 {sample_count}"
 
 
 def _bounded(limit: int) -> int:

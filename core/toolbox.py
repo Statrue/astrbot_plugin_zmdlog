@@ -10,6 +10,11 @@ the image and its own job is to explain them.
 Nothing here posts a candidate list. A command can afford to ask "did you
 mean one of these five"; a tool call cannot wait for an answer, so an
 ambiguous name is reported as such, with the options, and the model asks.
+
+There are four tools, one per subject — board, battle, character, account —
+never one per feature. AstrBot sends every active tool's schema with every
+LLM request, and a model choosing among overlapping tools picks the wrong
+one; a new view of a subject is a parameter or extra lines in its text.
 """
 
 from collections.abc import Callable
@@ -44,10 +49,6 @@ from .settings import PluginSettings
 
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
-# Reading every board to answer one question costs one request per board.
-# Tools that aggregate therefore work inside a dungeon unless a board is
-# named; a model asking about "all boards" gets told the scope it got.
-MAX_AGGREGATE_BOARDS = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,10 +93,10 @@ class ToolService:
         character: str = "",
         limit: int = facts.DEFAULT_ROW_LIMIT,
     ) -> ToolAnswer:
-        resolved = await self._resolve_boards(keyword)
-        if isinstance(resolved, ToolAnswer):
-            return resolved
-        ranking = await self._data.get_boss_ranking(resolved[0])
+        slug = await self._resolve_board(keyword)
+        if isinstance(slug, ToolAnswer):
+            return slug
+        ranking = await self._data.get_boss_ranking(slug)
         name = ""
         if character:
             name = self._resolve_character(ranking, character)
@@ -118,39 +119,13 @@ class ToolService:
         )
         return ToolAnswer(text, image)
 
-    async def teams(self, keyword: str) -> ToolAnswer:
-        resolved = await self._resolve_boards(keyword)
-        if isinstance(resolved, ToolAnswer):
-            return resolved
-        ranking = await self._data.get_boss_ranking(resolved[0])
-        return ToolAnswer(facts.format_board_teams(ranking))
-
-    async def partners(self, character: str, scope: str = "") -> ToolAnswer:
-        """Who shares a team with one character, inside a named scope."""
-
-        cards = await self._data.list_hot_bosses()
-        if scope:
-            resolved = await self._resolve_boards(scope, allow_many=True)
-            if isinstance(resolved, ToolAnswer):
-                return resolved
-            slugs = resolved[:MAX_AGGREGATE_BOARDS]
-        else:
-            slugs = [card.boss_slug for card in cards[:MAX_AGGREGATE_BOARDS]]
-        rankings = []
-        for slug in slugs:
-            try:
-                rankings.append(await self._data.get_boss_ranking(slug))
-            except ZmdLogsClientError:
-                continue
-        if not rankings:
-            return ToolAnswer("现在读不到榜单数据，请稍后再问。")
-        scope_note = "、".join(ranking.boss_name for ranking in rankings)
-        text = facts.format_character_partners(rankings, character)
-        return ToolAnswer(f"{text}\n\n统计范围：{scope_note}")
-
     # --- battles ----------------------------------------------------------------
 
-    async def battle(self, reference: str) -> ToolAnswer:
+    async def battle(self, reference: str, compare_with: str = "") -> ToolAnswer:
+        """One battle, or two side by side when a second reference is given."""
+
+        if compare_with.strip():
+            return await self.compare(reference, compare_with)
         battle_id = self._battle_reference(reference)
         if battle_id is None:
             return ToolAnswer(
@@ -231,11 +206,11 @@ class ToolService:
                 "角色统计只覆盖六星干员。"
             )
         if board:
-            resolved = await self._resolve_boards(board)
-            if isinstance(resolved, ToolAnswer):
-                return resolved
+            slug = await self._resolve_board(board)
+            if isinstance(slug, ToolAnswer):
+                return slug
             stats = await self._data.get_character_statistics(
-                resolved[0], time_range="all", potential="all"
+                slug, time_range="all", potential="all"
             )
             text = facts.format_character_statistics(
                 stats, character=resolution.name
@@ -313,12 +288,7 @@ class ToolService:
         except ZmdLogsClientError:
             return {}
 
-    async def _resolve_boards(
-        self,
-        keyword: str,
-        *,
-        allow_many: bool = False,
-    ) -> list[str] | ToolAnswer:
+    async def _resolve_board(self, keyword: str) -> str | ToolAnswer:
         """One board slug for ``keyword``, or the reason there is not one."""
 
         cards = await self._data.list_hot_bosses()
@@ -329,15 +299,10 @@ class ToolService:
                 f"没有找到与「{shorten(keyword)}」匹配的榜单或副本。"
             )
         if match.status is MatchStatus.AMBIGUOUS:
-            if not allow_many:
-                names = "、".join(
-                    choice.target.name for choice in match.candidates[:5]
-                )
-                return ToolAnswer(
-                    f"「{shorten(keyword)}」可能指：{names}。请说得更具体一些。"
-                )
-            expanded = matcher.expand_to_boards(match.candidates)
-            return [choice.target.key for choice in expanded]
+            names = "、".join(choice.target.name for choice in match.candidates[:5])
+            return ToolAnswer(
+                f"「{shorten(keyword)}」可能指：{names}。请说得更具体一些。"
+            )
         choice = match.selected
         if choice is None:
             return ToolAnswer(f"没有找到与「{shorten(keyword)}」匹配的榜单。")
@@ -353,16 +318,15 @@ class ToolService:
                 f"最接近的是「{choice.target.name}」但不像。请确认名字。"
             )
         if choice.target.target_type is TargetType.BOARD:
-            return [choice.target.key]
+            return choice.target.key
         boards = matcher.expand_to_boards((choice,))
-        slugs = [entry.target.key for entry in boards]
-        if len(slugs) > 1 and not allow_many:
+        if len(boards) > 1:
             names = "、".join(entry.target.name for entry in boards[:5])
             return ToolAnswer(
                 f"「{shorten(keyword)}」是副本，包含多个榜单：{names}。"
                 "请指明其中一个。"
             )
-        return slugs
+        return boards[0].target.key
 
     @staticmethod
     def _resolve_character(ranking: BossRanking, name: str) -> str | None:
