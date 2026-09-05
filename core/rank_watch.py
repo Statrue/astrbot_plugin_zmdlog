@@ -541,7 +541,7 @@ class RankWatcher:
         if account_id in self.rank_snapshots:
             return
         try:
-            account = await self._data.get_public_user_rankings(account_id)
+            account = await self._data.get_account_rankings(account_id)
         except ZmdLogsClientError as exc:
             self._logger.warning(
                 "ZmdLogBot could not seed a rank baseline: %s",
@@ -699,7 +699,7 @@ class RankWatcher:
 
         async with semaphore:
             try:
-                account = await self._data.get_public_user_rankings(account_id)
+                account = await self._data.get_account_rankings(account_id)
             except ZmdLogsClientError as exc:
                 self._logger.warning(
                     "ZmdLogBot rank watch skipped one account: %s",
@@ -744,14 +744,17 @@ class RankWatcher:
     ) -> tuple[RankDrop, ...]:
         """Look up what appeared above the account, for the drops shown.
 
-        Only the boards the notice actually prints are fetched, so one account
-        can never cost more than ``MAX_DROPS_PER_NOTICE`` extra requests.
+        The ranks came from the ranking index, so the boards are read from the
+        same copy: consistent with the drop, and no request at all. Only the
+        boards the notice prints are looked at.
         """
 
         described: list[RankDrop] = []
         for drop in drops[:MAX_DROPS_PER_NOTICE]:
             try:
-                ranking = await self._data.get_boss_ranking(drop.boss_slug)
+                ranking = await self._data.get_boss_ranking(
+                    drop.boss_slug, max_age=None
+                )
             except ZmdLogsClientError:
                 described.append(drop)
                 continue

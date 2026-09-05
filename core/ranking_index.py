@@ -22,7 +22,12 @@ from dataclasses import dataclass
 
 from .client import ZmdLogsClientError
 from .logs import LogSink
-from .models import BossRanking, HotBossCard
+from .models import (
+    BossRanking,
+    HotBossCard,
+    PublicUserRanking,
+    PublicUserRankings,
+)
 
 DEFAULT_PACE_SECONDS = 20.0
 DEFAULT_SIGNAL_SECONDS = 120.0
@@ -279,3 +284,55 @@ class RankingIndex:
                 self._logger.warning(
                     "ZmdLogBot ranking index cycle failed: %s", type(exc).__name__
                 )
+
+
+def account_rankings(
+    entries: tuple[IndexEntry, ...],
+    account_id: str,
+) -> PublicUserRankings | None:
+    """One account's best record on every board, read off the index.
+
+    The same answer as ``users/{id}/rankings`` — a board ranking lists every
+    record, so the account's rank there is the rank of its best row — but
+    for a whole watch list it costs no request at all. ``None`` when the
+    account has no row anywhere, which the caller answers with the endpoint.
+    """
+
+    rankings: list[PublicUserRanking] = []
+    display_name = ""
+    newest = ""
+    for entry in entries:
+        ranking = entry.ranking
+        mine = [row for row in ranking.rows if row.account_id == account_id]
+        if not mine:
+            continue
+        best = min(mine, key=lambda row: row.rank)
+        for row in mine:
+            # Nicknames change; the most recent upload carries the current one.
+            if row.battle_end_at >= newest:
+                newest = row.battle_end_at
+                display_name = row.account_display_name
+        rankings.append(
+            PublicUserRanking(
+                boss_slug=ranking.boss_slug,
+                boss_name=ranking.boss_name,
+                dungeon_name=ranking.dungeon_name,
+                battle_id=best.battle_id,
+                rank=best.rank,
+                score_percent=best.score_percent,
+                duration_ms=best.duration_ms,
+                total_dps=best.dps,
+                battle_end_at=best.battle_end_at,
+                roster_summary=best.roster_summary,
+                contract_tag_score=best.contract_tag_score,
+                contract_tags=best.contract_tags,
+            )
+        )
+    if not rankings:
+        return None
+    return PublicUserRankings(
+        account_id=account_id,
+        account_display_name=display_name,
+        rankings=tuple(rankings),
+    )
+

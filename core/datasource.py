@@ -26,7 +26,7 @@ from .models import (
     parse_hot_bosses,
 )
 from .persistence import load_json, save_json
-from .ranking_index import RankingIndex
+from .ranking_index import RankingIndex, account_rankings
 from .settings import PluginSettings
 
 HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
@@ -260,6 +260,20 @@ class ZmdLogsDataSource:
 
         age = self._ranking_max_age if max_age is None else max_age
         return await self.ranking_index.get(boss_slug, max_age=age)
+
+    async def get_account_rankings(self, account_id: str) -> PublicUserRankings:
+        """The account's rank on every board, from the index when it is complete.
+
+        This is what the rank watch polls: a whole watch list costs nothing
+        once the index is filled. The endpoint answers when the index is not
+        complete yet or holds no row for the account.
+        """
+
+        if self.ranking_index.complete:
+            derived = account_rankings(self.ranking_index.entries(), account_id)
+            if derived is not None:
+                return derived
+        return await self.get_public_user_rankings(account_id)
 
     async def _fetch_boss_ranking(self, boss_slug: str) -> BossRanking:
         return await self.client.get_boss_rankings(boss_slug)

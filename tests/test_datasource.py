@@ -11,10 +11,19 @@ from core.datasource import (
     HOT_BOSSES_SNAPSHOT,
     ZmdLogsDataSource,
 )
-from core.models import parse_character_statistics, parse_hot_bosses
+from core.models import (
+    parse_boss_ranking,
+    parse_character_statistics,
+    parse_hot_bosses,
+)
 from core.persistence import JsonStore, load_json
+from core.ranking_index import IndexEntry
 from core.settings import PluginSettings
-from tests.helpers import character_statistics_payload, hot_bosses_payload
+from tests.helpers import (
+    character_statistics_payload,
+    hot_bosses_payload,
+    ranking_payload_with_rows,
+)
 
 
 class FakeClient:
@@ -34,6 +43,12 @@ class FakeClient:
         if self.fail:
             raise ZmdLogsClientError("offline")
         return parse_character_statistics(character_statistics_payload())
+
+    account_reads = 0
+
+    async def get_public_user_rankings(self, account_id):
+        self.account_reads += 1
+        raise ZmdLogsClientError("endpoint answered instead of the index")
 
 
 class CapturingLogger(logging.Logger):
@@ -211,4 +226,40 @@ class CharacterCatalogTests(DataSourceTests):
         run(source.get_character_catalog())
 
         self.assertEqual(client.calls, 1)
+
+
+class AccountRankingsSourceTests(DataSourceTests):
+    def test_the_endpoint_answers_until_the_index_is_complete(self) -> None:
+        client = FakeClient()
+        source = self._source(client)
+
+        with self.assertRaises(ZmdLogsClientError):
+            run(source.get_account_rankings("usr_1234567890abcdef"))
+        self.assertEqual(client.account_reads, 1)
+
+    def test_a_complete_index_answers_without_a_request(self) -> None:
+        client = FakeClient()
+        source = self._source(client)
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        index = source.ranking_index
+        index._slugs = (ranking.boss_slug,)
+        index._entries[ranking.boss_slug] = IndexEntry(ranking, 0.0)
+        account_id = ranking.rows[0].account_id
+
+        derived = run(source.get_account_rankings(account_id))
+
+        self.assertEqual(derived.rankings[0].rank, 1)
+        self.assertEqual(client.account_reads, 0)
+
+    def test_an_account_absent_from_the_index_falls_back_to_the_endpoint(self) -> None:
+        client = FakeClient()
+        source = self._source(client)
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        index = source.ranking_index
+        index._slugs = (ranking.boss_slug,)
+        index._entries[ranking.boss_slug] = IndexEntry(ranking, 0.0)
+
+        with self.assertRaises(ZmdLogsClientError):
+            run(source.get_account_rankings("usr_nobody"))
+        self.assertEqual(client.account_reads, 1)
 

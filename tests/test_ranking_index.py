@@ -9,7 +9,9 @@ from core.client import ZmdLogsClientError
 from core.models import parse_boss_ranking, parse_hot_bosses
 from core.ranking_index import (
     STALE_FALLBACK_MAX_AGE_SECONDS,
+    IndexEntry,
     RankingIndex,
+    account_rankings,
 )
 from tests.helpers import hot_bosses_payload, ranking_payload_with_rows
 
@@ -236,3 +238,31 @@ class RankingIndexTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AccountRankingsTests(unittest.TestCase):
+    def test_the_best_row_per_board_becomes_the_accounts_ranking(self) -> None:
+        first = ranking_for(SLUGS[0])
+        second = ranking_for(SLUGS[1])
+        account_id = first.rows[2].account_id
+        entries = (IndexEntry(first, 0.0), IndexEntry(second, 0.0))
+
+        derived = account_rankings(entries, account_id)
+
+        self.assertIsNotNone(derived)
+        self.assertEqual(derived.account_id, account_id)
+        self.assertEqual(
+            derived.account_display_name, first.rows[2].account_display_name
+        )
+        by_slug = {entry.boss_slug: entry for entry in derived.rankings}
+        expected = min(
+            (row.rank for row in first.rows if row.account_id == account_id)
+        )
+        self.assertEqual(by_slug[SLUGS[0]].rank, expected)
+        self.assertEqual(by_slug[SLUGS[0]].total_dps, first.rows[2].dps)
+
+    def test_an_account_with_no_row_anywhere_is_none(self) -> None:
+        entries = (IndexEntry(ranking_for(SLUGS[0]), 0.0),)
+
+        self.assertIsNone(account_rankings(entries, "usr_nobody"))
+
