@@ -6,11 +6,10 @@ from ..loadout import (
     CharacterSkillDamage,
     element_label,
     group_skill_damage,
-    infer_suit_names,
     is_raw_item_name,
     skill_level_summary,
     stat_label,
-    suit_token,
+    suit_catalog_id,
     weapon_skill_levels,
 )
 from ..models import (
@@ -83,8 +82,6 @@ class EquipView:
     # upstream contradicts itself about them; this is what two pages compare.
     item_id: str | None
     suit_label: str | None
-    # The suit was read off a named sibling piece, not from this piece itself.
-    inferred_suit: bool
     icon_url: str | None
     enhance_label: str | None
     stats: tuple[EquipStatView, ...]
@@ -151,7 +148,6 @@ class LoadoutPage:
     battle_date: str
     loadouts: tuple[LoadoutView, ...]
     stat_lines_available: bool
-    has_inferred_suit: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,6 +212,7 @@ def build_battle_page(
     web_base_url: str,
     export: BattleExport | None = None,
     export_note: str | None = None,
+    suits: dict[str, str] | None = None,
 ) -> BattlePage:
     """Build the battle card; ``export`` adds the cast rail when available."""
 
@@ -271,6 +268,7 @@ def build_battle_page(
             battle,
             web_base_url=web_base_url,
             top_skills=_MAX_CARD_SKILLS,
+            suits=suits,
         ),
         skill_stats_available=bool(battle.skill_stats),
         timeline=(
@@ -346,6 +344,7 @@ def build_loadout_page(
     *,
     query: str,
     web_base_url: str,
+    suits: dict[str, str] | None = None,
 ) -> LoadoutPage:
     """Every deployed character's weapon, gear lines and skill levels."""
 
@@ -353,6 +352,7 @@ def build_loadout_page(
         battle,
         web_base_url=web_base_url,
         top_skills=_MAX_CARD_SKILLS,
+        suits=suits,
     )
     return LoadoutPage(
         header=PageHeader(
@@ -373,9 +373,6 @@ def build_loadout_page(
         loadouts=loadouts,
         stat_lines_available=any(
             equip.stats for load in loadouts for equip in load.equips
-        ),
-        has_inferred_suit=any(
-            equip.inferred_suit for load in loadouts for equip in load.equips
         ),
     )
 
@@ -438,8 +435,9 @@ def _build_loadouts(
     *,
     web_base_url: str | None,
     top_skills: int,
+    suits: dict[str, str] | None,
 ) -> tuple[LoadoutView, ...]:
-    suits = infer_suit_names(battle.roster)
+    suits = suits or {}
     groups = {
         group.character_name: group
         for group in group_skill_damage(battle.skill_stats)
@@ -527,13 +525,14 @@ def _equip_view(
 ) -> EquipView:
     part_name = _clean_text(equip.part_name) or "装备"
     raw_name = is_raw_item_name(equip.piece_name, equip.item_id)
-    suit_name = _clean_text(equip.suit_name)
-    inferred = False
+    # The catalog is keyed by the id the piece carries and says the same
+    # thing in every battle. ``suitName`` is filled per upload, contradicts
+    # itself across characters of one fight and has been seen naming a
+    # different suit outright, so it is only the fallback.
+    catalog_id = suit_catalog_id(equip.item_id)
+    suit_name = suits.get(catalog_id, "") if catalog_id else ""
     if not suit_name:
-        token = suit_token(equip.item_id)
-        guess = suits.get(token) if token else None
-        if guess:
-            suit_name, inferred = guess, True
+        suit_name = _clean_text(equip.suit_name)
     piece_label = "名称未收录" if raw_name else _clean_text(equip.piece_name)
     if suit_name:
         compact_label = f"{suit_name} · {part_name}"
@@ -547,7 +546,6 @@ def _equip_view(
         piece_label=piece_label,
         item_id=equip.item_id,
         suit_label=suit_name or None,
-        inferred_suit=inferred,
         icon_url=_derived_asset_url(
             equip.icon_url,
             _EQUIP_ICON_PATH,

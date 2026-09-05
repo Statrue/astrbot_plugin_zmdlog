@@ -20,7 +20,7 @@
 
 <div class="section-heading">
   <h2>阵容配装</h2>
-  <span class="section-note">按上场槽位 · 词条为上传时记录的数值{% if not page.stat_lines_available %} · 本场未记录词条数值{% endif %}{% if page.has_inferred_suit %} · 标注「推断」的套装名来自同场同款装备{% endif %}</span>
+  <span class="section-note">按上场槽位 · 词条为上传时记录的数值{% if not page.stat_lines_available %} · 本场未记录词条数值{% endif %}</span>
 </div>
 
 {% for load in page.loadouts %}
@@ -68,7 +68,7 @@
         <div class="equip-text">
           <span class="equip-part">{{ equip.part_name }}</span>
           <strong>{{ equip.piece_label }}</strong>
-          {% if equip.suit_label %}<em>{{ equip.suit_label }}{% if equip.inferred_suit %}（推断）{% endif %}</em>{% endif %}
+          {% if equip.suit_label %}<em>{{ equip.suit_label }}</em>{% endif %}
         </div>
       </div>
       {% if equip.enhance_label %}<p class="equip-enhance">{{ equip.enhance_label }}</p>{% endif %}

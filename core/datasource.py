@@ -31,6 +31,10 @@ _HOT_BOSSES_KEY = "all_board_top3"
 # 50-130 KB, an order of magnitude more than any other cached value, so the
 # two battle caches get a tighter cap than the shared default.
 BATTLE_CACHE_MAX_ENTRIES = 64
+# Static game data: two dozen entries that change when the game does, not
+# when someone uploads a run.
+EQUIP_CATALOG_TTL_SECONDS = 6 * 3600.0
+_EQUIP_CATALOG_KEY = "equip_suits"
 
 
 class ZmdLogsDataSource:
@@ -76,6 +80,11 @@ class ZmdLogsDataSource:
             battle_ttl,
             max_entries=BATTLE_CACHE_MAX_ENTRIES,
         )
+        self.equip_catalog_cache = AsyncTTLCache[str, dict[str, str]](
+            EQUIP_CATALOG_TTL_SECONDS,
+            stale_ttl_seconds=EQUIP_CATALOG_TTL_SECONDS,
+            max_entries=1,
+        )
         self._caches = (
             self.hot_boss_cache,
             self.boss_ranking_cache,
@@ -84,6 +93,7 @@ class ZmdLogsDataSource:
             self.character_boss_cache,
             self.battle_cache,
             self.battle_export_cache,
+            self.equip_catalog_cache,
         )
 
     async def list_hot_bosses(self) -> tuple[HotBossCard, ...]:
@@ -122,6 +132,29 @@ class ZmdLogsDataSource:
         if snapshot_path is not None:
             save_json(snapshot_path, payload)
         return cards
+
+    async def get_equip_suits(self) -> dict[str, str]:
+        """Suit id to display name, from the game data catalog.
+
+        The one read whose answer is the same for every battle, so it is
+        cached for hours and may be served stale: a gear label going missing
+        for a whole page is worse than a label a few hours out of date.
+        """
+
+        result = await self.equip_catalog_cache.get_or_load(
+            _EQUIP_CATALOG_KEY,
+            self._fetch_equip_suits,
+            allow_stale_on_error=True,
+        )
+        if result.state is CacheState.STALE:
+            self._logger.warning(
+                "ZmdLogBot is using a stale equip catalog after refresh failure."
+            )
+        return result.value
+
+    async def _fetch_equip_suits(self) -> dict[str, str]:
+        suits = await self.client.get_equip_catalog()
+        return {suit.suit_id: suit.name for suit in suits}
 
     async def get_boss_ranking(self, boss_slug: str) -> BossRanking:
         result = await self.boss_ranking_cache.get_or_load(

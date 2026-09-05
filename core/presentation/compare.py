@@ -111,6 +111,7 @@ def build_compare_page(
     web_base_url: str,
     rank_a: int | None = None,
     rank_b: int | None = None,
+    suits: dict[str, str] | None = None,
 ) -> ComparePage:
     """Two battles side by side: summary facts, rosters, curves, gear.
 

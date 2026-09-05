@@ -16,6 +16,7 @@ from .models import (
     BossRanking,
     CharacterBossStatistics,
     CharacterStatistics,
+    EquipSuit,
     HotBossCard,
     ModelValidationError,
     PublicUserRankings,
@@ -25,6 +26,7 @@ from .models import (
     parse_boss_ranking,
     parse_character_boss_statistics,
     parse_character_statistics,
+    parse_equip_catalog,
     parse_hot_bosses,
     parse_public_user_rankings,
 )
@@ -130,6 +132,21 @@ class ZmdLogsClient:
             return parse_hot_bosses(payload), payload
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError("hot-bosses response is invalid") from exc
+
+    async def get_equip_catalog(self) -> tuple[EquipSuit, ...]:
+        """Return every gear suit the game data catalog names.
+
+        Static game data, public and unauthenticated, roughly two dozen
+        entries. It is the authority on which suit an item belongs to;
+        ``suitName`` inside a battle is filled per upload and contradicts
+        itself, sometimes naming a different suit outright.
+        """
+
+        payload = await self._get_json("api/game-data/equip")
+        try:
+            return parse_equip_catalog(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError("equip catalog response is invalid") from exc
 
     async def get_boss_rankings(self, boss_slug: str) -> BossRanking:
         """Return one complete DPS ranking without sending a metric parameter."""

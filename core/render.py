@@ -318,6 +318,7 @@ class TemplateRenderer:
         web_base_url: str,
         export: BattleExport | None = None,
         export_note: str | None = None,
+        suits: dict[str, str] | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_battle_page(
@@ -326,6 +327,7 @@ class TemplateRenderer:
             web_base_url=web_base_url,
             export=export,
             export_note=export_note,
+            suits=suits,
         )
         return self._render(
             "battle/battle.html",
@@ -340,12 +342,14 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str,
+        suits: dict[str, str] | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_loadout_page(
             battle,
             query=query,
             web_base_url=web_base_url,
+            suits=suits,
         )
         return self._render(
             "loadout/loadout.html",
@@ -429,6 +433,7 @@ class TemplateRenderer:
         web_base_url: str,
         rank_a: int | None = None,
         rank_b: int | None = None,
+        suits: dict[str, str] | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_compare_page(
@@ -438,6 +443,7 @@ class TemplateRenderer:
             web_base_url=web_base_url,
             rank_a=rank_a,
             rank_b=rank_b,
+            suits=suits,
         )
         return self._render(
             "compare/compare.html",

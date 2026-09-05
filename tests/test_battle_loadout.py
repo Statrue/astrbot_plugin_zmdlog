@@ -1,6 +1,5 @@
 """Tests for the 0.6.0 battle loadout (配装) and skill statistics (技能) pages."""
 
-import copy
 import unittest
 from pathlib import Path
 
@@ -8,12 +7,11 @@ from core.candidates import CandidateStore, CandidateView, format_candidates
 from core.loadout import (
     SkillCategory,
     group_skill_damage,
-    infer_suit_names,
     is_raw_item_name,
     skill_category,
     skill_display_name,
     skill_level_summary,
-    suit_token,
+    suit_catalog_id,
     weapon_skill_levels,
 )
 from core.matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
@@ -202,32 +200,24 @@ class SkillNamingTests(unittest.TestCase):
 
 
 class GearHelperTests(unittest.TestCase):
-    def test_suit_names_are_inferred_from_named_siblings(self) -> None:
-        battle = parse_battle_detail(battle_detail_payload())
-
+    def test_item_ids_resolve_to_the_catalog_suit_or_to_nothing(self) -> None:
+        # ``_suit_`` pieces name the catalog entry to look up.
         self.assertEqual(
-            suit_token("item_equip_t4_suit_fire_natr01_hand_04"), "fire_natr01"
+            suit_catalog_id("item_equip_t4_suit_fire_natr01_hand_04"),
+            "suit_fire_natr01",
         )
         self.assertEqual(
-            suit_token("item_equip_t4_parts_wuling01_body_02"), "wuling01"
+            suit_catalog_id("item_equip_t4_suit_spellburst_hand_01"),
+            "suit_spellburst",
         )
-        self.assertIsNone(suit_token("something_else"))
-        self.assertIsNone(suit_token(None))
-        self.assertEqual(infer_suit_names(battle.roster), {"phy01": "点剑"})
-
-    def test_a_token_its_own_battle_disagrees_about_is_not_learned(self) -> None:
-        # Upstream reports one item id under two suits on two characters of
-        # the same battle, so the first name seen is not evidence. When the
-        # battle contradicts itself the piece stays 名称未收录.
-        payload = battle_detail_payload()
-        roster = payload["battle"]["roster"]
-        second = copy.deepcopy(roster[0])
-        second["characterName"] = "对照"
-        second["equips"][0]["suitName"] = "长息"
-        roster.append(second)
-        battle = parse_battle_detail(payload)
-
-        self.assertEqual(infer_suit_names(battle.roster), {})
+        self.assertEqual(
+            suit_catalog_id("item_equip_t3_suit_usp01_edc_03"), "suit_usp01"
+        )
+        # A ``_parts_`` piece belongs to no suit, so there is nothing to look
+        # up and no name to guess at.
+        self.assertIsNone(suit_catalog_id("item_equip_t4_parts_wuling01_body_02"))
+        self.assertIsNone(suit_catalog_id("something_else"))
+        self.assertIsNone(suit_catalog_id(None))
         self.assertTrue(
             is_raw_item_name(
                 "item_equip_t4_suit_phy01_body_02", "item_equip_t4_suit_phy01_body_02"
@@ -286,14 +276,13 @@ class LoadoutPresentationTests(unittest.TestCase):
             other.icon_url, "https://zmdlogs.com/images/equip/iconbig/explicit.png"
         )
 
-    def test_loadout_page_formats_gear_and_marks_inferred_suits(self) -> None:
+    def test_loadout_page_formats_gear(self) -> None:
         page = build_loadout_page(
             self.battle, query="配装 罗丹", web_base_url="https://zmdlogs.com"
         )
 
         self.assertEqual(page.header.target_type, "战报配装")
         self.assertTrue(page.stat_lines_available)
-        self.assertTrue(page.has_inferred_suit)
         luoxi, kamiu = page.loadouts
         self.assertEqual(luoxi.level_label, "Lv.90")
         self.assertEqual(luoxi.potential_label, "潜能 5")
@@ -309,7 +298,6 @@ class LoadoutPresentationTests(unittest.TestCase):
         hand, body, edc, _ = luoxi.equips
         self.assertEqual(hand.piece_label, "点剑护手")
         self.assertEqual(hand.suit_label, "点剑")
-        self.assertFalse(hand.inferred_suit)
         self.assertEqual(hand.enhance_label, "强化 +3 / +3 / +2")
         self.assertEqual(
             [(stat.name, stat.value, stat.is_main) for stat in hand.stats],
@@ -321,10 +309,11 @@ class LoadoutPresentationTests(unittest.TestCase):
             ],
         )
         self.assertEqual(hand.compact_label, "点剑 · 护手")
+        # Upstream named neither the piece nor its suit, and nothing is
+        # guessed from a sibling any more.
         self.assertEqual(body.piece_label, "名称未收录")
-        self.assertEqual(body.suit_label, "点剑")
-        self.assertTrue(body.inferred_suit)
-        self.assertEqual(body.compact_label, "点剑 · 护甲")
+        self.assertIsNone(body.suit_label)
+        self.assertEqual(body.compact_label, "护甲（未收录）")
         # Upstream gave no icon for the unknown piece; the path is derived.
         self.assertEqual(
             body.icon_url,
@@ -347,6 +336,54 @@ class LoadoutPresentationTests(unittest.TestCase):
         self.assertIsNone(kamiu.weapon.skill_label)
         self.assertIsNone(kamiu.weapon.level_label)
         self.assertEqual(kamiu.weapon.refine_label, "精炼 6")
+
+    def test_the_catalog_names_a_suit_upstream_left_blank(self) -> None:
+        # The same piece, once without the catalog and once with it. The
+        # catalog is keyed by the id the item carries, so it answers for
+        # every battle rather than only the ones a named sibling appears in.
+        page = build_loadout_page(
+            self.battle,
+            query="配装 罗丹",
+            web_base_url="https://zmdlogs.com",
+            suits={"suit_phy01": "点剑"},
+        )
+        _, body, _, _ = page.loadouts[0].equips
+
+        self.assertEqual(body.piece_label, "名称未收录")
+        self.assertEqual(body.suit_label, "点剑")
+        self.assertEqual(body.compact_label, "点剑 · 护甲")
+
+    def test_the_catalog_overrules_what_the_upload_called_the_suit(self) -> None:
+        # 险关 has been seen labelled 长息, the name of a different suit, in
+        # a real upload. The catalog wins.
+        payload = battle_detail_payload()
+        equip = payload["battle"]["roster"][0]["equips"][0]
+        equip["itemId"] = "item_equip_t4_suit_spellburst_hand_01"
+        equip["suitName"] = "长息"
+        page = build_loadout_page(
+            parse_battle_detail(payload),
+            query="q",
+            web_base_url="https://zmdlogs.com",
+            suits={"suit_spellburst": "险关"},
+        )
+
+        self.assertEqual(page.loadouts[0].equips[0].suit_label, "险关")
+
+    def test_a_standalone_piece_keeps_what_the_upload_called_it(self) -> None:
+        # ``_parts_`` pieces belong to no suit, so the catalog has nothing to
+        # say and upstream's own label is all there is.
+        payload = battle_detail_payload()
+        equip = payload["battle"]["roster"][0]["equips"][0]
+        equip["itemId"] = "item_equip_t4_parts_wuling01_hand_01"
+        equip["suitName"] = "独立装备"
+        page = build_loadout_page(
+            parse_battle_detail(payload),
+            query="q",
+            web_base_url="https://zmdlogs.com",
+            suits={"suit_wuling01": "不该被用到"},
+        )
+
+        self.assertEqual(page.loadouts[0].equips[0].suit_label, "独立装备")
 
     def test_skill_page_shares_and_ordering(self) -> None:
         page = build_skill_page(
@@ -418,7 +455,6 @@ class LoadoutTemplateTests(unittest.TestCase):
         self.assertIn("物理伤害提升", html)
         self.assertIn("<b>14.9%</b>", html)
         self.assertIn("名称未收录", html)
-        self.assertIn("点剑（推断）", html)
         self.assertIn("武器技能 9 · 词条 9 / 7", html)
         self.assertIn(
             "https://zmdlogs.com/images/weapon/icon/wpn_sword_0021.png", html

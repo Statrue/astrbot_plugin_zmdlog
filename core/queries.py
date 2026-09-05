@@ -198,8 +198,20 @@ class QueryService:
             web_base_url=self._web_base_url,
             export=export,
             export_note=note,
+            suits=await self._equip_suits(),
         )
         return Outcome(image_path=image_path)
+
+    async def _equip_suits(self) -> dict[str, str]:
+        """The suit catalog, or nothing; a gear page must render without it."""
+
+        try:
+            return await self._data.get_equip_suits()
+        except ZmdLogsClientError as exc:
+            self._logger.warning(
+                "ZmdLogBot equip catalog unavailable: %s", type(exc).__name__
+            )
+            return {}
 
     # --- routes that name their target -----------------------------------------------
 
@@ -853,7 +865,10 @@ class QueryService:
                 if not battle.roster:
                     return Outcome(message=messages.NO_LOADOUT)
                 image_path = await renderer.render_loadout(
-                    battle, query=query, web_base_url=self._web_base_url
+                    battle,
+                    query=query,
+                    web_base_url=self._web_base_url,
+                    suits=await self._equip_suits(),
                 )
             else:
                 if not battle.skill_stats:
@@ -869,6 +884,7 @@ class QueryService:
             web_base_url=self._web_base_url,
             export=export,
             export_note=note,
+            suits=await self._equip_suits(),
         )
         return Outcome(image_path=image_path)
 
@@ -954,6 +970,7 @@ class QueryService:
             web_base_url=self._web_base_url,
             rank_a=rank_a,
             rank_b=rank_b,
+            suits=await self._equip_suits(),
         )
         return Outcome(image_path=image_path)
 

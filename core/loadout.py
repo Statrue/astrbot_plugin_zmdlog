@@ -23,8 +23,12 @@ _NORMAL_ATTACK_NAME_RE = re.compile(r"^A[1-9]$", re.IGNORECASE)
 # reader, the tail is all that distinguishes one unnamed skill from another.
 _CHARACTER_KEY_PREFIX_RE = re.compile(r"^chr_\d+_[a-z0-9]+_", re.IGNORECASE)
 _CJK_RE = re.compile(r"[㐀-鿿]")
+# ``item_equip_t4_suit_usp02_body_03``: the middle segment is the suit id
+# the game data catalog is keyed by. ``parts`` in place of ``suit`` marks a
+# piece that belongs to no suit at all.
 _SUIT_TOKEN_RE = re.compile(
-    r"^item_equip_t\d+_(?:suit|parts)_(?P<token>[a-z0-9_]+?)_(?:hand|body|edc)_\d+$",
+    r"^item_equip_t\d+_(?P<kind>suit|parts)_(?P<token>[a-z0-9_]+?)"
+    r"_(?:hand|body|edc)_\d+$",
     re.IGNORECASE,
 )
 _WEAPON_OWN_SKILL_PREFIX = "sk_wpn_"
@@ -282,41 +286,19 @@ def stat_label(name: str) -> str:
     return _STAT_LABELS.get(name.strip().lower(), name.strip())
 
 
-def suit_token(item_id: str | None) -> str | None:
-    """The suit segment of an item id, e.g. ``fire_natr01`` for a 动火用 piece."""
+def suit_catalog_id(item_id: str | None) -> str | None:
+    """The game data catalog id of this piece's suit, if it has one.
+
+    Only ``_suit_`` pieces belong to a suit; a ``_parts_`` piece is
+    standalone and has nothing to look up.
+    """
 
     if not item_id:
         return None
     match = _SUIT_TOKEN_RE.match(item_id)
-    return match.group("token").lower() if match else None
-
-
-def infer_suit_names(roster: tuple[BattleRosterEntry, ...]) -> dict[str, str]:
-    """Suit names by item-id token, learned from the pieces that carry one.
-
-    The parser names some pieces and not others of the same suit (the raw
-    item id is used as ``pieceName`` then), so a named sibling in the same
-    battle is the best local evidence for what an unnamed piece belongs to.
-
-    A token is only learned when every named piece carrying it agrees.
-    Upstream's ``suitName`` is not a property of the item: one item id is
-    reported under two different suits on two characters of the *same*
-    battle, so taking the first name seen would copy one character's wrong
-    label onto another character's unnamed gear. Contradiction means the
-    battle knows nothing, and the piece stays 名称未收录.
-    """
-
-    seen: dict[str, set[str]] = {}
-    for entry in roster:
-        for equip in entry.equips:
-            token = suit_token(equip.item_id)
-            if token and equip.suit_name:
-                seen.setdefault(token, set()).add(equip.suit_name)
-    return {
-        token: next(iter(names))
-        for token, names in seen.items()
-        if len(names) == 1
-    }
+    if match is None or match.group("kind").lower() != "suit":
+        return None
+    return f"suit_{match.group('token').lower()}"
 
 
 def is_raw_item_name(piece_name: str, item_id: str | None) -> bool:

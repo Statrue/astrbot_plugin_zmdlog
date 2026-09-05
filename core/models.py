@@ -324,6 +324,14 @@ class BattleExport:
 
 
 @dataclass(frozen=True, slots=True)
+class EquipSuit:
+    """One gear suit as the game data catalog names it."""
+
+    suit_id: str
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
 class CharacterStatisticsRow:
     character_key: str
     character_name: str
@@ -398,6 +406,32 @@ class CharacterStatistics:
     total_outlier_count: int
     rows: tuple[CharacterStatisticsRow, ...]
     metric: Literal["dps"] = "dps"
+
+
+def parse_equip_catalog(payload: Any) -> tuple[EquipSuit, ...]:
+    """Read the suit names out of ``GET /api/game-data/equip``.
+
+    Lenient by design: this is a display label for gear that already
+    renders, so an entry the catalog cannot describe is skipped rather than
+    failing the page. ``suit_none`` is the game's bucket for pieces that
+    belong to no suit and carries its own id as its name, which is not a
+    name a reader should see.
+    """
+
+    root = _mapping(payload, "equip-catalog")
+    suits: list[EquipSuit] = []
+    for value in root.get("entries") or ():
+        if not isinstance(value, dict):
+            continue
+        suit_id = value.get("suitID") or value.get("id")
+        name = value.get("name") or value.get("displayName")
+        if not isinstance(suit_id, str) or not isinstance(name, str):
+            continue
+        suit_id, name = suit_id.strip(), name.strip()
+        if not suit_id or not name or name == suit_id:
+            continue
+        suits.append(EquipSuit(suit_id=suit_id, name=name))
+    return tuple(suits)
 
 
 def parse_hot_bosses(payload: Any) -> tuple[HotBossCard, ...]:

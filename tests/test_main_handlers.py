@@ -163,6 +163,7 @@ class HandlerTests(unittest.TestCase):
         self.plugin.data.list_hot_bosses = list_hot_bosses
         self.plugin.data.get_battle_export = offline
         self.plugin.data.get_character_statistics = offline
+        self.plugin.data.get_equip_suits = offline
         self.plugin.client.search_public_accounts = offline
 
     def tearDown(self) -> None:
@@ -830,6 +831,37 @@ class HandlerTests(unittest.TestCase):
         (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
 
         self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
+
+    def test_the_gear_pages_are_handed_the_suit_catalog(self) -> None:
+        # The catalog is what names a piece upstream left blank, so it has to
+        # reach the page; an outage must still draw the page without it.
+        seen: list[dict] = []
+
+        async def detail(battle_id):
+            return parse_battle_detail(battle_detail_payload())
+
+        async def render_loadout(battle, **kwargs):
+            seen.append(kwargs.get("suits"))
+            return "/tmp/loadout.png"
+
+        async def suits():
+            return {"suit_phy01": "点剑"}
+
+        self.plugin.data.get_battle_detail = detail
+        self.plugin.data.get_equip_suits = suits
+        self.plugin.renderer.render_loadout = render_loadout
+
+        (kind, result), = self._zmdlog("zmdlog 配装 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/loadout.png"))
+        self.assertEqual(seen, [{"suit_phy01": "点剑"}])
+
+        async def broken():
+            raise ZmdLogsClientError("offline")
+
+        self.plugin.data.get_equip_suits = broken
+        (kind, result), = self._zmdlog("zmdlog 配装 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/loadout.png"))
+        self.assertEqual(seen[-1], {})
 
     def test_timeline_explains_old_uploads_and_rate_limits(self) -> None:
         answers = {
