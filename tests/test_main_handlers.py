@@ -807,6 +807,30 @@ class HandlerTests(unittest.TestCase):
         self.assertIn("不做跨榜单对比", reply)
         self.assertIn("三位一体", reply)
 
+    def test_the_card_fetches_the_detail_and_the_export_together(self) -> None:
+        # Serially, a slow export spent its whole 15-second client budget in
+        # front of the detail. Each stub waits for the other to start, so a
+        # serial implementation deadlocks and the wait_for below trips.
+        detail_started = asyncio.Event()
+        export_started = asyncio.Event()
+
+        async def detail(battle_id):
+            detail_started.set()
+            await asyncio.wait_for(export_started.wait(), timeout=2)
+            return parse_battle_detail(battle_detail_payload())
+
+        async def export(battle_id):
+            export_started.set()
+            await asyncio.wait_for(detail_started.wait(), timeout=2)
+            return parse_battle_export(battle_export_payload())
+
+        self.plugin.data.get_battle_detail = detail
+        self.plugin.data.get_battle_export = export
+
+        (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
+
+        self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
+
     def test_timeline_explains_old_uploads_and_rate_limits(self) -> None:
         answers = {
             "btl_upload_old000000001": ZmdLogsAPIError(

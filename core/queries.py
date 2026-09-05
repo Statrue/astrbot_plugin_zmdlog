@@ -191,8 +191,7 @@ class QueryService:
     async def render_battle_card(self, battle_id: str) -> Outcome:
         """The battle card for an auto-expanded link."""
 
-        battle = await self._data.get_battle_detail(battle_id)
-        export, note = await self._battle_export_for_card(battle_id)
+        battle, export, note = await self._battle_with_export(battle_id)
         image_path = await self._renderer().render_battle(
             battle,
             query=battle_id,
@@ -822,45 +821,85 @@ class QueryService:
 
         renderer = self._renderer()
         if view is CandidateView.TIMELINE:
-            try:
-                export = await self._data.get_battle_export(battle_id)
-            except ZmdLogsAPIError as exc:
-                refusal = _export_refusal(exc)
+            # The detail only adds the BUFF 覆盖 band, so it is fetched
+            # alongside the export rather than after it; awaiting it second
+            # put its whole client budget behind the export's.
+            export, battle = await asyncio.gather(
+                self._data.get_battle_export(battle_id),
+                self._battle_detail_if_available(battle_id),
+                return_exceptions=True,
+            )
+            if isinstance(export, ZmdLogsAPIError):
+                refusal = _export_refusal(export)
                 if refusal is None:
-                    raise
-                self._logger.warning("ZmdLogBot API request failed: %s", exc.code)
+                    raise export
+                self._logger.warning(
+                    "ZmdLogBot API request failed: %s", export.code
+                )
                 return Outcome(message=refusal)
-            # The detail only adds the BUFF 覆盖 band; the page stands without.
+            if isinstance(export, BaseException):
+                raise export
             image_path = await renderer.render_timeline(
                 export,
                 query=query,
                 web_base_url=self._web_base_url,
-                battle=await self._battle_detail_if_available(battle_id),
+                battle=None if isinstance(battle, BaseException) else battle,
             )
             return Outcome(image_path=image_path)
-        battle = await self._data.get_battle_detail(battle_id)
-        if view is CandidateView.LOADOUT:
-            if not battle.roster:
-                return Outcome(message=messages.NO_LOADOUT)
-            image_path = await renderer.render_loadout(
-                battle, query=query, web_base_url=self._web_base_url
-            )
-        elif view is CandidateView.SKILLS:
-            if not battle.skill_stats:
-                return Outcome(message=messages.NO_SKILL_STATS)
-            image_path = await renderer.render_skills(
-                battle, query=query, web_base_url=self._web_base_url
-            )
-        else:
-            export, note = await self._battle_export_for_card(battle_id)
-            image_path = await renderer.render_battle(
-                battle,
-                query=query,
-                web_base_url=self._web_base_url,
-                export=export,
-                export_note=note,
-            )
+        if view in (CandidateView.LOADOUT, CandidateView.SKILLS):
+            # Neither page reads the cast export, so neither pays for it.
+            battle = await self._data.get_battle_detail(battle_id)
+            if view is CandidateView.LOADOUT:
+                if not battle.roster:
+                    return Outcome(message=messages.NO_LOADOUT)
+                image_path = await renderer.render_loadout(
+                    battle, query=query, web_base_url=self._web_base_url
+                )
+            else:
+                if not battle.skill_stats:
+                    return Outcome(message=messages.NO_SKILL_STATS)
+                image_path = await renderer.render_skills(
+                    battle, query=query, web_base_url=self._web_base_url
+                )
+            return Outcome(image_path=image_path)
+        battle, export, note = await self._battle_with_export(battle_id)
+        image_path = await renderer.render_battle(
+            battle,
+            query=query,
+            web_base_url=self._web_base_url,
+            export=export,
+            export_note=note,
+        )
         return Outcome(image_path=image_path)
+
+    async def _battle_with_export(
+        self,
+        battle_id: str,
+    ) -> tuple[BattleDetailSummary, BattleExport | None, str | None]:
+        """The battle card's two reads, fetched together.
+
+        Serially, a slow or rate-limited export endpoint spent its whole
+        15-second client budget in front of the detail, so the card the
+        reader asked for waited on the section it can do without.
+        """
+
+        detail, extra = await asyncio.gather(
+            self._data.get_battle_detail(battle_id),
+            self._battle_export_for_card(battle_id),
+            return_exceptions=True,
+        )
+        if isinstance(detail, BaseException):
+            raise detail
+        if isinstance(extra, BaseException):
+            # _battle_export_for_card answers its own failures, so reaching
+            # here is a bug rather than an outage; the card stands without.
+            self._logger.warning(
+                "ZmdLogBot battle export raised unexpectedly: %s",
+                type(extra).__name__,
+            )
+            return detail, None, None
+        export, note = extra
+        return detail, export, note
 
     async def _battle_export_for_card(
         self,
