@@ -22,6 +22,10 @@ SNAPSHOT_MAX_AGE_INTERVALS = 3
 MIN_SNAPSHOT_MAX_AGE_SECONDS = 3600.0
 _MIN_RENDER_TIMEOUT_MS = 1_000
 _MAX_RENDER_TIMEOUT_MS = 120_000
+# A config panel hands over real booleans, but a hand-edited YAML or JSON
+# file says "false", and ``bool("false")`` is True.
+_TRUE_WORDS = frozenset({"true", "yes", "on", "1"})
+_FALSE_WORDS = frozenset({"false", "no", "off", "0"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +110,28 @@ def setting_names() -> tuple[str, ...]:
     return tuple(field.name for field in fields(PluginSettings))
 
 
+def _is_usable_base_url(value: str) -> bool:
+    """Whether the client and the renderer will both accept this base URL.
+
+    Everything they check is checked here, inside one ``try``: ``urlsplit``
+    raises on a bad bracket and ``.port`` raises on ``:abc`` or ``:99999``.
+    A reader that let either through would move the failure into the plugin
+    constructor, which is the one place this module exists to protect.
+    """
+
+    try:
+        parsed = urlsplit(value)
+        parsed.port  # noqa: B018 - raises for a malformed or out-of-range port
+    except ValueError:
+        return False
+    return bool(
+        parsed.scheme in {"http", "https"}
+        and parsed.hostname
+        and not parsed.query
+        and not parsed.fragment
+    )
+
+
 class _Reader:
     """Typed accessors over the raw mapping; each falls back with one warning."""
 
@@ -128,7 +154,19 @@ class _Reader:
         return self._source.get(name, getattr(self._defaults, name))
 
     def flag(self, name: str) -> bool:
-        return bool(self._raw(name))
+        value = self._raw(name)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            if value in (0, 1):
+                return bool(value)
+        elif isinstance(value, str):
+            word = value.strip().casefold()
+            if word in _TRUE_WORDS:
+                return True
+            if word in _FALSE_WORDS:
+                return False
+        return bool(self._fallback(name, "true or false"))
 
     def text(self, name: str) -> str:
         value = self._raw(name)
@@ -138,15 +176,8 @@ class _Reader:
 
     def http_url(self, name: str) -> str:
         value = self._raw(name)
-        if isinstance(value, str):
-            parsed = urlsplit(value.strip())
-            if (
-                parsed.scheme in {"http", "https"}
-                and parsed.netloc
-                and not parsed.query
-                and not parsed.fragment
-            ):
-                return value.strip()
+        if isinstance(value, str) and _is_usable_base_url(value.strip()):
+            return value.strip()
         return self._fallback(name, "an absolute HTTP(S) URL")
 
     def positive_integer(

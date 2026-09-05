@@ -2,6 +2,8 @@ import json
 import unittest
 from pathlib import Path
 
+from core.client import ZmdLogsClient
+from core.render import _normalise_http_origin
 from core.settings import (
     MIN_RANK_WATCH_INTERVAL_SECONDS,
     PluginSettings,
@@ -112,6 +114,67 @@ class SettingsTests(unittest.TestCase):
             {"rank_watch_interval_seconds": 7200}, warn=warnings.append
         )
         self.assertEqual(long_interval.rank_snapshot_max_age_seconds, 21600.0)
+
+    def test_booleans_are_parsed_rather_than_coerced(self) -> None:
+        # A config panel hands over real booleans, but a hand-edited file
+        # says "false", and bool("false") is True.
+        warnings: list[str] = []
+        off = load_settings(
+            {"rank_watch_enabled": "false", "auto_expand_battle_links": "0"},
+            warn=warnings.append,
+        )
+        on = load_settings(
+            {"auto_expand_battle_links": "Yes", "rank_watch_enabled": 1},
+            warn=warnings.append,
+        )
+
+        self.assertFalse(off.rank_watch_enabled)
+        self.assertFalse(off.auto_expand_battle_links)
+        self.assertTrue(on.auto_expand_battle_links)
+        self.assertTrue(on.rank_watch_enabled)
+        self.assertEqual(warnings, [])
+
+        nonsense: list[str] = []
+        settings = load_settings(
+            {"rank_watch_enabled": "maybe"}, warn=nonsense.append
+        )
+        self.assertTrue(settings.rank_watch_enabled)
+        self.assertEqual(len(nonsense), 1)
+
+    def test_a_malformed_base_url_warns_instead_of_raising(self) -> None:
+        # The point of this module is that a bad value never reaches the
+        # plugin constructor: urlsplit raises on a bad bracket and .port
+        # raises on a non-numeric or out-of-range port.
+        defaults = PluginSettings()
+        for raw in (
+            "http://[bad",
+            "http://host:abc",
+            "http://host:99999",
+            "zmdlogs.com",
+            "https://zmdlogs.com/?x=1",
+            "ftp://zmdlogs.com",
+        ):
+            with self.subTest(raw=raw):
+                warnings: list[str] = []
+                settings = load_settings({"api_base_url": raw}, warn=warnings.append)
+                self.assertEqual(settings.api_base_url, defaults.api_base_url)
+                self.assertEqual(len(warnings), 1)
+
+    def test_a_usable_base_url_survives_intact(self) -> None:
+        warnings: list[str] = []
+        settings = load_settings(
+            {"api_base_url": " https://mirror.example:8443/base/ "},
+            warn=warnings.append,
+        )
+
+        self.assertEqual(settings.api_base_url, "https://mirror.example:8443/base/")
+        self.assertEqual(warnings, [])
+        # What settings accepts, the client and the renderer must accept too.
+        ZmdLogsClient(api_base_url=settings.api_base_url)
+        self.assertEqual(
+            _normalise_http_origin(settings.api_base_url),
+            "https://mirror.example:8443",
+        )
 
     def test_render_timeout_stays_inside_the_renderer_bounds(self) -> None:
         warnings: list[str] = []
