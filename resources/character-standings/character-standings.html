@@ -38,32 +38,45 @@
 {% block content %}
 <div class="section-heading">
   <h2>各榜单最好名次</h2>
-  <span class="section-note">每个榜带 {{ page.character_name }} 的最好一条公开记录 · #N / M = 该记录在该榜全部 M 条记录中排第 N · 这是队伍的成绩，不是角色的强度</span>
+  <span class="section-note">每个榜带 {{ page.character_name }} 的最好一条公开记录，按名次排 · 名次是该记录在该榜全部记录中的位置 · 这是队伍的成绩，不是角色的强度</span>
 </div>
 
 {% if page.rows %}
-<section class="standings-board">
-  <ol class="board-rows">
+<section class="standings">
+  <div class="standings-head" aria-hidden="true">
+    <span class="standings-head-rank">名次 / 总数</span>
+    <span class="standings-head-board">榜单 · 阵容</span>
+    <span class="standings-head-record">记录</span>
+    <span class="standings-head-time">用时</span>
+    <span class="standings-head-dps">队伍 DPS</span>
+  </div>
+  <ol class="standings-rows">
     {% for row in page.rows %}
-    <li class="board-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
-      <div class="cell-rank">
-        <span class="rank-num">{{ row.rank }}</span>
-        <span class="percentile">/ {{ row.total_rows }}</span>
+    <li class="standings-row{% if row.rank == 1 %} is-first{% elif row.rank <= 3 %} is-podium{% endif %}">
+      <div class="standings-rank">
+        <b>{{ row.rank }}</b>
+        <i>/ {{ row.total_rows }}</i>
       </div>
-      <div class="cell-id standings-board-name">
+      <div class="standings-board">
         <strong>{{ row.boss_name }}</strong>
-        <em>{{ row.dungeon_name }}</em>
+        <span>{{ row.dungeon_name }}</span>
       </div>
-      <div class="cell-id">
+      <div class="standings-record">
         <strong>{{ row.account_display_name }}</strong>
-        <em>
+        <span>
           {% if row.is_main %}<b class="standings-main">{{ page.character_name }} 主 C</b>{% else %}主 C <b>{{ row.character_name }}</b>{% endif %}
           · 该榜带 {{ page.character_name }} 的记录 {{ row.appearances }} 条
-        </em>
+        </span>
       </div>
-      <div class="cell-dps">{{ row.dps }}</div>
-      <div class="cell-time">{{ row.duration }}</div>
-      <div class="cell-team">
+      <div class="standings-time">
+        <span>用时</span>
+        <b>{{ row.duration }}</b>
+      </div>
+      <div class="standings-dps">
+        <span>队伍 DPS</span>
+        <b>{{ row.dps }}</b>
+      </div>
+      <div class="standings-team">
         {% for member in row.roster %}
         <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}{% if member.character_name == page.character_name %} is-match{% endif %}">
           <span class="avatar">
@@ -75,13 +88,13 @@
           {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
         </span>
         {% endfor %}
-        <span class="standings-battle">{{ row.battle_id }}</span>
       </div>
+      <div class="standings-battle">{{ row.battle_id }}</div>
     </li>
     {% endfor %}
   </ol>
   <p class="board-legend">
-    黄圈头像为该场主 C，加框的是 {{ page.character_name }}；名次后的 / M 为该榜公开记录总数。
+    黄圈头像为该场主 C，加框的是 {{ page.character_name }}；用时为通关时间，队伍 DPS 为整队合计。
   </p>
 </section>
 {% else %}
