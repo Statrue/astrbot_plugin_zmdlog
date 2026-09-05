@@ -550,6 +550,70 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class RenderQueueTests(unittest.IsolatedAsyncioTestCase):
+    """The semaphore bounds concurrency; the queue behind it needs bounds too."""
+
+    def setUp(self) -> None:
+        self.root = Path(__file__).parents[1]
+
+    async def test_a_full_queue_is_refused_instead_of_joined(self) -> None:
+        # The cap counts callers waiting for a slot, not the one rendering.
+        renderer = LongImageRenderer(
+            self.root,
+            render_timeout_ms=1_000,
+            max_concurrent_renders=1,
+            max_queued_renders=2,
+        )
+        release = asyncio.Event()
+
+        async def capture_once(html: str, page_kind: str) -> str:
+            await release.wait()
+            return page_kind
+
+        renderer._capture_once = capture_once
+        rendering = asyncio.create_task(renderer._capture("", "rendering"))
+        waiting = [
+            asyncio.create_task(renderer._capture("", f"waiting-{index}"))
+            for index in range(2)
+        ]
+        for _ in range(4):
+            await asyncio.sleep(0)
+        self.assertEqual(renderer._queued_renders, 2)
+
+        with self.assertRaises(RenderError) as refused:
+            await renderer._capture("", "refused")
+        self.assertIn("queued", str(refused.exception))
+
+        release.set()
+        self.assertEqual(await rendering, "rendering")
+        self.assertEqual(await asyncio.gather(*waiting), ["waiting-0", "waiting-1"])
+        # The slots are given back, so the next caller is served normally.
+        self.assertEqual(await renderer._capture("", "later"), "later")
+        await renderer.close()
+
+    async def test_waiting_for_a_slot_is_under_a_timeout(self) -> None:
+        renderer = LongImageRenderer(
+            self.root, render_timeout_ms=1_000, max_concurrent_renders=1
+        )
+        release = asyncio.Event()
+
+        async def capture_once(html: str, page_kind: str) -> str:
+            await release.wait()
+            return page_kind
+
+        renderer._capture_once = capture_once
+        held = asyncio.create_task(renderer._capture("", "held"))
+        await asyncio.sleep(0)
+
+        with self.assertRaises(RenderError) as timed_out:
+            await renderer._capture("", "waiting")
+        self.assertIn("render slot", str(timed_out.exception))
+
+        release.set()
+        await held
+        await renderer.close()
+
+
 class FakeRoute:
     def __init__(self, url: str, resource_type: str = "font") -> None:
         self.request = SimpleNamespace(url=url, resource_type=resource_type)

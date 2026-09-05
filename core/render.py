@@ -83,6 +83,11 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
 )
 _MAX_CAPTURE_HEIGHT_PX = 15_000
 DEFAULT_MAX_CONCURRENT_RENDERS = 2
+# The semaphore bounds how many captures run at once, not how many callers
+# wait for one. A burst from several chats would otherwise queue without
+# limit, and the wait counted against no timeout at all, so the last caller
+# could sit there for minutes before Chromium even opened its page.
+DEFAULT_MAX_QUEUED_RENDERS = 8
 DEFAULT_OUTPUT_TTL_SECONDS = 10 * 60
 DEFAULT_MAX_OUTPUT_FILES = 50
 
@@ -585,6 +590,7 @@ class LongImageRenderer:
         output_dir: Path | None = None,
         allowed_image_origins: tuple[str, ...] = (),
         max_concurrent_renders: int = DEFAULT_MAX_CONCURRENT_RENDERS,
+        max_queued_renders: int = DEFAULT_MAX_QUEUED_RENDERS,
         output_ttl_seconds: float = DEFAULT_OUTPUT_TTL_SECONDS,
         max_output_files: int = DEFAULT_MAX_OUTPUT_FILES,
     ) -> None:
@@ -623,6 +629,11 @@ class LongImageRenderer:
                 "max_concurrent_renders",
             )
         )
+        self.max_queued_renders = _positive_integer(
+            max_queued_renders,
+            "max_queued_renders",
+        )
+        self._queued_renders = 0
         self._output_lock = asyncio.Lock()
         self._asset_cache = AssetCache()
         self._created_files: set[Path] = set()
@@ -689,12 +700,32 @@ class LongImageRenderer:
             raise
 
     async def _capture(self, html: str, page_kind: str) -> str:
-        async with self._render_semaphore:
-            try:
-                return await self._capture_once(html, page_kind)
-            except RenderError as exc:
-                exc.html = html
-                raise
+        """Wait for a capture slot, then capture; both waits are bounded.
+
+        Only the queue wait is under the timeout. Wrapping the capture as
+        well would trip on a page that is legitimately slow, and the render
+        timeout already bounds every Playwright call inside it.
+        """
+
+        if self._queued_renders >= self.max_queued_renders:
+            # Answering "try again" now beats a reply that arrives after the
+            # reader has stopped waiting for it.
+            raise RenderError("too many renders are already queued")
+        self._queued_renders += 1
+        try:
+            async with asyncio.timeout(self.render_timeout_ms / 1000):
+                await self._render_semaphore.acquire()
+        except TimeoutError:
+            raise RenderError("timed out waiting for a render slot") from None
+        finally:
+            self._queued_renders -= 1
+        try:
+            return await self._capture_once(html, page_kind)
+        except RenderError as exc:
+            exc.html = html
+            raise
+        finally:
+            self._render_semaphore.release()
 
     async def _capture_once(self, html: str, page_kind: str) -> str:
         browser = await self._ensure_browser()
