@@ -45,9 +45,84 @@ _ELEMENT_LABELS = {
     "physical": "物理",
     "fire": "灼热",
     "cryst": "寒冷",
+    "crystal": "寒冷",
     "natural": "自然",
     "pulse": "电磁",
+    "spell": "法术",
 }
+# The anomaly an element applies when it is triggered by another one
+# (parser_core cross_element_trigger_match).
+_ANOMALY_BY_ELEMENT = {
+    "fire": "燃烧",
+    "pulse": "导电",
+    "cryst": "冻结",
+    "natural": "腐蚀",
+}
+# A damage row whose upstream name still carries a word like this was named
+# from its key, not from the game's text table.
+_ASCII_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+# ``buff_chr_0030_zhuangfy_sword_triggerd`` / ``buff_common_burning_status``.
+_BUFF_KEY_RE = re.compile(r"^buff_(?:common_|chr_\d+_[a-z0-9]+_)", re.IGNORECASE)
+_KEY_DIGITS_RE = re.compile(r"^\d+$")
+_ATTACK_TOKEN_RE = re.compile(r"^attack(\d+)$", re.IGNORECASE)
+# The skill family a raw key starts with, longest phrase first. Upstream's
+# own prettifier translates ``normal`` on its own and leaves ``skill``, which
+# is how a 战技 sub-hit came to be printed as ``普攻 / skill / 派生``.
+_SKILL_FAMILIES = (
+    (("normal", "skill"), "战技"),
+    (("ultimate", "skill"), "终结技"),
+    (("ultimate",), "终结技"),
+    (("combo", "skill"), "连携技"),
+    (("combo",), "连携技"),
+    (("power", "attack"), "重击"),
+    (("plunging", "attack"), "下落攻击"),
+    (("dash", "attack"), "闪避攻击"),
+)
+# What the remaining segments of a key mean. The first block is upstream's
+# own table (parser_core ``_humanize_skill_suffix_text``); the second is the
+# tokens it leaves untranslated that the public boards actually show.
+_KEY_TOKEN_LABELS = {
+    "normal": "普攻",
+    "combo": "连携",
+    "absorb": "吸收",
+    "air": "空中",
+    "airborne": "浮空",
+    "attack": "攻击",
+    "blocked": "格挡",
+    "bleed": "流血",
+    "break": "击破",
+    "damage": "伤害",
+    "drone": "无人机",
+    "effect": "效果",
+    "entity": "实体",
+    "extra": "额外",
+    "fx": "特效",
+    "hit": "命中",
+    "loop": "循环",
+    "move": "移动",
+    "projhit": "派生",
+    "range": "范围",
+    "remain": "持续",
+    "self": "自身",
+    "sheep": "绵羊",
+    "shockwave": "冲击波",
+    "spawn": "召唤",
+    "start": "起手",
+    "talent": "天赋",
+    "delay": "延迟",
+    "persistentdamage": "持续伤害",
+    "soundwave": "声波",
+    "floating": "浮空",
+    "triggered": "触发",
+    "triggerd": "触发",
+    "status": "状态",
+    "burning": "燃烧",
+    "weakness": "弱点",
+    "phantom": "幻影",
+    **_ELEMENT_LABELS,
+}
+_SIDE_LABELS = {"l": "左", "r": "右"}
+_CHINESE_ORDINALS = "零一二三四五六七八九"
 # Stat names the parser sometimes leaves untranslated.
 _STAT_LABELS = {"main": "主能力", "sub": "副能力"}
 _SKILL_LEVEL_SLOTS = (
@@ -124,26 +199,216 @@ def skill_display_name(
     if combo_from_key and skill_key and _COMBO_SKILL_KEY_RE.search(skill_key):
         return "连携技"
     if not name:
-        return skill_key or "未命名技能"
-    if _looks_like_raw_key(name):
-        stripped = _CHARACTER_KEY_PREFIX_RE.sub("", name).replace("_", " ").strip()
-        return stripped or name
+        return _humanise_key(skill_key or "") or skill_key or "未命名技能"
+    if (
+        _looks_like_raw_key(name)
+        or _ASCII_WORD_RE.search(name)
+        or _looks_like_token_join(name)
+    ):
+        # Named from a key rather than from the game's text table. When the
+        # name is upstream's segment-by-segment reading of a key whose shape
+        # we understand, the key says what the row is; a name that carries
+        # text of its own (``塞什卡的秘传 / phantom``, ``召唤 / pet``) keeps
+        # it and only has its English words read.
+        if _named_from_key(name, skill_key):
+            humanised = _humanise_key(skill_key or name)
+            if humanised:
+                return humanised
+        return _translate_name_segments(name)
     return name
+
+
+def _looks_like_token_join(name: str) -> str | None:
+    """``连携 / 02 / 派生``: every segment a token label or a number.
+
+    Such a name carries no English word to trip the other check, but it is
+    still upstream's segment join and reads better from the key.
+    """
+
+    if " / " not in name:
+        return None
+    labels = set(_KEY_TOKEN_LABELS.values())
+    segments = [segment.strip() for segment in name.split("/")]
+    return all(
+        segment in labels or _KEY_DIGITS_RE.match(segment) for segment in segments
+    ) or None
+
+
+def _named_from_key(name: str, skill_key: str | None) -> bool:
+    """Whether upstream built ``name`` by translating ``skill_key`` token by token.
+
+    Upstream joins one word per key segment, so the counts match and every
+    Chinese word is one of its token labels. A name with a different shape
+    was resolved from somewhere else and must not be replaced by the key.
+    """
+
+    if _looks_like_raw_key(name):
+        return True
+    body = _key_body(skill_key or "")
+    if body is None:
+        return False
+    # One word per raw segment: ``combo_skillfloating`` is two words to
+    # upstream even though it is read here as three tokens.
+    segments = [segment for segment in body.split("_") if segment]
+    words = [word for word in re.split(r"[\s/]+", name) if word]
+    if len(words) != len(segments):
+        return False
+    labels = set(_KEY_TOKEN_LABELS.values())
+    return all(not _CJK_RE.search(word) or word in labels for word in words)
+
+
+def _key_body(key: str) -> str | None:
+    """The segments of a character or buff key after its owner prefix."""
+
+    lowered = key.strip().lower()
+    if lowered.startswith("buff_"):
+        if not _BUFF_KEY_RE.match(lowered):
+            return None
+        return _BUFF_KEY_RE.sub("", lowered)
+    if _CHARACTER_KEY_PREFIX_RE.match(lowered):
+        return _CHARACTER_KEY_PREFIX_RE.sub("", lowered)
+    return None
+
+
+def _translate_name_segments(name: str) -> str:
+    """Read the English words of an upstream-prettified name, keep the rest."""
+
+    segments = [segment.strip() for segment in name.split("/")]
+    translated = []
+    for segment in segments:
+        words = segment.split()
+        if words and all(word.lower() in _KEY_TOKEN_LABELS for word in words):
+            translated.append("".join(_KEY_TOKEN_LABELS[w.lower()] for w in words))
+        else:
+            translated.append(segment)
+    if len(segments) == 1 and not _CJK_RE.search(name):
+        # A bare raw key with a shape we did not recognise: the old tidy.
+        stripped = _CHARACTER_KEY_PREFIX_RE.sub("", name).replace("_", " ").strip()
+        return translated[0] if translated[0] != name else (stripped or name)
+    return " / ".join(translated)
+
+
+def _humanise_key(key: str) -> str | None:
+    """Read a raw skill or buff key the way its segments are meant.
+
+    Mirrors parser_core's families and token table, then goes one step
+    further for the shapes the boards actually show: ``normal_skill`` is one
+    phrase (战技), a trailing character token on a same-element burst is
+    dropped, and ``attackN`` inside a family reads as the N-th hit. Returns
+    None when the key is not a character or buff key at all.
+    """
+
+    lowered = key.strip().lower()
+    body = _key_body(lowered)
+    if body is None:
+        return None
+    if lowered.startswith("buff_common_"):
+        reaction = _reaction_name(body)
+        if reaction:
+            return reaction
+    tokens = _split_key_tokens(body)
+    if not tokens:
+        return None
+    family = None
+    for phrase, label in _SKILL_FAMILIES:
+        if tuple(tokens[: len(phrase)]) == phrase:
+            family, tokens = label, tokens[len(phrase) :]
+            break
+    if family is None and len(tokens) == 2 and tokens[0] == "skill":
+        if _KEY_DIGITS_RE.match(tokens[1]):
+            return f"技能 {int(tokens[1])}"
+    rest = _render_key_tokens(tokens, in_family=family is not None)
+    if family and rest:
+        return f"{family} · {rest}"
+    return family or rest or None
+
+
+def _reaction_name(body: str) -> str | None:
+    """parser_core's names for ``buff_common_<element>…_triggered`` rows.
+
+    The same-element burst tolerates a trailing character token, which is
+    how 提弗洛斯's own 自然爆发 arrives (``…_natural_natural_triggered_typhoea``).
+    """
+
+    tokens = body.split("_")
+    if len(tokens) >= 3 and tokens[2] == "triggered" and tokens[0] in _ELEMENT_LABELS:
+        applied, source = tokens[0], tokens[1]
+        if applied == source:
+            return f"{_ELEMENT_LABELS[applied]}爆发"
+        if source in _ELEMENT_LABELS and len(tokens) == 3:
+            return _ANOMALY_BY_ELEMENT.get(applied)
+    return None
+
+
+def _split_key_tokens(body: str) -> list[str]:
+    tokens: list[str] = []
+    for token in body.split("_"):
+        if not token:
+            continue
+        # ``skillfloating``: two words the key glued together.
+        if token.startswith("skill") and token[5:] in _KEY_TOKEN_LABELS:
+            tokens.extend(("skill", token[5:]))
+        else:
+            tokens.append(token)
+    return tokens
+
+
+def _render_key_tokens(tokens: list[str], *, in_family: bool) -> str:
+    """Join translated segments the way a Chinese label reads.
+
+    Inside a family ``attack2`` is the second hit (二段); on its own it is
+    written the way upstream writes the basic chain (``A1-01``). A variant
+    number goes last, after the words that describe the hit.
+    """
+
+    pieces: list[str] = []
+    numbers: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        attack = _ATTACK_TOKEN_RE.match(token)
+        if attack and in_family:
+            hit = int(attack.group(1))
+            ordinal = (
+                _CHINESE_ORDINALS[hit] if hit < len(_CHINESE_ORDINALS) else str(hit)
+            )
+            pieces.append(f"{ordinal}段")
+        elif attack:
+            label = f"A{int(attack.group(1))}"
+            if index + 1 < len(tokens) and _KEY_DIGITS_RE.match(tokens[index + 1]):
+                label += f"-{tokens[index + 1]}"
+                index += 1
+            pieces.append(f" {label} ")
+        elif _KEY_DIGITS_RE.match(token):
+            numbers.append(str(int(token)))
+        elif token in _SIDE_LABELS:
+            pieces.append(f"（{_SIDE_LABELS[token]}）")
+        elif token in _KEY_TOKEN_LABELS:
+            pieces.append(_KEY_TOKEN_LABELS[token])
+        else:
+            pieces.append(f" {token} ")
+        index += 1
+    text = " ".join("".join(pieces).split())
+    if numbers:
+        text = f"{text} {' '.join(numbers)}".strip()
+    return text
 
 
 def skill_category(skill_name: str, skill_key: str | None) -> SkillCategory:
     """Bucket one skill-stat row, mirroring the site's category rules."""
 
     display = skill_display_name(skill_name, skill_key)
+    # ``战技 · 派生`` is still the 战技; the family is what buckets a row.
+    family = display.split(" · ", 1)[0]
     if _NORMAL_ATTACK_NAME_RE.match(display):
         return SkillCategory.NORMAL
-    if display == "战技":
+    if family == "战技":
         return SkillCategory.SKILL
-    if display == "连携技":
+    if family == "连携技":
         return SkillCategory.COMBO
-    if display in {"重击", "处决"}:
+    if family in {"重击", "处决"}:
         return SkillCategory.HEAVY
-    if display == "终结技":
+    if family == "终结技":
         return SkillCategory.ULTIMATE
     if not skill_key:
         return SkillCategory.OTHER

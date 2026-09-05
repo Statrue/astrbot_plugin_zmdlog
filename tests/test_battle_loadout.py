@@ -111,22 +111,117 @@ class SkillNamingTests(unittest.TestCase):
         self.assertEqual(
             skill_display_name("whatever", "chr_0031_kamiu_combo_skill"), "连携技"
         )
-        # Raw keys lose the character prefix and read as words.
+        # A bare numbered sub-skill has no words to read; it is at least Chinese.
         raw_key = "chr_0028_wulfa_skill_3090"
-        self.assertEqual(skill_display_name(raw_key, raw_key), "skill 3090")
+        self.assertEqual(skill_display_name(raw_key, raw_key), "技能 3090")
         self.assertEqual(
             skill_display_name("绯红刃舞", "chr_0028_wulfa_attack1"), "绯红刃舞"
         )
-        self.assertEqual(
-            skill_display_name("burning status", "buff_x"), "burning status"
-        )
+        # Upstream's word-joined buff names read through the same vocabulary
+        # even when the key has no shape to parse.
+        self.assertEqual(skill_display_name("burning status", "buff_x"), "燃烧状态")
         self.assertEqual(skill_display_name("", "buff_x"), "buff_x")
         self.assertEqual(skill_display_name("  ", None), "未命名技能")
         self.assertEqual(
             skill_display_name(
                 "ultimate / skill / 派生", "chr_0035_liino_ultimate_skill_projhit"
             ),
-            "ultimate / skill / 派生",
+            "终结技 · 派生",
+        )
+
+    def test_raw_keys_read_as_the_moves_they_are(self) -> None:
+        # Every shape the public boards showed with English left in it, and
+        # what the segments mean. Upstream translates ``normal`` on its own
+        # and leaves ``skill``, which is how a 战技 sub-hit read as 普攻.
+        cases = {
+            ("普攻 / skill / 派生 / hit", "chr_0035_liino_normal_skill_projhit_hit"): (
+                "战技 · 派生命中"
+            ),
+            (
+                "普攻 / skill / delay / 伤害",
+                "buff_chr_0033_camille_normal_skill_delay_damage",
+            ): "战技 · 延迟伤害",
+            (
+                "普攻 / skill / attack2 / 派生",
+                "chr_0034_typhoea_normal_skill_attack2_projhit",
+            ): "战技 · 二段派生",
+            ("普攻 / skill / 派生 / 02", "chr_0035_liino_normal_skill_projhit_02"): (
+                "战技 · 派生 2"
+            ),
+            ("连携 / persistentdamage", "chr_0034_typhoea_combo_persistentdamage"): (
+                "连携技 · 持续伤害"
+            ),
+            ("combo skillfloating", "chr_0034_typhoea_combo_skillfloating"): (
+                "连携技 · 浮空"
+            ),
+            (
+                "ultimate / skill / 派生 / 伤害 / 02",
+                "chr_0035_liino_ultimate_skill_projhit_damage_02",
+            ): "终结技 · 派生伤害 2",
+            (
+                "ultimate / skill / soundwave / 派生",
+                "chr_0035_liino_ultimate_skill_soundwave_projhit",
+            ): "终结技 · 声波派生",
+            (
+                "ultimate / skill / 派生 / l",
+                "chr_0035_liino_ultimate_skill_projhit_l",
+            ): "终结技 · 派生（左）",
+            ("power / 攻击 / 派生", "chr_0034_typhoea_power_attack_projhit"): (
+                "重击 · 派生"
+            ),
+            (
+                "floating / attack1 / 01 / 派生",
+                "chr_0034_typhoea_floating_attack1_01_projhit",
+            ): "浮空 A1-01 派生",
+            ("natural triggered", "buff_common_natural_triggered"): "自然触发",
+            ("cryst triggered fx", "buff_common_cryst_triggered_fx"): "寒冷触发特效",
+            ("fire triggered start", "buff_common_fire_triggered_start"): (
+                "灼热触发起手"
+            ),
+            # parser_core's own reaction names, plus a trailing character token
+            # on the same-element burst (提弗洛斯's own 自然爆发).
+            (
+                "natural natural triggered typhoea",
+                "buff_common_natural_natural_triggered_typhoea",
+            ): "自然爆发",
+            ("fire natural triggered", "buff_common_fire_natural_triggered"): "燃烧",
+            ("skill 3782", "chr_0032_lizhiyan_skill_3782"): "技能 3782",
+            # No English word at all, but still upstream's segment join.
+            ("连携 / 02 / 派生", "chr_0034_typhoea_combo_02_projhit"): (
+                "连携技 · 派生 2"
+            ),
+        }
+        for (name, key), expected in cases.items():
+            with self.subTest(key=key):
+                self.assertEqual(skill_display_name(name, key), expected)
+
+    def test_names_the_game_gave_are_kept_and_only_their_english_read(self) -> None:
+        # A name whose shape is not upstream's token join of the key carries
+        # text of its own; the key must not overwrite it.
+        self.assertEqual(
+            skill_display_name(
+                "塞什卡的秘传 / phantom", "buff_chr_0026_lastrite_normal_skill_phantom"
+            ),
+            "塞什卡的秘传 / 幻影",
+        )
+        self.assertEqual(
+            skill_display_name("河水 / water / gene", "chr_x_normal_skill_water_gene"),
+            "河水 / water / gene",
+        )
+        # Words the vocabulary does not know stay as they are, in place.
+        self.assertEqual(
+            skill_display_name(
+                "poise can be breaking attacked",
+                "buff_common_poise_can_be_breaking_attacked",
+            ),
+            "poise can be breaking attacked",
+        )
+        self.assertEqual(
+            skill_display_name(
+                "buff_chr_0030_zhuangfy_sword_triggerd",
+                "buff_chr_0030_zhuangfy_sword_triggerd",
+            ),
+            "sword 触发",
         )
 
     def test_categories_mirror_the_site_and_bucket_engine_sources(self) -> None:
@@ -140,6 +235,18 @@ class SkillNamingTests(unittest.TestCase):
             ("构成序列", "chr_x_normal_skill"): SkillCategory.SKILL,
             ("连携·潮汐", "chr_x_combo_skill"): SkillCategory.COMBO,
             ("燃烧", "buff_common_fire_natural_triggered"): SkillCategory.MECHANIC,
+            # The family buckets a row, not the whole label.
+            (
+                "连携 / persistentdamage",
+                "chr_0034_typhoea_combo_persistentdamage",
+            ): SkillCategory.COMBO,
+            (
+                "普攻 / skill / 派生",
+                "chr_0035_liino_normal_skill_projhit",
+            ): SkillCategory.SKILL,
+            ("连携 / 02 / 派生", "chr_0034_typhoea_combo_02_projhit"): (
+                SkillCategory.COMBO
+            ),
             ("套装", "buff_equipsuit_phy01"): SkillCategory.SUIT,
             ("武器", "buff_wpn_sword"): SkillCategory.WEAPON,
             ("skill 640", "chr_x_skill_640"): SkillCategory.OTHER,
@@ -479,8 +586,8 @@ class LoadoutTemplateTests(unittest.TestCase):
         self.assertIn("1,200,000", html)
         self.assertIn("59.2%", html)
         self.assertIn("<i>合并</i>", html)
-        self.assertIn("burning status", html)
-        self.assertIn("skill 3090", html)
+        self.assertIn("燃烧状态", html)
+        self.assertIn("技能 3090", html)
         self.assertIn("占全队 88.4%", html)
 
     def test_battle_card_gains_the_loadout_section(self) -> None:
