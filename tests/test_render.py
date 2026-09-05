@@ -28,6 +28,7 @@ from core.render import (
     RenderError,
     TemplateConfigurationError,
     TemplateRenderer,
+    read_plugin_version,
 )
 from tests.helpers import (
     battle_detail_payload,
@@ -92,7 +93,11 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("!zmdlog 榜单", html)
         self.assertIn("!zmdlog 战报 | 配装 | 技能 | 技能轴", html)
         self.assertIn("ZmdLogBot", html)
-        self.assertIn("v0.9.0", html)
+        # Read from the manifest rather than repeating it: the version is
+        # bumped every release, and the point of the test is that the page
+        # shows whatever metadata.yaml says.
+        version = read_plugin_version(self.root / "metadata.yaml")
+        self.assertIn(f"v{version}", html)
         self.assertIn("data:image/svg+xml;base64,", html)
         self.assertIn("@font-face", html)
         self.assertNotIn("astrbot_plugin_zmdlog", html)

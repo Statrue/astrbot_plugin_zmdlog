@@ -2,6 +2,6 @@ name: astrbot_plugin_zmdlog
 display_name: ZmdLogBot
 desc: 在聊天中查询 ZMDLogs 公开榜单、账号成绩与战报摘要，以终末地风格长图回复。
 short_desc: 查询 ZMDLogs（终末地 DPS）公开榜单、账号与战报，输出长图。
-version: "0.9.0"
+version: "0.9.1"
 author: Statrue
 repo: https://github.com/Statrue/astrbot_plugin_zmdlog
