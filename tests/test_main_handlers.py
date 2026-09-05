@@ -153,13 +153,17 @@ class HandlerTests(unittest.TestCase):
         async def list_hot_bosses():
             return self.cards
 
-        async def no_export(battle_id):
-            # The battle card asks for the export on every render; without
-            # this stub the real client would go to the network.
+        async def offline(*args, **kwargs):
+            # Everything the smart route reaches for on the side — the cast
+            # export, the nickname search, the six-star catalog — answers as
+            # an outage unless a test stubs it. tests/__init__ cuts the real
+            # network, so without these the suite would measure upstream.
             raise ZmdLogsClientError("offline")
 
         self.plugin.data.list_hot_bosses = list_hot_bosses
-        self.plugin.data.get_battle_export = no_export
+        self.plugin.data.get_battle_export = offline
+        self.plugin.data.get_character_statistics = offline
+        self.plugin.client.search_public_accounts = offline
 
     def tearDown(self) -> None:
         plugin_main.StarTools = self._star_tools
