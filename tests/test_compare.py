@@ -168,6 +168,88 @@ class ComparePageTests(unittest.TestCase):
         self.assertFalse(kamiu_lines["武器"].differs)
         self.assertEqual(rows["卡缪"].skills_b, ())
 
+    def test_identical_gear_is_not_flagged_when_upstream_renames_it(self) -> None:
+        # Upstream's suitName is not a property of the item: the same item id
+        # comes back under different suits in different battles. Comparing the
+        # rendered label called identical gear different on every line.
+        payload = second_battle_payload()
+        for entry in payload["battle"]["roster"]:
+            for equip in entry["equips"]:
+                equip["suitName"] = None
+                equip["pieceName"] = equip["itemId"]
+        page = build_compare_page(
+            self.first, parse_battle_detail(payload), query="q", web_base_url=WEB
+        )
+        lines = {
+            line.label: line
+            for line in next(
+                row for row in page.loadouts if row.character_name == "洛茜"
+            ).lines
+        }
+
+        for label in ("护手", "护甲", "配件 1", "配件 2"):
+            with self.subTest(label=label):
+                self.assertFalse(lines[label].differs)
+        # The page still prints what each side's upstream actually said.
+        self.assertEqual(lines["护手"].a, "点剑 · 护手")
+        self.assertEqual(lines["护手"].b, "护手（未收录）")
+
+    def test_the_same_two_accessories_in_either_order_compare_equal(self) -> None:
+        # Both accessory slots hold the same kind of piece, and one player's
+        # pair sits in slots 2/3 while another's sits in 3/2. Numbering the
+        # lines by slot made a swapped pair read as two changes.
+        payload = second_battle_payload()
+        for entry in payload["battle"]["roster"]:
+            accessories = [e for e in entry["equips"] if e["partName"] == "配件"]
+            if len(accessories) != 2:
+                continue
+            accessories[0]["itemId"] = "item_equip_t4_suit_heal01_edc_03"
+            accessories[0]["pieceName"] = "生物辅助护板"
+            accessories[0]["suitName"] = "生物辅助"
+        swapped = copy.deepcopy(payload)
+        for entry in swapped["battle"]["roster"]:
+            accessories = [e for e in entry["equips"] if e["partName"] == "配件"]
+            if len(accessories) != 2:
+                continue
+            first, second = accessories
+            first["slot"], second["slot"] = second["slot"], first["slot"]
+        page = build_compare_page(
+            parse_battle_detail(payload),
+            parse_battle_detail(swapped),
+            query="q",
+            web_base_url=WEB,
+        )
+        rows = {row.character_name: row for row in page.loadouts}
+        lines = {line.label: line for line in rows["洛茜"].lines}
+        # The pair really did land in the other order on the B side.
+        self.assertEqual(lines["配件 1"].a, lines["配件 1"].b)
+        self.assertEqual(lines["配件 2"].a, lines["配件 2"].b)
+        for row in page.loadouts:
+            for line in row.lines:
+                with self.subTest(character=row.character_name, line=line.label):
+                    self.assertFalse(line.differs)
+
+    def test_a_real_gear_change_is_still_flagged(self) -> None:
+        payload = second_battle_payload()
+        for entry in payload["battle"]["roster"]:
+            if entry["characterName"] == "洛茜":
+                entry["equips"][0]["itemId"] = "item_equip_t4_suit_heal01_hand_03"
+                entry["equips"][0]["pieceName"] = "生物辅助手甲"
+                entry["equips"][0]["suitName"] = "生物辅助"
+        page = build_compare_page(
+            self.first, parse_battle_detail(payload), query="q", web_base_url=WEB
+        )
+        lines = {
+            line.label: line
+            for line in next(
+                row for row in page.loadouts if row.character_name == "洛茜"
+            ).lines
+        }
+
+        self.assertTrue(lines["护手"].differs)
+        self.assertEqual(lines["护手"].b, "生物辅助 · 护手")
+        self.assertFalse(lines["护甲"].differs)
+
     def test_page_is_titled_after_the_shared_boss(self) -> None:
         page = build_compare_page(self.first, self.second, query="q", web_base_url=WEB)
         self.assertEqual(page.header.title, "“碾骨之拳”罗丹")

@@ -297,15 +297,26 @@ def infer_suit_names(roster: tuple[BattleRosterEntry, ...]) -> dict[str, str]:
     The parser names some pieces and not others of the same suit (the raw
     item id is used as ``pieceName`` then), so a named sibling in the same
     battle is the best local evidence for what an unnamed piece belongs to.
+
+    A token is only learned when every named piece carrying it agrees.
+    Upstream's ``suitName`` is not a property of the item: one item id is
+    reported under two different suits on two characters of the *same*
+    battle, so taking the first name seen would copy one character's wrong
+    label onto another character's unnamed gear. Contradiction means the
+    battle knows nothing, and the piece stays 名称未收录.
     """
 
-    names: dict[str, str] = {}
+    seen: dict[str, set[str]] = {}
     for entry in roster:
         for equip in entry.equips:
             token = suit_token(equip.item_id)
-            if token and equip.suit_name and token not in names:
-                names[token] = equip.suit_name
-    return names
+            if token and equip.suit_name:
+                seen.setdefault(token, set()).add(equip.suit_name)
+    return {
+        token: next(iter(names))
+        for token, names in seen.items()
+        if len(names) == 1
+    }
 
 
 def is_raw_item_name(piece_name: str, item_id: str | None) -> bool:

@@ -9,6 +9,7 @@ from ..telemetry import build_dps_curve
 from .battle import (
     BattlePage,
     BattleParticipantView,
+    EquipView,
     LoadoutView,
     SkillRowView,
     build_battle_page,
@@ -336,12 +337,11 @@ def _compare_loadouts(
                 character_avatar_url=source.character_avatar_url,
                 only="" if left and right else ("a" if left else "b"),
                 lines=tuple(
-                    CompareGearLineView(
-                        label=label,
-                        a=lines_a.get(label, "—"),
-                        b=lines_b.get(label, "—"),
-                        differs=bool(left and right)
-                        and lines_a.get(label) != lines_b.get(label),
+                    _compare_gear_line(
+                        label,
+                        lines_a.get(label),
+                        lines_b.get(label),
+                        both_present=bool(left and right),
                     )
                     for label in _GEAR_LINE_LABELS
                 ),
@@ -363,30 +363,83 @@ _GEAR_LINE_LABELS = (
 )
 
 
-def _gear_lines(view: LoadoutView | None) -> dict[str, str]:
-    """One comparable string per gear line; missing lines stay absent."""
+@dataclass(frozen=True, slots=True)
+class _GearLine:
+    """What one gear line shows, and what decides whether it differs.
+
+    The two are not the same for a piece of gear: ``text`` carries the suit
+    name, which upstream reports inconsistently for one and the same item,
+    while ``key`` is the item id, which is stable. Comparing the text would
+    call identical gear different.
+    """
+
+    text: str
+    key: str
+
+
+def _compare_gear_line(
+    label: str,
+    a: "_GearLine | None",
+    b: "_GearLine | None",
+    *,
+    both_present: bool,
+) -> CompareGearLineView:
+    return CompareGearLineView(
+        label=label,
+        a=a.text if a is not None else "—",
+        b=b.text if b is not None else "—",
+        differs=both_present
+        and (a.key if a is not None else None) != (b.key if b is not None else None),
+    )
+
+
+_FIXED_PARTS = ("护手", "护甲")
+
+
+def _ordered_equips(view: LoadoutView) -> list[EquipView]:
+    """护手 and 护甲 in place, the accessories in a canonical order.
+
+    Both accessory slots hold the same kind of piece and upstream records
+    them in whatever order the client sent them, so the same pair arrives
+    swapped between two battles. Sorted by item id, the two sides line up
+    and only a real change reads as one.
+    """
+
+    fixed = [equip for equip in view.equips if equip.part_name in _FIXED_PARTS]
+    accessories = sorted(
+        (equip for equip in view.equips if equip.part_name not in _FIXED_PARTS),
+        key=lambda equip: (equip.item_id or "", equip.compact_label),
+    )
+    return [*fixed, *accessories]
+
+
+def _gear_lines(view: LoadoutView | None) -> dict[str, _GearLine]:
+    """One comparable line per gear slot; missing slots stay absent."""
 
     if view is None:
         return {}
-    lines: dict[str, str] = {}
+    lines: dict[str, _GearLine] = {}
     level = " · ".join(
         part for part in (view.level_label, view.potential_label) if part
     )
     if level:
-        lines["等级 · 潜能"] = level
+        lines["等级 · 潜能"] = _GearLine(level, level)
     if view.weapon is not None:
         weapon = view.weapon.name
         if view.weapon.refine_label:
             weapon += f" · {view.weapon.refine_label}"
-        lines["武器"] = weapon
+        lines["武器"] = _GearLine(weapon, weapon)
     parts = {"护手": 0, "护甲": 0, "配件": 0}
-    for equip in view.equips:
+    for equip in _ordered_equips(view):
         part = equip.part_name if equip.part_name in parts else "配件"
         parts[part] += 1
         label = f"{part} {parts[part]}" if part == "配件" else part
-        lines[label] = equip.compact_label
+        lines[label] = _GearLine(
+            equip.compact_label, equip.item_id or equip.compact_label
+        )
     if view.skill_levels:
-        lines["技能等级"] = " ".join(
+        skills = " ".join(
             f"{level.label}{level.level}" for level in view.skill_levels
         )
+        lines["技能等级"] = _GearLine(skills, skills)
     return lines

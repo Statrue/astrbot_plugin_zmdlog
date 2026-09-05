@@ -1,5 +1,6 @@
 """Tests for the 0.6.0 battle loadout (配装) and skill statistics (技能) pages."""
 
+import copy
 import unittest
 from pathlib import Path
 
@@ -213,6 +214,20 @@ class GearHelperTests(unittest.TestCase):
         self.assertIsNone(suit_token("something_else"))
         self.assertIsNone(suit_token(None))
         self.assertEqual(infer_suit_names(battle.roster), {"phy01": "点剑"})
+
+    def test_a_token_its_own_battle_disagrees_about_is_not_learned(self) -> None:
+        # Upstream reports one item id under two suits on two characters of
+        # the same battle, so the first name seen is not evidence. When the
+        # battle contradicts itself the piece stays 名称未收录.
+        payload = battle_detail_payload()
+        roster = payload["battle"]["roster"]
+        second = copy.deepcopy(roster[0])
+        second["characterName"] = "对照"
+        second["equips"][0]["suitName"] = "长息"
+        roster.append(second)
+        battle = parse_battle_detail(payload)
+
+        self.assertEqual(infer_suit_names(battle.roster), {})
         self.assertTrue(
             is_raw_item_name(
                 "item_equip_t4_suit_phy01_body_02", "item_equip_t4_suit_phy01_body_02"

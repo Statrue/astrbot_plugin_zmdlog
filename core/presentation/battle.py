@@ -79,6 +79,9 @@ class EquipView:
     part_name: str
     # The real piece name, or a placeholder when upstream only had the item id.
     piece_label: str
+    # Upstream's own id for the piece. The labels are display text and
+    # upstream contradicts itself about them; this is what two pages compare.
+    item_id: str | None
     suit_label: str | None
     # The suit was read off a named sibling piece, not from this piece itself.
     inferred_suit: bool
@@ -542,6 +545,7 @@ def _equip_view(
     return EquipView(
         part_name=part_name,
         piece_label=piece_label,
+        item_id=equip.item_id,
         suit_label=suit_name or None,
         inferred_suit=inferred,
         icon_url=_derived_asset_url(
