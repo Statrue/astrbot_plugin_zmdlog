@@ -252,6 +252,12 @@ class SkillNamingTests(unittest.TestCase):
         cases = {
             ("终结技", "chr_x_ultimate_skill2"): SkillCategory.ULTIMATE,
             ("A5", "chr_x_attack5"): SkillCategory.NORMAL,
+            # Sub-hits of the basic chain, whichever way the key spells it.
+            ("A5 派生", "chr_0016_laevat_attack_5_projhit"): SkillCategory.NORMAL,
+            (
+                "A4-2 派生（格挡）",
+                "chr_0016_laevat_attack_4_2_projhit_blocked",
+            ): SkillCategory.NORMAL,
             ("绯红刃舞", "chr_x_attack1"): SkillCategory.NORMAL,
             ("噪点", "chr_x_power_attack"): SkillCategory.HEAVY,
             ("噪点", "chr_x_plunging_attack_end"): SkillCategory.HEAVY,

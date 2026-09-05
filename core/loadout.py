@@ -19,6 +19,12 @@ from .models import (
 _ATTACK_INDEX_RE = re.compile(r"_attack(\d+)(?:$|_)", re.IGNORECASE)
 _COMBO_SKILL_KEY_RE = re.compile(r"(?:^|_)combo(?:_\d+)?_skill(?:$|_)", re.IGNORECASE)
 _NORMAL_ATTACK_NAME_RE = re.compile(r"^A[1-9]$", re.IGNORECASE)
+# ``A5 派生`` / ``A4-2 派生（格挡）``: a sub-hit of the basic chain, in the
+# A-notation upstream uses for it. Keys spell the segment both ways
+# (``attack5_projhit`` and ``attack_5_projhit``), so the name is the
+# reliable signal for the category; folding into 普攻（各段合并） stays
+# limited to the bare segments.
+_NORMAL_ATTACK_FAMILY_RE = re.compile(r"^A[1-9](?:-\d+)?\b", re.IGNORECASE)
 # ``chr_0032_lizhiyan_skill_3090``: the character prefix says nothing to a
 # reader, the tail is all that distinguishes one unnamed skill from another.
 _CHARACTER_KEY_PREFIX_RE = re.compile(r"^chr_\d+_[a-z0-9]+_", re.IGNORECASE)
@@ -419,7 +425,7 @@ def skill_category(skill_name: str, skill_key: str | None) -> SkillCategory:
     display = skill_display_name(skill_name, skill_key)
     # ``战技 · 派生`` is still the 战技; the family is what buckets a row.
     family = display.split(" · ", 1)[0]
-    if _NORMAL_ATTACK_NAME_RE.match(display):
+    if _NORMAL_ATTACK_NAME_RE.match(display) or _NORMAL_ATTACK_FAMILY_RE.match(display):
         return SkillCategory.NORMAL
     if family == "战技":
         return SkillCategory.SKILL
