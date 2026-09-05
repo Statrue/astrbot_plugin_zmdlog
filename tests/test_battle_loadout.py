@@ -216,12 +216,20 @@ class SkillNamingTests(unittest.TestCase):
             ),
             "poise can be breaking attacked",
         )
+        # The dictionary layer beats every rule: this key has a name now.
         self.assertEqual(
             skill_display_name(
                 "buff_chr_0030_zhuangfy_sword_triggerd",
                 "buff_chr_0030_zhuangfy_sword_triggerd",
             ),
-            "sword 触发",
+            "青霆剑",
+        )
+        self.assertEqual(
+            skill_display_name(
+                "buff_chr_0030_zhuangfy_other_triggerd",
+                "buff_chr_0030_zhuangfy_other_triggerd",
+            ),
+            "other 触发",
         )
 
     def test_categories_mirror_the_site_and_bucket_engine_sources(self) -> None:

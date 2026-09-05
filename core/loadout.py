@@ -36,6 +36,9 @@ _WEAPON_OWN_SKILL_PREFIX = "sk_wpn_"
 # Same overrides as the site's ``lib/format/skill-display.ts``.
 _SKILL_KEY_OVERRIDES = {
     "buff_common_cryst_triggered_physical_break": "寒冷击破触发",
+    # 庄方宜 战技·惊霆诀: the 青霆剑 it leaves behind strike the target one
+    # by one, one row per strike. Named by the user on 2026-09-05.
+    "buff_chr_0030_zhuangfy_sword_triggerd": "青霆剑",
 }
 _SKILL_NAME_OVERRIDES = {
     "cryst triggered physical break": "寒冷击破触发",
