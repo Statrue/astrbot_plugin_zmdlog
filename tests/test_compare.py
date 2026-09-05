@@ -7,7 +7,7 @@ from pathlib import Path
 from core.candidates import CandidateStore, CandidateView, format_candidates
 from core.matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
 from core.models import parse_battle_detail
-from core.presentation import build_compare_page
+from core.presentation import build_compare_page, build_loadout_page
 from core.render import TemplateRenderer
 from core.routing import RouteKind, RouteParseError, parse_zmdlog_payload
 from tests.helpers import battle_detail_payload
@@ -221,7 +221,22 @@ class ComparePageTests(unittest.TestCase):
         )
         rows = {row.character_name: row for row in page.loadouts}
         lines = {line.label: line for line in rows["洛茜"].lines}
-        # The pair really did land in the other order on the B side.
+        # B is matched to A rather than both being sorted, so the A column
+        # still reads in the order the 配装 page shows for that battle.
+        loadout = build_loadout_page(
+            parse_battle_detail(payload), query="q", web_base_url=WEB
+        )
+        view = next(
+            item for item in loadout.loadouts if item.character_name == "洛茜"
+        )
+        self.assertEqual(
+            [lines["配件 1"].a, lines["配件 2"].a],
+            [
+                equip.compact_label
+                for equip in view.equips
+                if equip.part_name == "配件"
+            ],
+        )
         self.assertEqual(lines["配件 1"].a, lines["配件 1"].b)
         self.assertEqual(lines["配件 2"].a, lines["配件 2"].b)
         for row in page.loadouts:

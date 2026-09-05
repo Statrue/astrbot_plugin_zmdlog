@@ -328,8 +328,9 @@ def _compare_loadouts(
     for name in dict.fromkeys((*by_a, *by_b)):
         left, right = by_a.get(name), by_b.get(name)
         source = left or right
-        lines_a = _gear_lines(left)
-        lines_b = _gear_lines(right)
+        pairs = _pair_accessories(_accessories(left), _accessories(right))
+        lines_a = _gear_lines(left, [pair[0] for pair in pairs])
+        lines_b = _gear_lines(right, [pair[1] for pair in pairs])
         rows.append(
             CompareLoadoutRowView(
                 character_name=name,
@@ -396,25 +397,57 @@ def _compare_gear_line(
 _FIXED_PARTS = ("护手", "护甲")
 
 
-def _ordered_equips(view: LoadoutView) -> list[EquipView]:
-    """护手 and 护甲 in place, the accessories in a canonical order.
+def _accessories(view: LoadoutView | None) -> list[EquipView]:
+    """The 配件 pieces in the order the loadout page shows them."""
 
-    Both accessory slots hold the same kind of piece and upstream records
-    them in whatever order the client sent them, so the same pair arrives
-    swapped between two battles. Sorted by item id, the two sides line up
-    and only a real change reads as one.
+    if view is None:
+        return []
+    return [equip for equip in view.equips if equip.part_name not in _FIXED_PARTS]
+
+
+def _pair_accessories(
+    a: list[EquipView],
+    b: list[EquipView],
+) -> list[tuple[EquipView | None, EquipView | None]]:
+    """Line the two 配件 rows up, leaving A in the order its own page shows.
+
+    Both accessory slots hold the same kind of piece and upstream keeps
+    whatever order the client sent, so one player's pair sits in slot 2/3
+    and another's in 3/2. Sorting both sides would align them but leave
+    neither matching the 配装 page a reader cross-checks against, so B is
+    matched to A by item id instead and A is left alone.
     """
 
-    fixed = [equip for equip in view.equips if equip.part_name in _FIXED_PARTS]
-    accessories = sorted(
-        (equip for equip in view.equips if equip.part_name not in _FIXED_PARTS),
-        key=lambda equip: (equip.item_id or "", equip.compact_label),
-    )
-    return [*fixed, *accessories]
+    remaining = list(b)
+    pairs: list[tuple[EquipView | None, EquipView | None]] = []
+    for equip in a:
+        match = next(
+            (other for other in remaining if other.item_id == equip.item_id), None
+        )
+        if match is not None:
+            remaining.remove(match)
+        pairs.append((equip, match))
+    # Whatever B still holds fills the rows A could not match, then extends.
+    for index, (left, right) in enumerate(pairs):
+        if right is None and remaining:
+            pairs[index] = (left, remaining.pop(0))
+    pairs.extend((None, equip) for equip in remaining)
+    return pairs
 
 
-def _gear_lines(view: LoadoutView | None) -> dict[str, _GearLine]:
-    """One comparable line per gear slot; missing slots stay absent."""
+def _gear_line(equip: EquipView) -> "_GearLine":
+    return _GearLine(equip.compact_label, equip.item_id or equip.compact_label)
+
+
+def _gear_lines(
+    view: LoadoutView | None,
+    accessories: list[EquipView | None],
+) -> dict[str, _GearLine]:
+    """One comparable line per gear slot; missing slots stay absent.
+
+    ``accessories`` is this side of the paired 配件 rows, so the two sides
+    agree on which row is which; a ``None`` leaves that row empty.
+    """
 
     if view is None:
         return {}
@@ -429,14 +462,12 @@ def _gear_lines(view: LoadoutView | None) -> dict[str, _GearLine]:
         if view.weapon.refine_label:
             weapon += f" · {view.weapon.refine_label}"
         lines["武器"] = _GearLine(weapon, weapon)
-    parts = {"护手": 0, "护甲": 0, "配件": 0}
-    for equip in _ordered_equips(view):
-        part = equip.part_name if equip.part_name in parts else "配件"
-        parts[part] += 1
-        label = f"{part} {parts[part]}" if part == "配件" else part
-        lines[label] = _GearLine(
-            equip.compact_label, equip.item_id or equip.compact_label
-        )
+    for equip in view.equips:
+        if equip.part_name in _FIXED_PARTS:
+            lines[equip.part_name] = _gear_line(equip)
+    for index, equip in enumerate(accessories, start=1):
+        if equip is not None:
+            lines[f"配件 {index}"] = _gear_line(equip)
     if view.skill_levels:
         skills = " ".join(
             f"{level.label}{level.level}" for level in view.skill_levels
