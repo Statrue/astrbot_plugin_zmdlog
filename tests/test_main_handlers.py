@@ -50,7 +50,11 @@ if astrbot is not None:
         parse_public_user_rankings,
     )
     from astrbot_plugin_zmdlog.core.render import RenderError
-    from astrbot_plugin_zmdlog.core.watch import BoardSnapshot
+    from astrbot_plugin_zmdlog.core.timestamps import utc_now_text
+    from astrbot_plugin_zmdlog.core.watch import (
+        BoardSnapshot,
+        build_board_snapshot,
+    )
     from astrbot_plugin_zmdlog.core.watchlist import WatchedAccount, WatchedBoard
 
 GROUP = "aiocqhttp:GroupMessage:1"
@@ -434,6 +438,7 @@ class HandlerTests(unittest.TestCase):
 
         async def send(origin, text):
             sent.append((origin, text))
+            return True
 
         self.plugin.client.list_hot_bosses_with_payload = fetch
         self.plugin.watcher.notify = send
@@ -453,6 +458,60 @@ class HandlerTests(unittest.TestCase):
 
         run(self.plugin.watcher.run_board_cycle())
         self.assertEqual(len(sent), 1)
+
+    def test_a_failed_send_keeps_the_baseline_so_the_next_cycle_retries(self) -> None:
+        # Saving the snapshot first and sending second lost the event for
+        # good: the next cycle compared against the ranks already stored and
+        # saw nothing to report.
+        self._enable_watch_storage()
+        slug = "dung01_group_bossrush02"
+        self.plugin.watcher.watchlist, _ = self.plugin.watcher.watchlist.with_board(
+            GROUP,
+            WatchedBoard(
+                boss_slug=slug,
+                boss_name="危境再现·三位一体",
+                dungeon_name="危境再现 · 测试区",
+                added_by="aiocqhttp:111",
+                added_at="2026-08-22T10:00:00+00:00",
+            ),
+        )
+        seed, _ = self._hot_bosses_with_run("btl_upload_old000000001", "老王")
+        self.plugin.watcher.board_snapshots = {
+            slug: build_board_snapshot(seed[0], checked_at=utc_now_text())
+        }
+        fresh = self._hot_bosses_with_run("btl_upload_new000000009", "新人")
+        sent: list[tuple[str, str]] = []
+        delivered = [False]
+
+        async def fetch():
+            return fresh
+
+        async def send(origin, text):
+            sent.append((origin, text))
+            return delivered[0]
+
+        self.plugin.client.list_hot_bosses_with_payload = fetch
+        self.plugin.watcher.notify = send
+
+        run(self.plugin.watcher.run_board_cycle())
+        self.assertEqual(len(sent), 1)
+        # The send failed, so the baseline still holds the old run.
+        self.assertEqual(
+            self.plugin.watcher.board_snapshots[slug].runs[0].battle_id,
+            "btl_upload_old000000001",
+        )
+
+        delivered[0] = True
+        run(self.plugin.watcher.run_board_cycle())
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(sent[0][1], sent[1][1])
+        # Delivered this time, so the baseline finally moves on.
+        self.assertEqual(
+            self.plugin.watcher.board_snapshots[slug].runs[0].battle_id,
+            "btl_upload_new000000009",
+        )
+        run(self.plugin.watcher.run_board_cycle())
+        self.assertEqual(len(sent), 2)
 
     def test_a_stale_board_baseline_is_reseeded_silently(self) -> None:
         self._enable_watch_storage()
@@ -478,6 +537,7 @@ class HandlerTests(unittest.TestCase):
 
         async def send(origin, text):
             sent.append((origin, text))
+            return True
 
         self.plugin.client.list_hot_bosses_with_payload = fetch
         self.plugin.watcher.notify = send

@@ -98,7 +98,9 @@ BOARD_SNAPSHOT_FILE = "board-snapshot.json"
 RANK_HISTORY_FILE = "rank-history.json"
 _RANK_WATCH_CONCURRENCY = 2
 
-Notify = Callable[[str, str], Awaitable[None]]
+# Returns whether the chat actually received the text. A cycle only
+# advances a baseline past what it managed to deliver.
+Notify = Callable[[str, str], Awaitable[bool]]
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
 
@@ -651,8 +653,20 @@ class RankWatcher:
         # merge on top of the current state instead of installing the map this
         # cycle started from, and forget whoever is no longer watched.
         watching = self.watchlist.origins_by_account()
+        # One new record demotes every watched account below it, so send each
+        # chat a single merged message instead of a burst of near-identical
+        # ones — skipping anything unfollowed while the cycle was running.
+        undelivered = await self._deliver(
+            pending, watching, join_rank_drop_notices
+        )
         merged = dict(self.rank_snapshots)
-        merged.update(snapshots)
+        merged.update(
+            {
+                account_id: snapshot
+                for account_id, snapshot in snapshots.items()
+                if account_id not in undelivered
+            }
+        )
         self._save_rank_snapshots(
             {
                 account_id: snapshot
@@ -670,17 +684,6 @@ class RankWatcher:
         renamed, changed = self.watchlist.with_display_names(live_names)
         if changed:
             self._save_watchlist(renamed)
-        # One new record demotes every watched account below it, so send each
-        # chat a single merged message instead of a burst of near-identical
-        # ones — skipping anything unfollowed while the cycle was running.
-        for origin, entries in pending.items():
-            notices = tuple(
-                notice
-                for account_id, notice in entries
-                if origin in watching.get(account_id, ())
-            )
-            if notices:
-                await self.notify(origin, join_rank_drop_notices(notices))
 
     async def _poll_account(
         self,
@@ -815,19 +818,56 @@ class RankWatcher:
         # Same merge-on-live-state rule as the account cycle: 关注 / 取关 may
         # have run while the request was in flight.
         watching = self.watchlist.origins_by_board()
+        undelivered = await self._deliver(pending, watching, join_board_notices)
         merged = dict(self.board_snapshots)
-        merged.update(snapshots)
+        merged.update(
+            {
+                boss_slug: snapshot
+                for boss_slug, snapshot in snapshots.items()
+                if boss_slug not in undelivered
+            }
+        )
         self._save_board_snapshots(
             {slug: snapshot for slug, snapshot in merged.items() if slug in watching}
         )
+
+
+    async def _deliver(
+        self,
+        pending: dict[str, list[tuple[str, str]]],
+        watching: dict[str, tuple[str, ...]],
+        join: Callable[[tuple[str, ...]], str],
+    ) -> set[str]:
+        """Send one merged message per chat; return the keys that did not land.
+
+        Delivery has to happen *before* the baseline moves. Saving first and
+        sending second loses the event for good when a send fails: the next
+        cycle compares against the ranks that were already stored and sees
+        nothing to report, and a rank watch that silently drops the one thing
+        it exists to report is worse than no rank watch. A key whose message
+        did not arrive keeps its old baseline, so the next cycle computes the
+        same change and tries again; ``snapshot_is_usable`` bounds that,
+        because a baseline that stops advancing is eventually too old to
+        compare against and is re-seeded silently.
+
+        The cost is that a key several chats watch can be announced twice
+        when only one of those chats was unreachable. Told twice beats never
+        told.
+        """
+
+        undelivered: set[str] = set()
         for origin, entries in pending.items():
-            notices = tuple(
-                notice
-                for boss_slug, notice in entries
-                if origin in watching.get(boss_slug, ())
+            wanted = tuple(
+                (key, notice)
+                for key, notice in entries
+                if origin in watching.get(key, ())
             )
-            if notices:
-                await self.notify(origin, join_board_notices(notices))
+            if not wanted:
+                continue
+            text = join(tuple(notice for _, notice in wanted))
+            if not await self.notify(origin, text):
+                undelivered.update(key for key, _ in wanted)
+        return undelivered
 
 
 def _in(data_dir: Path | None, file_name: str) -> Path | None:

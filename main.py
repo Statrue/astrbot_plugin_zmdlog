@@ -411,14 +411,18 @@ class ZmdLogBotPlugin(Star):
                     return code
         return None
 
-    async def _send_notice(self, origin: str, text: str) -> None:
-        """Deliver one rank-watch notice; the only push path in the plugin."""
+    async def _send_notice(self, origin: str, text: str) -> bool:
+        """Deliver one rank-watch notice; the only push path in the plugin.
+
+        The caller only advances a baseline past what this reports as sent,
+        so every failure path has to answer False rather than swallow.
+        """
 
         if Plain is None:
             logger.warning(
                 "ZmdLogBot cannot build a rank notice on this AstrBot version."
             )
-            return
+            return False
         try:
             # One unresponsive adapter must not stall the whole cycle, and a
             # refused send reports itself by returning False rather than raising.
@@ -428,17 +432,19 @@ class ZmdLogBotPlugin(Star):
             )
         except TimeoutError:
             logger.warning("ZmdLogBot timed out delivering a rank notice.")
-            return
+            return False
         except Exception as exc:
             logger.warning(
                 "ZmdLogBot could not deliver a rank notice: %s",
                 type(exc).__name__,
             )
-            return
+            return False
         if delivered is False:
             logger.warning(
                 "ZmdLogBot rank notice was refused; the chat may be gone."
             )
+            return False
+        return True
 
     @staticmethod
     def _event_origin(event: AstrMessageEvent) -> str:
