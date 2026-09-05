@@ -39,6 +39,16 @@ _SKILL_KEY_OVERRIDES = {
     # 庄方宜 战技·惊霆诀: the 青霆剑 it leaves behind strike the target one
     # by one, one row per strike. Named by the user on 2026-09-05.
     "buff_chr_0030_zhuangfy_sword_triggerd": "青霆剑",
+    # The 燃烧 status tick itself (狼卫's 灼热獠牙 talent only boosts it).
+    "buff_common_burning_status": "燃烧",
+    # 卡缪 战技·驱火焚影 summons 衔火血翼, which hovers, strikes and bursts.
+    "chr_0033_camille_skill_213": "战技 · 衔火血翼",
+    # 诀 连携技·应龙四式 sets four 战术分身 on the target; the three numbered
+    # skills are that follow-up in her different forms (阵诀·智 / 阵诀·意),
+    # so they fold into one row on purpose.
+    "chr_0032_lizhiyan_skill_3782": "连携技 · 战术分身",
+    "chr_0032_lizhiyan_skill_3423": "连携技 · 战术分身",
+    "chr_0032_lizhiyan_skill_3090": "连携技 · 战术分身",
 }
 _SKILL_NAME_OVERRIDES = {
     "cryst triggered physical break": "寒冷击破触发",
@@ -120,7 +130,7 @@ _KEY_TOKEN_LABELS = {
     "triggerd": "触发",
     "status": "状态",
     "burning": "燃烧",
-    "weakness": "弱点",
+    "weakness": "脆弱",
     "phantom": "幻影",
     **_ELEMENT_LABELS,
 }
@@ -340,6 +350,12 @@ def _reaction_name(body: str) -> str | None:
             return f"{_ELEMENT_LABELS[applied]}爆发"
         if source in _ELEMENT_LABELS and len(tokens) == 3:
             return _ANOMALY_BY_ELEMENT.get(applied)
+    if len(tokens) >= 2 and tokens[1] == "triggered" and tokens[0] in _ELEMENT_LABELS:
+        # ``natural_triggered``: the element being put on the target (自然附着),
+        # confirmed in play for 诀 and 洁尔佩塔; ``_fx`` / ``_start`` tails
+        # read on as usual.
+        tail = _render_key_tokens(tokens[2:], in_family=False)
+        return f"{_ELEMENT_LABELS[tokens[0]]}附着{tail}"
     return None
 
 

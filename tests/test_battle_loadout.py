@@ -173,11 +173,13 @@ class SkillNamingTests(unittest.TestCase):
                 "floating / attack1 / 01 / 派生",
                 "chr_0034_typhoea_floating_attack1_01_projhit",
             ): "浮空 A1-01 派生",
-            ("natural triggered", "buff_common_natural_triggered"): "自然触发",
-            ("cryst triggered fx", "buff_common_cryst_triggered_fx"): "寒冷触发特效",
+            # A single element ``triggered`` is that element being applied.
+            ("natural triggered", "buff_common_natural_triggered"): "自然附着",
+            ("cryst triggered fx", "buff_common_cryst_triggered_fx"): "寒冷附着特效",
             ("fire triggered start", "buff_common_fire_triggered_start"): (
-                "灼热触发起手"
+                "灼热附着起手"
             ),
+            ("weakness triggered", "buff_common_weakness_triggered"): "脆弱触发",
             # parser_core's own reaction names, plus a trailing character token
             # on the same-element burst (提弗洛斯's own 自然爆发).
             (
@@ -185,7 +187,7 @@ class SkillNamingTests(unittest.TestCase):
                 "buff_common_natural_natural_triggered_typhoea",
             ): "自然爆发",
             ("fire natural triggered", "buff_common_fire_natural_triggered"): "燃烧",
-            ("skill 3782", "chr_0032_lizhiyan_skill_3782"): "技能 3782",
+            ("skill 640", "chr_0031_mifu_skill_640"): "技能 640",
             # No English word at all, but still upstream's segment join.
             ("连携 / 02 / 派生", "chr_0034_typhoea_combo_02_projhit"): (
                 "连携技 · 派生 2"
@@ -194,6 +196,20 @@ class SkillNamingTests(unittest.TestCase):
         for (name, key), expected in cases.items():
             with self.subTest(key=key):
                 self.assertEqual(skill_display_name(name, key), expected)
+
+    def test_the_dictionary_names_what_no_rule_can(self) -> None:
+        # Entries the user identified in play; they beat every rule, and the
+        # family before the dot still buckets the row.
+        cases = {
+            "buff_common_burning_status": ("燃烧", SkillCategory.MECHANIC),
+            "chr_0033_camille_skill_213": ("战技 · 衔火血翼", SkillCategory.SKILL),
+            "chr_0032_lizhiyan_skill_3782": ("连携技 · 战术分身", SkillCategory.COMBO),
+            "chr_0032_lizhiyan_skill_3423": ("连携技 · 战术分身", SkillCategory.COMBO),
+        }
+        for key, (name, category) in cases.items():
+            with self.subTest(key=key):
+                self.assertEqual(skill_display_name(key, key), name)
+                self.assertIs(skill_category(key, key), category)
 
     def test_names_the_game_gave_are_kept_and_only_their_english_read(self) -> None:
         # A name whose shape is not upstream's token join of the key carries
@@ -594,7 +610,7 @@ class LoadoutTemplateTests(unittest.TestCase):
         self.assertIn("1,200,000", html)
         self.assertIn("59.2%", html)
         self.assertIn("<i>合并</i>", html)
-        self.assertIn("燃烧状态", html)
+        self.assertIn("燃烧", html)
         self.assertIn("技能 3090", html)
         self.assertIn("占全队 88.4%", html)
 
