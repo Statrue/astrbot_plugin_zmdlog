@@ -41,6 +41,7 @@ from .presentation import (
     build_all_top3_page,
     build_battle_page,
     build_character_boss_page,
+    build_character_standings_page,
     build_character_stats_page,
     build_compare_page,
     build_dungeon_top3_page,
@@ -52,6 +53,7 @@ from .presentation import (
     build_trend_page,
 )
 from .routing import DEFAULT_RANKING_TOP
+from .standings import CharacterStandings
 
 _VERSION_LINE = re.compile(
     r"^\s*version\s*:\s*(?P<value>[^#]+?)\s*(?:#.*)?$"
@@ -72,6 +74,7 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
         "battle",
         "character-stats",
         "character-boss",
+        "character-standings",
         "roster",
         "loadout",
         "skills",
@@ -265,6 +268,28 @@ class TemplateRenderer:
             "character-boss/character-boss.html",
             page,
             "character-boss",
+            embed_fonts=embed_fonts,
+        )
+
+    def render_character_standings(
+        self,
+        standings: CharacterStandings,
+        *,
+        query: str,
+        web_base_url: str | None = None,
+        age_seconds: float | None = None,
+        embed_fonts: bool = True,
+    ) -> str:
+        page = build_character_standings_page(
+            standings,
+            query=query,
+            web_base_url=web_base_url,
+            age_seconds=age_seconds,
+        )
+        return self._render(
+            "character-standings/character-standings.html",
+            page,
+            "character-standings",
             embed_fonts=embed_fonts,
         )
 
@@ -664,6 +689,9 @@ class LongImageRenderer:
     )
     render_character_boss = _captured(
         "character-boss", TemplateRenderer.render_character_boss
+    )
+    render_character_standings = _captured(
+        "character-standings", TemplateRenderer.render_character_standings
     )
     render_roster = _captured("roster", TemplateRenderer.render_roster)
     render_account = _captured("account", TemplateRenderer.render_account)

@@ -82,6 +82,14 @@ def build_help_page(command_prefix: str) -> HelpPage:
                             "不填看全部副本。"
                         ),
                     ),
+                    HelpCommand(
+                        command=f"{command} 角色排名 <角色名>",
+                        answers="带这个角色的队伍在各个榜排第几？",
+                        description=(
+                            "每个榜带该角色的最好一条记录：名次、用时、DPS、阵容，"
+                            "当主C的标出；从没出场的榜折成一行。"
+                        ),
+                    ),
                 ),
             ),
             HelpSection(

@@ -95,6 +95,8 @@ class RouteKind(str, Enum):
     COMPARE_QUERY = "compare_query"
     SMART_QUERY = "smart_query"
     CHARACTER_STATS = "character_stats"
+    # Where the teams fielding one character stand on every board.
+    CHARACTER_STANDINGS = "character_standings"
     ROSTER_QUERY = "roster_query"
     ALIAS_LIST = "alias_list"
     ALIAS_ADD = "alias_add"
@@ -228,6 +230,12 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
                 else DEFAULT_TREND_RANGE
             ),
         )
+
+    if command in {"角色排名", "角色榜"}:
+        options.reject_except()
+        if not separator or not remainder:
+            raise RouteParseError("请提供角色名，例如：角色排名 提弗洛斯。")
+        return RouteRequest(RouteKind.CHARACTER_STANDINGS, remainder)
 
     if command in {"角色统计", "角色"}:
         options.reject_except("range", "potential")

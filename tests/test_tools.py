@@ -15,6 +15,7 @@ from core.models import (
     parse_hot_bosses,
     parse_public_user_rankings,
 )
+from core.ranking_index import IndexEntry
 from core.settings import PluginSettings
 from core.toolbox import ToolAnswer, ToolService
 from tests.helpers import (
@@ -56,12 +57,29 @@ class FakeRenderer:
         raise AttributeError(name)
 
 
+class FakeIndex:
+    """The ranking index as the tools see it: already filled, one board."""
+
+    def __init__(self, ranking) -> None:
+        self._entries = () if ranking is None else (IndexEntry(ranking, 0.0),)
+
+    async def ensure_filled(self) -> None:
+        return None
+
+    def entries(self):
+        return self._entries
+
+    def oldest_age_seconds(self):
+        return 42.0 if self._entries else None
+
+
 class FakeData:
     def __init__(self, ranking=None, battles=None, account=None) -> None:
         self.cards = parse_hot_bosses(hot_bosses_payload())
         self.ranking = ranking
         self.battles = battles or {}
         self.account = account
+        self.ranking_index = FakeIndex(ranking)
 
     async def list_hot_bosses(self):
         return self.cards
@@ -213,12 +231,26 @@ class ToolServiceTests(unittest.TestCase):
         self.assertEqual(answer.image_path, "/tmp/account.png")
         self.assertIn("上榜", answer.text)
 
-    def test_a_character_is_resolved_through_the_long_lived_catalog(self) -> None:
+    def test_a_six_star_without_records_gets_the_distribution_page(self) -> None:
+        # 提弗洛斯 is in the catalog but in no fixture roster: no standings to
+        # draw, so the answer is the DPS distribution alone.
         answer = run(self.service.character("提弗洛斯"))
 
         self.assertEqual(answer.image_path, "/tmp/character_boss.png")
         self.assertIn("各榜单表现", answer.text)
+        # The catalog knew the name, so no refresh was asked for.
         self.assertEqual(self.data.catalog_refreshes, 0)
+
+    def test_a_fielded_character_gets_the_standings_page_first(self) -> None:
+        name = self.ranking.rows[0].roster_entries[0].character_name
+
+        answer = run(self.service.character(name))
+
+        self.assertEqual(answer.image_path, "/tmp/character_standings.png")
+        self.assertIn("各榜单的最好名次", answer.text)
+        self.assertIn("battleId", answer.text)
+        # Not a six-star in the catalog: no distribution lines are appended.
+        self.assertNotIn("各榜单表现", answer.text)
 
     def test_an_unknown_character_triggers_one_catalog_refresh(self) -> None:
         # A name the catalog lacks might be a character added since the last
@@ -226,7 +258,7 @@ class ToolServiceTests(unittest.TestCase):
         answer = run(self.service.character("新角色"))
 
         self.assertIsNone(answer.image_path)
-        self.assertIn("没有叫", answer.text)
+        self.assertIn("没有「新角色」出场", answer.text)
         self.assertEqual(self.data.catalog_refreshes, 1)
 
     def test_a_page_that_will_not_draw_still_answers_in_text(self) -> None:

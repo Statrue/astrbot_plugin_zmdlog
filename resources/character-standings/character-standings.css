@@ -1,0 +1,48 @@
+/* 角色排名: one ranking-style row per board, best rank first. */
+
+.standings-board {
+  --cols: 96px minmax(0, 250px) minmax(0, 1fr) 112px 88px;
+  --gap: 16px;
+  margin-top: 12px;
+}
+
+.standings-board .cell-rank {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.standings-board .cell-rank .percentile {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.standings-board-name strong {
+  font-size: 15px;
+}
+
+.standings-board .cell-id em b {
+  font-style: normal;
+}
+
+.standings-main {
+  padding: 0 6px;
+  color: var(--ink);
+  background: var(--yellow);
+  font-style: normal;
+  font-weight: 800;
+}
+
+.standings-battle {
+  margin-left: auto;
+  align-self: center;
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.standings-asof {
+  font-size: 14px;
+}

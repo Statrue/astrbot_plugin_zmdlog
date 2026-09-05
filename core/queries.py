@@ -69,6 +69,7 @@ from .rank_watch import RankWatcher
 from .render import LongImageRenderer
 from .routing import DEFAULT_RANKING_TOP, RouteKind, RouteRequest
 from .settings import PluginSettings
+from .standings import character_standings, roster_character_names
 
 # 战报 / 配装 / 技能 / 技能轴 share one argument shape and one lookup; only
 # the page drawn from the battle differs.
@@ -273,6 +274,9 @@ class QueryService:
 
         if route.kind is RouteKind.TREND_QUERY:
             return await self._dispatch_trend(route, origin=origin)
+
+        if route.kind is RouteKind.CHARACTER_STANDINGS:
+            return await self._render_character_standings(route.query)
 
         if route.kind is RouteKind.CHARACTER_STATS and not route.query.strip():
             stats = await self._data.get_character_statistics(
@@ -617,6 +621,34 @@ class QueryService:
         return Outcome(image_path=image_path)
 
     # --- characters ------------------------------------------------------------------
+
+    async def _render_character_standings(self, query: str) -> Outcome:
+        """Where the teams fielding one character stand on every board.
+
+        Drawn from the ranking index, never from upstream directly: the name
+        is resolved against every roster the index holds (four-stars count),
+        and the page says how old the index is.
+        """
+
+        index = self._data.ranking_index
+        await index.ensure_filled()
+        rankings = tuple(entry.ranking for entry in index.entries())
+        resolution = resolve_character_name(query, roster_character_names(rankings))
+        if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
+            options = " / ".join(resolution.candidates)
+            return Outcome(
+                message=f"「{messages.shorten(query)}」可能是：{options}，请写全名。"
+            )
+        if resolution.status is CharacterResolutionStatus.NOT_FOUND:
+            return Outcome(message=messages.CHARACTER_NOT_IN_RECORDS)
+        standings = character_standings(rankings, resolution.name)
+        image_path = await self._renderer().render_character_standings(
+            standings,
+            query=query,
+            web_base_url=self._web_base_url,
+            age_seconds=index.oldest_age_seconds(),
+        )
+        return Outcome(image_path=image_path)
 
     async def _resolve_catalog_character(
         self,

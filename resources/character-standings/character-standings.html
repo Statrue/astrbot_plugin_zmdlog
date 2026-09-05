@@ -1,0 +1,102 @@
+{% extends "common/base.html" %}
+
+{% block extra_styles %}
+{% include "character-stats/character-stats.css" %}
+{% include "character-boss/character-boss.css" %}
+{% include "ranking/ranking.css" %}
+{% include "character-standings/character-standings.css" %}
+{% endblock %}
+
+{% block hero %}
+<div class="title-block title-block--portrait">
+  <span class="avatar avatar--hero">
+    {{ page.character_initial }}
+    {% if page.character_avatar_url %}
+    <img src="{{ page.character_avatar_url }}" alt="" onerror="this.remove()">
+    {% endif %}
+  </span>
+  <h1 class="page-title">
+    <span class="title-bracket" aria-hidden="true">[</span>
+    <span class="title-text">{{ page.header.title }}</span>
+    <span class="title-bracket" aria-hidden="true">]</span>
+  </h1>
+  <div class="title-side">
+    <span class="title-tag">{{ page.header.target_type }}</span>
+    <p class="page-subtitle">{{ page.header.subtitle }}</p>
+  </div>
+  <div class="hero-facts">
+    <div class="hero-fact hero-fact--key"><span>上榜榜单</span><strong>{{ page.board_count }}</strong></div>
+    <div class="hero-fact"><span>出场记录</span><strong>{{ page.appearances }}</strong><em>当主 C {{ page.main_appearances }}</em></div>
+    <div class="hero-fact"><span>未出场榜单</span><strong>{{ page.absent_count }}</strong></div>
+    {% if page.as_of_label %}
+    <div class="hero-fact"><span>时效</span><strong class="standings-asof">{{ page.as_of_label }}</strong></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="section-heading">
+  <h2>各榜单最好名次</h2>
+  <span class="section-note">每个榜带 {{ page.character_name }} 的最好一条公开记录 · #N / M = 该记录在该榜全部 M 条记录中排第 N · 这是队伍的成绩，不是角色的强度</span>
+</div>
+
+{% if page.rows %}
+<section class="standings-board">
+  <ol class="board-rows">
+    {% for row in page.rows %}
+    <li class="board-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
+      <div class="cell-rank">
+        <span class="rank-num">{{ row.rank }}</span>
+        <span class="percentile">/ {{ row.total_rows }}</span>
+      </div>
+      <div class="cell-id standings-board-name">
+        <strong>{{ row.boss_name }}</strong>
+        <em>{{ row.dungeon_name }}</em>
+      </div>
+      <div class="cell-id">
+        <strong>{{ row.account_display_name }}</strong>
+        <em>
+          {% if row.is_main %}<b class="standings-main">{{ page.character_name }} 主 C</b>{% else %}主 C <b>{{ row.character_name }}</b>{% endif %}
+          · 该榜带 {{ page.character_name }} 的记录 {{ row.appearances }} 条
+        </em>
+      </div>
+      <div class="cell-dps">{{ row.dps }}</div>
+      <div class="cell-time">{{ row.duration }}</div>
+      <div class="cell-team">
+        {% for member in row.roster %}
+        <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}{% if member.character_name == page.character_name %} is-match{% endif %}">
+          <span class="avatar">
+            {{ member.character_initial }}
+            {% if member.avatar_url %}
+            <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
+            {% endif %}
+          </span>
+          {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
+        </span>
+        {% endfor %}
+        <span class="standings-battle">{{ row.battle_id }}</span>
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="board-legend">
+    黄圈头像为该场主 C，加框的是 {{ page.character_name }}；名次后的 / M 为该榜公开记录总数。
+  </p>
+</section>
+{% else %}
+<div class="empty-ranking">读过的榜单里没有带 {{ page.character_name }} 的公开记录</div>
+{% endif %}
+
+{% if page.absent %}
+<div class="section-heading section-heading--minor">
+  <h2>没有出场</h2>
+  <span class="section-note">这些榜单的公开记录里没有带 {{ page.character_name }} 的队伍</span>
+</div>
+<div class="stats-insufficient">
+  {% for boss_name in page.absent %}
+  <span class="stats-insufficient-chip">{{ boss_name }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

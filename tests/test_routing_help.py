@@ -113,6 +113,7 @@ class HelpTests(unittest.TestCase):
                     "!zmdlog 角色统计 [榜单关键词或角色名] "
                     "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
                 ),
+                "!zmdlog 角色排名 <角色名>",
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 (
                     "!zmdlog 战报 | 配装 | 技能 | 技能轴 "
@@ -227,3 +228,18 @@ class AliasRouteTests(unittest.TestCase):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
+
+
+class CharacterStandingsRouteTests(unittest.TestCase):
+    def test_the_command_names_a_character_and_takes_no_options(self) -> None:
+        route = parse_zmdlog_payload("角色排名 提弗洛斯")
+        self.assertEqual(route.kind, RouteKind.CHARACTER_STANDINGS)
+        self.assertEqual(route.query, "提弗洛斯")
+        self.assertEqual(
+            parse_zmdlog_payload("角色榜 诀").kind, RouteKind.CHARACTER_STANDINGS
+        )
+        with self.assertRaises(RouteParseError):
+            parse_zmdlog_payload("角色排名")
+        with self.assertRaises(RouteParseError):
+            parse_zmdlog_payload("角色排名 诀 --top 5")
+

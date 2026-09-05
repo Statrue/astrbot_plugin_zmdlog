@@ -31,6 +31,7 @@ from .models import (
     CharacterStatistics,
     PublicUserRankings,
 )
+from .standings import CharacterStandings
 from .telemetry import build_buff_coverage
 from .timeline import build_timeline
 
@@ -383,7 +384,11 @@ def format_character_statistics(
     return "\n".join(lines)
 
 
-def format_character_boards(stats: CharacterBossStatistics) -> str:
+def format_character_boards(
+    stats: CharacterBossStatistics,
+    *,
+    limit: int = DEFAULT_ROW_LIMIT,
+) -> str:
     """One character's standing on every board that has statistics."""
 
     rows = [row for row in stats.rows if row.sample_count]
@@ -396,17 +401,70 @@ def format_character_boards(stats: CharacterBossStatistics) -> str:
         return "\n".join(lines)
     lines.append("")
     ordered = sorted(rows, key=lambda row: (row.rank is None, row.rank or 0))
-    for row in ordered:
+    shown = ordered[: _bounded(limit)]
+    for row in shown:
         rank = (
             f"#{row.rank}/{row.ranked_character_count}"
             if row.rank is not None
             else "样本不足"
         )
         lines.append(
-            f"{row.dungeon_name} · {row.boss_name}"
+            f"{row.boss_name}"
             f" · {rank} · 中位 DPS {_stat(row.median)}"
             f" · {_samples(row.sample_count, row.normal_sample_count)}"
         )
+    if len(ordered) > len(shown):
+        lines.append(f"（另有 {len(ordered) - len(shown)} 个榜未列出，图里有）")
+    return "\n".join(lines)
+
+
+def format_character_standings(
+    standings: CharacterStandings,
+    *,
+    limit: int = DEFAULT_ROW_LIMIT,
+    age_seconds: float | None = None,
+) -> str:
+    """The best record fielding one character on each board, best rank first.
+
+    These are a team's results, not the character's: the rank is the
+    record's rank among every record on that board.
+    """
+
+    name = standings.character
+    as_of = ""
+    if age_seconds is not None:
+        minutes = int(age_seconds // 60)
+        as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
+    lines = [f"带「{name}」的队伍在各榜单的最好名次{as_of}"]
+    if not standings.boards:
+        lines.append(f"读过的 {len(standings.absent)} 个榜里没有「{name}」出场。")
+        return "\n".join(lines)
+    lines.append(
+        f"出场 {standings.appearances} 次，分布在 {len(standings.boards)} 个榜；"
+        f"{len(standings.absent)} 个榜没有出场。"
+    )
+    lines.append("")
+    for board in standings.boards[: _bounded(limit)]:
+        row = board.best
+        team = "、".join(entry.character_name for entry in row.roster_entries)
+        lead = (
+            f"主C {name}"
+            if board.best_as_main
+            else f"主C {row.character_name}（{name} 为队员）"
+        )
+        lines.append(
+            f"#{row.rank}/{board.total_rows} {board.boss_name}"
+            f" · {_duration(row.duration_ms)} · DPS {row.dps:,.0f}"
+            f" · {lead} · {row.account_display_name}"
+        )
+        lines.append(
+            f"    阵容 {team} · battleId {row.battle_id}"
+            f" · 该榜带它的记录 {board.appearances} 条"
+        )
+    if len(standings.boards) > _bounded(limit):
+        lines.append(f"（另有 {len(standings.boards) - _bounded(limit)} 个榜未列出）")
+    lines.append("")
+    lines.append("以上是带该角色的队伍的成绩，不是角色本身的强度；名次受玩家水平和配装影响。")
     return "\n".join(lines)
 
 

@@ -17,6 +17,7 @@ BOARD_NOT_FOUND = "没有找到这个榜单，可能已下线或暂未公开。"
 BATTLE_NOT_FOUND = "战报不存在、未公开或已删除。"
 BATTLE_LINK_NOT_FOUND = "链接对应的公开战报不存在、未公开或已删除。"
 CRISIS_CONTRACT_NO_STATISTICS = "危机合约不提供角色统计。"
+CHARACTER_NOT_IN_RECORDS = "公开记录里没有这个角色出场，可能是名字不对。"
 
 # Battle pages that an older upload cannot fill.
 NO_LOADOUT = "这份战报没有记录阵容配装。"

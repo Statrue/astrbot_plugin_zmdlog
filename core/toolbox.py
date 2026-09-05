@@ -47,6 +47,7 @@ from .messages import shorten
 from .models import BossRanking, HotBossCard
 from .render import LongImageRenderer
 from .settings import PluginSettings
+from .standings import character_standings, roster_character_names
 
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
@@ -194,6 +195,79 @@ class ToolService:
     # --- characters and accounts --------------------------------------------------
 
     async def character(self, name: str, board: str = "") -> ToolAnswer:
+        if board:
+            return await self._character_on_board(name, board)
+        # Standings come from the ranking index and cover every rarity; the
+        # DPS distribution needs a six-star key and is added when there is one.
+        index = self._data.ranking_index
+        await index.ensure_filled()
+        rankings = tuple(entry.ranking for entry in index.entries())
+        resolution = resolve_character_name(name, roster_character_names(rankings))
+        if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
+            return ToolAnswer(
+                f"「{shorten(name)}」可能是：{' / '.join(resolution.candidates)}，"
+                "请用全名再问一次。"
+            )
+        if resolution.status is CharacterResolutionStatus.NOT_FOUND:
+            return await self._character_distribution_only(name)
+        standings = character_standings(rankings, resolution.name)
+        age = index.oldest_age_seconds()
+        parts = [facts.format_character_standings(standings, age_seconds=age)]
+        key = await self._catalog_key(resolution.name)
+        if key is not None:
+            stats = await self._data.get_character_boss_statistics(
+                key, time_range="all", potential="all"
+            )
+            parts.append(facts.format_character_boards(stats))
+        image = await self._render(
+            lambda renderer: renderer.render_character_standings(
+                standings,
+                query=resolution.name,
+                web_base_url=self._web_base_url,
+                age_seconds=age,
+            )
+        )
+        return ToolAnswer("\n\n".join(parts), image)
+
+    async def _character_on_board(self, name: str, board: str) -> ToolAnswer:
+        resolution = await self._resolve_six_star(name)
+        if isinstance(resolution, ToolAnswer):
+            return resolution
+        slug = await self._resolve_board(board)
+        if isinstance(slug, ToolAnswer):
+            return slug
+        stats = await self._data.get_character_statistics(
+            slug, time_range="all", potential="all"
+        )
+        text = facts.format_character_statistics(stats, character=resolution)
+        image = await self._render(
+            lambda renderer: renderer.render_character_stats(
+                stats, query=board, web_base_url=self._web_base_url
+            )
+        )
+        return ToolAnswer(text, image)
+
+    async def _character_distribution_only(self, name: str) -> ToolAnswer:
+        """A six-star with no public record yet: the distribution page alone."""
+
+        resolution = await self._resolve_six_star(name)
+        if isinstance(resolution, ToolAnswer):
+            return resolution
+        key = await self._catalog_key(resolution)
+        stats = await self._data.get_character_boss_statistics(
+            key, time_range="all", potential="all"
+        )
+        text = facts.format_character_boards(stats)
+        image = await self._render(
+            lambda renderer: renderer.render_character_boss(
+                stats, query=resolution, web_base_url=self._web_base_url
+            )
+        )
+        return ToolAnswer(text, image)
+
+    async def _resolve_six_star(self, name: str) -> str | ToolAnswer:
+        """The catalog name for ``name``, or the reason there is none."""
+
         entries = await self._data.get_character_catalog()
         resolution = resolve_character_name(name, tuple(e.name for e in entries))
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
@@ -208,36 +282,14 @@ class ToolService:
             )
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
             return ToolAnswer(
-                f"没有叫「{shorten(name)}」的六星干员，"
-                "角色统计只覆盖六星干员。"
+                f"公开记录里没有「{shorten(name)}」出场，"
+                "角色统计也只覆盖六星干员，可能是名字不对。"
             )
-        if board:
-            slug = await self._resolve_board(board)
-            if isinstance(slug, ToolAnswer):
-                return slug
-            stats = await self._data.get_character_statistics(
-                slug, time_range="all", potential="all"
-            )
-            text = facts.format_character_statistics(
-                stats, character=resolution.name
-            )
-            image = await self._render(
-                lambda renderer: renderer.render_character_stats(
-                    stats, query=board, web_base_url=self._web_base_url
-                )
-            )
-            return ToolAnswer(text, image)
-        key = next(e.key for e in entries if e.name == resolution.name)
-        stats = await self._data.get_character_boss_statistics(
-            key, time_range="all", potential="all"
-        )
-        text = facts.format_character_boards(stats)
-        image = await self._render(
-            lambda renderer: renderer.render_character_boss(
-                stats, query=resolution.name, web_base_url=self._web_base_url
-            )
-        )
-        return ToolAnswer(text, image)
+        return resolution.name
+
+    async def _catalog_key(self, name: str) -> str | None:
+        entries = await self._data.get_character_catalog()
+        return next((e.key for e in entries if e.name == name), None)
 
     async def account(self, query: str) -> ToolAnswer:
         try:
