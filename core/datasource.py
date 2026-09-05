@@ -26,6 +26,7 @@ from .models import (
     parse_hot_bosses,
 )
 from .persistence import load_json, save_json
+from .ranking_index import RankingIndex
 from .settings import PluginSettings
 
 HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
@@ -78,7 +79,7 @@ class ZmdLogsDataSource:
             ranking_ttl,
             stale_ttl_seconds=ranking_ttl,
         )
-        self.boss_ranking_cache = AsyncTTLCache[str, BossRanking](ranking_ttl)
+        self._ranking_max_age = ranking_ttl
         self.account_cache = AsyncTTLCache[str, PublicUserRankings](
             settings.account_cache_ttl_seconds,
         )
@@ -107,9 +108,16 @@ class ZmdLogsDataSource:
         self._character_catalog_loaded_at = 0.0
         self._character_catalog_lock = asyncio.Lock()
         self._clock = time.monotonic
+        # Every board ranking is read through the index; see ranking_index.py.
+        self.ranking_index = RankingIndex(
+            fetch_ranking=self._fetch_boss_ranking,
+            fetch_boards=self.refresh_hot_bosses,
+            pace_seconds=settings.ranking_index_pace_seconds,
+            logger=logger,
+        )
+        self._ranking_index_enabled = settings.ranking_index_enabled
         self._caches = (
             self.hot_boss_cache,
-            self.boss_ranking_cache,
             self.account_cache,
             self.character_stats_cache,
             self.character_boss_cache,
@@ -132,12 +140,29 @@ class ZmdLogsDataSource:
             )
         return result.value
 
+    async def refresh_hot_bosses(self) -> tuple[HotBossCard, ...]:
+        """Read the board index from upstream now and warm the cache with it.
+
+        The ranking index calls this on its own schedule, which is what keeps
+        a keyword query from ever paying the cold hot-bosses read.
+        """
+
+        cards = await self._fetch_hot_bosses_upstream()
+        await self.hot_boss_cache.put(_HOT_BOSSES_KEY, cards)
+        return cards
+
+    async def _fetch_hot_bosses_upstream(self) -> tuple[HotBossCard, ...]:
+        cards, payload = await self.client.list_hot_bosses_with_payload()
+        if self._snapshot_path is not None:
+            save_json(self._snapshot_path, payload)
+        return cards
+
     async def _fetch_hot_bosses(self) -> tuple[HotBossCard, ...]:
         """Fetch the board index; fall back to the on-disk snapshot if needed."""
 
         snapshot_path = self._snapshot_path
         try:
-            cards, payload = await self.client.list_hot_bosses_with_payload()
+            return await self._fetch_hot_bosses_upstream()
         except ZmdLogsClientError as upstream_error:
             payload = None if snapshot_path is None else load_json(snapshot_path)
             if payload is None:
@@ -151,9 +176,6 @@ class ZmdLogsDataSource:
                 "ZmdLogBot is serving the board index from the local snapshot."
             )
             return cards
-        if snapshot_path is not None:
-            save_json(snapshot_path, payload)
-        return cards
 
     async def get_equip_suits(self) -> dict[str, str]:
         """Suit id to display name, from the game data catalog.
@@ -224,12 +246,29 @@ class ZmdLogsDataSource:
             assert self._character_catalog is not None
             return self._character_catalog
 
-    async def get_boss_ranking(self, boss_slug: str) -> BossRanking:
-        result = await self.boss_ranking_cache.get_or_load(
-            boss_slug,
-            lambda: self.client.get_boss_rankings(boss_slug),
-        )
-        return result.value
+    async def get_boss_ranking(
+        self,
+        boss_slug: str,
+        *,
+        max_age: float | None = None,
+    ) -> BossRanking:
+        """One board's ranking, no older than ``max_age`` seconds.
+
+        The default is the configured ranking cache TTL, which is what a
+        board page expects; ``None`` takes whatever the index holds.
+        """
+
+        age = self._ranking_max_age if max_age is None else max_age
+        return await self.ranking_index.get(boss_slug, max_age=age)
+
+    async def _fetch_boss_ranking(self, boss_slug: str) -> BossRanking:
+        return await self.client.get_boss_rankings(boss_slug)
+
+    def start(self) -> None:
+        """Start the background ranking index when it is enabled."""
+
+        if self._ranking_index_enabled:
+            self.ranking_index.start()
 
     async def get_character_statistics(
         self,
@@ -289,7 +328,8 @@ class ZmdLogsDataSource:
         return result.value
 
     async def close(self) -> None:
-        """Cancel in-flight loads and drop every cached value."""
+        """Stop the index, cancel in-flight loads and drop every cached value."""
 
+        await self.ranking_index.stop()
         for cache in self._caches:
             await cache.close()

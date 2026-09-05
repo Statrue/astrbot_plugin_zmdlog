@@ -190,12 +190,14 @@ class ZmdLogBotPlugin(Star):
         cannot race platform startup.
         """
 
+        self.data.start()
         self.watcher.start()
 
     @filter.on_astrbot_loaded()
     async def on_astrbot_ready(self) -> None:
-        """Start Chromium and, on a cold boot, the rank watcher."""
+        """Start Chromium and, on a cold boot, the index and the rank watcher."""
 
+        self.data.start()
         self.watcher.start()
         if self.renderer is None:
             return
