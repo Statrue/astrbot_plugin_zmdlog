@@ -7,6 +7,9 @@ is what every keyword query starts from, so a short outage must not turn
 every command into an error.
 """
 
+import asyncio
+import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from .cache import AsyncTTLCache, CacheState
@@ -31,10 +34,25 @@ _HOT_BOSSES_KEY = "all_board_top3"
 # 50-130 KB, an order of magnitude more than any other cached value, so the
 # two battle caches get a tighter cap than the shared default.
 BATTLE_CACHE_MAX_ENTRIES = 64
-# Static game data: two dozen entries that change when the game does, not
-# when someone uploads a run.
-EQUIP_CATALOG_TTL_SECONDS = 6 * 3600.0
+# Static game data: suits and six-star characters change when the game adds
+# content, which is months apart, never when someone uploads a run. Both
+# catalogs are therefore kept for as long as the process runs in practice,
+# and the character catalog is re-read when a name is not in it, because a
+# missing name is what a new character looks like.
+STATIC_CATALOG_TTL_SECONDS = 30 * 24 * 3600.0
+EQUIP_CATALOG_TTL_SECONDS = STATIC_CATALOG_TTL_SECONDS
+# A wrong name must not re-read the five-second global statistics response
+# every time someone mistypes; one refresh per this interval is enough.
+CATALOG_REFRESH_MIN_INTERVAL_SECONDS = 10 * 60.0
 _EQUIP_CATALOG_KEY = "equip_suits"
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterCatalogEntry:
+    """One six-star character as the statistics endpoints know it."""
+
+    name: str
+    key: str
 
 
 class ZmdLogsDataSource:
@@ -85,6 +103,10 @@ class ZmdLogsDataSource:
             stale_ttl_seconds=EQUIP_CATALOG_TTL_SECONDS,
             max_entries=1,
         )
+        self._character_catalog: tuple[CharacterCatalogEntry, ...] | None = None
+        self._character_catalog_loaded_at = 0.0
+        self._character_catalog_lock = asyncio.Lock()
+        self._clock = time.monotonic
         self._caches = (
             self.hot_boss_cache,
             self.boss_ranking_cache,
@@ -137,8 +159,8 @@ class ZmdLogsDataSource:
         """Suit id to display name, from the game data catalog.
 
         The one read whose answer is the same for every battle, so it is
-        cached for hours and may be served stale: a gear label going missing
-        for a whole page is worse than a label a few hours out of date.
+        kept for a month and may be served stale: a gear label going missing
+        for a whole page is worse than a label a while out of date.
         """
 
         result = await self.equip_catalog_cache.get_or_load(
@@ -155,6 +177,52 @@ class ZmdLogsDataSource:
     async def _fetch_equip_suits(self) -> dict[str, str]:
         suits = await self.client.get_equip_catalog()
         return {suit.suit_id: suit.name for suit in suits}
+
+    async def get_character_catalog(
+        self, *, refresh: bool = False
+    ) -> tuple[CharacterCatalogEntry, ...]:
+        """Every six-star character's name and key, kept for the long run.
+
+        The list comes from the global statistics response, which upstream
+        takes seconds to compute; a name lookup must not pay that every two
+        minutes. ``refresh`` asks for a re-read because a name was not found,
+        bounded to one per ``CATALOG_REFRESH_MIN_INTERVAL_SECONDS``.
+        """
+
+        async with self._character_catalog_lock:
+            now = self._clock()
+            age = now - self._character_catalog_loaded_at
+            expired = (
+                self._character_catalog is None or age > STATIC_CATALOG_TTL_SECONDS
+            )
+            wanted = refresh and age >= CATALOG_REFRESH_MIN_INTERVAL_SECONDS
+            if expired or wanted:
+                try:
+                    if expired:
+                        # The first read shares the statistics cache, so a
+                        # 角色统计 page just drawn costs no second request.
+                        stats = await self.get_character_statistics(
+                            None, time_range="all", potential="all"
+                        )
+                    else:
+                        stats = await self.client.get_character_statistics(
+                            None, time_range="all", potential="all"
+                        )
+                except ZmdLogsClientError:
+                    if self._character_catalog is None:
+                        raise
+                    self._logger.warning(
+                        "ZmdLogBot is keeping the character catalog "
+                        "after a refresh failure."
+                    )
+                else:
+                    self._character_catalog = tuple(
+                        CharacterCatalogEntry(row.character_name, row.character_key)
+                        for row in stats.rows
+                    )
+                    self._character_catalog_loaded_at = now
+            assert self._character_catalog is not None
+            return self._character_catalog
 
     async def get_boss_ranking(self, boss_slug: str) -> BossRanking:
         result = await self.boss_ranking_cache.get_or_load(

@@ -5,10 +5,12 @@ import logging
 import unittest
 
 from core import facts
+from core.datasource import CharacterCatalogEntry
 from core.matcher import AliasConfig, MatcherCache
 from core.models import (
     parse_battle_detail,
     parse_boss_ranking,
+    parse_character_boss_statistics,
     parse_character_statistics,
     parse_hot_bosses,
     parse_public_user_rankings,
@@ -17,6 +19,7 @@ from core.settings import PluginSettings
 from core.toolbox import ToolAnswer, ToolService
 from tests.helpers import (
     battle_detail_payload,
+    character_boss_statistics_payload,
     character_statistics_payload,
     hot_bosses_payload,
     public_user_rankings_payload,
@@ -79,6 +82,19 @@ class FakeData:
 
     async def get_public_user_rankings(self, account_id):
         return self.account
+
+    catalog_refreshes = 0
+
+    async def get_character_catalog(self, *, refresh=False):
+        if refresh:
+            self.catalog_refreshes += 1
+        return (
+            CharacterCatalogEntry("洛茜", "chr_0001_luoxi"),
+            CharacterCatalogEntry("提弗洛斯", "chr_0002_tifu"),
+        )
+
+    async def get_character_boss_statistics(self, key, *, time_range, potential):
+        return parse_character_boss_statistics(character_boss_statistics_payload())
 
 
 class ToolServiceTests(unittest.TestCase):
@@ -196,6 +212,22 @@ class ToolServiceTests(unittest.TestCase):
 
         self.assertEqual(answer.image_path, "/tmp/account.png")
         self.assertIn("上榜", answer.text)
+
+    def test_a_character_is_resolved_through_the_long_lived_catalog(self) -> None:
+        answer = run(self.service.character("提弗洛斯"))
+
+        self.assertEqual(answer.image_path, "/tmp/character_boss.png")
+        self.assertIn("各榜单表现", answer.text)
+        self.assertEqual(self.data.catalog_refreshes, 0)
+
+    def test_an_unknown_character_triggers_one_catalog_refresh(self) -> None:
+        # A name the catalog lacks might be a character added since the last
+        # read; the tool asks for one refresh, then reports the miss.
+        answer = run(self.service.character("新角色"))
+
+        self.assertIsNone(answer.image_path)
+        self.assertIn("没有叫", answer.text)
+        self.assertEqual(self.data.catalog_refreshes, 1)
 
     def test_a_page_that_will_not_draw_still_answers_in_text(self) -> None:
         self.renderer.fail = True

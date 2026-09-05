@@ -17,6 +17,7 @@ LLM request, and a model choosing among overlapping tools picks the wrong
 one; a new view of a subject is a parameter or extra lines in its text.
 """
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -132,18 +133,18 @@ class ToolService:
                 "需要一个 battleId 或战报链接。想按名次找，"
                 "先用榜单工具拿到那一名的 battleId。"
             )
-        try:
-            detail = await self._data.get_battle_detail(battle_id)
-        except ZmdLogsAPIError as exc:
-            if exc.status_code == 404:
+        # Three upstream reads, each with its own latency, go out together;
+        # awaiting them in turn put the optional two in front of the payload.
+        detail, export, suits = await asyncio.gather(
+            self._data.get_battle_detail(battle_id),
+            self._battle_export(battle_id),
+            self._equip_suits(),
+            return_exceptions=True,
+        )
+        if isinstance(detail, BaseException):
+            if isinstance(detail, ZmdLogsAPIError) and detail.status_code == 404:
                 return ToolAnswer("这场战报不存在、未公开或已删除。")
-            raise
-        export = None
-        try:
-            export = await self._data.get_battle_export(battle_id)
-        except ZmdLogsClientError:
-            pass
-        suits = await self._equip_suits()
+            raise detail
         text = facts.format_battle(detail, export=export)
         image = await self._render(
             lambda renderer: renderer.render_battle(
@@ -166,13 +167,17 @@ class ToolService:
             )
         if left == right:
             return ToolAnswer("两边是同一场战报，没有可比的。")
-        try:
-            detail_a = await self._data.get_battle_detail(left)
-            detail_b = await self._data.get_battle_detail(right)
-        except ZmdLogsAPIError as exc:
-            if exc.status_code == 404:
+        details = await asyncio.gather(
+            self._data.get_battle_detail(left),
+            self._data.get_battle_detail(right),
+            return_exceptions=True,
+        )
+        for outcome in details:
+            if isinstance(outcome, ZmdLogsAPIError) and outcome.status_code == 404:
                 return ToolAnswer("其中一场战报不存在、未公开或已删除。")
-            raise
+            if isinstance(outcome, BaseException):
+                raise outcome
+        detail_a, detail_b = details
         text = facts.format_battle_comparison(detail_a, detail_b)
         if detail_a.boss_name != detail_b.boss_name:
             return ToolAnswer(text)
@@ -189,12 +194,13 @@ class ToolService:
     # --- characters and accounts --------------------------------------------------
 
     async def character(self, name: str, board: str = "") -> ToolAnswer:
-        catalog = await self._data.get_character_statistics(
-            None, time_range="all", potential="all"
-        )
-        resolution = resolve_character_name(
-            name, tuple(row.character_name for row in catalog.rows)
-        )
+        entries = await self._data.get_character_catalog()
+        resolution = resolve_character_name(name, tuple(e.name for e in entries))
+        if resolution.status is CharacterResolutionStatus.NOT_FOUND:
+            # A name the catalog lacks may be a character added since it was
+            # read. One bounded refresh settles it either way.
+            entries = await self._data.get_character_catalog(refresh=True)
+            resolution = resolve_character_name(name, tuple(e.name for e in entries))
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
             return ToolAnswer(
                 f"「{shorten(name)}」可能是：{' / '.join(resolution.candidates)}，"
@@ -221,11 +227,7 @@ class ToolService:
                 )
             )
             return ToolAnswer(text, image)
-        key = next(
-            row.character_key
-            for row in catalog.rows
-            if row.character_name == resolution.name
-        )
+        key = next(e.key for e in entries if e.name == resolution.name)
         stats = await self._data.get_character_boss_statistics(
             key, time_range="all", potential="all"
         )
@@ -279,6 +281,14 @@ class ToolService:
         return ToolAnswer(text, image)
 
     # --- shared -------------------------------------------------------------------
+
+    async def _battle_export(self, battle_id: str):
+        """The cast list, or nothing; the card renders without it."""
+
+        try:
+            return await self._data.get_battle_export(battle_id)
+        except ZmdLogsClientError:
+            return None
 
     async def _equip_suits(self) -> dict[str, str]:
         """The gear catalog, or nothing; a page renders without it."""

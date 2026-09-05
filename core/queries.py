@@ -43,7 +43,7 @@ from .client import (
     is_valid_boss_slug,
     searchable_nickname,
 )
-from .datasource import ZmdLogsDataSource
+from .datasource import CharacterCatalogEntry, ZmdLogsDataSource
 from .identifiers import (
     PublicReferenceError,
     parse_account_reference,
@@ -63,7 +63,6 @@ from .messages import shorten
 from .models import (
     BattleDetailSummary,
     BattleExport,
-    CharacterStatistics,
     HotBossCard,
 )
 from .rank_watch import RankWatcher
@@ -622,21 +621,29 @@ class QueryService:
     async def _resolve_catalog_character(
         self,
         query: str,
-    ) -> tuple[CharacterStatistics, CharacterResolution] | None:
+        *,
+        refresh_on_miss: bool = False,
+    ) -> tuple[tuple[CharacterCatalogEntry, ...], CharacterResolution] | None:
         """Match ``query`` against the six-star catalog; None when unavailable.
 
-        The global statistics response doubles as the character catalog and is
-        cached, so recognising a name costs nothing after the first query.
+        The catalog is the data source's long-lived name/key list, so
+        recognising a name costs nothing after the first read. A miss may be
+        a character added since that read; ``refresh_on_miss`` asks for one
+        bounded re-read before giving up.
         """
 
         try:
-            catalog = await self._data.get_character_statistics(
-                None, time_range="all", potential="all"
-            )
+            entries = await self._data.get_character_catalog()
+            resolution = resolve_character_name(query, _catalog_names(entries))
+            if (
+                refresh_on_miss
+                and resolution.status is CharacterResolutionStatus.NOT_FOUND
+            ):
+                entries = await self._data.get_character_catalog(refresh=True)
+                resolution = resolve_character_name(query, _catalog_names(entries))
         except ZmdLogsClientError:
             return None
-        names = tuple(row.character_name for row in catalog.rows)
-        return catalog, resolve_character_name(query, names)
+        return entries, resolution
 
     async def _character_boss_outcome(
         self,
@@ -649,10 +656,12 @@ class QueryService:
         catalog is unavailable) so board handling can continue.
         """
 
-        resolved = await self._resolve_catalog_character(query)
+        resolved = await self._resolve_catalog_character(
+            query, refresh_on_miss=True
+        )
         if resolved is None:
             return None
-        catalog, resolution = resolved
+        entries, resolution = resolved
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
             return None
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
@@ -661,9 +670,7 @@ class QueryService:
                 message=f"「{resolution.query}」可能是：{options}，请写全名。"
             )
         character_key = next(
-            row.character_key
-            for row in catalog.rows
-            if row.character_name == resolution.name
+            entry.key for entry in entries if entry.name == resolution.name
         )
         stats = await self._data.get_character_boss_statistics(
             character_key,
@@ -1116,3 +1123,8 @@ def battle_link_error_message(error: ZmdLogsAPIError) -> str:
     if error.status_code == 404:
         return messages.BATTLE_LINK_NOT_FOUND
     return messages.UPSTREAM_UNAVAILABLE
+
+
+def _catalog_names(entries: tuple[CharacterCatalogEntry, ...]) -> tuple[str, ...]:
+    return tuple(entry.name for entry in entries)
+

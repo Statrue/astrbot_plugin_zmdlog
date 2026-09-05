@@ -6,11 +6,15 @@ import unittest
 from pathlib import Path
 
 from core.client import ZmdLogsClientError
-from core.datasource import HOT_BOSSES_SNAPSHOT, ZmdLogsDataSource
-from core.models import parse_hot_bosses
+from core.datasource import (
+    CATALOG_REFRESH_MIN_INTERVAL_SECONDS,
+    HOT_BOSSES_SNAPSHOT,
+    ZmdLogsDataSource,
+)
+from core.models import parse_character_statistics, parse_hot_bosses
 from core.persistence import JsonStore, load_json
 from core.settings import PluginSettings
-from tests.helpers import hot_bosses_payload
+from tests.helpers import character_statistics_payload, hot_bosses_payload
 
 
 class FakeClient:
@@ -24,6 +28,12 @@ class FakeClient:
         if self.fail:
             raise ZmdLogsClientError("offline")
         return parse_hot_bosses(self.payload), self.payload
+
+    async def get_character_statistics(self, boss_slug, *, time_range, potential):
+        self.calls += 1
+        if self.fail:
+            raise ZmdLogsClientError("offline")
+        return parse_character_statistics(character_statistics_payload())
 
 
 class CapturingLogger(logging.Logger):
@@ -151,3 +161,54 @@ class JsonStoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CharacterCatalogTests(DataSourceTests):
+    def test_the_catalog_is_read_once_and_refreshed_only_when_asked(self) -> None:
+        client = FakeClient()
+        source = self._source(client)
+        now = [1_000.0]
+        source._clock = lambda: now[0]
+
+        first = run(source.get_character_catalog())
+        run(source.get_character_catalog())
+
+        self.assertTrue(first)
+        self.assertTrue(all(entry.name and entry.key for entry in first))
+        self.assertEqual(client.calls, 1)
+
+        # A miss asks for a refresh, but not one per mistyped name.
+        run(source.get_character_catalog(refresh=True))
+        self.assertEqual(client.calls, 1)
+
+        now[0] += CATALOG_REFRESH_MIN_INTERVAL_SECONDS
+        run(source.get_character_catalog(refresh=True))
+        self.assertEqual(client.calls, 2)
+
+    def test_a_failed_refresh_keeps_the_catalog_it_has(self) -> None:
+        client = FakeClient()
+        source = self._source(client)
+        now = [1_000.0]
+        source._clock = lambda: now[0]
+        before = run(source.get_character_catalog())
+
+        # A refresh reads upstream directly; when that fails the catalog in
+        # hand stays, because a stale name list beats no name list.
+        client.fail = True
+        now[0] += CATALOG_REFRESH_MIN_INTERVAL_SECONDS
+        after = run(source.get_character_catalog(refresh=True))
+
+        self.assertEqual(after, before)
+        self.assertTrue(
+            any("character catalog" in message for message in self.logger.messages)
+        )
+
+    def test_the_first_read_shares_the_statistics_cache(self) -> None:
+        client = FakeClient()
+        source = self._source(client)
+
+        run(source.get_character_statistics(None, time_range="all", potential="all"))
+        run(source.get_character_catalog())
+
+        self.assertEqual(client.calls, 1)
+

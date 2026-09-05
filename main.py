@@ -161,6 +161,7 @@ class ZmdLogBotPlugin(Star):
             logger=logger,
         )
         self._auto_expand_lock = asyncio.Lock()
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self._auto_expanded_until: dict[tuple[str, str], float] = {}
         try:
             self.renderer: LongImageRenderer | None = LongImageRenderer(
@@ -761,21 +762,37 @@ class ZmdLogBotPlugin(Star):
                     "ZmdLogBot cannot attach a tool image on this AstrBot version."
                 )
             else:
-                try:
-                    await event.send(
-                        MessageChain([Image.fromFileSystem(answer.image_path)])
-                    )
-                    setattr(event, _TOOL_IMAGE_SENT, True)
-                except Exception as exc:
-                    logger.warning(
-                        "ZmdLogBot could not send a tool image: %s",
-                        type(exc).__name__,
-                    )
+                # The upload runs in the background so the text reaches the
+                # model now: its second round trip and the platform upload
+                # overlap instead of queueing, and the picture still lands
+                # seconds before the model finishes writing.
+                setattr(event, _TOOL_IMAGE_SENT, True)
+                self._spawn(self._send_tool_image(event, answer.image_path))
         return _shorten_tool_reply(answer.text)
+
+    async def _send_tool_image(self, event: AstrMessageEvent, path: str) -> None:
+        try:
+            await asyncio.wait_for(
+                event.send(MessageChain([Image.fromFileSystem(path)])),
+                timeout=_NOTICE_SEND_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            logger.warning(
+                "ZmdLogBot could not send a tool image: %s", type(exc).__name__
+            )
+
+    def _spawn(self, coro) -> None:
+        """Run ``coro`` to completion in the background; cancelled at terminate."""
+
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def terminate(self) -> None:
         """Release HTTP, browser, and generated-image resources."""
 
+        for task in tuple(self._background_tasks):
+            task.cancel()
         await self.watcher.stop()
         await self.data.close()
         try:

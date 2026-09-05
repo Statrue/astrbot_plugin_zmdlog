@@ -480,7 +480,11 @@ class TemplateRenderer:
         )
 
 
-_ASSET_CACHE_TTL_SECONDS = 6 * 3600.0
+# Icons are static files addressed by path: a new character is a new path
+# and a miss, an existing file changing is an art patch months apart. So
+# the cache lives as long as the process does in practice; the byte caps
+# below, not the clock, bound it.
+_ASSET_CACHE_TTL_SECONDS = 30 * 24 * 3600.0
 _ASSET_CACHE_MAX_TOTAL_BYTES = 32 * 1024 * 1024
 _ASSET_CACHE_MAX_ITEM_BYTES = 2 * 1024 * 1024
 
