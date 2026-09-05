@@ -92,18 +92,27 @@ class AsyncTTLCache(Generic[K, V]):
 
         return await asyncio.shield(task)
 
-    async def put(self, key: K, value: V) -> None:
+    async def put(
+        self,
+        key: K,
+        value: V,
+        *,
+        ttl_seconds: float | None = None,
+    ) -> None:
         """Store ``value`` as freshly loaded, as if a loader had just returned it.
 
         For a caller that already holds the newest value from upstream — a
         background refresher — so the next reader need not fetch it again.
+        ``ttl_seconds`` lets that refresher keep the value fresh until its
+        own next read, whatever the cache's default is.
         """
 
+        ttl = self.ttl_seconds if ttl_seconds is None else ttl_seconds
         now = self._clock()
         entry = _CacheEntry(
             value=value,
-            fresh_until=now + self.ttl_seconds,
-            stale_until=now + self.ttl_seconds + self.stale_ttl_seconds,
+            fresh_until=now + ttl,
+            stale_until=now + ttl + self.stale_ttl_seconds,
         )
         async with self._lock:
             self._entries[key] = entry

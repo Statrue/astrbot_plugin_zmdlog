@@ -148,7 +148,17 @@ class ZmdLogsDataSource:
         """
 
         cards = await self._fetch_hot_bosses_upstream()
-        await self.hot_boss_cache.put(_HOT_BOSSES_KEY, cards)
+        # Fresh until the index reads again (plus a margin), whatever the query
+        # TTL is: a shorter freshness would leave a gap before the next read
+        # in which a keyword query pays the cold read after all.
+        await self.hot_boss_cache.put(
+            _HOT_BOSSES_KEY,
+            cards,
+            ttl_seconds=max(
+                self._ranking_max_age,
+                self.ranking_index.signal_period_seconds + 5.0,
+            ),
+        )
         return cards
 
     async def _fetch_hot_bosses_upstream(self) -> tuple[HotBossCard, ...]:

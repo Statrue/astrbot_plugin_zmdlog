@@ -263,3 +263,14 @@ class AccountRankingsSourceTests(DataSourceTests):
             run(source.get_account_rankings("usr_nobody"))
         self.assertEqual(client.account_reads, 1)
 
+
+class HotBossesWarmingTests(DataSourceTests):
+    def test_the_index_read_warms_the_query_cache(self) -> None:
+        client = FakeClient(hot_bosses_payload())
+        source = self._source(client)
+
+        run(source.refresh_hot_bosses())
+        run(source.list_hot_bosses())
+
+        self.assertEqual(client.calls, 1)
+

@@ -30,7 +30,9 @@ from .models import (
 )
 
 DEFAULT_PACE_SECONDS = 20.0
-DEFAULT_SIGNAL_SECONDS = 120.0
+# One hot-bosses read a minute: what a single keyword query a minute would
+# cost anyway, and it keeps the query cache warm as a side effect.
+DEFAULT_SIGNAL_SECONDS = 60.0
 FILL_CONCURRENCY = 4
 # A board the index could not re-read keeps serving its last copy for this
 # long; past it a reader asking for fresh data gets the error instead of a
@@ -68,6 +70,10 @@ class RankingIndex:
         self._logger = logger
         self._pace = pace_seconds
         self._signal = signal_seconds
+        # The loop checks the signal clock once per pace, so a read can land
+        # this long after the previous one; a value put into a cache must
+        # stay fresh at least that long or readers see a gap.
+        self.signal_period_seconds = signal_seconds + pace_seconds
         self._clock = clock
         self._entries: dict[str, IndexEntry] = {}
         self._slugs: tuple[str, ...] = ()
