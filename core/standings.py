@@ -114,9 +114,10 @@ def roster_character_names(rankings: Iterable[BossRanking]) -> tuple[str, ...]:
 class CharacterTally:
     """One character's standings counted over every board.
 
-    A first place is a board whose #1 record fields the character; the
-    record's four members each get one, so ``first_places_as_main`` — the
-    #1 record's main C — is what people usually mean by a champion.
+    A first place — a 冠军 — is a board whose #1 record fields the
+    character; the record's four members each get one (the user's
+    definition, 2026-09-06). ``first_places_as_main`` counts the ones where
+    the character was that record's main C, as a side note.
     """
 
     name: str
@@ -183,8 +184,8 @@ def character_tallies(rankings: Iterable[BossRanking]) -> tuple[CharacterTally, 
     ]
     tallies.sort(
         key=lambda tally: (
-            -tally.first_places_as_main,
             -tally.first_places,
+            -tally.first_places_as_main,
             -tally.podiums,
             -tally.top_tens,
             -tally.boards,

@@ -7,11 +7,11 @@
 
 {% block hero_facts %}
 <div class="hero-facts">
-  {% if page.top_main %}
-  <div class="hero-fact hero-fact--key"><span>冠军最多</span><strong>{{ page.top_main.name }}</strong><em>当主 C 拿下 {{ page.top_main.first_places_as_main }} 个榜</em></div>
-  {% endif %}
   {% if page.top_team %}
-  <div class="hero-fact"><span>第一名队伍出场最多</span><strong>{{ page.top_team.name }}</strong><em>{{ page.top_team.first_places }} / {{ page.board_count }} 个榜</em></div>
+  <div class="hero-fact hero-fact--key"><span>冠军最多</span><strong>{{ page.top_team.name }}</strong><em>{{ page.top_team.first_places }} / {{ page.board_count }} 个榜</em></div>
+  {% endif %}
+  {% if page.top_main %}
+  <div class="hero-fact"><span>当主 C 的冠军最多</span><strong>{{ page.top_main.name }}</strong><em>{{ page.top_main.first_places_as_main }} 个榜</em></div>
   {% endif %}
   <div class="hero-fact"><span>榜单</span><strong>{{ page.board_count }}</strong><em>进过前三的角色 {{ page.rows|length }}</em></div>
   {% if page.as_of_label %}
@@ -23,7 +23,7 @@
 {% block content %}
 <div class="section-heading">
   <h2>角色冠军榜</h2>
-  <span class="section-note">冠军 = 该榜第一名记录的主 C · 第一名队伍 = 第一名记录的四名角色各算一个 · 前三、前十按该角色在该榜的最好名次算 · 这是队伍的成绩，不是角色的强度</span>
+  <span class="section-note">冠军 = 该榜第一名记录的队伍带该角色，四名角色各算一个 · 当主 C = 其中该角色是主 C 的 · 前三、前十按该角色在该榜的最好名次算 · 这是队伍的成绩，不是角色的强度</span>
 </div>
 
 {% if page.rows %}
@@ -31,8 +31,8 @@
   <div class="champ-head" aria-hidden="true">
     <span class="champ-head-pos">#</span>
     <span class="champ-head-char">角色</span>
-    <span class="champ-head-first">冠军 · 当主 C</span>
-    <span class="champ-head-bar">第一名队伍出场</span>
+    <span class="champ-head-first">冠军</span>
+    <span class="champ-head-bar">占榜单数的比例</span>
     <span class="champ-head-num">前三</span>
     <span class="champ-head-num">前十</span>
     <span class="champ-head-num">上榜榜单</span>
@@ -54,10 +54,10 @@
         </span>
       </span>
       <span class="champ-first">
-        <b>{{ row.first_places_as_main }}</b>
-        <i>冠军</i>
+        <b>{{ row.first_places }}</b>
+        <i>当主 C {{ row.first_places_as_main }}</i>
       </span>
-      <span class="champ-bar"><i style="width: {{ row.bar_width }}%;"></i><em>{{ row.first_places }}</em></span>
+      <span class="champ-bar" aria-hidden="true"><i style="width: {{ row.bar_width }}%;"></i></span>
       <span class="champ-num">{{ row.podiums }}</span>
       <span class="champ-num">{{ row.top_tens }}</span>
       <span class="champ-num champ-num--muted">{{ row.boards }}</span>
@@ -65,7 +65,7 @@
     {% endfor %}
   </ol>
   <p class="board-legend champ-legend">
-    条形为该角色出现在第一名队伍里的榜数，相对出现最多者的比例；按冠军数、第一名队伍出场、前三、前十依次排序。
+    条形为冠军数占全部榜单数的比例；按冠军数、当主 C 的冠军数、前三、前十依次排序。
   </p>
 </section>
 {% else %}

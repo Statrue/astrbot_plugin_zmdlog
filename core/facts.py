@@ -446,7 +446,7 @@ def format_character_standings(
     # "有多少冠军" is answered here, not by counting the lines below, which
     # stop at ``limit``.
     lines.append(
-        f"第一名 {standings.first_places} 个榜"
+        f"冠军（第一名）{standings.first_places} 个榜"
         f"（其中 {name} 当主C {standings.first_places_as_main} 个）"
         f" · 前三 {len(standings.boards_within(3))} 个榜"
         f" · 前十 {len(standings.boards_within(10))} 个榜。"
@@ -512,24 +512,25 @@ def format_character_tallies(
         as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
     lines = [
         f"全部 {board_count} 个榜的第一名记录里各角色各占几个{as_of}",
-        "「冠军」= 该榜第一名记录的主C；「第一名队伍」= 第一名记录的四名角色各算一个。",
+        "「冠军」= 该榜第一名记录的队伍里带这个角色，四名角色各算一个；"
+        "「当主C」= 其中该角色是主C的。",
         "",
     ]
     if not tallies:
         lines.append("读过的榜单里没有任何公开记录。")
         return "\n".join(lines)
-    top_main = max(tallies, key=lambda t: t.first_places_as_main)
     top_team = max(tallies, key=lambda t: t.first_places)
+    top_main = max(tallies, key=lambda t: t.first_places_as_main)
     lines.append(
-        f"冠军最多：{top_main.name} {top_main.first_places_as_main} 个榜；"
-        f"出现在第一名队伍最多：{top_team.name} {top_team.first_places} 个榜。"
+        f"冠军最多：{top_team.name} {top_team.first_places} 个榜；"
+        f"当主C的冠军最多：{top_main.name} {top_main.first_places_as_main} 个榜。"
     )
     lines.append("")
     shown = tallies[: _bounded(limit)]
     for tally in shown:
         lines.append(
-            f"{tally.name} · 冠军 {tally.first_places_as_main}"
-            f" · 第一名队伍 {tally.first_places}"
+            f"{tally.name} · 冠军 {tally.first_places}"
+            f"（当主C {tally.first_places_as_main}）"
             f" · 前三 {tally.podiums} · 前十 {tally.top_tens}"
             f" · 上榜 {tally.boards} 个榜"
         )

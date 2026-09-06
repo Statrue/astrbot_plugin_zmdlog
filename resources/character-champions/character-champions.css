@@ -148,45 +148,16 @@
 
 .champ-bar {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.champ-bar::before {
-  content: "";
-  position: absolute;
-  top: calc(50% - 5px);
-  right: 40px;
-  left: 0;
+  display: block;
   height: 10px;
   background: var(--line-soft);
 }
 
 .champ-bar i {
-  position: relative;
-  z-index: 1;
-  display: block;
-  height: 10px;
-  flex: 0 0 auto;
-  min-width: 2px;
-  max-width: calc(100% - 40px);
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 0;
   background: var(--yellow);
-}
-
-.champ-bar em {
-  position: relative;
-  z-index: 1;
-  flex: 0 0 30px;
-  margin-left: auto;
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: 15px;
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  text-align: right;
 }
 
 .champ-num {

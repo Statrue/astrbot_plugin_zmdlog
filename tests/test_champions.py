@@ -47,14 +47,14 @@ class TalliesTests(unittest.TestCase):
         ]
         self.assertTrue(all(by_name[name].first_places_as_main == 0 for name in others))
 
-    def test_tallies_sort_by_champions_then_first_place_teams(self) -> None:
+    def test_tallies_sort_by_first_places_then_main_c(self) -> None:
         tallies = character_tallies(self.rankings)
 
-        # The #1 record's main C is the champion and leads; its team mates
-        # follow on first-place teams; everyone else after.
+        # Every member of the #1 record is a champion; among them the main C
+        # leads on the side count, and everyone else follows.
         self.assertEqual(tallies[0].name, self.leader.character_name)
-        mains = [tally.first_places_as_main for tally in tallies]
-        self.assertEqual(mains, sorted(mains, reverse=True))
+        firsts = [tally.first_places for tally in tallies]
+        self.assertEqual(firsts, sorted(firsts, reverse=True))
 
     def test_podiums_and_top_tens_count_boards_not_records(self) -> None:
         tallies = character_tallies(self.rankings)
@@ -75,7 +75,7 @@ class TalliesTests(unittest.TestCase):
         self.assertIn("全部 2 个榜", text)
         self.assertIn("四名角色各算一个", text)
         self.assertIn(f"冠军最多：{self.leader.character_name} 2 个榜", text)
-        self.assertIn(f"{self.leader.character_name} · 冠军 2 · 第一名队伍 2", text)
+        self.assertIn(f"{self.leader.character_name} · 冠军 2（当主C 2）", text)
         self.assertIn("不代表哪个角色更强", text)
 
 
@@ -100,7 +100,7 @@ class ChampionsPageTests(unittest.TestCase):
         self.assertEqual(page.board_count, 2)
         self.assertEqual(page.rows[0].position, 1)
         self.assertEqual(page.rows[0].bar_width, 100.0)
-        self.assertEqual(page.top_main.name, self.rankings[0].rows[0].character_name)
+        self.assertEqual(page.top_team.name, self.rankings[0].rows[0].character_name)
         self.assertTrue(all(row.podiums >= 1 for row in page.rows))
         self.assertEqual(
             len(page.rows) + len(page.others), len(self.tallies)

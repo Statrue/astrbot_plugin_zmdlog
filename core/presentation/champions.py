@@ -19,7 +19,7 @@ class TallyRowView:
     podiums: int
     top_tens: int
     boards: int
-    # First-place teams as a share of the most frequent member's, for the bar.
+    # First places as a share of the leader's, for the in-row bar.
     bar_width: float
 
 
@@ -28,10 +28,10 @@ class CharacterChampionsPage:
     header: PageHeader
     board_count: int
     as_of_label: str
-    # The two headline answers: most first places as main C, and most
-    # appearances in first-place teams. Both are None with no records.
-    top_main: TallyRowView | None
+    # The headline answer (most first places) and its side note (most first
+    # places as main C). Both are None with no records.
     top_team: TallyRowView | None
+    top_main: TallyRowView | None
     rows: tuple[TallyRowView, ...]
     # Characters fielded somewhere but never in a top-three record.
     others: tuple[str, ...]
@@ -48,7 +48,7 @@ def build_character_champions_page(
     """One row per character with a podium, most first places first."""
 
     ranked = [tally for tally in tallies if tally.podiums]
-    peak = max((tally.first_places for tally in tallies), default=0)
+    peak = board_count
     rows = tuple(
         TallyRowView(
             position=index,
@@ -72,11 +72,11 @@ def build_character_champions_page(
     return CharacterChampionsPage(
         header=PageHeader(
             title="角色冠军榜",
-            subtitle="各角色的队伍在全部榜单拿下的第一名、前三与前十",
+            subtitle="带该角色的队伍在全部榜单拿下的第一名、前三与前十",
             query=query,
             matched_name=f"全部 {board_count} 个榜单 · 角色冠军榜",
             target_type="角色排名",
-            footer_note="公开榜单 · 队伍成绩 · 一条第一名记录里四名角色各算一个",
+            footer_note="公开榜单 · 队伍成绩 · 第一名队伍的四名角色各算一个冠军",
         ),
         board_count=board_count,
         as_of_label=_as_of_label(age_seconds),
