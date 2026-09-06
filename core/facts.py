@@ -88,7 +88,7 @@ def format_board_ranking(
             if character
             else "这个榜目前没有公开记录。"
         )
-        return "\n".join(lines)
+        return _joined(lines)
     lines.append("")
     for row in rows[: _bounded(limit)]:
         team = "、".join(entry.character_name for entry in row.roster_entries)
@@ -115,7 +115,7 @@ def format_board_ranking(
             lines.append(f"    {count} 次 · {team}")
         if len(teams) > _TOP_TEAMS:
             lines.append(f"    （另有 {len(teams) - _TOP_TEAMS} 种各出现较少次数）")
-    return "\n".join(lines)
+    return _joined(lines)
 
 
 def format_board_teams(ranking: BossRanking, *, limit: int = _TOP_TEAMS) -> str:
@@ -128,13 +128,13 @@ def format_board_teams(ranking: BossRanking, *, limit: int = _TOP_TEAMS) -> str:
     ]
     if not teams:
         lines.append("这个榜目前没有公开记录。")
-        return "\n".join(lines)
+        return _joined(lines)
     lines.append("")
     for team, count in teams[:limit]:
         lines.append(f"{count} 次 · {team}")
     if len(teams) > limit:
         lines.append(f"（另有 {len(teams) - limit} 种阵容各出现较少次数）")
-    return "\n".join(lines)
+    return _joined(lines)
 
 
 def format_character_partners(
@@ -151,7 +151,7 @@ def format_character_partners(
 
     co = _cooccurrence(rankings, character)
     if not co.appearances:
-        return (
+        return with_source(
             f"读过的 {co.total} 条公开记录里没有「{character}」的出场，"
             "可能是名字不对，或这个范围内没人用。"
         )
@@ -161,7 +161,7 @@ def format_character_partners(
         "",
     ]
     lines.extend(_cooccurrence_lines(co, limit=limit))
-    return "\n".join(lines)
+    return _joined(lines)
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,7 +281,7 @@ def format_battle(
     elif not battle.roster:
         lines.append("")
         lines.append("这份战报由旧版客户端上传，没有记录阵容配装。")
-    return "\n".join(lines)
+    return _joined(lines)
 
 
 def format_battle_comparison(
@@ -298,7 +298,7 @@ def format_battle_comparison(
     """
 
     if first.boss_name != second.boss_name:
-        return (
+        return with_source(
             f"「{first.boss_name}」和「{second.boss_name}」不是同一个首领，"
             "每个首领的机制和排轴都不同，两场没有可比性。"
         )
@@ -343,7 +343,7 @@ def format_battle_comparison(
     lines.append(
         "以上是两份记录的差异本身。哪一处造成了时间差，公开数据无法判定。"
     )
-    return "\n".join(lines)
+    return _joined(lines)
 
 
 def format_character_statistics(
@@ -358,7 +358,7 @@ def format_character_statistics(
     if character:
         rows = [row for row in rows if row.character_name == character]
         if not rows:
-            return (
+            return with_source(
                 f"「{character}」在这个范围内没有样本，"
                 "可能是名字不对，或它还没有公开记录。"
             )
@@ -381,7 +381,7 @@ def format_character_statistics(
             f" · 四分位 {_stat(row.p25)}–{_stat(row.p75)}"
             f" · {_samples(row.sample_count, row.normal_sample_count)}"
         )
-    return "\n".join(lines)
+    return _joined(lines)
 
 
 def format_character_boards(
@@ -398,7 +398,7 @@ def format_character_boards(
     ]
     if not rows:
         lines.append("这个角色在任何榜单上都还没有足够的公开样本。")
-        return "\n".join(lines)
+        return _joined(lines)
     lines.append("")
     ordered = sorted(rows, key=lambda row: (row.rank is None, row.rank or 0))
     shown = ordered[: _bounded(limit)]
@@ -415,7 +415,7 @@ def format_character_boards(
         )
     if len(ordered) > len(shown):
         lines.append(f"（另有 {len(ordered) - len(shown)} 个榜未列出，图里有）")
-    return "\n".join(lines)
+    return _joined(lines)
 
 
 def format_character_standings(
@@ -438,7 +438,7 @@ def format_character_standings(
     lines = [f"带「{name}」的队伍在各榜单的最好名次{as_of}"]
     if not standings.boards:
         lines.append(f"读过的 {len(standings.absent)} 个榜里没有「{name}」出场。")
-        return "\n".join(lines)
+        return _joined(lines)
     lines.append(
         f"出场 {standings.appearances} 次，分布在 {len(standings.boards)} 个榜；"
         f"{len(standings.absent)} 个榜没有出场。"
@@ -494,7 +494,7 @@ def format_character_standings(
         lines.append(f"（另有 {len(standings.boards) - _bounded(limit)} 个榜未列出）")
     lines.append("")
     lines.append("以上是带该角色的队伍的成绩，不是角色本身的强度；名次受玩家水平和配装影响。")
-    return "\n".join(lines)
+    return _joined(lines)
 
 
 def format_character_tallies(
@@ -518,7 +518,7 @@ def format_character_tallies(
     ]
     if not tallies:
         lines.append("读过的榜单里没有任何公开记录。")
-        return "\n".join(lines)
+        return _joined(lines)
     top_team = max(tallies, key=lambda t: t.first_places)
     top_main = max(tallies, key=lambda t: t.first_places_as_main)
     lines.append(
@@ -538,7 +538,7 @@ def format_character_tallies(
         lines.append(f"（另有 {len(tallies) - len(shown)} 个角色未列出，图里有）")
     lines.append("")
     lines.append("以上是队伍成绩的计数，不代表哪个角色更强。")
-    return "\n".join(lines)
+    return _joined(lines)
 
 
 def format_account(account: PublicUserRankings, *, limit: int = MAX_ROW_LIMIT) -> str:
@@ -547,7 +547,7 @@ def format_account(account: PublicUserRankings, *, limit: int = MAX_ROW_LIMIT) -
     lines = [f"公开账号 {account.account_display_name}（{account.account_id}）"]
     if not account.rankings:
         lines.append("这个账号目前没有公开的榜单记录。")
-        return "\n".join(lines)
+        return _joined(lines)
     lines.append(f"上榜 {len(account.rankings)} 个副本")
     lines.append("")
     ordered = sorted(account.rankings, key=lambda row: row.rank)
@@ -558,10 +558,27 @@ def format_account(account: PublicUserRankings, *, limit: int = MAX_ROW_LIMIT) -
             f" · {_duration(row.duration_ms)} · DPS {row.total_dps:,.0f}"
         )
         lines.append(f"    阵容 {team} · battleId {row.battle_id}")
-    return "\n".join(lines)
+    return _joined(lines)
 
 
 # --- pieces -------------------------------------------------------------------
+
+
+# Every text a tool hands the model ends with where the numbers come from:
+# a model that is not told will call a leaderboard count a server-wide one.
+SOURCE_NOTE = "数据来源：ZMDLogs 上玩家自愿上传的公开记录，不是全服统计。"
+
+
+def _joined(lines: list[str]) -> str:
+    return with_source("\n".join(lines))
+
+
+def with_source(text: str) -> str:
+    """Append the source line once, whatever shape the text has."""
+
+    if SOURCE_NOTE in text:
+        return text
+    return text.rstrip() + "\n\n" + SOURCE_NOTE
 
 
 def _stat(value: float | None) -> str:

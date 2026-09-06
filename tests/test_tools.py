@@ -268,6 +268,21 @@ class ToolServiceTests(unittest.TestCase):
         self.assertIn("没有「新角色」出场", answer.text)
         self.assertEqual(self.data.catalog_refreshes, 1)
 
+    def test_every_answer_names_where_the_numbers_come_from(self) -> None:
+        # A model not told the source calls a leaderboard count a server-wide
+        # statistic; the page footer says it, so the text must too.
+        answers = [
+            run(self.service.board("三位一体")),
+            run(self.service.battle("btl_upload_abcdef123456")),
+            run(self.service.character("")),
+            run(self.service.character("提弗洛斯")),
+            run(self.service.account("usr_1234567890abcdef")),
+        ]
+        for answer in answers:
+            with self.subTest(text=answer.text[:30]):
+                self.assertIn("ZMDLogs", answer.text)
+                self.assertIn("不是全服统计", answer.text)
+
     def test_a_page_that_will_not_draw_still_answers_in_text(self) -> None:
         self.renderer.fail = True
         answer = run(self.service.board("三位一体"))
