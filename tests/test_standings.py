@@ -78,6 +78,8 @@ class StandingsTests(unittest.TestCase):
         # The count a model is asked for is stated, not left to be counted.
         self.assertIn("第一名 2 个榜", text)
         self.assertIn("前三 2 个榜", text)
+        # Every first-place board is named, whatever the row limit.
+        self.assertIn("第一名的榜：三位一体、罗丹", text)
         self.assertIn("数据截至 3 分钟前", text)
         self.assertIn("battleId", text)
         self.assertIn("不是角色本身的强度", text)

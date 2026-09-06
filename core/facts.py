@@ -451,6 +451,27 @@ def format_character_standings(
         f" · 前三 {len(standings.boards_within(3))} 个榜"
         f" · 前十 {len(standings.boards_within(10))} 个榜。"
     )
+    # "有哪些冠军" needs every board named, and the detailed rows below stop
+    # at ``limit``; a compact list is bounded by the number of boards.
+    firsts = standings.boards_within(1)
+    if firsts:
+        lines.append(
+            "第一名的榜："
+            + "、".join(
+                board.boss_name + ("" if board.best_as_main else "（队员）")
+                for board in firsts
+            )
+        )
+    runners_up = [
+        board for board in standings.boards_within(3) if board.best.rank > 1
+    ]
+    if runners_up:
+        lines.append(
+            "第二、三名的榜："
+            + "、".join(
+                f"{board.boss_name} #{board.best.rank}" for board in runners_up
+            )
+        )
     lines.append("")
     for board in standings.boards[: _bounded(limit)]:
         row = board.best
