@@ -925,7 +925,7 @@ class HandlerTests(unittest.TestCase):
 
                 self.plugin.tools.character = character
                 replies.append(
-                    await self.plugin.query_endfield_character(event, character="x")
+                    await self.plugin.zmdlogs_character_standings(event, character="x")
                 )
             # Nothing goes out while the model is still calling tools.
             self.assertEqual(event.sent, [])

@@ -668,8 +668,8 @@ class ZmdLogBotPlugin(Star):
     # out when the model has finished, if the turn drew exactly one. It
     # carries the numbers so the model never has to retype them.
 
-    @filter.llm_tool(name="query_endfield_board")
-    async def query_endfield_board(
+    @filter.llm_tool(name="zmdlogs_board_ranking")
+    async def zmdlogs_board_ranking(
         self,
         event: AstrMessageEvent,
         board: str = "",
@@ -681,7 +681,7 @@ class ZmdLogBotPlugin(Star):
         """查询终末地某个首领榜单的公开速通记录：前几名的用时、DPS、主C、
         阵容和 battleId，该榜各职业位的角色出场率，以及出现过的阵容组合各几次；
         board 只填首领或副本名；问的是某个角色（干员）的第一、冠军、排名时，
-        改用 query_endfield_character，不要在这里猜它是不是首领。
+        改用 zmdlogs_character_standings，不要在这里猜它是不是首领。
         给了角色名则只看带这个角色的记录，并统计它最常和谁同队。
         榜单留空则回答“最近有什么新纪录”：哪些榜的第一名被谁刷新了、
         新上传了哪些记录、哪个榜最近最活跃。
@@ -711,8 +711,8 @@ class ZmdLogBotPlugin(Star):
             ),
         )
 
-    @filter.llm_tool(name="query_endfield_battle")
-    async def query_endfield_battle(
+    @filter.llm_tool(name="zmdlogs_battle_report")
+    async def zmdlogs_battle_report(
         self,
         event: AstrMessageEvent,
         battle: str,
@@ -737,8 +737,8 @@ class ZmdLogBotPlugin(Star):
             event, lambda: self.tools.battle(battle, compare_with=compare_with)
         )
 
-    @filter.llm_tool(name="query_endfield_character")
-    async def query_endfield_character(
+    @filter.llm_tool(name="zmdlogs_character_standings")
+    async def zmdlogs_character_standings(
         self,
         event: AstrMessageEvent,
         character: str = "",
@@ -774,8 +774,8 @@ class ZmdLogBotPlugin(Star):
             lambda: self.tools.character(character, board, element, range),
         )
 
-    @filter.llm_tool(name="query_endfield_account")
-    async def query_endfield_account(
+    @filter.llm_tool(name="zmdlogs_account_records")
+    async def zmdlogs_account_records(
         self,
         event: AstrMessageEvent,
         account: str = "",
