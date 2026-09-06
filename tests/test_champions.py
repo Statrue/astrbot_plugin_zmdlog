@@ -75,6 +75,19 @@ class TalliesTests(unittest.TestCase):
                 self.assertLessEqual(tally.top_tens, tally.boards)
                 self.assertLessEqual(tally.boards, len(self.rankings))
 
+    def test_every_champion_is_listed_whatever_the_limit(self) -> None:
+        # A model reads absence from the list as zero; the cut must only
+        # ever drop characters with no first place, and say so.
+        tallies = character_tallies(self.rankings)
+        champions = [t.name for t in tallies if t.first_places > 0]
+
+        text = facts.format_character_tallies(tallies, board_count=2, limit=1)
+
+        for name in champions:
+            with self.subTest(character=name):
+                self.assertIn(f"{name} · 冠军", text)
+        self.assertIn("冠军 0 个，未列出", text)
+
     def test_the_text_states_the_counting_rule_and_the_leader(self) -> None:
         tallies = character_tallies(self.rankings)
 

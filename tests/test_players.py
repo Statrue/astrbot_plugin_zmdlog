@@ -61,6 +61,17 @@ class AccountTalliesTests(unittest.TestCase):
         )
         self.assertIsNone(account_tally(self.rankings, "usr_nobody"))
 
+    def test_every_champion_account_is_listed_whatever_the_limit(self) -> None:
+        tallies = account_tallies(self.rankings)
+        champions = [t.display_name for t in tallies if t.first_places > 0]
+
+        text = facts.format_account_tallies(tallies, board_count=2, limit=1)
+
+        for name in champions:
+            with self.subTest(account=name):
+                self.assertIn(f"{name} · 冠军", text)
+        self.assertIn("冠军 0 个，未列出", text)
+
     def test_the_text_leads_with_the_champion_and_states_the_rule(self) -> None:
         tallies = account_tallies(self.rankings)
 

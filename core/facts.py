@@ -558,7 +558,7 @@ def format_character_tallies(
         f"当主C的冠军最多：{top_main.name} {top_main.first_places_as_main} 个榜。"
     )
     lines.append("")
-    shown = tallies[: _bounded(limit)]
+    shown, rest_note = _champions_cut(tallies, limit, "角色")
     for tally in shown:
         lines.append(
             f"{tally.name} · 冠军 {tally.first_places}"
@@ -566,8 +566,8 @@ def format_character_tallies(
             f" · 前三 {tally.podiums} · 前十 {tally.top_tens}"
             f" · 上榜 {tally.boards} 个榜"
         )
-    if len(tallies) > len(shown):
-        lines.append(f"（另有 {len(tallies) - len(shown)} 个角色未列出，图里有）")
+    if rest_note:
+        lines.append(rest_note)
     if teams:
         lines.append("")
         lines.append("最常见的第一名阵容：")
@@ -670,7 +670,7 @@ def format_account_tallies(
     top = tallies[0]
     lines.append(f"冠军最多：{top.display_name} {top.first_places} 个榜。")
     lines.append("")
-    shown = tallies[: _bounded(limit)]
+    shown, rest_note = _champions_cut(tallies, limit, "账号")
     for tally in shown:
         habits = ""
         if tally.main_c:
@@ -680,8 +680,8 @@ def format_account_tallies(
             f" · 前三 {tally.podiums} · 前十 {tally.top_tens}"
             f" · 上榜 {tally.boards} 个榜 · 记录 {tally.records} 条{habits}"
         )
-    if len(tallies) > len(shown):
-        lines.append(f"（另有 {len(tallies) - len(shown)} 个账号未列出，图里有）")
+    if rest_note:
+        lines.append(rest_note)
     lines.append("")
     lines.append("以上是上传记录的计数，上传得多、打得快的人靠前，不代表别的。")
     return _joined(lines)
@@ -753,6 +753,26 @@ def with_source(text: str) -> str:
     if SOURCE_NOTE in text:
         return text
     return text.rstrip() + "\n\n" + SOURCE_NOTE
+
+
+def _champions_cut(tallies, limit: int, noun: str):
+    """Cut a champions list so that every champion is still on it.
+
+    A model reads absence from the list as zero — 伊冯, seventeenth with one
+    first place, was reported as having none — so the cut never drops a
+    tally with a first place while the cap allows, and the trailer says
+    what the cut characters have.
+    """
+
+    with_first = sum(1 for tally in tallies if tally.first_places > 0)
+    keep = max(_bounded(limit), min(with_first, MAX_ROW_LIMIT))
+    shown = tallies[:keep]
+    rest = tallies[keep:]
+    if not rest:
+        return shown, ""
+    if all(tally.first_places == 0 for tally in rest):
+        return shown, f"（其余 {len(rest)} 个{noun}冠军 0 个，未列出）"
+    return shown, f"（另有 {len(rest)} 个{noun}未列出，其中仍有冠军的见图）"
 
 
 def _when(value: str) -> str:
