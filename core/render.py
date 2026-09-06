@@ -322,9 +322,11 @@ class TemplateRenderer:
         age_seconds: float | None = None,
         element: str | None = None,
         elements: Mapping[str, str] | None = None,
+        profession: str | None = None,
         teams: tuple[TeamTally, ...] = (),
         usage: tuple[ProfessionUsage, ...] = (),
         window_label: str = "",
+        unseen: tuple[str, ...] = (),
         embed_fonts: bool = True,
     ) -> str:
         page = build_character_champions_page(
@@ -338,6 +340,8 @@ class TemplateRenderer:
             teams=teams,
             usage=usage,
             window_label=window_label,
+            profession=profession,
+            unseen=unseen,
         )
         return self._render(
             "character-champions/character-champions.html",

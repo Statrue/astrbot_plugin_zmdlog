@@ -33,6 +33,7 @@ from .models import (
     CharacterStatistics,
     PublicUserRankings,
 )
+from .professions import normalize_profession
 from .standings import (
     AccountTally,
     CharacterStandings,
@@ -535,17 +536,25 @@ def format_character_tallies(
     limit: int = DEFAULT_ROW_LIMIT,
     age_seconds: float | None = None,
     element: str | None = None,
+    profession: str | None = None,
     teams: tuple[TeamTally, ...] = (),
     usage: tuple[ProfessionUsage, ...] = (),
     window_label: str = "",
+    unseen: tuple[str, ...] = (),
 ) -> str:
-    """Every character's first places, podiums and top tens over all boards."""
+    """Every character's first places, podiums and top tens over all boards.
+
+    With ``profession`` the board is one class: every member is listed,
+    zeros included, and the fewest are named. ``unseen`` are the catalog's
+    characters (of that class) no public record fields.
+    """
 
     as_of = ""
     if age_seconds is not None:
         minutes = int(age_seconds // 60)
         as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
-    who = "各角色" if element is None else f"{element}属性角色"
+    who = _who(element, profession)
+    noun = "角色" if element is None and profession is None else who
     scope = (
         f"全部 {board_count} 个榜的第一名记录"
         if not window_label
@@ -558,11 +567,12 @@ def format_character_tallies(
         "",
     ]
     if not tallies:
-        lines.append(
-            "读过的榜单里没有任何公开记录。"
-            if element is None
-            else f"没有{element}属性的角色进过前三。"
-        )
+        if element is None and profession is None:
+            lines.append("读过的榜单里没有任何公开记录。")
+        else:
+            lines.append(f"公开记录里没有{who}出场。")
+        if unseen:
+            lines.append(f"从未出现在公开记录里的{noun}：{'、'.join(unseen)}")
         return _joined(lines)
     top_team = max(tallies, key=lambda t: t.first_places)
     top_main = max(tallies, key=lambda t: t.first_places_as_main)
@@ -571,7 +581,11 @@ def format_character_tallies(
         f"当主C的冠军最多：{top_main.name} {top_main.first_places_as_main} 个榜。"
     )
     lines.append("")
-    shown, rest_note = _champions_cut(tallies, limit, "角色")
+    if profession is not None:
+        # One class is a handful: list every member, zeros included.
+        shown, rest_note = tallies, ""
+    else:
+        shown, rest_note = _champions_cut(tallies, limit, "角色", name_zeros=True)
     for tally in shown:
         lines.append(
             f"{tally.name} · 冠军 {tally.first_places}"
@@ -581,6 +595,18 @@ def format_character_tallies(
         )
     if rest_note:
         lines.append(rest_note)
+    if profession is not None:
+        # The question a class board gets asked (2026-09-07: 谁是冠军最少的
+        # 突击, answered 没法拍板 while 大潘 and 艾维文娜 sat at zero).
+        fewest = min(tally.first_places for tally in tallies)
+        least = [tally.name for tally in tallies if tally.first_places == fewest]
+        if unseen and fewest > 0:
+            fewest, least = 0, list(unseen)
+        elif unseen:
+            least.extend(unseen)
+        lines.append(f"冠军最少：{'、'.join(least)}（{fewest} 个）")
+    if unseen:
+        lines.append(f"从未出现在公开记录里的{noun}：{'、'.join(unseen)}")
     if teams:
         lines.append("")
         lines.append("最常见的第一名阵容：")
@@ -591,6 +617,8 @@ def format_character_tallies(
         lines.append("")
         lines.append("各职业位出场率（带该角色的记录占全部记录的比例）：")
         for group in usage:
+            if profession and normalize_profession(group.profession) != profession:
+                continue
             chips = ", ".join(
                 f"{entry.name} {entry.share:g}%" for entry in group.entries[:4]
             )
@@ -768,13 +796,15 @@ def with_source(text: str) -> str:
     return text.rstrip() + "\n\n" + SOURCE_NOTE
 
 
-def _champions_cut(tallies, limit: int, noun: str):
+def _champions_cut(tallies, limit: int, noun: str, *, name_zeros: bool = False):
     """Cut a champions list so that every champion is still on it.
 
     A model reads absence from the list as zero — 伊冯, seventeenth with one
     first place, was reported as having none — so the cut never drops a
     tally with a first place while the cap allows, and the trailer says
-    what the cut characters have.
+    what the cut characters have. ``name_zeros`` names them: a roster is
+    some thirty characters, so "who has none" is answerable in one line,
+    while the accounts with none are hundreds and stay a count.
     """
 
     with_first = sum(1 for tally in tallies if tally.first_places > 0)
@@ -784,8 +814,19 @@ def _champions_cut(tallies, limit: int, noun: str):
     if not rest:
         return shown, ""
     if all(tally.first_places == 0 for tally in rest):
+        if name_zeros:
+            names = "、".join(tally.name for tally in rest)
+            return shown, f"（其余 {len(rest)} 个{noun}冠军 0 个：{names}）"
         return shown, f"（其余 {len(rest)} 个{noun}冠军 0 个，未列出）"
     return shown, f"（另有 {len(rest)} 个{noun}未列出，其中仍有冠军的见图）"
+
+
+def _who(element: str | None, profession: str | None) -> str:
+    """各角色, 自然属性角色, 突击角色, 自然属性突击角色."""
+
+    if element is None and profession is None:
+        return "各角色"
+    return (f"{element}属性" if element else "") + (profession or "") + "角色"
 
 
 def _when(value: str) -> str:

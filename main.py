@@ -745,6 +745,7 @@ class ZmdLogBotPlugin(Star):
         board: str = "",
         element: str = "",
         range: str = "",
+        profession: str = "",
     ):
         """凡是问某个角色（干员）的“第一、冠军、第一名、排第几、成绩、上了哪些榜”，
         例如“别礼的第一呢”“洛茜有几个冠军”，都用这个工具，把名字原样填进 character：
@@ -755,8 +756,9 @@ class ZmdLogBotPlugin(Star):
         只查一个对象时会自动附长图，图里有完整数值，你不要复述数字，只解读；
         这次回答里查了多个对象就不附图，不要让用户看图。
         DPS 名次只看去极值后的正常样本，正常样本不足的角色没有名次，
-        记录多但分布很散时也会这样。角色名留空则回答“谁的冠军最多”：
-        每个角色的队伍在全部榜单拿下的第一名、前三、前十各几个。
+        记录多但分布很散时也会这样。角色名留空则回答“谁的冠军最多/最少”：
+        每个角色的队伍在全部榜单拿下的第一名、前三、前十各几个；填了 profession
+        就把该职业的角色全部列出，0 个也列，从没上过榜的也点名。
         这些数字来自公开速通记录，受玩家水平和配装影响，不是角色强度的判据。
         数据全部来自 ZMDLogs 上玩家自愿上传的公开记录，不是全服统计，回答时要说明。
 
@@ -767,11 +769,15 @@ class ZmdLogBotPlugin(Star):
                 或 电磁；问“物理队有什么冠军”就填 物理
             range(string): 角色名留空时只算这段时间的记录，填 7d、14d 或 30d；
                 问“最近一周谁冠军多”就填 7d，不限时间留空
+            profession(string): 角色名留空时只看该职业的角色，填 先锋、近卫、重装、
+                术士（术师）、突击 或 辅助；问“谁是冠军最少的突击”就填 突击
         """
 
         return await self._run_tool(
             event,
-            lambda: self.tools.character(character, board, element, range),
+            lambda: self.tools.character(
+                character, board, element, range, profession=profession
+            ),
         )
 
     @filter.llm_tool(name="zmdlogs_account_records")

@@ -49,16 +49,19 @@ from .matcher import (
 )
 from .messages import shorten
 from .models import BossRanking, HotBossCard
+from .professions import PROFESSIONS, normalize_profession
 from .render import LongImageRenderer
 from .settings import PluginSettings
 from .standings import (
     account_tallies,
     account_tally,
+    by_profession,
     character_standings,
     character_tallies,
     first_place_teams,
     profession_usage,
     roster_character_names,
+    unseen_characters,
 )
 
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
@@ -261,7 +264,12 @@ class ToolService:
     # --- characters and accounts --------------------------------------------------
 
     async def character(
-        self, name: str, board: str = "", element: str = "", time_range: str = ""
+        self,
+        name: str,
+        board: str = "",
+        element: str = "",
+        time_range: str = "",
+        profession: str = "",
     ) -> ToolAnswer:
         if board:
             return await self._character_on_board(name, board)
@@ -269,7 +277,12 @@ class ToolService:
             wanted = self._element(element)
             if isinstance(wanted, ToolAnswer):
                 return wanted
-            return await self._champions(wanted or None, time_range=time_range)
+            role = self._profession(profession)
+            if isinstance(role, ToolAnswer):
+                return role
+            return await self._champions(
+                wanted or None, profession=role or None, time_range=time_range
+            )
         # Standings come from the ranking index and cover every rarity; the
         # DPS distribution needs a six-star key and is added when there is one.
         index = self._data.ranking_index
@@ -307,12 +320,18 @@ class ToolService:
         return ToolAnswer(facts.join_sections(*parts), image)
 
     async def _champions(
-        self, element: str | None = None, *, time_range: str = ""
+        self,
+        element: str | None = None,
+        *,
+        profession: str | None = None,
+        time_range: str = "",
     ) -> ToolAnswer:
         """Every character's first places over all boards, most first.
 
         ``element`` keeps only the characters of that element, which is how
         "物理队有什么冠军" is answered: the board, restricted to them.
+        ``profession`` restricts it to one class and lists every member,
+        zeros included, which is how "谁是冠军最少的突击" is answered.
         ``time_range`` (7d / 14d / 30d) narrows every board to a window.
         """
 
@@ -321,10 +340,20 @@ class ToolService:
         await index.ensure_filled()
         rankings = tuple(entry.ranking for entry in index.entries())
         elements = await self._elements()
+        professions = await self._professions()
         since = window_start(span, now=datetime.now(UTC))
         tallies = character_tallies(rankings, since=since)
         if element is not None:
             tallies = tuple(t for t in tallies if elements.get(t.name) == element)
+        if profession is not None:
+            tallies = by_profession(tallies, profession)
+        # Who the catalog knows and no record fields; not worked out for an
+        # element alone, which the catalog dict here does not carry.
+        unseen = (
+            unseen_characters(tallies, professions, profession=profession)
+            if element is None
+            else ()
+        )
         teams = first_place_teams(rankings, since=since)
         usage = profession_usage(rankings, since=since)
         label = window_label(span)
@@ -335,9 +364,11 @@ class ToolService:
             limit=15,
             age_seconds=age,
             element=element,
+            profession=profession,
             teams=teams,
             usage=usage,
             window_label=label,
+            unseen=unseen,
         )
         image = await self._render(
             lambda renderer: renderer.render_character_champions(
@@ -348,9 +379,11 @@ class ToolService:
                 age_seconds=age,
                 element=element,
                 elements=elements,
+                profession=profession,
                 teams=teams,
                 usage=usage,
                 window_label=label,
+                unseen=unseen,
             )
         )
         return ToolAnswer(text, image)
@@ -376,6 +409,31 @@ class ToolService:
         except ZmdLogsClientError:
             return {}
         return {name: entry.element for name, entry in types.items()}
+
+    @staticmethod
+    def _profession(text: str) -> str | ToolAnswer:
+        """The records' label for a profession the model typed; "" for none."""
+
+        if not text.strip():
+            return ""
+        label = normalize_profession(text)
+        if label is None:
+            return ToolAnswer(
+                f"「{shorten(text)}」不是职业，职业只有：{'、'.join(PROFESSIONS)}"
+                "（术师也认）。"
+            )
+        return label
+
+    async def _professions(self) -> dict[str, str]:
+        """Name to profession as the catalog spells it; empty when unreachable."""
+
+        try:
+            types = await self._data.get_character_types()
+        except ZmdLogsClientError:
+            return {}
+        return {
+            name: entry.profession for name, entry in types.items() if entry.profession
+        }
 
     async def _boss_statistics(self, key: str | None):
         """The six-star distribution, or nothing; the standings stand without it."""

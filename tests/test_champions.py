@@ -86,7 +86,7 @@ class TalliesTests(unittest.TestCase):
         for name in champions:
             with self.subTest(character=name):
                 self.assertIn(f"{name} · 冠军", text)
-        self.assertIn("冠军 0 个，未列出", text)
+        self.assertIn("冠军 0 个：", text)
 
     def test_the_text_states_the_counting_rule_and_the_leader(self) -> None:
         tallies = character_tallies(self.rankings)

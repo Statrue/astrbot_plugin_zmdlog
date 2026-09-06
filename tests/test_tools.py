@@ -105,7 +105,11 @@ class FakeData:
         from core.models import CharacterType
 
         lead = self.ranking.rows[0].character_name if self.ranking else "洛茜"
-        return {lead: CharacterType(lead, "自然", "手铳")}
+        return {
+            lead: CharacterType(lead, "自然", "手铳", "近卫"),
+            # A catalog character of the same class that no record fields.
+            "未上榜者": CharacterType("未上榜者", "物理", "长枪", "近卫"),
+        }
 
     catalog_refreshes = 0
 
@@ -282,6 +286,23 @@ class ToolServiceTests(unittest.TestCase):
         self.assertIsNone(nobody.image_path)
         self.assertIn("没有主C 为电磁属性", nobody.text)
         self.assertIn("不是属性", nonsense.text)
+
+    def test_a_profession_lists_the_whole_class_with_its_zeros(self) -> None:
+        # 2026-09-07: 谁是冠军最少的突击 was answered 没法拍板 while two 突击
+        # sat at zero, unnamed by the text.
+        lead = self.ranking.rows[0].character_name
+
+        guards = run(self.service.character("", profession="近卫"))
+        casters = run(self.service.character("", profession="术师"))
+        nonsense = run(self.service.character("", profession="刺客"))
+
+        self.assertIn("近卫角色", guards.text)
+        self.assertIn(lead, guards.text)
+        self.assertIn("冠军最少：", guards.text)
+        self.assertIn("从未出现在公开记录里的近卫角色：未上榜者", guards.text)
+        self.assertEqual(guards.image_path, "/tmp/character_champions.png")
+        self.assertIn("术士角色", casters.text)
+        self.assertIn("不是职业", nonsense.text)
 
     def test_a_range_narrows_the_champions_board_to_a_window(self) -> None:
         windowed = run(self.service.character("", time_range="7d"))

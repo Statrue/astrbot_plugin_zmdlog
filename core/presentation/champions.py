@@ -64,10 +64,16 @@ class CharacterChampionsPage:
     others: tuple[str, ...]
     # The element the board was filtered to, if any.
     element: str | None = None
+    # The profession the board was restricted to, if any: then every member
+    # is a row, zeros included, and ``others`` is empty.
+    profession: str | None = None
     # "近 7 天" and the like when the records were narrowed to a window.
     window_label: str = ""
     teams: tuple[TeamComboView, ...] = ()
     usage: tuple[ChampionUsageView, ...] = ()
+    # Catalog characters (of the profession, when restricted) that no public
+    # record fields.
+    unseen: tuple[str, ...] = ()
 
 
 def build_character_champions_page(
@@ -79,13 +85,21 @@ def build_character_champions_page(
     age_seconds: float | None = None,
     element: str | None = None,
     elements: Mapping[str, str] | None = None,
+    profession: str | None = None,
     teams: tuple[TeamTally, ...] = (),
     usage: tuple[ProfessionUsage, ...] = (),
     window_label: str = "",
+    unseen: tuple[str, ...] = (),
 ) -> CharacterChampionsPage:
-    """One row per character with a podium, most first places first."""
+    """One row per character with a podium, most first places first.
 
-    ranked = [tally for tally in tallies if tally.podiums]
+    Restricted to a profession, every member is a row, zeros included: the
+    class is a handful, and the zeros are the answer to 谁冠军最少.
+    """
+
+    ranked = (
+        list(tallies) if profession else [tally for tally in tallies if tally.podiums]
+    )
     peak = board_count
     known = elements or {}
     rows = tuple(
@@ -138,18 +152,20 @@ def build_character_champions_page(
         for group in usage
     )
     scope = "全部榜单" if not window_label else f"{window_label}各榜最快记录"
+    who = (
+        "带该角色"
+        if not (element or profession)
+        else (f"{element}属性" if element else "") + (profession or "") + "角色"
+    )
     return CharacterChampionsPage(
         header=PageHeader(
             title=(
                 "角色冠军榜"
                 + (f" · {element}" if element else "")
+                + (f" · {profession}" if profession else "")
                 + (f" · {window_label}" if window_label else "")
             ),
-            subtitle=(
-                f"带该角色的队伍在{scope}拿下的第一名、前三与前十"
-                if element is None
-                else f"{element}属性角色的队伍在{scope}拿下的第一名、前三与前十"
-            ),
+            subtitle=f"{who}的队伍在{scope}拿下的第一名、前三与前十",
             query=query,
             matched_name=f"全部 {board_count} 个榜单 · 角色冠军榜",
             target_type="角色排名",
@@ -160,9 +176,15 @@ def build_character_champions_page(
         top_main=top_main,
         top_team=top_team,
         element=element,
+        profession=profession,
         window_label=window_label,
         teams=team_views,
         usage=usage_views,
         rows=rows,
-        others=tuple(tally.name for tally in tallies if not tally.podiums),
+        others=(
+            ()
+            if profession
+            else tuple(tally.name for tally in tallies if not tally.podiums)
+        ),
+        unseen=unseen,
     )

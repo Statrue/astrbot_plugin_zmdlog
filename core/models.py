@@ -338,6 +338,9 @@ class CharacterType:
     name: str
     element: str
     weapon_type: str
+    # ``professionName`` as the catalog spells it (术师 for the caster); "" when
+    # the entry has none. ``professions.normalize_profession`` reads it.
+    profession: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -460,6 +463,7 @@ def parse_character_types(payload: Any) -> tuple[CharacterType, ...]:
         name = value.get("name")
         element = value.get("charTypeName")
         weapon = value.get("weaponTypeName")
+        profession = value.get("professionName")
         if not isinstance(name, str) or not isinstance(element, str):
             continue
         name, element = name.strip(), element.strip()
@@ -470,6 +474,7 @@ def parse_character_types(payload: Any) -> tuple[CharacterType, ...]:
                 name=name,
                 element=element,
                 weapon_type=weapon.strip() if isinstance(weapon, str) else "",
+                profession=profession.strip() if isinstance(profession, str) else "",
             )
         )
     return tuple(types)

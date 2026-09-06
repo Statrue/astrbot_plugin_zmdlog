@@ -7,11 +7,12 @@ every record on that board. Everything here is counting over rankings the
 index already holds; nothing is fetched.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
 from .models import BossRanking, BossRankingRosterEntry, BossRankingRow
+from .professions import normalize_profession
 from .timestamps import parse_timestamp
 
 PROFESSION_ORDER = ("近卫", "重装", "辅助", "突击", "术士", "先锋")
@@ -440,3 +441,45 @@ def account_tally(
             return tally
     return None
 
+
+# --- one profession --------------------------------------------------------------
+
+
+def by_profession(
+    tallies: tuple[CharacterTally, ...], profession: str
+) -> tuple[CharacterTally, ...]:
+    """The tallies of one profession, in the order given.
+
+    A profession is a handful of characters, so a board restricted to it
+    lists every one — "谁是冠军最少的突击" is answered by the zeros, which
+    the full board folds into a count.
+    """
+
+    return tuple(
+        tally
+        for tally in tallies
+        if normalize_profession(tally.profession) == profession
+    )
+
+
+def unseen_characters(
+    tallies: tuple[CharacterTally, ...],
+    catalog: Mapping[str, str],
+    *,
+    profession: str | None = None,
+) -> tuple[str, ...]:
+    """Catalog characters (of ``profession``, when given) that no tally covers.
+
+    ``catalog`` maps a name to its profession as the game data spells it. A
+    character no public record fields has no tally at all, which a reader
+    takes for "not a member of the profession" rather than "zero of
+    everything"; naming them keeps 冠军最少 honest.
+    """
+
+    seen = {tally.name for tally in tallies}
+    return tuple(
+        name
+        for name, label in catalog.items()
+        if name not in seen
+        and (profession is None or normalize_profession(label) == profession)
+    )

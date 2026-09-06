@@ -74,11 +74,13 @@ from .routing import DEFAULT_RANKING_TOP, RouteKind, RouteRequest
 from .settings import PluginSettings
 from .standings import (
     account_tallies,
+    by_profession,
     character_standings,
     character_tallies,
     first_place_teams,
     profession_usage,
     roster_character_names,
+    unseen_characters,
 )
 
 # 战报 / 配装 / 技能 / 技能轴 share one argument shape and one lookup; only
@@ -295,6 +297,7 @@ class QueryService:
             return await self._render_character_standings(
                 route.query,
                 element_filter=route.element_filter,
+                profession_filter=route.profession_filter,
                 time_range=route.stats_range,
             )
 
@@ -687,11 +690,23 @@ class QueryService:
             return {}
         return {name: entry.element for name, entry in types.items()}
 
+    async def _character_professions(self) -> dict[str, str]:
+        """Name to profession as the catalog spells it; empty when unreachable."""
+
+        try:
+            types = await self._data.get_character_types()
+        except ZmdLogsClientError:
+            return {}
+        return {
+            name: entry.profession for name, entry in types.items() if entry.profession
+        }
+
     async def _render_character_standings(
         self,
         query: str,
         *,
         element_filter: str | None = None,
+        profession_filter: str | None = None,
         time_range: str = "all",
     ) -> Outcome:
         """Where the teams fielding one character stand on every board.
@@ -713,6 +728,14 @@ class QueryService:
                     tally for tally in tallies
                     if elements.get(tally.name) == element_filter
                 )
+            unseen: tuple[str, ...] = ()
+            if profession_filter is not None:
+                tallies = by_profession(tallies, profession_filter)
+                unseen = unseen_characters(
+                    tallies,
+                    await self._character_professions(),
+                    profession=profession_filter,
+                )
             image_path = await self._renderer().render_character_champions(
                 tallies,
                 board_count=len(rankings),
@@ -721,9 +744,11 @@ class QueryService:
                 age_seconds=index.oldest_age_seconds(),
                 element=element_filter,
                 elements=elements,
+                profession=profession_filter,
                 teams=first_place_teams(rankings, since=since),
                 usage=profession_usage(rankings, since=since),
                 window_label=window_label(time_range),
+                unseen=unseen,
             )
             return Outcome(image_path=image_path)
         resolution = resolve_character_name(query, roster_character_names(rankings))
