@@ -174,7 +174,7 @@
 .rec-bar i {
   position: absolute;
   inset: 0 auto 0 0;
-  background: var(--data);
+  background: var(--yellow);
 }
 
 .rec-count {

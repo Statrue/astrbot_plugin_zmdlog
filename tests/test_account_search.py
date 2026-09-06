@@ -162,9 +162,9 @@ class AccountMedalTests(unittest.TestCase):
             account, query="q", web_base_url="https://zmdlogs.com"
         )
         self.assertEqual(len(page.rows), 4)
-        for rank in (1, 2, 3):
-            self.assertIn(f'class="rank-{rank}"', html)
-        self.assertNotIn('class="rank-4"', html)
+        self.assertEqual(html.count('class="standings-row is-first"'), 1)
+        self.assertEqual(html.count('class="standings-row is-podium"'), 2)
+        self.assertEqual(html.count('class="standings-row"'), 1)
 
 
 if __name__ == "__main__":

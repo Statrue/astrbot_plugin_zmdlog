@@ -8,7 +8,7 @@ import tempfile
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -32,6 +32,7 @@ from .models import (
     BattleDetailSummary,
     BattleExport,
     BossRanking,
+    BossRankingRow,
     CharacterBossStatistics,
     CharacterStatistics,
     HotBossCard,
@@ -425,12 +426,18 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str,
+        rows_by_battle: Mapping[str, BossRankingRow] | None = None,
+        listed_boards: Collection[str] | None = None,
+        elements: Mapping[str, str] | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_account_page(
             account,
             query=query,
             web_base_url=web_base_url,
+            rows_by_battle=rows_by_battle,
+            listed_boards=listed_boards,
+            elements=elements,
         )
         return self._render(
             "account/account.html",

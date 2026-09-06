@@ -284,47 +284,6 @@
   padding-top: 1px;
 }
 
-.team-member {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  color: var(--steel);
-  font-size: 11.5px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.team-member i {
-  color: var(--muted);
-  font-style: normal;
-  font-weight: 600;
-}
-
-.team-member .avatar {
-  width: 22px;
-  height: 22px;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.team-member.is-lead {
-  color: var(--ink);
-  font-weight: 700;
-}
-
-.team-member.is-lead .avatar {
-  border-color: var(--action);
-  box-shadow: 0 0 0 1px var(--action);
-}
-
-/* 全队匹配时高亮被筛选的那个位置，与主 C 的黄圈区分开 */
-.team-member.is-match {
-  color: var(--ink);
-  font-weight: 700;
-  box-shadow: inset 0 -7px 0 var(--yellow-soft);
-}
-
 /* ---------- 回退提示 ---------- */
 
 .board-fallback {
@@ -336,20 +295,4 @@
   font-size: 12.5px;
   font-weight: 600;
   line-height: 1.5;
-}
-
-/* ---------- 口径说明 ---------- */
-
-.board-legend {
-  margin: 12px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  line-height: 1.6;
-}
-
-.board-legend::before {
-  content: "// ";
-  color: var(--faint);
 }

@@ -548,9 +548,18 @@ class ToolService:
         held = tuple(entry.ranking for entry in self._data.ranking_index.entries())
         habits = account_tally(held, account_id) if held else None
         text = facts.format_account(rankings, habits=habits)
+        rows, listed = await self._data.index_rows_for(
+            row.battle_id for row in rankings.rankings
+        )
+        elements = await self._data.character_elements()
         image = await self._render(
             lambda renderer: renderer.render_account(
-                rankings, query=query, web_base_url=self._web_base_url
+                rankings,
+                query=query,
+                web_base_url=self._web_base_url,
+                rows_by_battle=rows,
+                listed_boards=listed,
+                elements=elements,
             )
         )
         return ToolAnswer(text, image)

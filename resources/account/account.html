@@ -1,6 +1,6 @@
 {% extends "common/base.html" %}
 
-{% block extra_styles %}{% include "account/account.css" %}{% endblock %}
+{% block extra_styles %}{% include "common/standings-rows.css" %}{% include "account/account.css" %}{% endblock %}
 
 {% block hero_facts %}
 <div class="hero-facts">
@@ -19,33 +19,63 @@
 
 <div class="section-heading">
   <h2>各首领最佳记录</h2>
-  <span class="section-note">DPS 为队伍总 DPS</span>
+  <span class="section-note">每个榜单该账号的最好一条公开记录，按名次排 · 名次是该记录在该榜全部记录中的位置</span>
 </div>
 
 {% if page.rows %}
-<div class="account-table-wrap">
-  <table class="account-table">
-    <thead>
-      <tr>
-        <th>首领</th><th>排名</th><th>通关时间</th><th>队伍总 DPS</th><th>阵容</th><th>日期</th>
-        {% if page.show_contract_score %}<th>合约</th>{% endif %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in page.rows %}
-      <tr{% if row.rank <= 3 %} class="rank-{{ row.rank }}"{% endif %}>
-        <td><strong>{{ row.boss_name }}</strong>{% if row.dungeon_name %}<span>{{ row.dungeon_name }}</span>{% endif %}</td>
-        <td><strong class="account-rank">#{{ row.rank }}</strong><span>{{ row.percentile }}</span></td>
-        <td class="numeric">{{ row.duration }}</td>
-        <td class="numeric account-dps">{{ row.total_dps }}</td>
-        <td><div class="account-roster">{% for member in row.roster %}<span>{{ member }}</span>{% endfor %}</div></td>
-        <td class="account-date">{{ row.battle_date }}</td>
-        {% if page.show_contract_score %}<td>{% if row.contract_score is not none %}{{ row.contract_score }} 分{% else %}—{% endif %}</td>{% endif %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<section class="standings">
+  <div class="standings-head" aria-hidden="true">
+    <span class="standings-head-rank">名次 · 百分位</span>
+    <span class="standings-head-board">榜单 · 阵容</span>
+    <span class="standings-head-record">记录</span>
+    <span class="standings-head-time">用时</span>
+    <span class="standings-head-dps">队伍 DPS</span>
+  </div>
+  <ol class="standings-rows">
+    {% for row in page.rows %}
+    <li class="standings-row{% if row.rank == 1 %} is-first{% elif row.rank <= 3 %} is-podium{% endif %}">
+      <div class="standings-rank">
+        <b>{{ row.rank }}</b>
+        <i>{{ row.percentile }}</i>
+      </div>
+      <div class="standings-board">
+        <strong>{{ row.boss_name }}</strong>
+        {% if row.dungeon_name %}<span>{{ row.dungeon_name }}</span>{% endif %}
+      </div>
+      <div class="standings-record">
+        <strong>{% if row.character_name %}主 C {{ row.character_name }}{% elif row.board_listed %}主 C 未知{% else %}榜单已下线{% endif %}</strong>
+        <span>战斗日期 <b>{{ row.battle_date }}</b>{% if row.contract_score %} · 合约 <b>{{ row.contract_score }} 分</b>{% endif %}</span>
+      </div>
+      <div class="standings-time">
+        <span>用时</span>
+        <b>{{ row.duration }}</b>
+      </div>
+      <div class="standings-dps">
+        <span>队伍 DPS</span>
+        <b>{{ row.total_dps }}</b>
+      </div>
+      <div class="standings-team">
+        {% for member in row.roster %}
+        <span class="team-member{% if row.character_name and member.character_name == row.character_name %} is-lead{% endif %}">
+          <span class="avatar{% if member.element_key %} el-{{ member.element_key }}{% endif %}">
+            {{ member.character_initial }}
+            {% if member.avatar_url %}
+            <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
+            {% endif %}
+          </span>
+          {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
+        </span>
+        {% endfor %}
+      </div>
+      <div class="standings-battle">{{ row.battle_id }}</div>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="board-legend">
+    黄圈头像为该场主 C；名次下方为 ZMDLogs 公开排名的百分位；用时为通关时间，队伍 DPS 为整队合计；已下线的榜只有阵容名单。
+    <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
+  </p>
+</section>
 {% else %}
 <div class="empty-ranking">该账号暂无当前公开榜单记录</div>
 {% endif %}

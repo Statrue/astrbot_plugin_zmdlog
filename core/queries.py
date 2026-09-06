@@ -614,8 +614,18 @@ class QueryService:
                 raise
             self._logger.warning("ZmdLogBot API request failed: %s", exc.code)
             return Outcome(message=messages.ACCOUNT_NOT_FOUND)
+        # Avatars, professions and the main C of each record come off the
+        # ranking index; the user endpoint only names the roster.
+        rows, listed = await self._data.index_rows_for(
+            row.battle_id for row in account.rankings
+        )
         image_path = await renderer.render_account(
-            account, query=query, web_base_url=self._web_base_url
+            account,
+            query=query,
+            web_base_url=self._web_base_url,
+            rows_by_battle=rows,
+            listed_boards=listed,
+            elements=await self._data.character_elements(),
         )
         return Outcome(image_path=image_path)
 
@@ -681,26 +691,6 @@ class QueryService:
         )
         return Outcome(image_path=image_path)
 
-    async def _character_elements(self) -> dict[str, str]:
-        """Name to element label; empty when the catalog is unreachable."""
-
-        try:
-            types = await self._data.get_character_types()
-        except ZmdLogsClientError:
-            return {}
-        return {name: entry.element for name, entry in types.items()}
-
-    async def _character_professions(self) -> dict[str, str]:
-        """Name to profession as the catalog spells it; empty when unreachable."""
-
-        try:
-            types = await self._data.get_character_types()
-        except ZmdLogsClientError:
-            return {}
-        return {
-            name: entry.profession for name, entry in types.items() if entry.profession
-        }
-
     async def _render_character_standings(
         self,
         query: str,
@@ -719,7 +709,7 @@ class QueryService:
         index = self._data.ranking_index
         await index.ensure_filled()
         rankings = tuple(entry.ranking for entry in index.entries())
-        elements = await self._character_elements()
+        elements = await self._data.character_elements()
         if not query.strip():
             since = window_start(time_range, now=datetime.now(UTC))
             tallies = character_tallies(rankings, since=since)
@@ -733,7 +723,7 @@ class QueryService:
                 tallies = by_profession(tallies, profession_filter)
                 unseen = unseen_characters(
                     tallies,
-                    await self._character_professions(),
+                    await self._data.character_professions(),
                     profession=profession_filter,
                 )
             image_path = await self._renderer().render_character_champions(
@@ -963,7 +953,7 @@ class QueryService:
                             f"「{'、'.join(resolved)}」的记录。"
                         )
                     )
-        elements = await self._character_elements()
+        elements = await self._data.character_elements()
         element_filter = pending.element_filter
         if element_filter is not None and not any(
             elements.get(row.character_name) == element_filter for row in ranking.rows

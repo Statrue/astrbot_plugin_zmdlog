@@ -111,6 +111,17 @@ class FakeData:
             "未上榜者": CharacterType("未上榜者", "物理", "长枪", "近卫"),
         }
 
+    async def index_rows_for(self, battle_ids):
+        return {}, None
+
+    async def character_elements(self):
+        types = await self.get_character_types()
+        return {name: entry.element for name, entry in types.items()}
+
+    async def character_professions(self):
+        types = await self.get_character_types()
+        return {name: entry.profession for name, entry in types.items()}
+
     catalog_refreshes = 0
 
     async def get_character_catalog(self, *, refresh=False):

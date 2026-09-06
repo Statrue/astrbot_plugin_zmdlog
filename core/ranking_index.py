@@ -17,13 +17,14 @@ data than the index has simply gets a fetch, which also updates the index.
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 
 from .client import ZmdLogsClientError
 from .logs import LogSink
 from .models import (
     BossRanking,
+    BossRankingRow,
     HotBossCard,
     PublicUserRanking,
     PublicUserRankings,
@@ -355,3 +356,27 @@ def account_rankings(
         rankings=tuple(rankings),
     )
 
+
+def rows_by_battle(
+    entries: tuple[IndexEntry, ...],
+    battle_ids: Iterable[str],
+) -> dict[str, BossRankingRow]:
+    """The held ranking row of every battle id the index knows.
+
+    An account's best record on a board is a row of that board's ranking,
+    so the roster avatars, professions and main C that the user endpoint
+    leaves out can be read off the index without a request. Ids the index
+    does not hold — a retired board, or a fill still in progress — are
+    simply absent from the result and the caller falls back.
+    """
+
+    wanted = set(battle_ids)
+    found: dict[str, BossRankingRow] = {}
+    for entry in entries:
+        if not wanted:
+            break
+        for row in entry.ranking.rows:
+            if row.battle_id in wanted:
+                found[row.battle_id] = row
+                wanted.discard(row.battle_id)
+    return found

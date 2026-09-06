@@ -9,6 +9,7 @@ every command into an error.
 
 import asyncio
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from .models import (
     BattleDetailSummary,
     BattleExport,
     BossRanking,
+    BossRankingRow,
     CharacterBossStatistics,
     CharacterStatistics,
     CharacterType,
@@ -28,7 +30,7 @@ from .models import (
     parse_hot_bosses,
 )
 from .persistence import JsonStore, load_json, save_json
-from .ranking_index import RankingIndex, account_rankings
+from .ranking_index import RankingIndex, account_rankings, rows_by_battle
 from .settings import PluginSettings
 
 HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
@@ -365,6 +367,48 @@ class ZmdLogsDataSource:
             ),
         )
         return result.value
+
+    async def character_elements(self) -> dict[str, str]:
+        """Name to element label; empty when the catalog is unreachable."""
+
+        try:
+            types = await self.get_character_types()
+        except ZmdLogsClientError:
+            return {}
+        return {name: entry.element for name, entry in types.items()}
+
+
+    async def character_professions(self) -> dict[str, str]:
+        """Name to profession as the catalog spells it; empty when unreachable."""
+
+        try:
+            types = await self.get_character_types()
+        except ZmdLogsClientError:
+            return {}
+        return {
+            name: entry.profession for name, entry in types.items() if entry.profession
+        }
+
+    async def index_rows_for(
+        self, battle_ids: Iterable[str]
+    ) -> tuple[dict[str, BossRankingRow], frozenset[str] | None]:
+        """The held ranking rows of some battles, and the boards the index lists.
+
+        Waits for a fill in progress (a cold boot), never for a failed one:
+        when the board list cannot be read the page draws names and initials
+        instead of failing. The second value is the set of board slugs the
+        index knows, ``None`` while it is still incomplete — with it a
+        caller can tell a retired board from one not read yet.
+        """
+
+        index = self.ranking_index
+        try:
+            await index.ensure_filled()
+        except ZmdLogsClientError:
+            pass
+        rows = rows_by_battle(index.entries(), battle_ids)
+        listed = frozenset(index.slugs) if index.complete else None
+        return rows, listed
 
     async def get_public_user_rankings(self, account_id: str) -> PublicUserRankings:
         result = await self.account_cache.get_or_load(

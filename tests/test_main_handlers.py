@@ -165,7 +165,14 @@ class HandlerTests(unittest.TestCase):
             # network, so without these the suite would measure upstream.
             raise ZmdLogsClientError("offline")
 
+        async def unfilled():
+            # The ranking index stays empty in handler tests: the pages that
+            # read it fall back to names and initials, and nothing reaches
+            # the network through its fill.
+            return None
+
         self.plugin.data.list_hot_bosses = list_hot_bosses
+        self.plugin.data.ranking_index.ensure_filled = unfilled
         self.plugin.data.get_battle_export = offline
         self.plugin.data.get_character_statistics = offline
         self.plugin.data.get_equip_suits = offline
