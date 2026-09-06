@@ -21,6 +21,7 @@ obeyed; the tool docstrings tell the model the same.
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import timedelta, timezone
 
 from .events import CHAMPION_CHANGE, NEW_RECORD, BoardActivity, RecordEvent
 from .loadout import group_skill_damage, skill_level_summary
@@ -41,6 +42,7 @@ from .standings import (
 )
 from .telemetry import build_buff_coverage
 from .timeline import build_timeline
+from .timestamps import parse_timestamp
 
 # One line per record is readable; past this a reader (or a model) stops
 # taking anything in and the reply crowds out the rest of the context.
@@ -604,8 +606,7 @@ def format_records(
     records = [event for event in events if event.kind == NEW_RECORD]
     lines = [f"{window_label}的新纪录{as_of}"]
     if log_since:
-        started = log_since[:16].replace("T", " ")
-        lines.append(f"新纪录流从 {started} 起记录，之前的变化没有。")
+        lines.append(f"新纪录流从 {_when(log_since)} 起记录，之前的变化没有。")
     else:
         lines.append("新纪录流刚开始记录，还没有发现任何变化。")
     lines.append("")
@@ -752,6 +753,15 @@ def with_source(text: str) -> str:
     if SOURCE_NOTE in text:
         return text
     return text.rstrip() + "\n\n" + SOURCE_NOTE
+
+
+def _when(value: str) -> str:
+    """A stamp in the game's server time (UTC+8), like the pages show it."""
+
+    parsed = parse_timestamp(value)
+    if parsed is None:
+        return value[:16].replace("T", " ")
+    return parsed.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
 
 
 def _stat(value: float | None) -> str:

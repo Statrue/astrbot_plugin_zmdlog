@@ -3,7 +3,7 @@
 import math
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urljoin, urlsplit
 
 # Temporary presentation compatibility: upstream currently exposes the
@@ -175,19 +175,26 @@ def public_url(base_url: str, resource: str, identifier: str) -> str:
     return urljoin(f"{base_url.rstrip('/')}/", path)
 
 
+# Every stamp is shown in the game's server time (UTC+8), which is also the
+# offset upstream's battle stamps carry; the plugin's own stamps are UTC and
+# would otherwise sit eight hours off the battle times next to them.
+DISPLAY_TZ = timezone(timedelta(hours=8))
+
+
+def _displayed(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed.astimezone(DISPLAY_TZ) if parsed.tzinfo is not None else parsed
+
+
 def _format_date(value: str) -> str:
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).strftime(
-            "%Y-%m-%d"
-        )
+        return _displayed(value).strftime("%Y-%m-%d")
     except ValueError:
         return value[:10]
 
 
 def _format_datetime(value: str) -> str:
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).strftime(
-            "%Y-%m-%d %H:%M"
-        )
+        return _displayed(value).strftime("%Y-%m-%d %H:%M")
     except ValueError:
         return value

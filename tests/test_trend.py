@@ -220,7 +220,7 @@ class TrendPageTests(unittest.TestCase):
         self.assertEqual(page.header.target_type, "名次趋势")
         self.assertEqual(page.tracked_since, "2026-07-25")
         self.assertEqual(page.tracked_days, "40 天")
-        self.assertEqual(page.last_checked, "2026-09-03 09:00")
+        self.assertEqual(page.last_checked, "2026-09-03 17:00")
         self.assertEqual(page.best_rank, "#1")
         self.assertEqual((page.improved_count, page.declined_count), (1, 1))
         self.assertEqual(page.range_label, "近 30 天")
