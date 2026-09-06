@@ -43,6 +43,11 @@ from .boards import (
     build_ranking_page,
     build_roster_page,
 )
+from .champions import (
+    CharacterChampionsPage,
+    TallyRowView,
+    build_character_champions_page,
+)
 from .charts import (
     BuffBandView,
     BuffRowView,
@@ -153,6 +158,8 @@ __all__ = [
     "TopRunView",
     "TrendPage",
     "CharacterStandingsPage",
+    "CharacterChampionsPage",
+    "TallyRowView",
     "StandingRowView",
     "TrendRowView",
     "UsageEntryView",
@@ -175,6 +182,7 @@ __all__ = [
     "build_timeline_view",
     "build_trend_page",
     "build_character_standings_page",
+    "build_character_champions_page",
     "format_duration",
     "format_number",
     "public_url",

@@ -31,7 +31,7 @@ from .models import (
     CharacterStatistics,
     PublicUserRankings,
 )
-from .standings import CharacterStandings
+from .standings import CharacterStandings, CharacterTally
 from .telemetry import build_buff_coverage
 from .timeline import build_timeline
 
@@ -494,6 +494,49 @@ def format_character_standings(
         lines.append(f"（另有 {len(standings.boards) - _bounded(limit)} 个榜未列出）")
     lines.append("")
     lines.append("以上是带该角色的队伍的成绩，不是角色本身的强度；名次受玩家水平和配装影响。")
+    return "\n".join(lines)
+
+
+def format_character_tallies(
+    tallies: tuple[CharacterTally, ...],
+    *,
+    board_count: int,
+    limit: int = DEFAULT_ROW_LIMIT,
+    age_seconds: float | None = None,
+) -> str:
+    """Every character's first places, podiums and top tens over all boards."""
+
+    as_of = ""
+    if age_seconds is not None:
+        minutes = int(age_seconds // 60)
+        as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
+    lines = [
+        f"全部 {board_count} 个榜的第一名记录里各角色各占几个{as_of}",
+        "「冠军」= 该榜第一名记录的主C；「第一名队伍」= 第一名记录的四名角色各算一个。",
+        "",
+    ]
+    if not tallies:
+        lines.append("读过的榜单里没有任何公开记录。")
+        return "\n".join(lines)
+    top_main = max(tallies, key=lambda t: t.first_places_as_main)
+    top_team = max(tallies, key=lambda t: t.first_places)
+    lines.append(
+        f"冠军最多：{top_main.name} {top_main.first_places_as_main} 个榜；"
+        f"出现在第一名队伍最多：{top_team.name} {top_team.first_places} 个榜。"
+    )
+    lines.append("")
+    shown = tallies[: _bounded(limit)]
+    for tally in shown:
+        lines.append(
+            f"{tally.name} · 冠军 {tally.first_places_as_main}"
+            f" · 第一名队伍 {tally.first_places}"
+            f" · 前三 {tally.podiums} · 前十 {tally.top_tens}"
+            f" · 上榜 {tally.boards} 个榜"
+        )
+    if len(tallies) > len(shown):
+        lines.append(f"（另有 {len(tallies) - len(shown)} 个角色未列出，图里有）")
+    lines.append("")
+    lines.append("以上是队伍成绩的计数，不代表哪个角色更强。")
     return "\n".join(lines)
 
 

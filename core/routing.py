@@ -232,9 +232,8 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         )
 
     if command in {"角色排名", "角色榜"}:
+        # Without a name: every character's first places over all boards.
         options.reject_except()
-        if not separator or not remainder:
-            raise RouteParseError("请提供角色名，例如：角色排名 提弗洛斯。")
         return RouteRequest(RouteKind.CHARACTER_STANDINGS, remainder)
 
     if command in {"角色统计", "角色"}:

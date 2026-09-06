@@ -108,3 +108,87 @@ def roster_character_names(rankings: Iterable[BossRanking]) -> tuple[str, ...]:
             for entry in row.roster_entries:
                 names.setdefault(entry.character_name, None)
     return tuple(names)
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterTally:
+    """One character's standings counted over every board.
+
+    A first place is a board whose #1 record fields the character; the
+    record's four members each get one, so ``first_places_as_main`` — the
+    #1 record's main C — is what people usually mean by a champion.
+    """
+
+    name: str
+    profession: str
+    avatar_url: str | None
+    first_places: int
+    first_places_as_main: int
+    podiums: int
+    top_tens: int
+    boards: int
+    appearances: int
+
+
+def character_tallies(rankings: Iterable[BossRanking]) -> tuple[CharacterTally, ...]:
+    """Every fielded character's counts, most first places first.
+
+    "谁的冠军最多" is the standings turned the other way round: the same #1
+    records, counted per character instead of listed per board.
+    """
+
+    first: dict[str, int] = {}
+    first_main: dict[str, int] = {}
+    podium: dict[str, int] = {}
+    top_ten: dict[str, int] = {}
+    boards: dict[str, int] = {}
+    appearances: dict[str, int] = {}
+    profession: dict[str, str] = {}
+    avatar: dict[str, str | None] = {}
+    for ranking in rankings:
+        best: dict[str, int] = {}
+        for row in ranking.rows:
+            for entry in row.roster_entries:
+                name = entry.character_name
+                appearances[name] = appearances.get(name, 0) + 1
+                profession.setdefault(name, entry.profession)
+                if avatar.get(name) is None:
+                    avatar[name] = entry.avatar_url
+                if row.rank < best.get(name, row.rank + 1):
+                    best[name] = row.rank
+        for name, rank in best.items():
+            boards[name] = boards.get(name, 0) + 1
+            if rank <= 10:
+                top_ten[name] = top_ten.get(name, 0) + 1
+            if rank <= 3:
+                podium[name] = podium.get(name, 0) + 1
+            if rank == 1:
+                first[name] = first.get(name, 0) + 1
+        if ranking.rows:
+            leader = ranking.rows[0].character_name
+            first_main[leader] = first_main.get(leader, 0) + 1
+    tallies = [
+        CharacterTally(
+            name=name,
+            profession=profession.get(name, ""),
+            avatar_url=avatar.get(name),
+            first_places=first.get(name, 0),
+            first_places_as_main=first_main.get(name, 0),
+            podiums=podium.get(name, 0),
+            top_tens=top_ten.get(name, 0),
+            boards=boards.get(name, 0),
+            appearances=appearances.get(name, 0),
+        )
+        for name in appearances
+    ]
+    tallies.sort(
+        key=lambda tally: (
+            -tally.first_places_as_main,
+            -tally.first_places,
+            -tally.podiums,
+            -tally.top_tens,
+            -tally.boards,
+            tally.name,
+        )
+    )
+    return tuple(tallies)

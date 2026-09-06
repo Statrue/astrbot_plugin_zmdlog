@@ -252,6 +252,13 @@ class ToolServiceTests(unittest.TestCase):
         # Not a six-star in the catalog: no distribution lines are appended.
         self.assertNotIn("各榜单表现", answer.text)
 
+    def test_no_character_name_answers_who_holds_the_most_first_places(self) -> None:
+        answer = run(self.service.character(""))
+
+        self.assertEqual(answer.image_path, "/tmp/character_champions.png")
+        self.assertIn("第一名记录里各角色各占几个", answer.text)
+        self.assertIn("冠军最多：", answer.text)
+
     def test_an_unknown_character_triggers_one_catalog_refresh(self) -> None:
         # A name the catalog lacks might be a character added since the last
         # read; the tool asks for one refresh, then reports the miss.

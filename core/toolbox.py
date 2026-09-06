@@ -47,7 +47,11 @@ from .messages import shorten
 from .models import BossRanking, HotBossCard
 from .render import LongImageRenderer
 from .settings import PluginSettings
-from .standings import character_standings, roster_character_names
+from .standings import (
+    character_standings,
+    character_tallies,
+    roster_character_names,
+)
 
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
@@ -197,6 +201,8 @@ class ToolService:
     async def character(self, name: str, board: str = "") -> ToolAnswer:
         if board:
             return await self._character_on_board(name, board)
+        if not name.strip():
+            return await self._champions()
         # Standings come from the ranking index and cover every rarity; the
         # DPS distribution needs a six-star key and is added when there is one.
         index = self._data.ranking_index
@@ -228,6 +234,28 @@ class ToolService:
             )
         )
         return ToolAnswer("\n\n".join(parts), image)
+
+    async def _champions(self) -> ToolAnswer:
+        """Every character's first places over all boards, most first."""
+
+        index = self._data.ranking_index
+        await index.ensure_filled()
+        rankings = tuple(entry.ranking for entry in index.entries())
+        tallies = character_tallies(rankings)
+        age = index.oldest_age_seconds()
+        text = facts.format_character_tallies(
+            tallies, board_count=len(rankings), limit=15, age_seconds=age
+        )
+        image = await self._render(
+            lambda renderer: renderer.render_character_champions(
+                tallies,
+                board_count=len(rankings),
+                query="角色排名",
+                web_base_url=self._web_base_url,
+                age_seconds=age,
+            )
+        )
+        return ToolAnswer(text, image)
 
     async def _character_on_board(self, name: str, board: str) -> ToolAnswer:
         resolution = await self._resolve_six_star(name)

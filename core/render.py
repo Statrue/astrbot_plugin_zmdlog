@@ -41,6 +41,7 @@ from .presentation import (
     build_all_top3_page,
     build_battle_page,
     build_character_boss_page,
+    build_character_champions_page,
     build_character_standings_page,
     build_character_stats_page,
     build_compare_page,
@@ -53,7 +54,7 @@ from .presentation import (
     build_trend_page,
 )
 from .routing import DEFAULT_RANKING_TOP
-from .standings import CharacterStandings
+from .standings import CharacterStandings, CharacterTally
 
 _VERSION_LINE = re.compile(
     r"^\s*version\s*:\s*(?P<value>[^#]+?)\s*(?:#.*)?$"
@@ -75,6 +76,7 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
         "character-stats",
         "character-boss",
         "character-standings",
+        "character-champions",
         "roster",
         "loadout",
         "skills",
@@ -290,6 +292,30 @@ class TemplateRenderer:
             "character-standings/character-standings.html",
             page,
             "character-standings",
+            embed_fonts=embed_fonts,
+        )
+
+    def render_character_champions(
+        self,
+        tallies: tuple[CharacterTally, ...],
+        *,
+        board_count: int,
+        query: str,
+        web_base_url: str | None = None,
+        age_seconds: float | None = None,
+        embed_fonts: bool = True,
+    ) -> str:
+        page = build_character_champions_page(
+            tallies,
+            board_count=board_count,
+            query=query,
+            web_base_url=web_base_url,
+            age_seconds=age_seconds,
+        )
+        return self._render(
+            "character-champions/character-champions.html",
+            page,
+            "character-champions",
             embed_fonts=embed_fonts,
         )
 
@@ -692,6 +718,9 @@ class LongImageRenderer:
     )
     render_character_standings = _captured(
         "character-standings", TemplateRenderer.render_character_standings
+    )
+    render_character_champions = _captured(
+        "character-champions", TemplateRenderer.render_character_champions
     )
     render_roster = _captured("roster", TemplateRenderer.render_roster)
     render_account = _captured("account", TemplateRenderer.render_account)

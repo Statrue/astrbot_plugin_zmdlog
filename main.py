@@ -707,7 +707,7 @@ class ZmdLogBotPlugin(Star):
     async def query_endfield_character(
         self,
         event: AstrMessageEvent,
-        character: str,
+        character: str = "",
         board: str = "",
     ):
         """查询终末地某个角色在公开记录里的表现：带它的队伍在每个榜单的最好名次、
@@ -715,11 +715,12 @@ class ZmdLogBotPlugin(Star):
         DPS 分布：中位数、四分位、样本量和各榜名次；给了榜单则只看那个榜的 DPS 分布。
         已自动发送长图，图里有完整数值，你不要复述数字，只解读。
         DPS 名次只看去极值后的正常样本，正常样本不足的角色没有名次，
-        记录多但分布很散时也会这样。这些数字来自公开速通记录，受玩家水平和配装影响，
-        不是角色强度的判据。
+        记录多但分布很散时也会这样。角色名留空则回答“谁的冠军最多”：
+        每个角色的队伍在全部榜单拿下的第一名、前三、前十各几个。
+        这些数字来自公开速通记录，受玩家水平和配装影响，不是角色强度的判据。
 
         Args:
-            character(string): 六星干员全名，例如“提弗洛斯”“洛茜”
+            character(string): 角色全名，例如“提弗洛斯”“余烬”；留空看全角色冠军榜
             board(string): 只看某个榜单，例如“罗丹”，留空则看它在所有榜单的表现
         """
 

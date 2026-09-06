@@ -1,0 +1,212 @@
+/* 角色冠军榜 — 数据简报家族：一角色一行，第一名数是每行的视觉锚，
+   条形表达相对榜首的比例（黄=完成度/关注），三个计数并列在右。 */
+
+.champ {
+  --champ-cols: 44px minmax(0, 1fr) 132px minmax(0, 340px) 96px 96px 112px;
+  --champ-gap: 18px;
+  margin-top: 14px;
+}
+
+.champ-head {
+  display: grid;
+  grid-template-columns: var(--champ-cols);
+  gap: var(--champ-gap);
+  align-items: center;
+  margin: 0 0 8px;
+  padding: 7px 18px 7px 0;
+  background: var(--line-soft);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+}
+
+.champ-head > span {
+  position: relative;
+  padding-left: 18px;
+  color: var(--steel);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+.champ-head > span + span::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 0;
+  width: 1px;
+  background: var(--line);
+}
+
+.champ-head-first,
+.champ-head-num {
+  text-align: right;
+}
+
+.champ-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.champ-row {
+  display: grid;
+  grid-template-columns: var(--champ-cols);
+  gap: var(--champ-gap);
+  align-items: center;
+  padding: 10px 18px 10px 0;
+  background: var(--card);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.champ-row.is-first {
+  background: linear-gradient(90deg, var(--yellow-soft) 0, var(--card) 320px);
+}
+
+.champ-pos {
+  padding-left: 18px;
+  border-left: 5px solid var(--faint);
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 44px;
+}
+
+.champ-row.is-podium .champ-pos {
+  border-left-color: var(--ink);
+  color: var(--ink);
+}
+
+.champ-row.is-first .champ-pos {
+  border-left-color: var(--yellow-deep);
+  color: var(--ink);
+}
+
+.champ-char {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.champ-char .avatar {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  font-size: 18px;
+}
+
+.champ-char-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.champ-char-text strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.champ-char-text em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.champ-first {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.champ-first b {
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.champ-first i {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.champ-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.champ-bar::before {
+  content: "";
+  position: absolute;
+  top: calc(50% - 5px);
+  right: 40px;
+  left: 0;
+  height: 10px;
+  background: var(--line-soft);
+}
+
+.champ-bar i {
+  position: relative;
+  z-index: 1;
+  display: block;
+  height: 10px;
+  flex: 0 0 auto;
+  min-width: 2px;
+  max-width: calc(100% - 40px);
+  background: var(--yellow);
+}
+
+.champ-bar em {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 30px;
+  margin-left: auto;
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 15px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: right;
+}
+
+.champ-num {
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: right;
+}
+
+.champ-num--muted {
+  color: var(--steel);
+  font-size: 17px;
+}
+
+.champ-legend {
+  margin-top: 12px;
+}
+
+.champ-asof {
+  font-size: 14px;
+}

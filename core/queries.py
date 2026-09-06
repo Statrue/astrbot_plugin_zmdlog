@@ -69,7 +69,11 @@ from .rank_watch import RankWatcher
 from .render import LongImageRenderer
 from .routing import DEFAULT_RANKING_TOP, RouteKind, RouteRequest
 from .settings import PluginSettings
-from .standings import character_standings, roster_character_names
+from .standings import (
+    character_standings,
+    character_tallies,
+    roster_character_names,
+)
 
 # 战报 / 配装 / 技能 / 技能轴 share one argument shape and one lookup; only
 # the page drawn from the battle differs.
@@ -633,6 +637,15 @@ class QueryService:
         index = self._data.ranking_index
         await index.ensure_filled()
         rankings = tuple(entry.ranking for entry in index.entries())
+        if not query.strip():
+            image_path = await self._renderer().render_character_champions(
+                character_tallies(rankings),
+                board_count=len(rankings),
+                query="角色排名",
+                web_base_url=self._web_base_url,
+                age_seconds=index.oldest_age_seconds(),
+            )
+            return Outcome(image_path=image_path)
         resolution = resolve_character_name(query, roster_character_names(rankings))
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
             options = " / ".join(resolution.candidates)

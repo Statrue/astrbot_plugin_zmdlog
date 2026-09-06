@@ -83,11 +83,11 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
-                        command=f"{command} 角色排名 <角色名>",
-                        answers="带这个角色的队伍在各个榜排第几？",
+                        command=f"{command} 角色排名 [角色名]",
+                        answers="带这个角色的队伍在各个榜排第几？谁的冠军最多？",
                         description=(
-                            "每个榜带该角色的最好一条记录：名次、用时、DPS、阵容，"
-                            "当主C的标出；从没出场的榜折成一行。"
+                            "接角色名看每个榜带它的最好记录：名次、用时、阵容；"
+                            "不填看各角色的第一名、前三、前十各几个。"
                         ),
                     ),
                 ),
