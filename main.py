@@ -80,9 +80,9 @@ _WATCH_ROUTES = frozenset(
     }
 )
 _NOTICE_SEND_TIMEOUT_SECONDS = 30.0
-# Set on the event once a tool has attached a picture, so the tools after it
-# in the same turn answer in text alone.
-_TOOL_IMAGE_SENT = "_zmdlog_tool_image_sent"
+# The pictures the tools of one turn drew, kept on the event until the model
+# has finished: exactly one is sent then, and several mean none is.
+_TOOL_PICTURES = "_zmdlog_tool_pictures"
 # What one tool may put into the model's context. The picture carries the
 # detail; a wall of text past this only crowds out the conversation.
 _MAX_TOOL_REPLY_CHARS = 3_000
@@ -90,6 +90,19 @@ _PLUGIN_DATA_NAME = "astrbot_plugin_zmdlog"
 _BATTLE_LINK_FILTER = (
     r"https?://[^\s<>\"']+/(?:battle|share|axis)/btl_[A-Za-z0-9_-]+"
 )
+
+
+def _agent_done_hook():
+    """``filter.on_agent_done``: fires once, when the model has finished a turn.
+
+    Older AstrBot releases have no such hook; there the tools answer in text
+    alone, which beats failing to load.
+    """
+
+    register = getattr(filter, "on_agent_done", None)
+    if register is None:  # pragma: no cover - depends on host AstrBot version
+        return lambda handler: handler
+    return register()
 
 
 class ZmdLogBotPlugin(Star):
@@ -162,6 +175,11 @@ class ZmdLogBotPlugin(Star):
         )
         self._auto_expand_lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
+        if getattr(filter, "on_agent_done", None) is None:
+            logger.warning(
+                "ZmdLogBot: this AstrBot has no on_agent_done hook; the LLM "
+                "tools answer in text alone."
+            )
         self._auto_expanded_until: dict[tuple[str, str], float] = {}
         try:
             self.renderer: LongImageRenderer | None = LongImageRenderer(
@@ -646,8 +664,9 @@ class ZmdLogBotPlugin(Star):
     # Four tools, one per subject, never one per feature: AstrBot sends every
     # active tool's schema with every LLM request, and a model choosing among
     # overlapping tools picks the wrong one. Each draws the page zmdlog would
-    # have drawn and sends it, then returns the facts behind it as text. The
-    # picture carries the numbers so the model never has to retype them.
+    # have drawn and returns the facts behind it as text; the picture goes
+    # out when the model has finished, if the turn drew exactly one. It
+    # carries the numbers so the model never has to retype them.
 
     @filter.llm_tool(name="query_endfield_board")
     async def query_endfield_board(
@@ -666,7 +685,8 @@ class ZmdLogBotPlugin(Star):
         给了角色名则只看带这个角色的记录，并统计它最常和谁同队。
         榜单留空则回答“最近有什么新纪录”：哪些榜的第一名被谁刷新了、
         新上传了哪些记录、哪个榜最近最活跃。
-        已自动发送榜单长图，图里有完整数值，你不要复述数字，只解读。
+        只查一个对象时会自动附长图，图里有完整数值，你不要复述数字，只解读；
+        这次回答里查了多个对象就不附图，不要让用户看图。
         数据只有公开上传的成功记录，没有失败样本，出场次数和名次都不代表谁更强。
         数据全部来自 ZMDLogs 上玩家自愿上传的公开记录，不是全服统计，回答时要说明。
 
@@ -701,8 +721,9 @@ class ZmdLogBotPlugin(Star):
         """查询终末地某一场公开战报：用时、全队与各角色 DPS 和伤害占比、
         每人的等级潜能武器精炼技能等级、主要伤害来源、BUFF 覆盖率、各类招式施放次数。
         给了第二场就改为对比同一首领的两场：用时差、DPS 差、阵容差异、
-        同名角色的养成与装备差异；跨首领没有可比性。已自动发送长图，
-        图里有完整数值，你不要复述数字，只解读。工具只列出记录本身和两份记录的差异，
+        同名角色的养成与装备差异；跨首领没有可比性。只查一个对象时会自动附长图，
+        图里有完整数值，你不要复述数字，只解读；这次回答里查了多个对象就不附图，
+        不要让用户看图。工具只列出记录本身和两份记录的差异，
         哪一处造成了时间差公开数据无法判定，不要替它下因果结论。
         要按名次找某一场，先用榜单工具拿到那一名的 battleId。
         数据全部来自 ZMDLogs 上玩家自愿上传的公开记录，不是全服统计，回答时要说明。
@@ -731,7 +752,8 @@ class ZmdLogBotPlugin(Star):
         查询终末地某个角色在公开记录里的表现：带它的队伍在每个榜单的最好名次、
         用时、DPS 和阵容（这是队伍的成绩，任何星级的角色都能查），六星干员再附上
         DPS 分布：中位数、四分位、样本量和各榜名次；给了榜单则只看那个榜的 DPS 分布。
-        已自动发送长图，图里有完整数值，你不要复述数字，只解读。
+        只查一个对象时会自动附长图，图里有完整数值，你不要复述数字，只解读；
+        这次回答里查了多个对象就不附图，不要让用户看图。
         DPS 名次只看去极值后的正常样本，正常样本不足的角色没有名次，
         记录多但分布很散时也会这样。角色名留空则回答“谁的冠军最多”：
         每个角色的队伍在全部榜单拿下的第一名、前三、前十各几个。
@@ -762,7 +784,8 @@ class ZmdLogBotPlugin(Star):
         """查询终末地某个公开账号在各首领榜单的最好成绩：名次、用时、DPS、
         阵容和 battleId，以及它的公开记录数、冠军数、常用主C 和常用阵容。
         账号留空则回答“哪个玩家冠军最多”：各公开账号上传的第一名、前三、前十各几个。
-        已自动发送长图，图里有完整数值，你不要复述数字，只解读。
+        只查一个对象时会自动附长图，图里有完整数值，你不要复述数字，只解读；
+        这次回答里查了多个对象就不附图，不要让用户看图。
         只有把记录设为公开的玩家才查得到。
         数据全部来自 ZMDLogs 上玩家自愿上传的公开记录，不是全服统计，回答时要说明。
 
@@ -777,11 +800,15 @@ class ZmdLogBotPlugin(Star):
         )
 
     async def _run_tool(self, event: AstrMessageEvent, action) -> str:
-        """Run one tool: send its picture, hand its facts back to the model.
+        """Run one tool: hand its facts to the model, keep its picture for later.
 
-        At most one picture per turn. A model answering a question often
-        calls two or three tools, and three long images in a row is spam;
-        the first tool that has one wins and the rest answer in text.
+        A turn sends at most one picture, and only when its tools drew
+        exactly one. A model answering a question often calls two or three
+        tools, and three long images in a row is spam; and when it asks one
+        tool about several subjects — four characters compared — none of
+        their pages is *the* answer, so sending the first would be an
+        arbitrary pick that reads as the wrong one. Which picture, if any,
+        is decided when the model has finished, in ``send_tool_picture``.
         """
 
         try:
@@ -797,19 +824,44 @@ class ZmdLogBotPlugin(Star):
         except Exception:
             logger.exception("ZmdLogBot unexpected tool failure")
             return messages.UNEXPECTED_FAILURE
-        if answer.image_path and not getattr(event, _TOOL_IMAGE_SENT, False):
-            if Image is None:
-                logger.warning(
-                    "ZmdLogBot cannot attach a tool image on this AstrBot version."
-                )
-            else:
-                # The upload runs in the background so the text reaches the
-                # model now: its second round trip and the platform upload
-                # overlap instead of queueing, and the picture still lands
-                # seconds before the model finishes writing.
-                setattr(event, _TOOL_IMAGE_SENT, True)
-                self._spawn(self._send_tool_image(event, answer.image_path))
-        return _shorten_tool_reply(answer.text)
+        text = _shorten_tool_reply(answer.text)
+        if not answer.image_path:
+            return text
+        pictures = getattr(event, _TOOL_PICTURES, None)
+        if pictures is None:
+            pictures = []
+            setattr(event, _TOOL_PICTURES, pictures)
+        pictures.append(answer.image_path)
+        if len(pictures) > 1:
+            # Said in every result after the first, so the model does not
+            # point the reader at a picture that will not come.
+            return text + "\n" + messages.TOOL_PICTURE_WITHHELD
+        return text
+
+    @_agent_done_hook()
+    async def send_tool_picture(
+        self, event: AstrMessageEvent, run_context=None, response=None
+    ) -> None:
+        """Once the model has finished a turn, send the one picture its tools drew.
+
+        Nothing goes out when they drew several: the text the model got
+        carries every subject's facts, and no one page would be the answer.
+        """
+
+        pictures = getattr(event, _TOOL_PICTURES, None)
+        if not pictures:
+            return
+        setattr(event, _TOOL_PICTURES, [])
+        if len(pictures) != 1:
+            return
+        if Image is None:
+            logger.warning(
+                "ZmdLogBot cannot attach a tool image on this AstrBot version."
+            )
+            return
+        # In the background: the platform upload then overlaps the reply the
+        # pipeline is about to send instead of holding it back.
+        self._spawn(self._send_tool_image(event, pictures[0]))
 
     async def _send_tool_image(self, event: AstrMessageEvent, path: str) -> None:
         try:

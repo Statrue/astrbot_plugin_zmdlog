@@ -46,6 +46,10 @@ TREND_NO_DATA = (
 ALIAS_WRITE_FAILED = "别名文件写入失败，请检查数据目录权限。"
 ALIAS_ADMIN_ONLY = "只有机器人管理员可以修改别名。"
 
+# Appended to a tool result when the same turn already drew another picture:
+# the model must not send the reader to an image that will not come.
+TOOL_PICTURE_WITHHELD = "（这次回答查了多个对象，不附图，不要让用户看图。）"
+
 ECHO_LIMIT = 40
 
 

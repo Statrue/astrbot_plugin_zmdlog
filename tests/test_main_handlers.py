@@ -51,6 +51,7 @@ if astrbot is not None:
     )
     from astrbot_plugin_zmdlog.core.render import RenderError
     from astrbot_plugin_zmdlog.core.timestamps import utc_now_text
+    from astrbot_plugin_zmdlog.core.toolbox import ToolAnswer
     from astrbot_plugin_zmdlog.core.watch import (
         BoardSnapshot,
         build_board_snapshot,
@@ -75,9 +76,13 @@ class FakeEvent:
         self.unified_msg_origin = origin
         chain = [Reply(quoted)] if quoted is not None else []
         self.message_obj = SimpleNamespace(message_str=text, message=chain)
+        self.sent: list = []
 
     def get_message_str(self) -> str:
         return self._text
+
+    async def send(self, chain) -> None:
+        self.sent.append(chain)
 
     def plain_result(self, text: str):
         return ("plain", text)
@@ -900,6 +905,71 @@ class HandlerTests(unittest.TestCase):
                 )
                 self.assertEqual(kind, "plain")
                 self.assertEqual(reply, "战报不存在、未公开或已删除。")
+
+    # --- LLM tool pictures ------------------------------------------------------
+
+    def _tool_turn(self, *answers: ToolAnswer):
+        """One turn's tool calls, then the agent-done hook.
+
+        Returns the replies the model got and the chains the chat received.
+        """
+
+        event = FakeEvent("突击里谁最菜")
+        replies: list[str] = []
+
+        async def scenario():
+            for answer in answers:
+
+                async def character(*args, _answer=answer, **kwargs):
+                    return _answer
+
+                self.plugin.tools.character = character
+                replies.append(
+                    await self.plugin.query_endfield_character(event, character="x")
+                )
+            # Nothing goes out while the model is still calling tools.
+            self.assertEqual(event.sent, [])
+            await self.plugin.send_tool_picture(event, None, None)
+            await asyncio.gather(*self.plugin._background_tasks)
+            # The hook fires once per turn; a second firing has nothing left.
+            await self.plugin.send_tool_picture(event, None, None)
+            await asyncio.gather(*self.plugin._background_tasks)
+
+        run(scenario())
+        return replies, event.sent
+
+    def test_the_only_picture_of_a_turn_goes_out_when_the_model_is_done(
+        self,
+    ) -> None:
+        replies, sent = self._tool_turn(ToolAnswer("洛茜的事实", "/tmp/a.png"))
+
+        self.assertEqual(replies, ["洛茜的事实"])
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(type(sent[0].chain[0]).__name__, "Image")
+
+    def test_several_subjects_in_one_turn_send_no_picture(self) -> None:
+        # Four characters compared: the first page would be an arbitrary pick.
+        replies, sent = self._tool_turn(
+            ToolAnswer("A", "/tmp/a.png"),
+            ToolAnswer("B", "/tmp/b.png"),
+            ToolAnswer("C", "/tmp/c.png"),
+        )
+
+        self.assertEqual(sent, [])
+        note = plugin_main.messages.TOOL_PICTURE_WITHHELD
+        # The first result cannot know yet; every later one says so.
+        self.assertEqual(replies[0], "A")
+        self.assertEqual(replies[1], "B\n" + note)
+        self.assertEqual(replies[2], "C\n" + note)
+
+    def test_a_text_only_answer_is_not_a_second_subject(self) -> None:
+        replies, sent = self._tool_turn(
+            ToolAnswer("找不到这个名字"),
+            ToolAnswer("洛茜的事实", "/tmp/a.png"),
+        )
+
+        self.assertEqual(replies, ["找不到这个名字", "洛茜的事实"])
+        self.assertEqual(len(sent), 1)
 
 
 if __name__ == "__main__":
