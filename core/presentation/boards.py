@@ -1,9 +1,11 @@
 """Top-3 cards, one board's ranking and the roster page."""
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..characters import CharacterFilterScope
+from ..elements import element_key
 from ..matcher import MatchChoice, TargetType
 from ..models import (
     BossRanking,
@@ -69,6 +71,9 @@ class RosterEntryView:
     profession: str
     character_initial: str
     avatar_url: str | None
+    # Catalog element label and its CSS key; None when the catalog lacks the name.
+    element: str | None = None
+    element_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +111,8 @@ class RankingPage:
     # The resolved names behind ``character_filter`` (their display join);
     # several names mean every one of them must be in the team.
     character_filters: tuple[str, ...] = ()
+    # Rows whose main C has this element, on top of the character filter.
+    element_filter: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +231,8 @@ def build_ranking_page(
     web_base_url: str | None = None,
     character_filter: str | tuple[str, ...] | None = None,
     character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
+    element_filter: str | None = None,
+    elements: Mapping[str, str] | None = None,
 ) -> RankingPage:
     """Build the first public DPS rows in their upstream order.
 
@@ -260,6 +269,14 @@ def build_ranking_page(
             source_rows = tuple(
                 row for row in ranking.rows if row.character_name in filters
             )
+        filtered_count = len(source_rows)
+    if element_filter is not None:
+        known = elements or {}
+        source_rows = tuple(
+            row
+            for row in source_rows
+            if known.get(row.character_name) == element_filter
+        )
         filtered_count = len(source_rows)
     displayed_rows = source_rows[:display_limit]
     top_dps = ranking.rows[0].dps if ranking.rows else 0.0
@@ -300,6 +317,7 @@ def build_ranking_page(
                     row.roster_entries,
                     row.roster_summary,
                     web_base_url=web_base_url,
+                    elements=elements,
                 ),
                 dps=format_number(row.dps),
                 duration=format_duration(row.duration_ms),
@@ -317,6 +335,7 @@ def build_ranking_page(
         character_filter_scope=character_filter_scope,
         filtered_count=filtered_count,
         character_filters=filters,
+        element_filter=element_filter,
     )
 
 
@@ -507,7 +526,9 @@ def _build_roster(
     summary: tuple[str, ...],
     *,
     web_base_url: str | None,
+    elements: Mapping[str, str] | None = None,
 ) -> tuple[RosterEntryView, ...]:
+    known = elements or {}
     if entries:
         return tuple(
             RosterEntryView(
@@ -518,6 +539,8 @@ def _build_roster(
                     entry.avatar_url,
                     base_url=web_base_url,
                 ),
+                element=known.get(entry.character_name),
+                element_key=element_key(known.get(entry.character_name)),
             )
             for entry in entries
         )
@@ -527,6 +550,8 @@ def _build_roster(
             profession="",
             character_initial=_initial(name),
             avatar_url=None,
+            element=known.get(name),
+            element_key=element_key(known.get(name)),
         )
         for name in summary
     )

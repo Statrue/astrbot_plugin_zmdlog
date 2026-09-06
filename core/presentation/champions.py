@@ -1,7 +1,9 @@
 """Who holds the most first places: every character counted over all boards."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
+from ..elements import element_key
 from ..standings import CharacterTally
 from .common import PageHeader, _initial, _safe_asset_url
 from .standings import _as_of_label
@@ -21,6 +23,7 @@ class TallyRowView:
     boards: int
     # First places as a share of the leader's, for the in-row bar.
     bar_width: float
+    element_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +38,8 @@ class CharacterChampionsPage:
     rows: tuple[TallyRowView, ...]
     # Characters fielded somewhere but never in a top-three record.
     others: tuple[str, ...]
+    # The element the board was filtered to, if any.
+    element: str | None = None
 
 
 def build_character_champions_page(
@@ -44,11 +49,14 @@ def build_character_champions_page(
     query: str,
     web_base_url: str | None = None,
     age_seconds: float | None = None,
+    element: str | None = None,
+    elements: Mapping[str, str] | None = None,
 ) -> CharacterChampionsPage:
     """One row per character with a podium, most first places first."""
 
     ranked = [tally for tally in tallies if tally.podiums]
     peak = board_count
+    known = elements or {}
     rows = tuple(
         TallyRowView(
             position=index,
@@ -64,6 +72,7 @@ def build_character_champions_page(
             bar_width=(
                 round(tally.first_places / peak * 100, 2) if peak else 0.0
             ),
+            element_key=element_key(known.get(tally.name)),
         )
         for index, tally in enumerate(ranked, start=1)
     )
@@ -71,8 +80,12 @@ def build_character_champions_page(
     top_team = max(rows, key=lambda row: row.first_places, default=None)
     return CharacterChampionsPage(
         header=PageHeader(
-            title="角色冠军榜",
-            subtitle="带该角色的队伍在全部榜单拿下的第一名、前三与前十",
+            title="角色冠军榜" if element is None else f"角色冠军榜 · {element}",
+            subtitle=(
+                "带该角色的队伍在全部榜单拿下的第一名、前三与前十"
+                if element is None
+                else f"{element}属性角色的队伍在全部榜单拿下的第一名、前三与前十"
+            ),
             query=query,
             matched_name=f"全部 {board_count} 个榜单 · 角色冠军榜",
             target_type="角色排名",
@@ -82,6 +95,7 @@ def build_character_champions_page(
         as_of_label=_as_of_label(age_seconds),
         top_main=top_main,
         top_team=top_team,
+        element=element,
         rows=rows,
         others=tuple(tally.name for tally in tallies if not tally.podiums),
     )

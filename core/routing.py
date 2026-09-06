@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
+from .elements import normalize_element
+
 DEFAULT_RANKING_TOP = 10
 MIN_RANKING_TOP = 1
 MAX_RANKING_TOP = 30
@@ -46,6 +48,7 @@ _OPTION_SPELLINGS: dict[str, tuple[str, ...]] = {
     "character": ("--角色", "--char", "--character"),
     "range": ("--范围", "--range"),
     "potential": ("--潜能", "--potential"),
+    "element": ("--属性", "--element"),
 }
 _OPTION_BY_SPELLING = {
     spelling.casefold(): name
@@ -57,6 +60,7 @@ _OPTION_LABEL = {
     "character": "--角色",
     "range": "--范围",
     "potential": "--潜能",
+    "element": "--属性",
 }
 # Rejection text names where the option DOES work, not the current route —
 # "--潜能 不适用于榜单查询" reads like the option belongs somewhere unknown.
@@ -68,6 +72,10 @@ _OPTION_USAGE = {
     ),
     "range": "--范围 仅适用于角色统计和名次趋势，例如：角色统计 罗丹 --范围 7d。",
     "potential": "--潜能 仅适用于角色统计，例如：角色统计 罗丹 --潜能 0。",
+    "element": (
+        "--属性 仅适用于具体榜单查询和不带角色名的角色排名，"
+        "例如：罗丹 --属性 物理，或 角色排名 --属性 物理。"
+    ),
 }
 
 
@@ -129,6 +137,7 @@ class RouteOptions:
 
     ranking_top: int | None = None
     character_filter: str | None = None
+    element_filter: str | None = None
     stats_range: str = DEFAULT_STATS_RANGE
     stats_potential: str = DEFAULT_STATS_POTENTIAL
     present: frozenset[str] = frozenset()
@@ -136,7 +145,7 @@ class RouteOptions:
     def reject_except(self, *allowed: str) -> None:
         """Raise when an option outside ``allowed`` was given."""
 
-        for name in ("top", "character", "range", "potential"):
+        for name in ("top", "character", "range", "potential", "element"):
             if name in self.present and name not in allowed:
                 raise RouteParseError(_OPTION_USAGE[name])
 
@@ -149,6 +158,8 @@ class RouteRequest:
     query: str = ""
     ranking_top: int | None = None
     character_filter: str | None = None
+    # A catalog element label (物理 …); rows whose main C has it.
+    element_filter: str | None = None
     stats_range: str = DEFAULT_STATS_RANGE
     stats_potential: str = DEFAULT_STATS_POTENTIAL
     battle_rank: int = 1
@@ -186,12 +197,13 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         if not separator:
             options.reject_except()
             return RouteRequest(RouteKind.ALL_RANKINGS)
-        options.reject_except("top", "character")
+        options.reject_except("top", "character", "element")
         return RouteRequest(
             RouteKind.RANKING_QUERY,
             remainder,
             ranking_top=options.ranking_top,
             character_filter=options.character_filter,
+            element_filter=options.element_filter,
         )
 
     if command in {"账号", "账户"}:
@@ -232,9 +244,18 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         )
 
     if command in {"角色排名", "角色榜"}:
-        # Without a name: every character's first places over all boards.
-        options.reject_except()
-        return RouteRequest(RouteKind.CHARACTER_STANDINGS, remainder)
+        # Without a name: every character's first places over all boards,
+        # optionally only the characters of one element.
+        options.reject_except("element")
+        if remainder and options.element_filter is not None:
+            raise RouteParseError(
+                "--属性 只在不带角色名的角色排名里用，例如：角色排名 --属性 物理。"
+            )
+        return RouteRequest(
+            RouteKind.CHARACTER_STANDINGS,
+            remainder,
+            element_filter=options.element_filter,
+        )
 
     if command in {"角色统计", "角色"}:
         options.reject_except("range", "potential")
@@ -297,12 +318,13 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
             return RouteRequest(RouteKind.WATCH_BOARD_REMOVE, board_query)
         return RouteRequest(RouteKind.WATCH_REMOVE, remainder)
 
-    options.reject_except("top", "character")
+    options.reject_except("top", "character", "element")
     return RouteRequest(
         RouteKind.SMART_QUERY,
         normalized,
         ranking_top=options.ranking_top,
         character_filter=options.character_filter,
+        element_filter=options.element_filter,
     )
 
 
@@ -352,9 +374,15 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
         index += 2
 
     query = " ".join(tokens[:first])
+    element_filter = None
+    if "element" in values:
+        element_filter = normalize_element(values["element"])
+        if element_filter is None:
+            raise RouteParseError("--属性 只能填 物理、灼热、寒冷、自然、电磁。")
     return query, RouteOptions(
         ranking_top=_parse_top(values["top"]) if "top" in values else None,
         character_filter=values.get("character"),
+        element_filter=element_filter,
         stats_range=(
             _parse_choice(values["range"], STATS_RANGES, _RANGE_ALIASES, "--范围")
             if "range" in values

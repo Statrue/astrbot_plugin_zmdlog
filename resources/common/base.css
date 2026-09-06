@@ -828,3 +828,42 @@ body {
 .percentile {
   letter-spacing: 0.04em;
 }
+
+/* ---------- 角色属性描边：目录里的属性，头像外圈一道色 ---------- */
+
+:root {
+  --el-physical: #9a9a94;
+  --el-fire: #f0731f;
+  --el-cryst: #4fb3e8;
+  --el-natural: #3fa652;
+  --el-pulse: #8a5cf6;
+}
+
+.avatar.el-physical { box-shadow: 0 0 0 2px var(--el-physical); }
+.avatar.el-fire { box-shadow: 0 0 0 2px var(--el-fire); }
+.avatar.el-cryst { box-shadow: 0 0 0 2px var(--el-cryst); }
+.avatar.el-natural { box-shadow: 0 0 0 2px var(--el-natural); }
+.avatar.el-pulse { box-shadow: 0 0 0 2px var(--el-pulse); }
+
+.el-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 12px;
+  align-items: center;
+}
+
+.el-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-radius: 50%;
+  vertical-align: 0;
+}
+
+.el-legend .el-physical { background: var(--el-physical); }
+.el-legend .el-fire { background: var(--el-fire); }
+.el-legend .el-cryst { background: var(--el-cryst); }
+.el-legend .el-natural { background: var(--el-natural); }
+.el-legend .el-pulse { background: var(--el-pulse); }
+

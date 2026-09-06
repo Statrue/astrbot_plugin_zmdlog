@@ -16,6 +16,7 @@ from .models import (
     BossRanking,
     CharacterBossStatistics,
     CharacterStatistics,
+    CharacterType,
     EquipSuit,
     HotBossCard,
     ModelValidationError,
@@ -26,6 +27,7 @@ from .models import (
     parse_boss_ranking,
     parse_character_boss_statistics,
     parse_character_statistics,
+    parse_character_types,
     parse_equip_catalog,
     parse_hot_bosses,
     parse_public_user_rankings,
@@ -147,6 +149,22 @@ class ZmdLogsClient:
             return parse_equip_catalog(payload)
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError("equip catalog response is invalid") from exc
+
+    async def get_character_types(self) -> tuple[CharacterType, ...]:
+        """Return every character's element and weapon type.
+
+        Static game data, public and unauthenticated, about thirty entries;
+        the only place upstream states a character's element outside a
+        battle's own roster.
+        """
+
+        payload = await self._get_json("api/game-data/character")
+        try:
+            return parse_character_types(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError(
+                "character catalog response is invalid"
+            ) from exc
 
     async def get_boss_rankings(self, boss_slug: str) -> BossRanking:
         """Return one complete DPS ranking without sending a metric parameter."""

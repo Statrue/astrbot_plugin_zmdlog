@@ -30,6 +30,7 @@ from .client import (
     searchable_nickname,
 )
 from .datasource import ZmdLogsDataSource
+from .elements import ELEMENTS, normalize_element
 from .identifiers import (
     PublicReferenceError,
     parse_account_reference,
@@ -98,11 +99,16 @@ class ToolService:
         *,
         character: str = "",
         limit: int = facts.DEFAULT_ROW_LIMIT,
+        element: str = "",
     ) -> ToolAnswer:
+        wanted = self._element(element)
+        if isinstance(wanted, ToolAnswer):
+            return wanted
         slug = await self._resolve_board(keyword)
         if isinstance(slug, ToolAnswer):
             return slug
         ranking = await self._data.get_boss_ranking(slug)
+        elements = await self._elements()
         name = ""
         if character:
             name = self._resolve_character(ranking, character)
@@ -111,8 +117,18 @@ class ToolService:
                     f"「{ranking.boss_name}」的公开记录里没有"
                     f"「{shorten(character)}」这个角色，可能是名字不对。"
                 )
+        if wanted and not any(
+            elements.get(row.character_name) == wanted for row in ranking.rows
+        ):
+            return ToolAnswer(
+                f"「{ranking.boss_name}」的公开记录里没有主C 为{wanted}属性的队伍。"
+            )
         text = facts.format_board_ranking(
-            ranking, limit=limit, character=name or None
+            ranking,
+            limit=limit,
+            character=name or None,
+            element=wanted or None,
+            elements=elements,
         )
         image = await self._render(
             lambda renderer: renderer.render_ranking(
@@ -121,6 +137,8 @@ class ToolService:
                 ranking_limit=max(limit, 10),
                 web_base_url=self._web_base_url,
                 character_filter=(name,) if name else None,
+                element_filter=wanted or None,
+                elements=elements,
             )
         )
         return ToolAnswer(text, image)
@@ -198,11 +216,16 @@ class ToolService:
 
     # --- characters and accounts --------------------------------------------------
 
-    async def character(self, name: str, board: str = "") -> ToolAnswer:
+    async def character(
+        self, name: str, board: str = "", element: str = ""
+    ) -> ToolAnswer:
         if board:
             return await self._character_on_board(name, board)
         if not name.strip():
-            return await self._champions()
+            wanted = self._element(element)
+            if isinstance(wanted, ToolAnswer):
+                return wanted
+            return await self._champions(wanted or None)
         # Standings come from the ranking index and cover every rarity; the
         # DPS distribution needs a six-star key and is added when there is one.
         index = self._data.ranking_index
@@ -221,6 +244,7 @@ class ToolService:
         key = await self._catalog_key(resolution.name)
         # The distribution is an upstream read of several seconds and the
         # render about one; they need nothing from each other, so they overlap.
+        elements = await self._elements()
         stats, image = await asyncio.gather(
             self._boss_statistics(key),
             self._render(
@@ -229,6 +253,7 @@ class ToolService:
                     query=resolution.name,
                     web_base_url=self._web_base_url,
                     age_seconds=age,
+                    elements=elements,
                 )
             ),
         )
@@ -237,16 +262,27 @@ class ToolService:
             parts.append(facts.format_character_boards(stats))
         return ToolAnswer(facts.join_sections(*parts), image)
 
-    async def _champions(self) -> ToolAnswer:
-        """Every character's first places over all boards, most first."""
+    async def _champions(self, element: str | None = None) -> ToolAnswer:
+        """Every character's first places over all boards, most first.
+
+        ``element`` keeps only the characters of that element, which is how
+        "物理队有什么冠军" is answered: the board, restricted to them.
+        """
 
         index = self._data.ranking_index
         await index.ensure_filled()
         rankings = tuple(entry.ranking for entry in index.entries())
+        elements = await self._elements()
         tallies = character_tallies(rankings)
+        if element is not None:
+            tallies = tuple(t for t in tallies if elements.get(t.name) == element)
         age = index.oldest_age_seconds()
         text = facts.format_character_tallies(
-            tallies, board_count=len(rankings), limit=15, age_seconds=age
+            tallies,
+            board_count=len(rankings),
+            limit=15,
+            age_seconds=age,
+            element=element,
         )
         image = await self._render(
             lambda renderer: renderer.render_character_champions(
@@ -255,9 +291,33 @@ class ToolService:
                 query="角色排名",
                 web_base_url=self._web_base_url,
                 age_seconds=age,
+                element=element,
+                elements=elements,
             )
         )
         return ToolAnswer(text, image)
+
+    @staticmethod
+    def _element(text: str) -> str | ToolAnswer:
+        """The catalog label for an element the model typed; "" for none."""
+
+        if not text.strip():
+            return ""
+        label = normalize_element(text)
+        if label is None:
+            return ToolAnswer(
+                f"「{shorten(text)}」不是属性，属性只有：{'、'.join(ELEMENTS)}。"
+            )
+        return label
+
+    async def _elements(self) -> dict[str, str]:
+        """Name to element label; empty when the catalog is unreachable."""
+
+        try:
+            types = await self._data.get_character_types()
+        except ZmdLogsClientError:
+            return {}
+        return {name: entry.element for name, entry in types.items()}
 
     async def _boss_statistics(self, key: str | None):
         """The six-star distribution, or nothing; the standings stand without it."""

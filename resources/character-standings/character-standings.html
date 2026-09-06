@@ -79,7 +79,7 @@
       <div class="standings-team">
         {% for member in row.roster %}
         <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}{% if member.character_name == page.character_name %} is-match{% endif %}">
-          <span class="avatar">
+          <span class="avatar{% if member.element_key %} el-{{ member.element_key }}{% endif %}">
             {{ member.character_initial }}
             {% if member.avatar_url %}
             <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
@@ -95,6 +95,7 @@
   </ol>
   <p class="board-legend">
     黄圈头像为该场主 C，加框的是 {{ page.character_name }}；用时为通关时间，队伍 DPS 为整队合计。
+    <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
   </p>
 </section>
 {% else %}

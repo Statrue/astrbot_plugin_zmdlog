@@ -280,7 +280,9 @@ class QueryService:
             return await self._dispatch_trend(route, origin=origin)
 
         if route.kind is RouteKind.CHARACTER_STANDINGS:
-            return await self._render_character_standings(route.query)
+            return await self._render_character_standings(
+                route.query, element_filter=route.element_filter
+            )
 
         if route.kind is RouteKind.CHARACTER_STATS and not route.query.strip():
             stats = await self._data.get_character_statistics(
@@ -416,6 +418,7 @@ class QueryService:
                 ranking_top=pending.ranking_top,
                 view=pending.view,
                 character_filter=pending.character_filter,
+                element_filter=pending.element_filter,
                 stats_range=pending.stats_range,
                 stats_potential=pending.stats_potential,
                 battle_rank=pending.battle_rank,
@@ -626,7 +629,21 @@ class QueryService:
 
     # --- characters ------------------------------------------------------------------
 
-    async def _render_character_standings(self, query: str) -> Outcome:
+    async def _character_elements(self) -> dict[str, str]:
+        """Name to element label; empty when the catalog is unreachable."""
+
+        try:
+            types = await self._data.get_character_types()
+        except ZmdLogsClientError:
+            return {}
+        return {name: entry.element for name, entry in types.items()}
+
+    async def _render_character_standings(
+        self,
+        query: str,
+        *,
+        element_filter: str | None = None,
+    ) -> Outcome:
         """Where the teams fielding one character stand on every board.
 
         Drawn from the ranking index, never from upstream directly: the name
@@ -637,13 +654,22 @@ class QueryService:
         index = self._data.ranking_index
         await index.ensure_filled()
         rankings = tuple(entry.ranking for entry in index.entries())
+        elements = await self._character_elements()
         if not query.strip():
+            tallies = character_tallies(rankings)
+            if element_filter is not None:
+                tallies = tuple(
+                    tally for tally in tallies
+                    if elements.get(tally.name) == element_filter
+                )
             image_path = await self._renderer().render_character_champions(
-                character_tallies(rankings),
+                tallies,
                 board_count=len(rankings),
                 query="角色排名",
                 web_base_url=self._web_base_url,
                 age_seconds=index.oldest_age_seconds(),
+                element=element_filter,
+                elements=elements,
             )
             return Outcome(image_path=image_path)
         resolution = resolve_character_name(query, roster_character_names(rankings))
@@ -660,6 +686,7 @@ class QueryService:
             query=query,
             web_base_url=self._web_base_url,
             age_seconds=index.oldest_age_seconds(),
+            elements=elements,
         )
         return Outcome(image_path=image_path)
 
@@ -857,6 +884,17 @@ class QueryService:
                             f"「{'、'.join(resolved)}」的记录。"
                         )
                     )
+        elements = await self._character_elements()
+        element_filter = pending.element_filter
+        if element_filter is not None and not any(
+            elements.get(row.character_name) == element_filter for row in ranking.rows
+        ):
+            return Outcome(
+                message=(
+                    f"「{ranking.boss_name}」的公开排名里没有主 C 为"
+                    f"{element_filter}属性的记录。"
+                )
+            )
         image_path = await renderer.render_ranking(
             ranking,
             query=query,
@@ -864,6 +902,8 @@ class QueryService:
             web_base_url=self._web_base_url,
             character_filter=character_filter,
             character_filter_scope=character_filter_scope,
+            element_filter=element_filter,
+            elements=elements,
         )
         return Outcome(image_path=image_path)
 
@@ -1072,6 +1112,7 @@ def pending_from_route(route: RouteRequest) -> PendingCandidates:
         created_at=0.0,
         view=route_view(route),
         character_filter=route.character_filter,
+        element_filter=route.element_filter,
         stats_range=route.stats_range,
         stats_potential=route.stats_potential,
         battle_rank=route.battle_rank,
@@ -1090,6 +1131,7 @@ def _plain_ranking_query(view: CandidateView, pending: PendingCandidates) -> boo
         view is CandidateView.RANKING
         and pending.ranking_top is None
         and pending.character_filter is None
+        and pending.element_filter is None
     )
 
 

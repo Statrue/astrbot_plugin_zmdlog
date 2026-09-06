@@ -332,6 +332,15 @@ class EquipSuit:
 
 
 @dataclass(frozen=True, slots=True)
+class CharacterType:
+    """One character's element and weapon type, from the game data catalog."""
+
+    name: str
+    element: str
+    weapon_type: str
+
+
+@dataclass(frozen=True, slots=True)
 class CharacterStatisticsRow:
     character_key: str
     character_name: str
@@ -432,6 +441,38 @@ def parse_equip_catalog(payload: Any) -> tuple[EquipSuit, ...]:
             continue
         suits.append(EquipSuit(suit_id=suit_id, name=name))
     return tuple(suits)
+
+
+def parse_character_types(payload: Any) -> tuple[CharacterType, ...]:
+    """Read element and weapon type out of ``GET /api/game-data/character``.
+
+    Lenient like the suit catalog: an entry without a name or a type is
+    skipped, never fatal — the rings and the filter simply do not know that
+    character. ``charTypeName`` is the element (物理 / 灼热 / 寒冷 / 自然 /
+    电磁); the catalog carries every rarity, and the two 管理员 entries agree.
+    """
+
+    root = _mapping(payload, "character-catalog")
+    types: list[CharacterType] = []
+    for value in root.get("entries") or ():
+        if not isinstance(value, dict):
+            continue
+        name = value.get("name")
+        element = value.get("charTypeName")
+        weapon = value.get("weaponTypeName")
+        if not isinstance(name, str) or not isinstance(element, str):
+            continue
+        name, element = name.strip(), element.strip()
+        if not name or not element:
+            continue
+        types.append(
+            CharacterType(
+                name=name,
+                element=element,
+                weapon_type=weapon.strip() if isinstance(weapon, str) else "",
+            )
+        )
+    return tuple(types)
 
 
 def parse_hot_bosses(payload: Any) -> tuple[HotBossCard, ...]:

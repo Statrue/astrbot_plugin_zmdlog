@@ -58,6 +58,7 @@ class PendingCandidates:
     # chat, so a code learned elsewhere cannot select on someone else's behalf.
     origin: str = ""
     character_filter: str | None = None
+    element_filter: str | None = None
     stats_range: str = "all"
     stats_potential: str = "all"
     battle_rank: int = 1
@@ -85,6 +86,7 @@ class CandidateStore:
         ranking_top: int | None = None,
         view: CandidateView = CandidateView.RANKING,
         character_filter: str | None = None,
+        element_filter: str | None = None,
         stats_range: str = "all",
         stats_potential: str = "all",
         battle_rank: int = 1,
@@ -103,6 +105,7 @@ class CandidateStore:
             created_at=timestamp,
             view=view,
             character_filter=character_filter,
+            element_filter=element_filter,
             stats_range=stats_range,
             stats_potential=stats_potential,
             battle_rank=battle_rank,

@@ -1,5 +1,6 @@
 """Where the teams fielding one character stand on every board."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..standings import CharacterStandings
@@ -52,6 +53,7 @@ def build_character_standings_page(
     query: str,
     web_base_url: str | None = None,
     age_seconds: float | None = None,
+    elements: Mapping[str, str] | None = None,
 ) -> CharacterStandingsPage:
     """One row per board the character appeared on, best rank first.
 
@@ -66,7 +68,10 @@ def build_character_standings_page(
     for board in standings.boards:
         row = board.best
         roster = _build_roster(
-            row.roster_entries, row.roster_summary, web_base_url=web_base_url
+            row.roster_entries,
+            row.roster_summary,
+            web_base_url=web_base_url,
+            elements=elements,
         )
         if avatar_url is None:
             avatar_url = next(

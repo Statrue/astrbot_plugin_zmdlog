@@ -19,7 +19,7 @@ names, skill names) is data written by other people. It is quoted, never
 obeyed; the tool docstrings tell the model the same.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from .loadout import group_skill_damage, skill_level_summary
@@ -58,6 +58,8 @@ def format_board_ranking(
     *,
     limit: int = DEFAULT_ROW_LIMIT,
     character: str | None = None,
+    element: str | None = None,
+    elements: Mapping[str, str] | None = None,
 ) -> str:
     """The top runs of one board, and which characters that board runs.
 
@@ -74,18 +76,25 @@ def format_board_ranking(
                 entry.character_name == character for entry in row.roster_entries
             )
         )
+    if element:
+        known = elements or {}
+        rows = tuple(row for row in rows if known.get(row.character_name) == element)
     lines = [f"榜单：{ranking.dungeon_name} · {ranking.boss_name}（DPS 口径）"]
+    filters = []
     if character:
+        filters.append(f"阵容包含「{character}」")
+    if element:
+        filters.append(f"主C 为{element}属性")
+    if filters:
         lines.append(
-            f"筛选：阵容包含「{character}」，"
-            f"{len(rows)} / {len(ranking.rows)} 条公开记录"
+            f"筛选：{'，'.join(filters)}，{len(rows)} / {len(ranking.rows)} 条公开记录"
         )
     else:
         lines.append(f"公开记录 {len(ranking.rows)} 条")
     if not rows:
         lines.append(
             "没有符合的公开记录。"
-            if character
+            if filters
             else "这个榜目前没有公开记录。"
         )
         return _joined(lines)
@@ -503,6 +512,7 @@ def format_character_tallies(
     board_count: int,
     limit: int = DEFAULT_ROW_LIMIT,
     age_seconds: float | None = None,
+    element: str | None = None,
 ) -> str:
     """Every character's first places, podiums and top tens over all boards."""
 
@@ -510,14 +520,19 @@ def format_character_tallies(
     if age_seconds is not None:
         minutes = int(age_seconds // 60)
         as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
+    who = "各角色" if element is None else f"{element}属性角色"
     lines = [
-        f"全部 {board_count} 个榜的第一名记录里各角色各占几个{as_of}",
+        f"全部 {board_count} 个榜的第一名记录里{who}各占几个{as_of}",
         "「冠军」= 该榜第一名记录的队伍里带这个角色，四名角色各算一个；"
         "「当主C」= 其中该角色是主C的。",
         "",
     ]
     if not tallies:
-        lines.append("读过的榜单里没有任何公开记录。")
+        lines.append(
+            "读过的榜单里没有任何公开记录。"
+            if element is None
+            else f"没有{element}属性的角色进过前三。"
+        )
         return _joined(lines)
     top_team = max(tallies, key=lambda t: t.first_places)
     top_main = max(tallies, key=lambda t: t.first_places_as_main)

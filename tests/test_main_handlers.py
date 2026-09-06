@@ -164,6 +164,7 @@ class HandlerTests(unittest.TestCase):
         self.plugin.data.get_battle_export = offline
         self.plugin.data.get_character_statistics = offline
         self.plugin.data.get_equip_suits = offline
+        self.plugin.data.get_character_types = offline
         self.plugin.client.search_public_accounts = offline
 
     def tearDown(self) -> None:

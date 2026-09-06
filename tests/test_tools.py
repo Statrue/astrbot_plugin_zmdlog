@@ -101,6 +101,12 @@ class FakeData:
     async def get_public_user_rankings(self, account_id):
         return self.account
 
+    async def get_character_types(self):
+        from core.models import CharacterType
+
+        lead = self.ranking.rows[0].character_name if self.ranking else "洛茜"
+        return {lead: CharacterType(lead, "自然", "手铳")}
+
     catalog_refreshes = 0
 
     async def get_character_catalog(self, *, refresh=False):
@@ -251,6 +257,22 @@ class ToolServiceTests(unittest.TestCase):
         self.assertIn("battleId", answer.text)
         # Not a six-star in the catalog: no distribution lines are appended.
         self.assertNotIn("各榜单表现", answer.text)
+
+    def test_an_element_narrows_the_board_and_the_champions(self) -> None:
+        lead = self.ranking.rows[0].character_name
+
+        board = run(self.service.board("三位一体", element="自然"))
+        champions = run(self.service.character("", element="自然"))
+        nobody = run(self.service.board("三位一体", element="雷"))
+        nonsense = run(self.service.board("三位一体", element="光"))
+
+        self.assertIn("主C 为自然属性", board.text)
+        self.assertEqual(board.image_path, "/tmp/ranking.png")
+        self.assertIn("自然属性角色", champions.text)
+        self.assertIn(lead, champions.text)
+        self.assertIsNone(nobody.image_path)
+        self.assertIn("没有主C 为电磁属性", nobody.text)
+        self.assertIn("不是属性", nonsense.text)
 
     def test_no_character_name_answers_who_holds_the_most_first_places(self) -> None:
         answer = run(self.service.character(""))

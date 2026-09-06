@@ -42,7 +42,7 @@
     <li class="champ-row{% if row.position == 1 %} is-first{% elif row.position <= 3 %} is-podium{% endif %}">
       <span class="champ-pos">{{ row.position }}</span>
       <span class="champ-char">
-        <span class="avatar">
+        <span class="avatar{% if row.element_key %} el-{{ row.element_key }}{% endif %}">
           {{ row.initial }}
           {% if row.avatar_url %}
           <img src="{{ row.avatar_url }}" alt="" onerror="this.remove()">
@@ -66,6 +66,7 @@
   </ol>
   <p class="board-legend champ-legend">
     条形为冠军数占全部榜单数的比例；按冠军数、当主 C 的冠军数、前三、前十依次排序。
+    <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
   </p>
 </section>
 {% else %}

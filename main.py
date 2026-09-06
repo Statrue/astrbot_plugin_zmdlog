@@ -656,6 +656,7 @@ class ZmdLogBotPlugin(Star):
         board: str,
         character: str = "",
         limit: str = "",
+        element: str = "",
     ):
         """查询终末地某个首领榜单的公开速通记录：前几名的用时、DPS、主C、
         阵容和 battleId，该榜各职业位的角色出场率，以及出现过的阵容组合各几次；
@@ -669,6 +670,8 @@ class ZmdLogBotPlugin(Star):
             character(string): 只看阵容里带这个角色的记录并统计它的同队伙伴，
                 例如“提弗洛斯”，不筛选就留空
             limit(string): 列出前几名，默认 10，最多 30
+            element(string): 只看主C 为该属性的记录，填 物理、灼热、寒冷、自然 或 电磁，
+                不筛选就留空
         """
 
         return await self._run_tool(
@@ -677,6 +680,7 @@ class ZmdLogBotPlugin(Star):
                 board,
                 character=character,
                 limit=_positive_int(limit, facts.DEFAULT_ROW_LIMIT),
+                element=element,
             ),
         )
 
@@ -711,6 +715,7 @@ class ZmdLogBotPlugin(Star):
         event: AstrMessageEvent,
         character: str = "",
         board: str = "",
+        element: str = "",
     ):
         """查询终末地某个角色在公开记录里的表现：带它的队伍在每个榜单的最好名次、
         用时、DPS 和阵容（这是队伍的成绩，任何星级的角色都能查），六星干员再附上
@@ -725,10 +730,12 @@ class ZmdLogBotPlugin(Star):
         Args:
             character(string): 角色全名，例如“提弗洛斯”“余烬”；留空看全角色冠军榜
             board(string): 只看某个榜单，例如“罗丹”，留空则看它在所有榜单的表现
+            element(string): 角色名留空时只看该属性的角色，填 物理、灼热、寒冷、自然
+                或 电磁；问“物理队有什么冠军”就填 物理
         """
 
         return await self._run_tool(
-            event, lambda: self.tools.character(character, board)
+            event, lambda: self.tools.character(character, board, element)
         )
 
     @filter.llm_tool(name="query_endfield_account")

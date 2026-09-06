@@ -8,7 +8,7 @@ import tempfile
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -216,6 +216,8 @@ class TemplateRenderer:
         web_base_url: str | None = None,
         character_filter: str | tuple[str, ...] | None = None,
         character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
+        element_filter: str | None = None,
+        elements: Mapping[str, str] | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_ranking_page(
@@ -225,6 +227,8 @@ class TemplateRenderer:
             web_base_url=web_base_url,
             character_filter=character_filter,
             character_filter_scope=character_filter_scope,
+            element_filter=element_filter,
+            elements=elements,
         )
         return self._render(
             "ranking/ranking.html",
@@ -280,6 +284,7 @@ class TemplateRenderer:
         query: str,
         web_base_url: str | None = None,
         age_seconds: float | None = None,
+        elements: Mapping[str, str] | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_character_standings_page(
@@ -287,6 +292,7 @@ class TemplateRenderer:
             query=query,
             web_base_url=web_base_url,
             age_seconds=age_seconds,
+            elements=elements,
         )
         return self._render(
             "character-standings/character-standings.html",
@@ -303,6 +309,8 @@ class TemplateRenderer:
         query: str,
         web_base_url: str | None = None,
         age_seconds: float | None = None,
+        element: str | None = None,
+        elements: Mapping[str, str] | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_character_champions_page(
@@ -311,6 +319,8 @@ class TemplateRenderer:
             query=query,
             web_base_url=web_base_url,
             age_seconds=age_seconds,
+            element=element,
+            elements=elements,
         )
         return self._render(
             "character-champions/character-champions.html",

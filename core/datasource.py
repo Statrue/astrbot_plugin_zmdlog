@@ -21,6 +21,7 @@ from .models import (
     BossRanking,
     CharacterBossStatistics,
     CharacterStatistics,
+    CharacterType,
     HotBossCard,
     PublicUserRankings,
     parse_hot_bosses,
@@ -46,6 +47,7 @@ EQUIP_CATALOG_TTL_SECONDS = STATIC_CATALOG_TTL_SECONDS
 # every time someone mistypes; one refresh per this interval is enough.
 CATALOG_REFRESH_MIN_INTERVAL_SECONDS = 10 * 60.0
 _EQUIP_CATALOG_KEY = "equip_suits"
+_CHARACTER_TYPES_KEY = "character_types"
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +106,11 @@ class ZmdLogsDataSource:
             stale_ttl_seconds=EQUIP_CATALOG_TTL_SECONDS,
             max_entries=1,
         )
+        self.character_type_cache = AsyncTTLCache[str, dict[str, CharacterType]](
+            STATIC_CATALOG_TTL_SECONDS,
+            stale_ttl_seconds=STATIC_CATALOG_TTL_SECONDS,
+            max_entries=1,
+        )
         self._character_catalog: tuple[CharacterCatalogEntry, ...] | None = None
         self._character_catalog_loaded_at = 0.0
         self._character_catalog_lock = asyncio.Lock()
@@ -124,6 +131,7 @@ class ZmdLogsDataSource:
             self.battle_cache,
             self.battle_export_cache,
             self.equip_catalog_cache,
+            self.character_type_cache,
         )
 
     async def list_hot_bosses(self) -> tuple[HotBossCard, ...]:
@@ -209,6 +217,23 @@ class ZmdLogsDataSource:
     async def _fetch_equip_suits(self) -> dict[str, str]:
         suits = await self.client.get_equip_catalog()
         return {suit.suit_id: suit.name for suit in suits}
+
+    async def get_character_types(self) -> dict[str, CharacterType]:
+        """Name to element and weapon type; kept for a month like the suits."""
+
+        result = await self.character_type_cache.get_or_load(
+            _CHARACTER_TYPES_KEY,
+            self._fetch_character_types,
+            allow_stale_on_error=True,
+        )
+        if result.state is CacheState.STALE:
+            self._logger.warning(
+                "ZmdLogBot is using a stale character catalog after refresh failure."
+            )
+        return result.value
+
+    async def _fetch_character_types(self) -> dict[str, CharacterType]:
+        return {entry.name: entry for entry in await self.client.get_character_types()}
 
     async def get_character_catalog(
         self, *, refresh: bool = False

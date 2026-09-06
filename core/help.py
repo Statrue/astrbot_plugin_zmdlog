@@ -54,7 +54,8 @@ def build_help_page(command_prefix: str) -> HelpPage:
                 commands=(
                     HelpCommand(
                         command=(
-                            f"{command} <榜单关键词> [--top 数量] [--角色 角色名…]"
+                            f"{command} <榜单关键词> [--top 数量] "
+                            "[--角色 角色名…] [--属性 属性]"
                         ),
                         answers="这个榜的前几名是谁？带上某些角色的队伍能排第几？",
                         description=(
@@ -83,11 +84,11 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
-                        command=f"{command} 角色排名 [角色名]",
+                        command=f"{command} 角色排名 [角色名 | --属性 属性]",
                         answers="带这个角色的队伍在各个榜排第几？谁的冠军最多？",
                         description=(
                             "接角色名看每个榜带它的最好记录：名次、用时、阵容；"
-                            "不填看各角色的第一名、前三、前十各几个。"
+                            "不填看各角色的冠军数，--属性 只看该属性的角色。"
                         ),
                     ),
                 ),
