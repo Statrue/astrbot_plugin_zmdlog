@@ -91,6 +91,28 @@ class StandingsTests(unittest.TestCase):
 
         self.assertIn("没有「没有这个人」出场", text)
 
+    def test_the_text_names_the_boards_without_the_character(self) -> None:
+        # 「诀有哪几个副本不是第一」 needs the absent boards by name.
+        empty = ranking("dung01_group_bossrush04", "阮一", rows=0)
+        standings = character_standings((*self.rankings, empty), self.name)
+
+        text = facts.format_character_standings(standings)
+
+        self.assertIn("1 个榜没有出场。", text)
+        self.assertIn("没有出场的榜：阮一", text)
+
+    def test_many_absent_boards_are_left_to_the_page(self) -> None:
+        empties = tuple(
+            ranking(f"dung01_group_bossrush{i:02d}", f"榜{i}", rows=0)
+            for i in range(10, 10 + facts.MAX_ABSENT_NAMED + 1)
+        )
+        standings = character_standings((*self.rankings, *empties), self.name)
+
+        text = facts.format_character_standings(standings)
+
+        self.assertIn("没有出场的榜太多，名单见图。", text)
+        self.assertNotIn("没有出场的榜：", text)
+
 
 class StandingsPageTests(unittest.TestCase):
     def setUp(self) -> None:

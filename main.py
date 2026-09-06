@@ -869,6 +869,9 @@ class ZmdLogBotPlugin(Star):
                 event.send(MessageChain([Image.fromFileSystem(path)])),
                 timeout=_NOTICE_SEND_TIMEOUT_SECONDS,
             )
+            # Direct sends bypass the pipeline's own send log; one line here
+            # is what lets a log review tell a sent picture from a lost one.
+            logger.info("ZmdLogBot sent the turn's tool picture.")
         except Exception as exc:
             logger.warning(
                 "ZmdLogBot could not send a tool image: %s", type(exc).__name__

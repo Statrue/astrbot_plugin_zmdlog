@@ -436,6 +436,10 @@ def format_character_boards(
     return _joined(lines)
 
 
+# Absent boards are named up to this many; past it the page carries the list.
+MAX_ABSENT_NAMED = 12
+
+
 def format_character_standings(
     standings: CharacterStandings,
     *,
@@ -461,6 +465,15 @@ def format_character_standings(
         f"出场 {standings.appearances} 次，分布在 {len(standings.boards)} 个榜；"
         f"{len(standings.absent)} 个榜没有出场。"
     )
+    # "哪几个榜没上" is a real question (2026-09-06: the model had to answer
+    # 「具体哪 5 个我这边没列出来」); a short list is named, a long one is
+    # on the page.
+    if 0 < len(standings.absent) <= MAX_ABSENT_NAMED:
+        lines.append(
+            "没有出场的榜：" + "、".join(board.boss_name for board in standings.absent)
+        )
+    elif standings.absent:
+        lines.append("没有出场的榜太多，名单见图。")
     # "有多少冠军" is answered here, not by counting the lines below, which
     # stop at ``limit``.
     lines.append(
