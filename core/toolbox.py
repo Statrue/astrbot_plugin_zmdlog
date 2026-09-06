@@ -32,6 +32,7 @@ from .client import (
 )
 from .datasource import ZmdLogsDataSource
 from .elements import ELEMENTS, normalize_element
+from .events import board_activity
 from .history import window_label, window_start
 from .identifiers import (
     PublicReferenceError,
@@ -106,7 +107,10 @@ class ToolService:
         character: str = "",
         limit: int = facts.DEFAULT_ROW_LIMIT,
         element: str = "",
+        time_range: str = "",
     ) -> ToolAnswer:
+        if not keyword.strip():
+            return await self._records(time_range)
         wanted = self._element(element)
         if isinstance(wanted, ToolAnswer):
             return wanted
@@ -145,6 +149,40 @@ class ToolService:
                 character_filter=(name,) if name else None,
                 element_filter=wanted or None,
                 elements=elements,
+            )
+        )
+        return ToolAnswer(text, image)
+
+    async def _records(self, time_range: str) -> ToolAnswer:
+        """New records, first places changing hands and board activity."""
+
+        span = _time_range(time_range)
+        if span == "all":
+            span = "7d"
+        index = self._data.ranking_index
+        await index.ensure_filled()
+        rankings = tuple(entry.ranking for entry in index.entries())
+        since = window_start(span, now=datetime.now(UTC))
+        log = self._data.event_log
+        events = log.recent(since=since)
+        activity = board_activity(rankings, since=since)
+        label = window_label(span)
+        age = index.oldest_age_seconds()
+        text = facts.format_records(
+            events,
+            activity,
+            window_label=label,
+            age_seconds=age,
+            log_since=log.oldest_seen_at(),
+        )
+        image = await self._render(
+            lambda renderer: renderer.render_records(
+                events,
+                activity,
+                query="新纪录",
+                window_label=label,
+                age_seconds=age,
+                log_since=log.oldest_seen_at(),
             )
         )
         return ToolAnswer(text, image)

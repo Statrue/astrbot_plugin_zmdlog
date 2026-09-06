@@ -93,6 +93,13 @@ from .rail import (
     build_timeline_page,
     build_timeline_view,
 )
+from .records import (
+    ActivityView,
+    ChampionChangeView,
+    NewRecordView,
+    RecordsPage,
+    build_records_page,
+)
 from .standings import (
     CharacterStandingsPage,
     StandingRowView,
@@ -167,6 +174,10 @@ __all__ = [
     "TrendPage",
     "CharacterStandingsPage",
     "PlayerChampionsPage",
+    "RecordsPage",
+    "ChampionChangeView",
+    "NewRecordView",
+    "ActivityView",
     "PlayerRowView",
     "CharacterChampionsPage",
     "TeamComboView",
@@ -196,6 +207,7 @@ __all__ = [
     "build_trend_page",
     "build_character_standings_page",
     "build_player_champions_page",
+    "build_records_page",
     "build_character_champions_page",
     "format_duration",
     "format_number",

@@ -71,7 +71,7 @@ _OPTION_USAGE = {
         "或 罗丹 --角色 黎风 洛茜（同时带上两人的队伍）。"
     ),
     "range": (
-        "--范围 仅适用于角色统计、名次趋势和不带角色名的角色排名，"
+        "--范围 仅适用于角色统计、名次趋势、新纪录和不带角色名的角色排名、玩家冠军榜，"
         "例如：角色统计 罗丹 --范围 7d。"
     ),
     "potential": "--潜能 仅适用于角色统计，例如：角色统计 罗丹 --潜能 0。",
@@ -110,6 +110,8 @@ class RouteKind(str, Enum):
     CHARACTER_STANDINGS = "character_standings"
     # Which public accounts uploaded the most first places.
     PLAYER_CHAMPIONS = "player_champions"
+    # New records and first places changing hands, from the index's re-reads.
+    RECORDS_QUERY = "records_query"
     ROSTER_QUERY = "roster_query"
     ALIAS_LIST = "alias_list"
     ALIAS_ADD = "alias_add"
@@ -245,6 +247,19 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
                 options.stats_range
                 if "range" in options.present
                 else DEFAULT_TREND_RANGE
+            ),
+        )
+
+    if command in {"新纪录", "新记录", "最近纪录"}:
+        options.reject_except("range")
+        if remainder:
+            raise RouteParseError(
+                "新纪录不接参数，只能加 --范围，例如：新纪录 --范围 30d。"
+            )
+        return RouteRequest(
+            RouteKind.RECORDS_QUERY,
+            stats_range=(
+                options.stats_range if "range" in options.present else "7d"
             ),
         )
 

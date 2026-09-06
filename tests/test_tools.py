@@ -120,6 +120,15 @@ class FakeData:
     async def get_character_boss_statistics(self, key, *, time_range, potential):
         return parse_character_boss_statistics(character_boss_statistics_payload())
 
+    class _EmptyLog:
+        def recent(self, *, kind=None, since=None):
+            return ()
+
+        def oldest_seen_at(self):
+            return None
+
+    event_log = _EmptyLog()
+
 
 class ToolServiceTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -319,6 +328,13 @@ class ToolServiceTests(unittest.TestCase):
         self.assertEqual(answer.image_path, "/tmp/player_champions.png")
         self.assertIn("各玩家各占几个", answer.text)
         self.assertIn("冠军最多：", answer.text)
+
+    def test_no_board_answers_what_is_new(self) -> None:
+        answer = run(self.service.board(""))
+
+        self.assertEqual(answer.image_path, "/tmp/records.png")
+        self.assertIn("新纪录", answer.text)
+        self.assertIn("第一名易主", answer.text)
 
     def test_a_page_that_will_not_draw_still_answers_in_text(self) -> None:
         self.renderer.fail = True

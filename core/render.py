@@ -24,6 +24,7 @@ from jinja2 import (
 from markupsafe import Markup
 
 from .characters import CharacterFilterScope
+from .events import BoardActivity, RecordEvent
 from .help import build_help_page
 from .history import AccountHistory
 from .matcher import MatchChoice
@@ -49,6 +50,7 @@ from .presentation import (
     build_loadout_page,
     build_player_champions_page,
     build_ranking_page,
+    build_records_page,
     build_roster_page,
     build_skill_page,
     build_timeline_page,
@@ -85,6 +87,7 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
         "character-standings",
         "character-champions",
         "player-champions",
+        "records",
         "roster",
         "loadout",
         "skills",
@@ -365,6 +368,29 @@ class TemplateRenderer:
             page,
             "player-champions",
             embed_fonts=embed_fonts,
+        )
+
+    def render_records(
+        self,
+        events: tuple[RecordEvent, ...],
+        activity: tuple[BoardActivity, ...],
+        *,
+        query: str,
+        window_label: str,
+        age_seconds: float | None = None,
+        log_since: str | None = None,
+        embed_fonts: bool = True,
+    ) -> str:
+        page = build_records_page(
+            events,
+            activity,
+            query=query,
+            window_label=window_label,
+            age_seconds=age_seconds,
+            log_since=log_since,
+        )
+        return self._render(
+            "records/records.html", page, "records", embed_fonts=embed_fonts
         )
 
     def render_roster(
@@ -773,6 +799,7 @@ class LongImageRenderer:
     render_player_champions = _captured(
         "player-champions", TemplateRenderer.render_player_champions
     )
+    render_records = _captured("records", TemplateRenderer.render_records)
     render_roster = _captured("roster", TemplateRenderer.render_roster)
     render_account = _captured("account", TemplateRenderer.render_account)
     render_battle = _captured("battle", TemplateRenderer.render_battle)

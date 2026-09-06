@@ -114,6 +114,7 @@ class HelpTests(unittest.TestCase):
                     "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
                 ),
                 "!zmdlog 角色排名 [角色名 | --属性 属性]",
+                "!zmdlog 新纪录 [--范围 7d|14d|30d]",
                 "!zmdlog 玩家冠军榜 [--范围 7d|14d|30d]",
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 (

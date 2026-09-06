@@ -653,14 +653,17 @@ class ZmdLogBotPlugin(Star):
     async def query_endfield_board(
         self,
         event: AstrMessageEvent,
-        board: str,
+        board: str = "",
         character: str = "",
         limit: str = "",
         element: str = "",
+        range: str = "",
     ):
         """查询终末地某个首领榜单的公开速通记录：前几名的用时、DPS、主C、
         阵容和 battleId，该榜各职业位的角色出场率，以及出现过的阵容组合各几次；
         给了角色名则只看带这个角色的记录，并统计它最常和谁同队。
+        榜单留空则回答“最近有什么新纪录”：哪些榜的第一名被谁刷新了、
+        新上传了哪些记录、哪个榜最近最活跃。
         已自动发送榜单长图，图里有完整数值，你不要复述数字，只解读。
         数据只有公开上传的成功记录，没有失败样本，出场次数和名次都不代表谁更强。
         数据全部来自 ZMDLogs 上玩家自愿上传的公开记录，不是全服统计，回答时要说明。
@@ -672,6 +675,7 @@ class ZmdLogBotPlugin(Star):
             limit(string): 列出前几名，默认 10，最多 30
             element(string): 只看主C 为该属性的记录，填 物理、灼热、寒冷、自然 或 电磁，
                 不筛选就留空
+            range(string): 榜单留空时看这段时间的新纪录，填 7d、14d 或 30d，默认 7d
         """
 
         return await self._run_tool(
@@ -681,6 +685,7 @@ class ZmdLogBotPlugin(Star):
                 character=character,
                 limit=_positive_int(limit, facts.DEFAULT_ROW_LIMIT),
                 element=element,
+                time_range=range,
             ),
         )
 

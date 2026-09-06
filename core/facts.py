@@ -22,6 +22,7 @@ obeyed; the tool docstrings tell the model the same.
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from .events import CHAMPION_CHANGE, NEW_RECORD, BoardActivity, RecordEvent
 from .loadout import group_skill_damage, skill_level_summary
 from .models import (
     BattleDetailSummary,
@@ -581,6 +582,59 @@ def format_character_tallies(
             lines.append(f"    {group.profession}：{chips}")
     lines.append("")
     lines.append("以上是队伍成绩的计数，不代表哪个角色更强。")
+    return _joined(lines)
+
+
+def format_records(
+    events: tuple[RecordEvent, ...],
+    activity: tuple[BoardActivity, ...],
+    *,
+    window_label: str,
+    age_seconds: float | None = None,
+    log_since: str | None = None,
+    limit: int = DEFAULT_ROW_LIMIT,
+) -> str:
+    """Champion changes, new records and per-board activity in a window."""
+
+    as_of = ""
+    if age_seconds is not None:
+        minutes = int(age_seconds // 60)
+        as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
+    changes = [event for event in events if event.kind == CHAMPION_CHANGE]
+    records = [event for event in events if event.kind == NEW_RECORD]
+    lines = [f"{window_label}的新纪录{as_of}"]
+    if log_since:
+        started = log_since[:16].replace("T", " ")
+        lines.append(f"新纪录流从 {started} 起记录，之前的变化没有。")
+    else:
+        lines.append("新纪录流刚开始记录，还没有发现任何变化。")
+    lines.append("")
+    lines.append(f"第一名易主 {len(changes)} 次：")
+    for event in changes[: _bounded(limit)]:
+        lines.append(
+            f"    {event.boss_name}：{event.account_display_name}"
+            f"（主C {event.character_name}，{_duration(event.duration_ms)}）"
+            f" 顶掉 {event.previous_account_display_name}"
+            f"（{_duration(event.previous_duration_ms)}）"
+            f" · battleId {event.battle_id}"
+        )
+    if not changes:
+        lines.append("    没有")
+    lines.append("")
+    per_board: dict[str, int] = {}
+    for event in records:
+        per_board[event.boss_name] = per_board.get(event.boss_name, 0) + 1
+    lines.append(f"新上传的记录 {len(records)} 条，按榜：")
+    for name, count in sorted(per_board.items(), key=lambda kv: (-kv[1], kv[0]))[
+        : _bounded(limit)
+    ]:
+        lines.append(f"    {name} {count} 条")
+    if not records:
+        lines.append("    没有")
+    lines.append("")
+    lines.append(f"各榜{window_label}打出的记录数（按战斗时间，与日志无关）：")
+    for item in [row for row in activity if row.count][: _bounded(limit)]:
+        lines.append(f"    {item.boss_name} {item.count} 条（共 {item.total} 条）")
     return _joined(lines)
 
 

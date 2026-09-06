@@ -1,0 +1,94 @@
+{% extends "common/base.html" %}
+
+{% block extra_styles %}
+{% include "character-stats/character-stats.css" %}
+{% include "records/records.css" %}
+{% endblock %}
+
+{% block hero_facts %}
+<div class="hero-facts">
+  <div class="hero-fact hero-fact--key"><span>第一名易主</span><strong>{{ page.change_count }}</strong><em>{{ page.window_label }}</em></div>
+  <div class="hero-fact"><span>新上传的记录</span><strong>{{ page.record_count }}</strong><em>索引发现的</em></div>
+  <div class="hero-fact"><span>{{ page.window_label }}打出的记录</span><strong>{{ page.active_total }}</strong><em>按战斗时间</em></div>
+  {% if page.as_of_label %}
+  <div class="hero-fact"><span>时效</span><strong class="rec-asof">{{ page.as_of_label }}</strong></div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="section-heading">
+  <h2>第一名易主</h2>
+  <span class="section-note">索引重读时发现的新第一名，以及它顶掉的记录{% if page.log_since_label %} · 记录自 {{ page.log_since_label }} 起{% endif %}</span>
+</div>
+{% if page.changes %}
+<ol class="rec-list">
+  {% for item in page.changes %}
+  <li class="rec-row rec-row--change">
+    <span class="rec-when">{{ item.seen_label }}</span>
+    <span class="rec-board"><strong>{{ item.boss_name }}</strong><em>{{ item.dungeon_name }}</em></span>
+    <span class="rec-new">
+      <strong>{{ item.account_display_name }}</strong>
+      <em>主 C {{ item.character_name }}</em>
+    </span>
+    <span class="rec-time"><b>{{ item.duration }}</b><i>DPS {{ item.dps }}</i></span>
+    <span class="rec-arrow" aria-hidden="true">顶掉</span>
+    <span class="rec-prev">
+      <strong>{{ item.previous_account_display_name }}</strong>
+      <em>主 C {{ item.previous_character_name }} · {{ item.previous_duration }}</em>
+    </span>
+  </li>
+  {% endfor %}
+</ol>
+{% if page.change_count > page.changes|length %}
+<p class="rec-more">另有 {{ page.change_count - page.changes|length }} 次未列出</p>
+{% endif %}
+{% else %}
+<div class="empty-ranking">{{ page.window_label }}没有发现第一名易主{% if not page.log_since_label %} · 新纪录流从索引上线起记录{% endif %}</div>
+{% endif %}
+
+<div class="section-heading section-heading--minor">
+  <h2>新上传的记录</h2>
+  <span class="section-note">索引重读时新出现的记录，按发现时间倒序 · 名次为发现时该记录在该榜的名次</span>
+</div>
+{% if page.records %}
+<ol class="rec-list">
+  {% for item in page.records %}
+  <li class="rec-row rec-row--new{% if item.rank == 1 %} is-first{% elif item.rank <= 3 %} is-podium{% endif %}">
+    <span class="rec-when">{{ item.seen_label }}</span>
+    <span class="rec-rank"><b>{{ item.rank }}</b></span>
+    <span class="rec-board"><strong>{{ item.boss_name }}</strong><em>{{ item.dungeon_name }}</em></span>
+    <span class="rec-new">
+      <strong>{{ item.account_display_name }}</strong>
+      <em>主 C {{ item.character_name }} · {{ item.roster_label }}</em>
+    </span>
+    <span class="rec-time"><b>{{ item.duration }}</b><i>DPS {{ item.dps }}</i></span>
+    <span class="rec-fought">战斗 {{ item.fought_label }}</span>
+  </li>
+  {% endfor %}
+</ol>
+{% if page.record_count > page.records|length %}
+<p class="rec-more">另有 {{ page.record_count - page.records|length }} 条未列出</p>
+{% endif %}
+{% else %}
+<div class="empty-ranking">{{ page.window_label }}没有发现新上传的记录{% if not page.log_since_label %} · 新纪录流从索引上线起记录{% endif %}</div>
+{% endif %}
+
+<div class="section-heading section-heading--minor">
+  <h2>各榜{{ page.window_label }}新增记录</h2>
+  <span class="section-note">按每条记录自己的战斗时间数，不依赖日志 · 条形相对最活跃的榜</span>
+</div>
+{% if page.activity %}
+<ol class="rec-activity">
+  {% for item in page.activity %}
+  <li class="rec-activity-row">
+    <span class="rec-board"><strong>{{ item.boss_name }}</strong><em>{{ item.dungeon_name }}</em></span>
+    <span class="rec-bar" aria-hidden="true"><i style="width: {{ item.bar_width }}%;"></i></span>
+    <span class="rec-count"><b>{{ item.count }}</b><i>/ {{ item.total }}</i></span>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<div class="empty-ranking">{{ page.window_label }}没有榜单打出新记录</div>
+{% endif %}
+{% endblock %}

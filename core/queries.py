@@ -45,6 +45,7 @@ from .client import (
     searchable_nickname,
 )
 from .datasource import CharacterCatalogEntry, ZmdLogsDataSource
+from .events import board_activity
 from .history import window_label, window_start
 from .identifiers import (
     PublicReferenceError,
@@ -286,6 +287,9 @@ class QueryService:
 
         if route.kind is RouteKind.PLAYER_CHAMPIONS:
             return await self._render_player_champions(route.stats_range)
+
+        if route.kind is RouteKind.RECORDS_QUERY:
+            return await self._render_records(route.stats_range)
 
         if route.kind is RouteKind.CHARACTER_STANDINGS:
             return await self._render_character_standings(
@@ -638,6 +642,25 @@ class QueryService:
         return Outcome(image_path=image_path)
 
     # --- characters ------------------------------------------------------------------
+
+    async def _render_records(self, time_range: str) -> Outcome:
+        """New records and first places changing hands, from the event log."""
+
+        index = self._data.ranking_index
+        await index.ensure_filled()
+        rankings = tuple(entry.ranking for entry in index.entries())
+        span = time_range if time_range != "all" else "30d"
+        since = window_start(span, now=datetime.now(UTC))
+        log = self._data.event_log
+        image_path = await self._renderer().render_records(
+            log.recent(since=since),
+            board_activity(rankings, since=since),
+            query="新纪录",
+            window_label=window_label(span),
+            age_seconds=index.oldest_age_seconds(),
+            log_since=log.oldest_seen_at(),
+        )
+        return Outcome(image_path=image_path)
 
     async def _render_player_champions(self, time_range: str) -> Outcome:
         """Which public accounts uploaded the most first places, from the index."""

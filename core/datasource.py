@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .cache import AsyncTTLCache, CacheState
 from .client import ZmdLogsClient, ZmdLogsClientError
+from .events import EventLog
 from .logs import LogSink
 from .models import (
     BattleDetailSummary,
@@ -26,11 +27,12 @@ from .models import (
     PublicUserRankings,
     parse_hot_bosses,
 )
-from .persistence import load_json, save_json
+from .persistence import JsonStore, load_json, save_json
 from .ranking_index import RankingIndex, account_rankings
 from .settings import PluginSettings
 
 HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
+RECORD_EVENTS_FILE = "record-events.json"
 _HOT_BOSSES_KEY = "all_board_top3"
 # A parsed battle carries its damage points and buff spans and measures
 # 50-130 KB, an order of magnitude more than any other cached value, so the
@@ -115,12 +117,21 @@ class ZmdLogsDataSource:
         self._character_catalog_loaded_at = 0.0
         self._character_catalog_lock = asyncio.Lock()
         self._clock = time.monotonic
+        # What every re-read of a board changed, kept in one bounded file.
+        self.event_log = EventLog(
+            JsonStore(
+                None if data_dir is None else data_dir / RECORD_EVENTS_FILE,
+                label="record events",
+                warn=logger.warning,
+            )
+        )
         # Every board ranking is read through the index; see ranking_index.py.
         self.ranking_index = RankingIndex(
             fetch_ranking=self._fetch_boss_ranking,
             fetch_boards=self.refresh_hot_bosses,
             pace_seconds=settings.ranking_index_pace_seconds,
             logger=logger,
+            on_refresh=self.event_log.record,
         )
         self._ranking_index_enabled = settings.ranking_index_enabled
         self._caches = (

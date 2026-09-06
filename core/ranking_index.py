@@ -64,10 +64,14 @@ class RankingIndex:
         pace_seconds: float = DEFAULT_PACE_SECONDS,
         signal_seconds: float = DEFAULT_SIGNAL_SECONDS,
         clock: Callable[[], float] = time.monotonic,
+        on_refresh: Callable[[BossRanking, BossRanking], None] | None = None,
     ) -> None:
         self._fetch_ranking = fetch_ranking
         self._fetch_boards = fetch_boards
         self._logger = logger
+        # Called with (copy held, copy fetched) after every re-read of a board
+        # that was already held: the event log reads the difference.
+        self._on_refresh = on_refresh
         self._pace = pace_seconds
         self._signal = signal_seconds
         # The loop checks the signal clock once per pace, so a read can land
@@ -177,7 +181,16 @@ class RankingIndex:
                 lambda done, slug=boss_slug: self._inflight.pop(slug, None)
             )
         ranking = await asyncio.shield(task)
+        previous = self._entries.get(boss_slug)
         self._entries[boss_slug] = IndexEntry(ranking, self._clock())
+        if previous is not None and self._on_refresh is not None:
+            try:
+                self._on_refresh(previous.ranking, ranking)
+            except Exception as exc:
+                self._logger.warning(
+                    "ZmdLogBot could not record board changes: %s",
+                    type(exc).__name__,
+                )
         if boss_slug in self._failing:
             self._failing.discard(boss_slug)
             self._logger.info("ZmdLogBot ranking index reads %s again.", boss_slug)

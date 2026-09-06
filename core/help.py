@@ -92,6 +92,14 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
+                        command=f"{command} 新纪录 [--范围 7d|14d|30d]",
+                        answers="最近谁刷新了第一名？新上传了哪些记录？哪个榜最活跃？",
+                        description=(
+                            "索引每次重读发现的第一名易主和新记录，"
+                            "加各榜这段时间打出的记录数；默认近 7 天。"
+                        ),
+                    ),
+                    HelpCommand(
                         command=f"{command} 玩家冠军榜 [--范围 7d|14d|30d]",
                         answers="哪个玩家的冠军最多？",
                         description=(
