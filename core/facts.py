@@ -31,7 +31,12 @@ from .models import (
     CharacterStatistics,
     PublicUserRankings,
 )
-from .standings import CharacterStandings, CharacterTally
+from .standings import (
+    CharacterStandings,
+    CharacterTally,
+    ProfessionUsage,
+    TeamTally,
+)
 from .telemetry import build_buff_coverage
 from .timeline import build_timeline
 
@@ -513,6 +518,9 @@ def format_character_tallies(
     limit: int = DEFAULT_ROW_LIMIT,
     age_seconds: float | None = None,
     element: str | None = None,
+    teams: tuple[TeamTally, ...] = (),
+    usage: tuple[ProfessionUsage, ...] = (),
+    window_label: str = "",
 ) -> str:
     """Every character's first places, podiums and top tens over all boards."""
 
@@ -521,8 +529,13 @@ def format_character_tallies(
         minutes = int(age_seconds // 60)
         as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
     who = "各角色" if element is None else f"{element}属性角色"
+    scope = (
+        f"全部 {board_count} 个榜的第一名记录"
+        if not window_label
+        else f"{window_label}各榜最快记录（{board_count} 个榜）"
+    )
     lines = [
-        f"全部 {board_count} 个榜的第一名记录里{who}各占几个{as_of}",
+        f"{scope}里{who}各占几个{as_of}",
         "「冠军」= 该榜第一名记录的队伍里带这个角色，四名角色各算一个；"
         "「当主C」= 其中该角色是主C的。",
         "",
@@ -551,6 +564,20 @@ def format_character_tallies(
         )
     if len(tallies) > len(shown):
         lines.append(f"（另有 {len(tallies) - len(shown)} 个角色未列出，图里有）")
+    if teams:
+        lines.append("")
+        lines.append("最常见的第一名阵容：")
+        for team in teams[:_TOP_TEAMS]:
+            boards = "、".join(team.boards[:4]) + ("…" if len(team.boards) > 4 else "")
+            lines.append(f"    {team.count} 个榜 · {'、'.join(team.names)}（{boards}）")
+    if usage:
+        lines.append("")
+        lines.append("各职业位出场率（带该角色的记录占全部记录的比例）：")
+        for group in usage:
+            chips = ", ".join(
+                f"{entry.name} {entry.share:g}%" for entry in group.entries[:4]
+            )
+            lines.append(f"    {group.profession}：{chips}")
     lines.append("")
     lines.append("以上是队伍成绩的计数，不代表哪个角色更强。")
     return _joined(lines)

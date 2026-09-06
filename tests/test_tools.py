@@ -274,6 +274,13 @@ class ToolServiceTests(unittest.TestCase):
         self.assertIn("没有主C 为电磁属性", nobody.text)
         self.assertIn("不是属性", nonsense.text)
 
+    def test_a_range_narrows_the_champions_board_to_a_window(self) -> None:
+        windowed = run(self.service.character("", time_range="7d"))
+        odd = run(self.service.character("", time_range="上个世纪"))
+
+        self.assertIn("近 7 天各榜最快记录", windowed.text)
+        self.assertIn("全部", odd.text)
+
     def test_no_character_name_answers_who_holds_the_most_first_places(self) -> None:
         answer = run(self.service.character(""))
 

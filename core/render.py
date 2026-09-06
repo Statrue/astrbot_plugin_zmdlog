@@ -54,7 +54,12 @@ from .presentation import (
     build_trend_page,
 )
 from .routing import DEFAULT_RANKING_TOP
-from .standings import CharacterStandings, CharacterTally
+from .standings import (
+    CharacterStandings,
+    CharacterTally,
+    ProfessionUsage,
+    TeamTally,
+)
 
 _VERSION_LINE = re.compile(
     r"^\s*version\s*:\s*(?P<value>[^#]+?)\s*(?:#.*)?$"
@@ -311,6 +316,9 @@ class TemplateRenderer:
         age_seconds: float | None = None,
         element: str | None = None,
         elements: Mapping[str, str] | None = None,
+        teams: tuple[TeamTally, ...] = (),
+        usage: tuple[ProfessionUsage, ...] = (),
+        window_label: str = "",
         embed_fonts: bool = True,
     ) -> str:
         page = build_character_champions_page(
@@ -321,6 +329,9 @@ class TemplateRenderer:
             age_seconds=age_seconds,
             element=element,
             elements=elements,
+            teams=teams,
+            usage=usage,
+            window_label=window_label,
         )
         return self._render(
             "character-champions/character-champions.html",

@@ -1,13 +1,21 @@
 """角色冠军榜: every character's first places counted over all boards."""
 
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 from core import facts
 from core.models import parse_boss_ranking
 from core.presentation import build_character_champions_page
 from core.render import TemplateRenderer
-from core.standings import character_tallies
+from core.standings import (
+    PROFESSION_ORDER,
+    character_tallies,
+    first_place_teams,
+    profession_usage,
+    window_rows,
+)
+from core.timestamps import parse_timestamp
 from tests.helpers import ranking_payload_with_rows
 
 WEB = "https://zmdlogs.com"
@@ -119,5 +127,95 @@ class ChampionsPageTests(unittest.TestCase):
         self.assertIn(self.rankings[0].rows[0].character_name, html)
 
 
+class WindowTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.rankings = (
+            ranking("dung01_group_bossrush02", "三位一体"),
+            ranking("dung01_group_bossrush03", "罗丹", rows=3),
+        )
+        # Every fixture record was fought at the same moment.
+        self.fought_at = parse_timestamp(self.rankings[0].rows[0].battle_end_at)
+
+    def test_a_window_keeps_the_records_fought_since_its_start(self) -> None:
+        board = self.rankings[0]
+
+        self.assertEqual(window_rows(board, None), board.rows)
+        self.assertEqual(len(window_rows(board, self.fought_at)), len(board.rows))
+        self.assertEqual(
+            window_rows(board, self.fought_at + timedelta(seconds=1)), ()
+        )
+
+    def test_tallies_inside_an_empty_window_are_empty(self) -> None:
+        later = self.fought_at + timedelta(seconds=1)
+
+        self.assertEqual(character_tallies(self.rankings, since=later), ())
+        self.assertTrue(character_tallies(self.rankings, since=self.fought_at))
+
+    def test_first_place_teams_count_boards_per_composition(self) -> None:
+        teams = first_place_teams(self.rankings)
+
+        # Both fixture boards share the same #1 record.
+        self.assertEqual(teams[0].count, 2)
+        self.assertEqual(teams[0].boards, ("三位一体", "罗丹"))
+        expected = tuple(
+            sorted(e.character_name for e in self.rankings[0].rows[0].roster_entries)
+        )
+        self.assertEqual(teams[0].names, expected)
+
+    def test_profession_usage_is_in_slot_order_with_exact_shares(self) -> None:
+        usage = profession_usage(self.rankings)
+
+        professions = [group.profession for group in usage]
+        order = {name: index for index, name in enumerate(PROFESSION_ORDER)}
+        self.assertEqual(
+            professions, sorted(professions, key=lambda p: order.get(p, 99))
+        )
+        total = sum(len(board.rows) for board in self.rankings)
+        for group in usage:
+            for entry in group.entries:
+                with self.subTest(character=entry.name):
+                    self.assertAlmostEqual(
+                        entry.share, round(entry.count / total * 100, 1)
+                    )
+
+    def test_the_page_and_the_text_carry_the_teams_and_the_usage(self) -> None:
+        tallies = character_tallies(self.rankings)
+        teams = first_place_teams(self.rankings)
+        usage = profession_usage(self.rankings)
+
+        page = build_character_champions_page(
+            tallies,
+            board_count=2,
+            query="角色排名",
+            teams=teams,
+            usage=usage,
+            window_label="近 7 天",
+        )
+        text = facts.format_character_tallies(
+            tallies, board_count=2, teams=teams, usage=usage, window_label="近 7 天"
+        )
+        renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
+        html = renderer.render_character_champions(
+            tallies,
+            board_count=2,
+            query="角色排名",
+            web_base_url=WEB,
+            teams=teams,
+            usage=usage,
+            window_label="近 7 天",
+        )
+
+        self.assertEqual(page.window_label, "近 7 天")
+        self.assertIn("近 7 天", page.header.title)
+        self.assertEqual(page.teams[0].count, 2)
+        self.assertTrue(page.usage)
+        self.assertIn("近 7 天各榜最快记录", text)
+        self.assertIn("最常见的第一名阵容", text)
+        self.assertIn("各职业位出场率", text)
+        self.assertIn("最常见的第一名阵容", html)
+        self.assertIn("各职业位出场率", html)
+
+
 if __name__ == "__main__":
     unittest.main()
+

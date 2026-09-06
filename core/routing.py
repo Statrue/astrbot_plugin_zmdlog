@@ -70,7 +70,10 @@ _OPTION_USAGE = {
         "--角色 仅适用于具体榜单查询，例如：罗丹 --角色 黎风，"
         "或 罗丹 --角色 黎风 洛茜（同时带上两人的队伍）。"
     ),
-    "range": "--范围 仅适用于角色统计和名次趋势，例如：角色统计 罗丹 --范围 7d。",
+    "range": (
+        "--范围 仅适用于角色统计、名次趋势和不带角色名的角色排名，"
+        "例如：角色统计 罗丹 --范围 7d。"
+    ),
     "potential": "--潜能 仅适用于角色统计，例如：角色统计 罗丹 --潜能 0。",
     "element": (
         "--属性 仅适用于具体榜单查询和不带角色名的角色排名，"
@@ -246,15 +249,19 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
     if command in {"角色排名", "角色榜"}:
         # Without a name: every character's first places over all boards,
         # optionally only the characters of one element.
-        options.reject_except("element")
-        if remainder and options.element_filter is not None:
+        options.reject_except("element", "range")
+        if remainder and (
+            options.element_filter is not None or "range" in options.present
+        ):
             raise RouteParseError(
-                "--属性 只在不带角色名的角色排名里用，例如：角色排名 --属性 物理。"
+                "--属性 和 --范围 只在不带角色名的角色排名里用，"
+                "例如：角色排名 --属性 物理，或 角色排名 --范围 7d。"
             )
         return RouteRequest(
             RouteKind.CHARACTER_STANDINGS,
             remainder,
             element_filter=options.element_filter,
+            stats_range=options.stats_range,
         )
 
     if command in {"角色统计", "角色"}:

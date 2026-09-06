@@ -20,6 +20,7 @@ one; a new view of a subject is a parameter or extra lines in its text.
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from . import facts
 from .characters import CharacterResolutionStatus, resolve_character_name
@@ -31,6 +32,7 @@ from .client import (
 )
 from .datasource import ZmdLogsDataSource
 from .elements import ELEMENTS, normalize_element
+from .history import window_label, window_start
 from .identifiers import (
     PublicReferenceError,
     parse_account_reference,
@@ -51,6 +53,8 @@ from .settings import PluginSettings
 from .standings import (
     character_standings,
     character_tallies,
+    first_place_teams,
+    profession_usage,
     roster_character_names,
 )
 
@@ -217,7 +221,7 @@ class ToolService:
     # --- characters and accounts --------------------------------------------------
 
     async def character(
-        self, name: str, board: str = "", element: str = ""
+        self, name: str, board: str = "", element: str = "", time_range: str = ""
     ) -> ToolAnswer:
         if board:
             return await self._character_on_board(name, board)
@@ -225,7 +229,7 @@ class ToolService:
             wanted = self._element(element)
             if isinstance(wanted, ToolAnswer):
                 return wanted
-            return await self._champions(wanted or None)
+            return await self._champions(wanted or None, time_range=time_range)
         # Standings come from the ranking index and cover every rarity; the
         # DPS distribution needs a six-star key and is added when there is one.
         index = self._data.ranking_index
@@ -262,20 +266,28 @@ class ToolService:
             parts.append(facts.format_character_boards(stats))
         return ToolAnswer(facts.join_sections(*parts), image)
 
-    async def _champions(self, element: str | None = None) -> ToolAnswer:
+    async def _champions(
+        self, element: str | None = None, *, time_range: str = ""
+    ) -> ToolAnswer:
         """Every character's first places over all boards, most first.
 
         ``element`` keeps only the characters of that element, which is how
         "物理队有什么冠军" is answered: the board, restricted to them.
+        ``time_range`` (7d / 14d / 30d) narrows every board to a window.
         """
 
+        span = _time_range(time_range)
         index = self._data.ranking_index
         await index.ensure_filled()
         rankings = tuple(entry.ranking for entry in index.entries())
         elements = await self._elements()
-        tallies = character_tallies(rankings)
+        since = window_start(span, now=datetime.now(UTC))
+        tallies = character_tallies(rankings, since=since)
         if element is not None:
             tallies = tuple(t for t in tallies if elements.get(t.name) == element)
+        teams = first_place_teams(rankings, since=since)
+        usage = profession_usage(rankings, since=since)
+        label = window_label(span)
         age = index.oldest_age_seconds()
         text = facts.format_character_tallies(
             tallies,
@@ -283,6 +295,9 @@ class ToolService:
             limit=15,
             age_seconds=age,
             element=element,
+            teams=teams,
+            usage=usage,
+            window_label=label,
         )
         image = await self._render(
             lambda renderer: renderer.render_character_champions(
@@ -293,6 +308,9 @@ class ToolService:
                 age_seconds=age,
                 element=element,
                 elements=elements,
+                teams=teams,
+                usage=usage,
+                window_label=label,
             )
         )
         return ToolAnswer(text, image)
@@ -524,3 +542,18 @@ class ToolService:
                 "ZmdLogBot tool could not render its page: %s", type(exc).__name__
             )
             return None
+
+
+_TIME_RANGES = {"7d": "7d", "14d": "14d", "30d": "30d", "all": "all", "": "all"}
+_TIME_RANGE_ALIASES = {
+    "7天": "7d", "一周": "7d", "week": "7d", "14天": "14d", "两周": "14d",
+    "30天": "30d", "一个月": "30d", "month": "30d", "全部": "all", "所有": "all",
+}
+
+
+def _time_range(text: str) -> str:
+    """A model's range as the option spells it; anything odd means all time."""
+
+    value = text.strip().casefold()
+    return _TIME_RANGES.get(value) or _TIME_RANGE_ALIASES.get(value) or "all"
+

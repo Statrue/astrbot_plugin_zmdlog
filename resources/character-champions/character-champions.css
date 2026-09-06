@@ -181,3 +181,114 @@
 .champ-asof {
   font-size: 14px;
 }
+
+/* ---------- 最常见的第一名阵容 ---------- */
+
+.champ-teams {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.champ-team {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) minmax(0, 360px);
+  gap: 18px;
+  align-items: center;
+  padding: 10px 18px 10px 0;
+  background: var(--card);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.champ-team-count {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding-left: 18px;
+  border-left: 5px solid var(--yellow-deep);
+  white-space: nowrap;
+}
+
+.champ-team-count b {
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.champ-team-count i {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.champ-team-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  min-width: 0;
+}
+
+.champ-team-boards {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+/* ---------- 各职业位出场率 ---------- */
+
+.champ-usage {
+  margin-top: 12px;
+  background: var(--card);
+}
+
+.champ-usage-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  padding: 9px 18px 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.champ-usage-prof {
+  flex: 0 0 74px;
+  padding-left: 18px;
+  border-left: 5px solid var(--ink);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.champ-usage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 4px;
+  background: var(--card-soft);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+
+.champ-usage-chip .avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
+.champ-usage-chip b {
+  color: var(--steel);
+  font-family: var(--font-num);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+

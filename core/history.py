@@ -167,6 +167,13 @@ def trend_points(
     return (carried, *within)
 
 
+def window_label(time_range: str) -> str:
+    """The Chinese label of a ``7d`` / ``14d`` / ``30d`` window; empty for ``all``."""
+
+    days = {"7d": 7, "14d": 14, "30d": 30}.get(time_range)
+    return "" if days is None else f"近 {days} 天"
+
+
 def window_start(time_range: str, *, now: datetime) -> datetime | None:
     """The left edge of a ``7d`` / ``14d`` / ``30d`` window; None for ``all``."""
 

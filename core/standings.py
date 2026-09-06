@@ -9,8 +9,32 @@ index already holds; nothing is fetched.
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 
-from .models import BossRanking, BossRankingRow
+from .models import BossRanking, BossRankingRosterEntry, BossRankingRow
+from .timestamps import parse_timestamp
+
+PROFESSION_ORDER = ("近卫", "重装", "辅助", "突击", "术士", "先锋")
+
+
+def window_rows(
+    ranking: BossRanking, since: datetime | None
+) -> tuple[BossRankingRow, ...]:
+    """The board's records fought at or after ``since``, still in rank order.
+
+    ``None`` is the whole board. Inside a window the positions are counted
+    again from one, so "the first place of the last seven days" is the
+    fastest record of those seven days, whatever its rank overall.
+    """
+
+    if since is None:
+        return ranking.rows
+    kept = []
+    for row in ranking.rows:
+        when = parse_timestamp(row.battle_end_at)
+        if when is not None and when >= since:
+            kept.append(row)
+    return tuple(kept)
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,11 +155,16 @@ class CharacterTally:
     appearances: int
 
 
-def character_tallies(rankings: Iterable[BossRanking]) -> tuple[CharacterTally, ...]:
+def character_tallies(
+    rankings: Iterable[BossRanking],
+    *,
+    since: datetime | None = None,
+) -> tuple[CharacterTally, ...]:
     """Every fielded character's counts, most first places first.
 
     "谁的冠军最多" is the standings turned the other way round: the same #1
-    records, counted per character instead of listed per board.
+    records, counted per character instead of listed per board. ``since``
+    narrows every board to the records of a window first.
     """
 
     first: dict[str, int] = {}
@@ -147,16 +176,17 @@ def character_tallies(rankings: Iterable[BossRanking]) -> tuple[CharacterTally, 
     profession: dict[str, str] = {}
     avatar: dict[str, str | None] = {}
     for ranking in rankings:
+        rows = window_rows(ranking, since)
         best: dict[str, int] = {}
-        for row in ranking.rows:
+        for position, row in enumerate(rows, start=1):
             for entry in row.roster_entries:
                 name = entry.character_name
                 appearances[name] = appearances.get(name, 0) + 1
                 profession.setdefault(name, entry.profession)
                 if avatar.get(name) is None:
                     avatar[name] = entry.avatar_url
-                if row.rank < best.get(name, row.rank + 1):
-                    best[name] = row.rank
+                if position < best.get(name, position + 1):
+                    best[name] = position
         for name, rank in best.items():
             boards[name] = boards.get(name, 0) + 1
             if rank <= 10:
@@ -165,8 +195,8 @@ def character_tallies(rankings: Iterable[BossRanking]) -> tuple[CharacterTally, 
                 podium[name] = podium.get(name, 0) + 1
             if rank == 1:
                 first[name] = first.get(name, 0) + 1
-        if ranking.rows:
-            leader = ranking.rows[0].character_name
+        if rows:
+            leader = rows[0].character_name
             first_main[leader] = first_main.get(leader, 0) + 1
     tallies = [
         CharacterTally(
@@ -193,3 +223,107 @@ def character_tallies(rankings: Iterable[BossRanking]) -> tuple[CharacterTally, 
         )
     )
     return tuple(tallies)
+
+
+@dataclass(frozen=True, slots=True)
+class TeamTally:
+    """One four-man composition and the boards whose first place fields it."""
+
+    names: tuple[str, ...]
+    # The roster of one of those records, for avatars and professions.
+    entries: tuple[BossRankingRosterEntry, ...]
+    count: int
+    boards: tuple[str, ...]
+
+
+def first_place_teams(
+    rankings: Iterable[BossRanking],
+    *,
+    since: datetime | None = None,
+) -> tuple[TeamTally, ...]:
+    """The compositions holding first places, most boards first."""
+
+    groups: dict[tuple[str, ...], list[tuple[str, BossRankingRow]]] = {}
+    for ranking in rankings:
+        rows = window_rows(ranking, since)
+        if not rows:
+            continue
+        top = rows[0]
+        names = tuple(sorted(entry.character_name for entry in top.roster_entries))
+        if not names:
+            names = tuple(sorted(top.roster_summary))
+        if not names:
+            continue
+        groups.setdefault(names, []).append((ranking.boss_name, top))
+    tallies = [
+        TeamTally(
+            names=names,
+            entries=members[0][1].roster_entries,
+            count=len(members),
+            boards=tuple(board for board, _ in members),
+        )
+        for names, members in groups.items()
+    ]
+    tallies.sort(key=lambda tally: (-tally.count, tally.names))
+    return tuple(tallies)
+
+
+@dataclass(frozen=True, slots=True)
+class UsageEntry:
+    name: str
+    count: int
+    # Records fielding the character, as a percentage of every record counted.
+    share: float
+    avatar_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ProfessionUsage:
+    profession: str
+    entries: tuple[UsageEntry, ...]
+
+
+def profession_usage(
+    rankings: Iterable[BossRanking],
+    *,
+    since: datetime | None = None,
+    limit: int = 6,
+) -> tuple[ProfessionUsage, ...]:
+    """Who fills each profession slot across every record, in slot order.
+
+    Counted from the rosters themselves rather than from upstream's per-board
+    percentages, so the share is exact: records fielding the character over
+    all records counted.
+    """
+
+    counts: dict[str, dict[str, int]] = {}
+    avatar: dict[str, str | None] = {}
+    total = 0
+    for ranking in rankings:
+        for row in window_rows(ranking, since):
+            total += 1
+            for entry in row.roster_entries:
+                bucket = counts.setdefault(entry.profession, {})
+                bucket[entry.character_name] = bucket.get(entry.character_name, 0) + 1
+                if avatar.get(entry.character_name) is None:
+                    avatar[entry.character_name] = entry.avatar_url
+    order = {profession: index for index, profession in enumerate(PROFESSION_ORDER)}
+    result = []
+    for profession in sorted(counts, key=lambda p: (order.get(p, len(order)), p)):
+        ranked = sorted(counts[profession].items(), key=lambda kv: (-kv[1], kv[0]))
+        result.append(
+            ProfessionUsage(
+                profession=profession,
+                entries=tuple(
+                    UsageEntry(
+                        name=name,
+                        count=count,
+                        share=round(count / total * 100, 1) if total else 0.0,
+                        avatar_url=avatar.get(name),
+                    )
+                    for name, count in ranked[:limit]
+                ),
+            )
+        )
+    return tuple(result)
+

@@ -716,6 +716,7 @@ class ZmdLogBotPlugin(Star):
         character: str = "",
         board: str = "",
         element: str = "",
+        range: str = "",
     ):
         """查询终末地某个角色在公开记录里的表现：带它的队伍在每个榜单的最好名次、
         用时、DPS 和阵容（这是队伍的成绩，任何星级的角色都能查），六星干员再附上
@@ -732,10 +733,13 @@ class ZmdLogBotPlugin(Star):
             board(string): 只看某个榜单，例如“罗丹”，留空则看它在所有榜单的表现
             element(string): 角色名留空时只看该属性的角色，填 物理、灼热、寒冷、自然
                 或 电磁；问“物理队有什么冠军”就填 物理
+            range(string): 角色名留空时只算这段时间的记录，填 7d、14d 或 30d；
+                问“最近一周谁冠军多”就填 7d，不限时间留空
         """
 
         return await self._run_tool(
-            event, lambda: self.tools.character(character, board, element)
+            event,
+            lambda: self.tools.character(character, board, element, range),
         )
 
     @filter.llm_tool(name="query_endfield_account")

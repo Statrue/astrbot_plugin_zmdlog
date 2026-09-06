@@ -44,8 +44,11 @@ from .boards import (
     build_roster_page,
 )
 from .champions import (
+    ChampionUsageView,
     CharacterChampionsPage,
     TallyRowView,
+    TeamComboView,
+    UsageChipView,
     build_character_champions_page,
 )
 from .charts import (
@@ -159,6 +162,9 @@ __all__ = [
     "TrendPage",
     "CharacterStandingsPage",
     "CharacterChampionsPage",
+    "TeamComboView",
+    "UsageChipView",
+    "ChampionUsageView",
     "TallyRowView",
     "StandingRowView",
     "TrendRowView",

@@ -4,9 +4,33 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..elements import element_key
-from ..standings import CharacterTally
+from ..standings import CharacterTally, ProfessionUsage, TeamTally
+from .boards import RosterEntryView, _build_roster
 from .common import PageHeader, _initial, _safe_asset_url
 from .standings import _as_of_label
+
+
+@dataclass(frozen=True, slots=True)
+class TeamComboView:
+    members: tuple[RosterEntryView, ...]
+    count: int
+    boards_label: str
+
+
+@dataclass(frozen=True, slots=True)
+class UsageChipView:
+    name: str
+    count: int
+    share_label: str
+    initial: str
+    avatar_url: str | None
+    element_key: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ChampionUsageView:
+    profession: str
+    chips: tuple[UsageChipView, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +64,10 @@ class CharacterChampionsPage:
     others: tuple[str, ...]
     # The element the board was filtered to, if any.
     element: str | None = None
+    # "近 7 天" and the like when the records were narrowed to a window.
+    window_label: str = ""
+    teams: tuple[TeamComboView, ...] = ()
+    usage: tuple[ChampionUsageView, ...] = ()
 
 
 def build_character_champions_page(
@@ -51,6 +79,9 @@ def build_character_champions_page(
     age_seconds: float | None = None,
     element: str | None = None,
     elements: Mapping[str, str] | None = None,
+    teams: tuple[TeamTally, ...] = (),
+    usage: tuple[ProfessionUsage, ...] = (),
+    window_label: str = "",
 ) -> CharacterChampionsPage:
     """One row per character with a podium, most first places first."""
 
@@ -78,13 +109,46 @@ def build_character_champions_page(
     )
     top_main = max(rows, key=lambda row: row.first_places_as_main, default=None)
     top_team = max(rows, key=lambda row: row.first_places, default=None)
+    team_views = tuple(
+        TeamComboView(
+            members=_build_roster(
+                team.entries, team.names, web_base_url=web_base_url, elements=elements
+            ),
+            count=team.count,
+            boards_label="、".join(team.boards[:6])
+            + ("…" if len(team.boards) > 6 else ""),
+        )
+        for team in teams[:5]
+    )
+    usage_views = tuple(
+        ChampionUsageView(
+            profession=group.profession,
+            chips=tuple(
+                UsageChipView(
+                    name=entry.name,
+                    count=entry.count,
+                    share_label=f"{entry.share:g}%",
+                    initial=_initial(entry.name),
+                    avatar_url=_safe_asset_url(entry.avatar_url, base_url=web_base_url),
+                    element_key=element_key(known.get(entry.name)),
+                )
+                for entry in group.entries
+            ),
+        )
+        for group in usage
+    )
+    scope = "全部榜单" if not window_label else f"{window_label}各榜最快记录"
     return CharacterChampionsPage(
         header=PageHeader(
-            title="角色冠军榜" if element is None else f"角色冠军榜 · {element}",
+            title=(
+                "角色冠军榜"
+                + (f" · {element}" if element else "")
+                + (f" · {window_label}" if window_label else "")
+            ),
             subtitle=(
-                "带该角色的队伍在全部榜单拿下的第一名、前三与前十"
+                f"带该角色的队伍在{scope}拿下的第一名、前三与前十"
                 if element is None
-                else f"{element}属性角色的队伍在全部榜单拿下的第一名、前三与前十"
+                else f"{element}属性角色的队伍在{scope}拿下的第一名、前三与前十"
             ),
             query=query,
             matched_name=f"全部 {board_count} 个榜单 · 角色冠军榜",
@@ -96,6 +160,9 @@ def build_character_champions_page(
         top_main=top_main,
         top_team=top_team,
         element=element,
+        window_label=window_label,
+        teams=team_views,
+        usage=usage_views,
         rows=rows,
         others=tuple(tally.name for tally in tallies if not tally.podiums),
     )

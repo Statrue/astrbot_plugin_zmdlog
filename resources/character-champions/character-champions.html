@@ -2,6 +2,7 @@
 
 {% block extra_styles %}
 {% include "character-stats/character-stats.css" %}
+{% include "ranking/ranking.css" %}
 {% include "character-champions/character-champions.css" %}
 {% endblock %}
 
@@ -71,6 +72,59 @@
 </section>
 {% else %}
 <div class="empty-ranking">读过的榜单里没有任何公开记录</div>
+{% endif %}
+
+{% if page.teams %}
+<div class="section-heading section-heading--minor">
+  <h2>最常见的第一名阵容</h2>
+  <span class="section-note">{{ page.window_label or "全部榜单" }}第一名记录的四人组合，按拿下的榜数排</span>
+</div>
+<ol class="champ-teams">
+  {% for team in page.teams %}
+  <li class="champ-team">
+    <span class="champ-team-count"><b>{{ team.count }}</b><i>个榜</i></span>
+    <span class="champ-team-members">
+      {% for member in team.members %}
+      <span class="team-member">
+        <span class="avatar{% if member.element_key %} el-{{ member.element_key }}{% endif %}">
+          {{ member.character_initial }}
+          {% if member.avatar_url %}
+          <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
+          {% endif %}
+        </span>
+        {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
+      </span>
+      {% endfor %}
+    </span>
+    <span class="champ-team-boards">{{ team.boards_label }}</span>
+  </li>
+  {% endfor %}
+</ol>
+{% endif %}
+
+{% if page.usage %}
+<div class="section-heading section-heading--minor">
+  <h2>各职业位出场率</h2>
+  <span class="section-note">带该角色的记录占{{ page.window_label or "全部" }}记录的比例，按职业分组</span>
+</div>
+<div class="champ-usage">
+  {% for group in page.usage %}
+  <div class="champ-usage-row">
+    <span class="champ-usage-prof">{{ group.profession }}</span>
+    {% for chip in group.chips %}
+    <span class="champ-usage-chip">
+      <span class="avatar{% if chip.element_key %} el-{{ chip.element_key }}{% endif %}">
+        {{ chip.initial }}
+        {% if chip.avatar_url %}
+        <img src="{{ chip.avatar_url }}" alt="" onerror="this.remove()">
+        {% endif %}
+      </span>
+      {{ chip.name }}<b>{{ chip.share_label }}</b>
+    </span>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
 {% endif %}
 
 {% if page.others %}

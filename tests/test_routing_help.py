@@ -244,4 +244,8 @@ class CharacterStandingsRouteTests(unittest.TestCase):
         self.assertEqual(bare.query, "")
         with self.assertRaises(RouteParseError):
             parse_zmdlog_payload("角色排名 诀 --top 5")
+        # A window applies to the bare champions board only.
+        self.assertEqual(parse_zmdlog_payload("角色排名 --范围 7d").stats_range, "7d")
+        with self.assertRaises(RouteParseError):
+            parse_zmdlog_payload("角色排名 诀 --范围 7d")
 

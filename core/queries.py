@@ -18,6 +18,7 @@ searches boards and accounts alike.
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from . import messages
 from .candidates import (
@@ -44,6 +45,7 @@ from .client import (
     searchable_nickname,
 )
 from .datasource import CharacterCatalogEntry, ZmdLogsDataSource
+from .history import window_label, window_start
 from .identifiers import (
     PublicReferenceError,
     parse_account_reference,
@@ -72,6 +74,8 @@ from .settings import PluginSettings
 from .standings import (
     character_standings,
     character_tallies,
+    first_place_teams,
+    profession_usage,
     roster_character_names,
 )
 
@@ -281,7 +285,9 @@ class QueryService:
 
         if route.kind is RouteKind.CHARACTER_STANDINGS:
             return await self._render_character_standings(
-                route.query, element_filter=route.element_filter
+                route.query,
+                element_filter=route.element_filter,
+                time_range=route.stats_range,
             )
 
         if route.kind is RouteKind.CHARACTER_STATS and not route.query.strip():
@@ -643,6 +649,7 @@ class QueryService:
         query: str,
         *,
         element_filter: str | None = None,
+        time_range: str = "all",
     ) -> Outcome:
         """Where the teams fielding one character stand on every board.
 
@@ -656,7 +663,8 @@ class QueryService:
         rankings = tuple(entry.ranking for entry in index.entries())
         elements = await self._character_elements()
         if not query.strip():
-            tallies = character_tallies(rankings)
+            since = window_start(time_range, now=datetime.now(UTC))
+            tallies = character_tallies(rankings, since=since)
             if element_filter is not None:
                 tallies = tuple(
                     tally for tally in tallies
@@ -670,6 +678,9 @@ class QueryService:
                 age_seconds=index.oldest_age_seconds(),
                 element=element_filter,
                 elements=elements,
+                teams=first_place_teams(rankings, since=since),
+                usage=profession_usage(rankings, since=since),
+                window_label=window_label(time_range),
             )
             return Outcome(image_path=image_path)
         resolution = resolve_character_name(query, roster_character_names(rankings))
