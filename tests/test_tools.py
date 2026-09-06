@@ -281,7 +281,8 @@ class ToolServiceTests(unittest.TestCase):
         for answer in answers:
             with self.subTest(text=answer.text[:30]):
                 self.assertIn("ZMDLogs", answer.text)
-                self.assertIn("不是全服统计", answer.text)
+                # Once, even when the answer is several sections joined.
+                self.assertEqual(answer.text.count("不是全服统计"), 1)
 
     def test_a_page_that_will_not_draw_still_answers_in_text(self) -> None:
         self.renderer.fail = True

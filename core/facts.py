@@ -573,6 +573,15 @@ def _joined(lines: list[str]) -> str:
     return with_source("\n".join(lines))
 
 
+def join_sections(*sections: str) -> str:
+    """Several formatter outputs as one answer, the source line once at the end."""
+
+    stripped = [
+        section.replace(SOURCE_NOTE, "").rstrip() for section in sections if section
+    ]
+    return with_source((chr(10) * 2).join(stripped))
+
+
 def with_source(text: str) -> str:
     """Append the source line once, whatever shape the text has."""
 

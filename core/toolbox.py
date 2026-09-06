@@ -218,22 +218,24 @@ class ToolService:
             return await self._character_distribution_only(name)
         standings = character_standings(rankings, resolution.name)
         age = index.oldest_age_seconds()
-        parts = [facts.format_character_standings(standings, age_seconds=age)]
         key = await self._catalog_key(resolution.name)
-        if key is not None:
-            stats = await self._data.get_character_boss_statistics(
-                key, time_range="all", potential="all"
-            )
-            parts.append(facts.format_character_boards(stats))
-        image = await self._render(
-            lambda renderer: renderer.render_character_standings(
-                standings,
-                query=resolution.name,
-                web_base_url=self._web_base_url,
-                age_seconds=age,
-            )
+        # The distribution is an upstream read of several seconds and the
+        # render about one; they need nothing from each other, so they overlap.
+        stats, image = await asyncio.gather(
+            self._boss_statistics(key),
+            self._render(
+                lambda renderer: renderer.render_character_standings(
+                    standings,
+                    query=resolution.name,
+                    web_base_url=self._web_base_url,
+                    age_seconds=age,
+                )
+            ),
         )
-        return ToolAnswer("\n\n".join(parts), image)
+        parts = [facts.format_character_standings(standings, age_seconds=age)]
+        if stats is not None:
+            parts.append(facts.format_character_boards(stats))
+        return ToolAnswer(facts.join_sections(*parts), image)
 
     async def _champions(self) -> ToolAnswer:
         """Every character's first places over all boards, most first."""
@@ -256,6 +258,18 @@ class ToolService:
             )
         )
         return ToolAnswer(text, image)
+
+    async def _boss_statistics(self, key: str | None):
+        """The six-star distribution, or nothing; the standings stand without it."""
+
+        if key is None:
+            return None
+        try:
+            return await self._data.get_character_boss_statistics(
+                key, time_range="all", potential="all"
+            )
+        except ZmdLogsClientError:
+            return None
 
     async def _character_on_board(self, name: str, board: str) -> ToolAnswer:
         resolution = await self._resolve_six_star(name)
