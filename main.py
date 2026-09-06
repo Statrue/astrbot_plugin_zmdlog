@@ -743,17 +743,28 @@ class ZmdLogBotPlugin(Star):
         )
 
     @filter.llm_tool(name="query_endfield_account")
-    async def query_endfield_account(self, event: AstrMessageEvent, account: str):
+    async def query_endfield_account(
+        self,
+        event: AstrMessageEvent,
+        account: str = "",
+        range: str = "",
+    ):
         """查询终末地某个公开账号在各首领榜单的最好成绩：名次、用时、DPS、
-        阵容和 battleId。已自动发送账号长图，图里有完整数值，你不要复述数字，只解读。
+        阵容和 battleId，以及它的公开记录数、冠军数、常用主C 和常用阵容。
+        账号留空则回答“哪个玩家冠军最多”：各公开账号上传的第一名、前三、前十各几个。
+        已自动发送长图，图里有完整数值，你不要复述数字，只解读。
         只有把记录设为公开的玩家才查得到。
         数据全部来自 ZMDLogs 上玩家自愿上传的公开记录，不是全服统计，回答时要说明。
 
         Args:
-            account(string): 公开昵称、accountId 或 ZMDLogs 账号主页链接
+            account(string): 公开昵称、accountId 或 ZMDLogs 账号主页链接；
+                留空看玩家冠军榜
+            range(string): 账号留空时只算这段时间的记录，填 7d、14d 或 30d，不限时间留空
         """
 
-        return await self._run_tool(event, lambda: self.tools.account(account))
+        return await self._run_tool(
+            event, lambda: self.tools.account(account, range)
+        )
 
     async def _run_tool(self, event: AstrMessageEvent, action) -> str:
         """Run one tool: send its picture, hand its facts back to the model.

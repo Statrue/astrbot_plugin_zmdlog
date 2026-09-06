@@ -327,3 +327,116 @@ def profession_usage(
         )
     return tuple(result)
 
+
+@dataclass(frozen=True, slots=True)
+class AccountTally:
+    """One public account's standings counted over every board.
+
+    A first place is a board whose #1 record this account uploaded; podiums
+    and top tens count boards by the account's best record there.
+    """
+
+    account_id: str
+    display_name: str
+    first_places: int
+    podiums: int
+    top_tens: int
+    boards: int
+    records: int
+    main_c: str
+    main_c_count: int
+    team: tuple[str, ...]
+    team_count: int
+
+
+def account_tallies(
+    rankings: Iterable[BossRanking],
+    *,
+    since: datetime | None = None,
+) -> tuple[AccountTally, ...]:
+    """Every uploading account's counts, most first places first."""
+
+    first: dict[str, int] = {}
+    podium: dict[str, int] = {}
+    top_ten: dict[str, int] = {}
+    boards: dict[str, int] = {}
+    records: dict[str, int] = {}
+    mains: dict[str, dict[str, int]] = {}
+    teams: dict[str, dict[tuple[str, ...], int]] = {}
+    display: dict[str, tuple[str, str]] = {}
+    for ranking in rankings:
+        rows = window_rows(ranking, since)
+        best: dict[str, int] = {}
+        for position, row in enumerate(rows, start=1):
+            account = row.account_id
+            records[account] = records.get(account, 0) + 1
+            if position < best.get(account, position + 1):
+                best[account] = position
+            bucket = mains.setdefault(account, {})
+            bucket[row.character_name] = bucket.get(row.character_name, 0) + 1
+            names = tuple(sorted(entry.character_name for entry in row.roster_entries))
+            if names:
+                combos = teams.setdefault(account, {})
+                combos[names] = combos.get(names, 0) + 1
+            # Nicknames change; the most recent upload carries the current one.
+            newest = display.get(account)
+            if newest is None or row.battle_end_at >= newest[0]:
+                display[account] = (row.battle_end_at, row.account_display_name)
+        for account, position in best.items():
+            boards[account] = boards.get(account, 0) + 1
+            if position <= 10:
+                top_ten[account] = top_ten.get(account, 0) + 1
+            if position <= 3:
+                podium[account] = podium.get(account, 0) + 1
+            if position == 1:
+                first[account] = first.get(account, 0) + 1
+    tallies = []
+    for account, count in records.items():
+        main_c, main_count = max(
+            mains.get(account, {}).items(),
+            key=lambda kv: (kv[1], kv[0]),
+            default=("", 0),
+        )
+        team, team_count = max(
+            teams.get(account, {}).items(),
+            key=lambda kv: (kv[1], kv[0]),
+            default=((), 0),
+        )
+        tallies.append(
+            AccountTally(
+                account_id=account,
+                display_name=display[account][1],
+                first_places=first.get(account, 0),
+                podiums=podium.get(account, 0),
+                top_tens=top_ten.get(account, 0),
+                boards=boards.get(account, 0),
+                records=count,
+                main_c=main_c,
+                main_c_count=main_count,
+                team=team,
+                team_count=team_count,
+            )
+        )
+    tallies.sort(
+        key=lambda tally: (
+            -tally.first_places,
+            -tally.podiums,
+            -tally.top_tens,
+            -tally.boards,
+            -tally.records,
+            tally.display_name,
+        )
+    )
+    return tuple(tallies)
+
+
+def account_tally(
+    rankings: Iterable[BossRanking], account_id: str
+) -> AccountTally | None:
+    """One account's counts, or None when it uploaded nothing the index holds."""
+
+    for tally in account_tallies(rankings):
+        if tally.account_id == account_id:
+            return tally
+    return None
+

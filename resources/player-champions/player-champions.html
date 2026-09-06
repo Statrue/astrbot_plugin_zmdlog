@@ -1,0 +1,81 @@
+{% extends "common/base.html" %}
+
+{% block extra_styles %}
+{% include "character-stats/character-stats.css" %}
+{% include "character-champions/character-champions.css" %}
+{% include "player-champions/player-champions.css" %}
+{% endblock %}
+
+{% block hero_facts %}
+<div class="hero-facts">
+  {% if page.top %}
+  <div class="hero-fact hero-fact--key"><span>冠军最多</span><strong>{{ page.top.display_name }}</strong><em>{{ page.top.first_places }} / {{ page.board_count }} 个榜</em></div>
+  {% endif %}
+  <div class="hero-fact"><span>榜单</span><strong>{{ page.board_count }}</strong><em>进过前三的玩家 {{ page.rows|length }}</em></div>
+  {% if page.as_of_label %}
+  <div class="hero-fact"><span>时效</span><strong class="champ-asof">{{ page.as_of_label }}</strong></div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="section-heading">
+  <h2>玩家冠军榜</h2>
+  <span class="section-note">冠军 = 该榜第一名记录的上传者 · 前三、前十按该账号在该榜的最好名次算 · 上榜榜单 = 有记录的榜数 · 记录 = 上传的公开记录数 · 只统计设为公开的账号</span>
+</div>
+
+{% if page.rows %}
+<section class="champ players">
+  <div class="champ-head" aria-hidden="true">
+    <span class="champ-head-pos">#</span>
+    <span class="champ-head-char">玩家</span>
+    <span class="champ-head-first">冠军</span>
+    <span class="champ-head-bar">占榜单数的比例</span>
+    <span class="champ-head-num">前三</span>
+    <span class="champ-head-num">前十</span>
+    <span class="champ-head-num">上榜榜单</span>
+    <span class="champ-head-num">记录</span>
+  </div>
+  <ol class="champ-rows">
+    {% for row in page.rows %}
+    <li class="champ-row{% if row.position == 1 %} is-first{% elif row.position <= 3 %} is-podium{% endif %}">
+      <span class="champ-pos">{{ row.position }}</span>
+      <span class="champ-char">
+        <span class="champ-char-text">
+          <strong>{{ row.display_name }}</strong>
+          {% if row.main_label %}<em>{{ row.main_label }}</em>{% endif %}
+          {% if row.team_label %}<em>{{ row.team_label }}</em>{% endif %}
+        </span>
+      </span>
+      <span class="champ-first">
+        <b>{{ row.first_places }}</b>
+        <i>冠军</i>
+      </span>
+      <span class="champ-bar" aria-hidden="true"><i style="width: {{ row.bar_width }}%;"></i></span>
+      <span class="champ-num">{{ row.podiums }}</span>
+      <span class="champ-num">{{ row.top_tens }}</span>
+      <span class="champ-num champ-num--muted">{{ row.boards }}</span>
+      <span class="champ-num champ-num--muted">{{ row.records }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="board-legend champ-legend">
+    条形为冠军数占全部榜单数的比例；按冠军数、前三、前十、上榜榜单、记录数依次排序。
+  </p>
+</section>
+{% else %}
+<div class="empty-ranking">读过的榜单里没有任何公开记录</div>
+{% endif %}
+
+{% if page.others %}
+<div class="section-heading section-heading--minor">
+  <h2>上榜但未进前三</h2>
+  <span class="section-note">{{ page.others|length }} 个账号有公开记录，最好名次在第三之后</span>
+</div>
+<div class="stats-insufficient">
+  {% for name in page.others %}
+  <span class="stats-insufficient-chip">{{ name }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

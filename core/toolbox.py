@@ -51,6 +51,8 @@ from .models import BossRanking, HotBossCard
 from .render import LongImageRenderer
 from .settings import PluginSettings
 from .standings import (
+    account_tallies,
+    account_tally,
     character_standings,
     character_tallies,
     first_place_teams,
@@ -411,7 +413,9 @@ class ToolService:
         entries = await self._data.get_character_catalog()
         return next((e.key for e in entries if e.name == name), None)
 
-    async def account(self, query: str) -> ToolAnswer:
+    async def account(self, query: str, time_range: str = "") -> ToolAnswer:
+        if not query.strip():
+            return await self._player_champions(time_range)
         try:
             account_id = parse_account_reference(
                 query, web_base_url=self._web_base_url
@@ -444,10 +448,42 @@ class ToolService:
             if exc.status_code == 404:
                 return ToolAnswer("没有这个公开账号，或它暂无公开榜单记录。")
             raise
-        text = facts.format_account(rankings)
+        # Habits come from whatever the index already holds; never wait for it.
+        held = tuple(entry.ranking for entry in self._data.ranking_index.entries())
+        habits = account_tally(held, account_id) if held else None
+        text = facts.format_account(rankings, habits=habits)
         image = await self._render(
             lambda renderer: renderer.render_account(
                 rankings, query=query, web_base_url=self._web_base_url
+            )
+        )
+        return ToolAnswer(text, image)
+
+    async def _player_champions(self, time_range: str) -> ToolAnswer:
+        """Which public accounts uploaded the most first places."""
+
+        span = _time_range(time_range)
+        index = self._data.ranking_index
+        await index.ensure_filled()
+        rankings = tuple(entry.ranking for entry in index.entries())
+        since = window_start(span, now=datetime.now(UTC))
+        tallies = account_tallies(rankings, since=since)
+        label = window_label(span)
+        age = index.oldest_age_seconds()
+        text = facts.format_account_tallies(
+            tallies,
+            board_count=len(rankings),
+            limit=15,
+            age_seconds=age,
+            window_label=label,
+        )
+        image = await self._render(
+            lambda renderer: renderer.render_player_champions(
+                tallies,
+                board_count=len(rankings),
+                query="玩家冠军榜",
+                age_seconds=age,
+                window_label=label,
             )
         )
         return ToolAnswer(text, image)

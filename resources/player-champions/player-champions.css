@@ -1,0 +1,15 @@
+/* 玩家冠军榜 — 复用角色冠军榜的行，多一列记录数，玩家没有头像。 */
+
+.champ.players {
+  --champ-cols: 44px minmax(0, 1fr) 120px minmax(0, 220px) 84px 84px 100px 84px;
+}
+
+.champ.players .champ-char-text strong {
+  font-size: 16px;
+}
+
+.champ.players .champ-char-text em {
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
+}

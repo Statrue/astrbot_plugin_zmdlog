@@ -72,6 +72,7 @@ from .render import LongImageRenderer
 from .routing import DEFAULT_RANKING_TOP, RouteKind, RouteRequest
 from .settings import PluginSettings
 from .standings import (
+    account_tallies,
     character_standings,
     character_tallies,
     first_place_teams,
@@ -282,6 +283,9 @@ class QueryService:
 
         if route.kind is RouteKind.TREND_QUERY:
             return await self._dispatch_trend(route, origin=origin)
+
+        if route.kind is RouteKind.PLAYER_CHAMPIONS:
+            return await self._render_player_champions(route.stats_range)
 
         if route.kind is RouteKind.CHARACTER_STANDINGS:
             return await self._render_character_standings(
@@ -634,6 +638,22 @@ class QueryService:
         return Outcome(image_path=image_path)
 
     # --- characters ------------------------------------------------------------------
+
+    async def _render_player_champions(self, time_range: str) -> Outcome:
+        """Which public accounts uploaded the most first places, from the index."""
+
+        index = self._data.ranking_index
+        await index.ensure_filled()
+        rankings = tuple(entry.ranking for entry in index.entries())
+        since = window_start(time_range, now=datetime.now(UTC))
+        image_path = await self._renderer().render_player_champions(
+            account_tallies(rankings, since=since),
+            board_count=len(rankings),
+            query="玩家冠军榜",
+            age_seconds=index.oldest_age_seconds(),
+            window_label=window_label(time_range),
+        )
+        return Outcome(image_path=image_path)
 
     async def _character_elements(self) -> dict[str, str]:
         """Name to element label; empty when the catalog is unreachable."""

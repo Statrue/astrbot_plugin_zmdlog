@@ -32,6 +32,7 @@ from .models import (
     PublicUserRankings,
 )
 from .standings import (
+    AccountTally,
     CharacterStandings,
     CharacterTally,
     ProfessionUsage,
@@ -583,7 +584,60 @@ def format_character_tallies(
     return _joined(lines)
 
 
-def format_account(account: PublicUserRankings, *, limit: int = MAX_ROW_LIMIT) -> str:
+def format_account_tallies(
+    tallies: tuple[AccountTally, ...],
+    *,
+    board_count: int,
+    limit: int = DEFAULT_ROW_LIMIT,
+    age_seconds: float | None = None,
+    window_label: str = "",
+) -> str:
+    """Every uploading account's first places, podiums and top tens."""
+
+    as_of = ""
+    if age_seconds is not None:
+        minutes = int(age_seconds // 60)
+        as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
+    scope = (
+        f"全部 {board_count} 个榜的第一名记录"
+        if not window_label
+        else f"{window_label}各榜最快记录（{board_count} 个榜）"
+    )
+    lines = [
+        f"{scope}里各玩家各占几个{as_of}",
+        "「冠军」= 该榜第一名记录的上传者；前三、前十按该账号在该榜的最好名次算；"
+        "只统计设为公开的账号。",
+        "",
+    ]
+    if not tallies:
+        lines.append("读过的榜单里没有任何公开记录。")
+        return _joined(lines)
+    top = tallies[0]
+    lines.append(f"冠军最多：{top.display_name} {top.first_places} 个榜。")
+    lines.append("")
+    shown = tallies[: _bounded(limit)]
+    for tally in shown:
+        habits = ""
+        if tally.main_c:
+            habits = f" · 常用主C {tally.main_c}（{tally.main_c_count} 次）"
+        lines.append(
+            f"{tally.display_name} · 冠军 {tally.first_places}"
+            f" · 前三 {tally.podiums} · 前十 {tally.top_tens}"
+            f" · 上榜 {tally.boards} 个榜 · 记录 {tally.records} 条{habits}"
+        )
+    if len(tallies) > len(shown):
+        lines.append(f"（另有 {len(tallies) - len(shown)} 个账号未列出，图里有）")
+    lines.append("")
+    lines.append("以上是上传记录的计数，上传得多、打得快的人靠前，不代表别的。")
+    return _joined(lines)
+
+
+def format_account(
+    account: PublicUserRankings,
+    *,
+    limit: int = MAX_ROW_LIMIT,
+    habits: AccountTally | None = None,
+) -> str:
     """One public account's best record on each board."""
 
     lines = [f"公开账号 {account.account_display_name}（{account.account_id}）"]
@@ -591,6 +645,20 @@ def format_account(account: PublicUserRankings, *, limit: int = MAX_ROW_LIMIT) -
         lines.append("这个账号目前没有公开的榜单记录。")
         return _joined(lines)
     lines.append(f"上榜 {len(account.rankings)} 个副本")
+    if habits is not None:
+        lines.append(
+            f"公开记录 {habits.records} 条 · 冠军 {habits.first_places} 个榜"
+            f" · 前三 {habits.podiums} · 前十 {habits.top_tens}"
+        )
+        if habits.main_c:
+            lines.append(
+                f"常用主C {habits.main_c}（{habits.main_c_count} 次）"
+                + (
+                    f" · 常用阵容 {'、'.join(habits.team)}（{habits.team_count} 次）"
+                    if habits.team
+                    else ""
+                )
+            )
     lines.append("")
     ordered = sorted(account.rankings, key=lambda row: row.rank)
     for row in ordered[: _bounded(limit)]:

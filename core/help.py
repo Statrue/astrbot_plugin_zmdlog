@@ -91,6 +91,14 @@ def build_help_page(command_prefix: str) -> HelpPage:
                             "不填看各角色的冠军数，--属性 只看该属性的角色。"
                         ),
                     ),
+                    HelpCommand(
+                        command=f"{command} 玩家冠军榜 [--范围 7d|14d|30d]",
+                        answers="哪个玩家的冠军最多？",
+                        description=(
+                            "各公开账号上传的第一名、前三、前十各几个，"
+                            "附常用主C 和常用阵容；--范围 只算这段时间。"
+                        ),
+                    ),
                 ),
             ),
             HelpSection(

@@ -114,6 +114,7 @@ class HelpTests(unittest.TestCase):
                     "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
                 ),
                 "!zmdlog 角色排名 [角色名 | --属性 属性]",
+                "!zmdlog 玩家冠军榜 [--范围 7d|14d|30d]",
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 (
                     "!zmdlog 战报 | 配装 | 技能 | 技能轴 "
@@ -246,6 +247,14 @@ class CharacterStandingsRouteTests(unittest.TestCase):
             parse_zmdlog_payload("角色排名 诀 --top 5")
         # A window applies to the bare champions board only.
         self.assertEqual(parse_zmdlog_payload("角色排名 --范围 7d").stats_range, "7d")
+        players = parse_zmdlog_payload("玩家冠军榜 --范围 30d")
+        self.assertEqual(players.kind, RouteKind.PLAYER_CHAMPIONS)
+        self.assertEqual(players.stats_range, "30d")
+        self.assertEqual(
+            parse_zmdlog_payload("玩家榜").kind, RouteKind.PLAYER_CHAMPIONS
+        )
+        with self.assertRaises(RouteParseError):
+            parse_zmdlog_payload("玩家冠军榜 CPU")
         with self.assertRaises(RouteParseError):
             parse_zmdlog_payload("角色排名 诀 --范围 7d")
 

@@ -313,6 +313,13 @@ class ToolServiceTests(unittest.TestCase):
                 # Once, even when the answer is several sections joined.
                 self.assertEqual(answer.text.count("不是全服统计"), 1)
 
+    def test_no_account_answers_which_player_holds_the_most_first_places(self) -> None:
+        answer = run(self.service.account(""))
+
+        self.assertEqual(answer.image_path, "/tmp/player_champions.png")
+        self.assertIn("各玩家各占几个", answer.text)
+        self.assertIn("冠军最多：", answer.text)
+
     def test_a_page_that_will_not_draw_still_answers_in_text(self) -> None:
         self.renderer.fail = True
         answer = run(self.service.board("三位一体"))

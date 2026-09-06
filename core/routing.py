@@ -108,6 +108,8 @@ class RouteKind(str, Enum):
     CHARACTER_STATS = "character_stats"
     # Where the teams fielding one character stand on every board.
     CHARACTER_STANDINGS = "character_standings"
+    # Which public accounts uploaded the most first places.
+    PLAYER_CHAMPIONS = "player_champions"
     ROSTER_QUERY = "roster_query"
     ALIAS_LIST = "alias_list"
     ALIAS_ADD = "alias_add"
@@ -245,6 +247,14 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
                 else DEFAULT_TREND_RANGE
             ),
         )
+
+    if command in {"玩家冠军榜", "玩家榜"}:
+        options.reject_except("range")
+        if remainder:
+            raise RouteParseError(
+                "玩家冠军榜不接名字；查某个人用 账号，例如：账号 CPU 0。"
+            )
+        return RouteRequest(RouteKind.PLAYER_CHAMPIONS, stats_range=options.stats_range)
 
     if command in {"角色排名", "角色榜"}:
         # Without a name: every character's first places over all boards,

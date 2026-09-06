@@ -79,6 +79,11 @@ from .compare import (
     CompareSideView,
     build_compare_page,
 )
+from .players import (
+    PlayerChampionsPage,
+    PlayerRowView,
+    build_player_champions_page,
+)
 from .rail import (
     RailEventView,
     RailLaneView,
@@ -161,6 +166,8 @@ __all__ = [
     "TopRunView",
     "TrendPage",
     "CharacterStandingsPage",
+    "PlayerChampionsPage",
+    "PlayerRowView",
     "CharacterChampionsPage",
     "TeamComboView",
     "UsageChipView",
@@ -188,6 +195,7 @@ __all__ = [
     "build_timeline_view",
     "build_trend_page",
     "build_character_standings_page",
+    "build_player_champions_page",
     "build_character_champions_page",
     "format_duration",
     "format_number",

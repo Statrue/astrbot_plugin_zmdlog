@@ -47,6 +47,7 @@ from .presentation import (
     build_compare_page,
     build_dungeon_top3_page,
     build_loadout_page,
+    build_player_champions_page,
     build_ranking_page,
     build_roster_page,
     build_skill_page,
@@ -55,6 +56,7 @@ from .presentation import (
 )
 from .routing import DEFAULT_RANKING_TOP
 from .standings import (
+    AccountTally,
     CharacterStandings,
     CharacterTally,
     ProfessionUsage,
@@ -82,6 +84,7 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
         "character-boss",
         "character-standings",
         "character-champions",
+        "player-champions",
         "roster",
         "loadout",
         "skills",
@@ -337,6 +340,30 @@ class TemplateRenderer:
             "character-champions/character-champions.html",
             page,
             "character-champions",
+            embed_fonts=embed_fonts,
+        )
+
+    def render_player_champions(
+        self,
+        tallies: tuple[AccountTally, ...],
+        *,
+        board_count: int,
+        query: str,
+        age_seconds: float | None = None,
+        window_label: str = "",
+        embed_fonts: bool = True,
+    ) -> str:
+        page = build_player_champions_page(
+            tallies,
+            board_count=board_count,
+            query=query,
+            age_seconds=age_seconds,
+            window_label=window_label,
+        )
+        return self._render(
+            "player-champions/player-champions.html",
+            page,
+            "player-champions",
             embed_fonts=embed_fonts,
         )
 
@@ -742,6 +769,9 @@ class LongImageRenderer:
     )
     render_character_champions = _captured(
         "character-champions", TemplateRenderer.render_character_champions
+    )
+    render_player_champions = _captured(
+        "player-champions", TemplateRenderer.render_player_champions
     )
     render_roster = _captured("roster", TemplateRenderer.render_roster)
     render_account = _captured("account", TemplateRenderer.render_account)
