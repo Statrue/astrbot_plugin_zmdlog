@@ -25,6 +25,29 @@
   --info: var(--teal);
   --data: #2a84b4; /* 蓝：正向数据（官方产耗行实测） */
   --special: #8a5cf6;
+  /* The six participant colours of the battle card: share bar, curve legend
+     and curve line all read these, so one character is one colour. */
+  --series-1: var(--yellow-deep);
+  --series-2: var(--ink);
+  --series-3: var(--blue);
+  --series-4: var(--info);
+  --series-5: var(--special);
+  --series-6: var(--notify);
+  --on-dark: #fff;
+  --ink-05: rgba(28, 28, 28, 0.05);
+  --ink-10: rgba(28, 28, 28, 0.1);
+  --ink-22: rgba(28, 28, 28, 0.22);
+  --yellow-tint: var(--yellow-tint);
+  --danger-deep: #b0322f;
+  --danger-ink: #8c2c2a;
+  --danger-paper: #faf3f2;
+  --danger-line: #eddedc;
+  /* Element rings on avatars; 灼热 and 电磁 reuse the accent oranges/purples. */
+  --el-physical: #9a9a94;
+  --el-fire: var(--orange);
+  --el-cryst: #4fb3e8;
+  --el-natural: #3fa652;
+  --el-pulse: var(--special);
   --on-dark-muted: #9d9d96;
   --font-cjk: "MiSans", "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC",
     "Microsoft YaHei", sans-serif;
@@ -80,7 +103,7 @@ body {
   position: absolute;
   background-image: repeating-linear-gradient(
     -45deg,
-    rgba(28, 28, 28, 0.06) 0 4px,
+    var(--ink-05) 0 4px,
     transparent 4px 10px
   );
   transform: skewX(-18deg);
@@ -98,7 +121,7 @@ body {
   top: 84px;
   right: -14px;
   color: transparent;
-  -webkit-text-stroke: 1px rgba(28, 28, 28, 0.09);
+  -webkit-text-stroke: 1px var(--ink-10);
   font-family: var(--font-num);
   font-size: 140px;
   font-weight: 800;
@@ -170,7 +193,7 @@ body {
   align-items: center;
   height: 26px;
   padding: 0 9px 0 10px;
-  color: #fff;
+  color: var(--on-dark);
   background: var(--ink);
   font-family: var(--font-num);
   font-size: 16px;
@@ -468,7 +491,7 @@ body {
   overflow-wrap: anywhere;
   justify-self: start;
   padding: 4px 9px;
-  color: #fff;
+  color: var(--on-dark);
   background: var(--charcoal);
   font-family: var(--font-body);
   font-size: 13.5px;
@@ -551,7 +574,7 @@ body {
   align-items: center;
   gap: 12px;
   padding: 8px 14px;
-  color: #fff;
+  color: var(--on-dark);
   background: var(--ink);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 12px 100%, 0 calc(100% - 12px));
 }
@@ -645,7 +668,7 @@ body {
 }
 
 .top3-run:nth-child(1) {
-  background: linear-gradient(90deg, rgba(248, 211, 77, 0.16), transparent 55%);
+  background: linear-gradient(90deg, var(--yellow-tint), transparent 55%);
 }
 
 /* skewed badge whose text stays upright */
@@ -682,7 +705,7 @@ body {
 }
 
 .top3-run:nth-child(2) .rank-medal {
-  color: #fff;
+  color: var(--on-dark);
 }
 
 .top3-run:nth-child(2) .rank-medal::before {
@@ -690,7 +713,7 @@ body {
 }
 
 .top3-run:nth-child(3) .rank-medal {
-  color: #fff;
+  color: var(--on-dark);
 }
 
 .top3-run:nth-child(3) .rank-medal::before {
@@ -831,13 +854,6 @@ body {
 
 /* ---------- 角色属性描边：目录里的属性，头像外圈一道色 ---------- */
 
-:root {
-  --el-physical: #9a9a94;
-  --el-fire: #f0731f;
-  --el-cryst: #4fb3e8;
-  --el-natural: #3fa652;
-  --el-pulse: #8a5cf6;
-}
 
 .avatar.el-physical { box-shadow: 0 0 0 2px var(--el-physical); }
 .avatar.el-fire { box-shadow: 0 0 0 2px var(--el-fire); }
@@ -924,4 +940,114 @@ body {
   color: var(--ink);
   font-weight: 700;
   box-shadow: inset 0 -7px 0 var(--yellow-soft);
+}
+
+/* ---------- identity strip: dark bars with a yellow label, under the hero ---------- */
+
+.battle-identity {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.battle-identity > div,
+.account-identity > div,
+.battle-id-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 0;
+  background: var(--charcoal);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+}
+
+.battle-identity span,
+.account-identity span,
+.battle-id-row span {
+  flex: 0 0 auto;
+  padding: 8px 9px 8px 11px;
+  color: var(--ink);
+  background: var(--action);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+
+.battle-identity strong,
+.battle-identity code,
+.account-identity code,
+.battle-id-row code {
+  overflow: hidden;
+  color: var(--on-dark);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.battle-identity .battle-link {
+  grid-column: 1 / -1;
+}
+
+/* ---------- portrait hero: an avatar beside the title ---------- */
+
+.title-block--portrait {
+  align-items: center;
+}
+
+.title-block--portrait .title-side {
+  padding-bottom: 0;
+}
+
+.avatar--hero {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  border-width: 2px;
+  font-size: 26px;
+}
+
+/* ---------- minor section heading ---------- */
+
+.section-heading--minor h2 {
+  font-size: 18px;
+}
+
+.section-heading--minor h2::after {
+  height: 7px;
+  background: var(--line-soft);
+}
+
+/* ---------- chips for a list of names (insufficient samples, absent boards, the rest) ---------- */
+
+.stats-insufficient {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stats-insufficient-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  color: var(--steel);
+  background: var(--card);
+  font-size: 13px;
+  font-weight: 600;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+}
+
+.stats-insufficient-chip b {
+  padding: 0 5px;
+  color: var(--ink);
+  background: var(--line-soft);
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-weight: 700;
 }

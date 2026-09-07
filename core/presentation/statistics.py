@@ -156,7 +156,7 @@ def build_character_stats_page(
     """Turn upstream percentile rows into box-plot geometry for the template."""
 
     is_global = stats.scope == "all"
-    title = "全部副本" if is_global else stats.boss_name
+    title = "全部榜单" if is_global else stats.boss_name
     subtitle = "角色统计总榜" if is_global else stats.dungeon_name
     matched_name = (
         "角色统计总榜" if is_global else f"{stats.dungeon_name} · {stats.boss_name}"
@@ -201,7 +201,7 @@ def build_character_stats_page(
             target_type="角色统计",
             footer_note="公开战斗 · 六星角色 DPS 分布",
         ),
-        scope_label="全部副本" if is_global else "单个榜单",
+        scope_label="全部榜单" if is_global else "单个榜单",
         range_label=_RANGE_LABELS.get(stats.range, stats.range),
         potential_label=_POTENTIAL_LABELS.get(stats.potential, stats.potential),
         eligible_battle_count=stats.eligible_battle_count,

@@ -292,12 +292,12 @@ def build_battle_page(
                 rdps=format_number(participant.rdps),
                 total_damage=format_number(participant.total_damage),
                 damage_share=(
-                    f"{participant.total_damage / total_damage * 100:.1f}%"
+                    _share(participant.total_damage, total_damage)
                     if total_damage > 0
                     else "—"
                 ),
                 rdps_share=(
-                    f"{participant.rdps / total_rdps * 100:.1f}%"
+                    _share(participant.rdps, total_rdps)
                     if total_rdps > 0
                     else "—"
                 ),
@@ -317,7 +317,7 @@ def build_battle_page(
                     else "—"
                 ),
                 crit_rate=(
-                    f"{participant.crit_rate * 100:.1f}%"
+                    f"{format_number(round(participant.crit_rate * 100, 1))}%"
                     if participant.crit_rate is not None
                     else "—"
                 ),
@@ -486,7 +486,7 @@ def _weapon_view(weapon: BattleWeapon, *, web_base_url: str | None) -> WeaponVie
     if affix_levels:
         parts.append("词条 " + " / ".join(str(level) for level in affix_levels))
     return WeaponView(
-        name=_clean_text(weapon.name) or "未知武器",
+        name=_clean_text(weapon.name) or "武器未记录",
         icon_url=_derived_asset_url(
             weapon.icon_url,
             _WEAPON_ICON_PATH,

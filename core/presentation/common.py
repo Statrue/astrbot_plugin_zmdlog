@@ -198,3 +198,15 @@ def _format_datetime(value: str) -> str:
         return _displayed(value).strftime("%Y-%m-%d %H:%M")
     except ValueError:
         return value
+
+
+def _as_of_label(age_seconds: float | None) -> str:
+    if age_seconds is None:
+        return ""
+    minutes = int(age_seconds // 60)
+    if minutes < 1:
+        return "数据刚刚更新"
+    if minutes < 60:
+        return f"数据截至 {minutes} 分钟前"
+    hours, minutes = divmod(minutes, 60)
+    return f"数据截至 {hours} 小时 {minutes} 分钟前"

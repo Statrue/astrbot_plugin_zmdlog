@@ -58,7 +58,7 @@
 
 .trend-rank .ranking-position.is-2,
 .trend-rank .ranking-position.is-3 {
-  color: #fff;
+  color: var(--on-dark);
 }
 
 .trend-rank .ranking-position.is-2::before {
@@ -83,12 +83,12 @@
    them, so an improvement is red and a drop is green — not the design
    system's danger red for a drop. */
 .is-up .trend-delta {
-  color: #fff;
+  color: var(--on-dark);
   background: var(--danger);
 }
 
 .is-down .trend-delta {
-  color: #fff;
+  color: var(--on-dark);
   background: var(--green);
 }
 

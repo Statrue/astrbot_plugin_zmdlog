@@ -1,9 +1,6 @@
 {% extends "common/base.html" %}
 
 {% block extra_styles %}
-{% include "character-stats/character-stats.css" %}
-{% include "character-boss/character-boss.css" %}
-{% include "ranking/ranking.css" %}
 {% include "common/standings-rows.css" %}
 {% endblock %}
 
@@ -48,7 +45,7 @@
     <span class="standings-head-board">榜单 · 阵容</span>
     <span class="standings-head-record">记录</span>
     <span class="standings-head-time">用时</span>
-    <span class="standings-head-dps">队伍 DPS</span>
+    <span class="standings-head-dps">DPS</span>
   </div>
   <ol class="standings-rows">
     {% for row in page.rows %}
@@ -73,7 +70,7 @@
         <b>{{ row.duration }}</b>
       </div>
       <div class="standings-dps">
-        <span>队伍 DPS</span>
+        <span>DPS</span>
         <b>{{ row.dps }}</b>
       </div>
       <div class="standings-team">
@@ -94,7 +91,7 @@
     {% endfor %}
   </ol>
   <p class="board-legend">
-    黄圈头像为该场主 C，加框的是 {{ page.character_name }}；用时为通关时间，队伍 DPS 为整队合计。
+    黄圈头像为该场主 C，加框的是 {{ page.character_name }}；用时为通关时间，DPS 为整队合计。
     <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
   </p>
 </section>

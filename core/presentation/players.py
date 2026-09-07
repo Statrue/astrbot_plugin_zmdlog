@@ -3,8 +3,7 @@
 from dataclasses import dataclass
 
 from ..standings import AccountTally
-from .common import PageHeader
-from .standings import _as_of_label
+from .common import PageHeader, _as_of_label, _bar_width
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +65,7 @@ def build_player_champions_page(
                 else ""
             ),
             bar_width=(
-                round(tally.first_places / board_count * 100, 2) if board_count else 0.0
+                _bar_width(tally.first_places, board_count)
             ),
         )
         for index, tally in enumerate(ranked, start=1)

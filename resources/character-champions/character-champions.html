@@ -1,8 +1,6 @@
 {% extends "common/base.html" %}
 
 {% block extra_styles %}
-{% include "character-stats/character-stats.css" %}
-{% include "ranking/ranking.css" %}
 {% include "character-champions/character-champions.css" %}
 {% endblock %}
 
@@ -77,7 +75,7 @@
 {% if page.teams %}
 <div class="section-heading section-heading--minor">
   <h2>最常见的第一名阵容</h2>
-  <span class="section-note">{{ page.window_label or "全部榜单" }}第一名记录的四人组合，按拿下的榜数排</span>
+  <span class="section-note">{{ page.window_label or "全部榜单" }}第一名记录的阵容，按拿下的榜数排</span>
 </div>
 <ol class="champ-teams">
   {% for team in page.teams %}

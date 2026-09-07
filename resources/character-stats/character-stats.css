@@ -1,12 +1,3 @@
-.section-heading--minor h2 {
-  font-size: 18px;
-}
-
-.section-heading--minor h2::after {
-  height: 7px;
-  background: var(--line-soft);
-}
-
 /* ---------- box-plot table ---------- */
 
 .stats-table-wrap {
@@ -26,7 +17,7 @@
 
 .stats-head {
   min-height: 40px;
-  color: #fff;
+  color: var(--on-dark);
   background: var(--ink);
   font-size: 12px;
   font-weight: 700;
@@ -39,7 +30,7 @@
   justify-content: space-between;
   height: 100%;
   align-items: center;
-  color: #cfcfca;
+  color: var(--line);
   font-family: var(--font-num);
   font-size: 11px;
   font-weight: 600;
@@ -67,7 +58,7 @@
 }
 
 .stats-row--top {
-  background: linear-gradient(90deg, rgba(248, 211, 77, 0.18), transparent 40%);
+  background: linear-gradient(90deg, var(--yellow-tint), transparent 40%);
 }
 
 .stats-rank .ranking-position {
@@ -84,7 +75,7 @@
 }
 
 .stats-row:nth-child(3) .ranking-position {
-  color: #fff;
+  color: var(--on-dark);
 }
 
 .stats-row:nth-child(3) .ranking-position::before {
@@ -92,7 +83,7 @@
 }
 
 .stats-row:nth-child(4) .ranking-position {
-  color: #fff;
+  color: var(--on-dark);
 }
 
 .stats-row:nth-child(4) .ranking-position::before {
@@ -232,34 +223,4 @@
   font-size: 14px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-}
-
-/* ---------- insufficient samples ---------- */
-
-.stats-insufficient {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.stats-insufficient-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border: 1px solid var(--line);
-  color: var(--steel);
-  background: var(--card);
-  font-size: 13px;
-  font-weight: 600;
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
-}
-
-.stats-insufficient-chip b {
-  padding: 0 5px;
-  color: var(--ink);
-  background: var(--line-soft);
-  font-family: var(--font-num);
-  font-size: 12px;
-  font-weight: 700;
 }

@@ -15,7 +15,7 @@
 .usage-title {
   margin: 0;
   padding: 7px 12px;
-  color: #fff;
+  color: var(--on-dark);
   background: var(--ink);
   font-size: 13px;
   font-weight: 800;

@@ -13,13 +13,13 @@
 {% block content %}
 <div class="section-heading">
   <h2>六星角色 DPS 分布</h2>
-  <span class="section-note">{% if page.scope_label == "全部副本" %}覆盖 {{ page.included_boss_count }} 个榜单{% else %}单个榜单{% endif %} · 有效战斗 {{ page.eligible_battle_count }} 场 · 盒=P25–P75 · 竖线=中位 · 须=正常样本极值 · 至少 {{ page.minimum_sample_count }} 个样本参与排名</span>
+  <span class="section-note">{% if page.scope_label == "全部榜单" %}覆盖 {{ page.included_boss_count }} 个榜单{% else %}单个榜单{% endif %} · 有效战斗 {{ page.eligible_battle_count }} 场 · 盒=P25–P75 · 竖线=中位 · 须=正常样本极值 · 至少 {{ page.minimum_sample_count }} 个样本参与排名</span>
 </div>
 
 {% if page.rows %}
 <div class="stats-table-wrap">
   <div class="stats-head">
-    <span class="stats-head-rank">排名</span>
+    <span class="stats-head-rank">名次</span>
     <span class="stats-head-char">角色</span>
     <span class="stats-head-sample">样本</span>
     <span class="stats-head-axis">

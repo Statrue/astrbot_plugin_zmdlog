@@ -3,8 +3,14 @@
 from dataclasses import dataclass
 
 from ..events import CHAMPION_CHANGE, NEW_RECORD, BoardActivity, RecordEvent
-from .common import PageHeader, _format_datetime, format_duration, format_number
-from .standings import _as_of_label
+from .common import (
+    PageHeader,
+    _as_of_label,
+    _bar_width,
+    _format_datetime,
+    format_duration,
+    format_number,
+)
 
 MAX_CHANGES = 20
 MAX_RECORDS = 40
@@ -132,7 +138,7 @@ def build_records_page(
                 dungeon_name=item.dungeon_name,
                 count=item.count,
                 total=item.total,
-                bar_width=round(item.count / peak * 100, 2) if peak else 0.0,
+                bar_width=_bar_width(item.count, peak),
             )
             for item in activity
             if item.count

@@ -473,7 +473,7 @@ def format_character_statistics(
                 f"「{character}」在这个范围内没有样本，"
                 "可能是名字不对，或它还没有公开记录。"
             )
-    scope = stats.boss_name or "全部副本"
+    scope = stats.boss_name or "全部榜单"
     lines = [
         f"角色 DPS 分布（{scope}，范围 {stats.range} · 潜能 {stats.potential}）",
         "名次只看去极值后的正常样本，正常样本不足的角色没有名次"

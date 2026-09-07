@@ -131,7 +131,7 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("usr_1234567890abcdef", html)
         self.assertIn("https://zmdlogs.com/records/usr_1234567890abcdef", html)
         self.assertIn("110,061.2", html)
-        self.assertIn("队伍 DPS", html)
+        self.assertIn("DPS 为整队合计", html)
         self.assertIn("95%", html)
 
     def test_battle_page_uses_compact_detail_fields_and_resolves_avatar(self) -> None:

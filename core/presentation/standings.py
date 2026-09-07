@@ -7,6 +7,7 @@ from ..standings import CharacterStandings
 from .boards import RosterEntryView, _build_roster
 from .common import (
     PageHeader,
+    _as_of_label,
     _initial,
     format_duration,
     format_number,
@@ -120,15 +121,3 @@ def build_character_standings_page(
         rows=tuple(rows),
         absent=tuple(board.boss_name for board in standings.absent),
     )
-
-
-def _as_of_label(age_seconds: float | None) -> str:
-    if age_seconds is None:
-        return ""
-    minutes = int(age_seconds // 60)
-    if minutes < 1:
-        return "数据刚刚更新"
-    if minutes < 60:
-        return f"数据截至 {minutes} 分钟前"
-    hours, minutes = divmod(minutes, 60)
-    return f"数据截至 {hours} 小时 {minutes} 分钟前"

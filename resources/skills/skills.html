@@ -1,6 +1,6 @@
 {% extends "common/base.html" %}
 
-{% block extra_styles %}{% include "battle/battle.css" %}{% include "common/loadout.css" %}{% include "skills/skills.css" %}{% endblock %}
+{% block extra_styles %}{% include "common/loadout.css" %}{% include "skills/skills.css" %}{% endblock %}
 
 {% block hero_facts %}
 <div class="hero-facts">
@@ -20,7 +20,7 @@
 
 <div class="section-heading">
   <h2>技能伤害统计</h2>
-  <span class="section-note">角色按技能统计总伤排序 · 占比为该项占该角色技能统计总伤的比例{% if page.has_merged_rows %} · 普攻各段与同名子段已合并{% endif %}</span>
+  <span class="section-note">角色按技能统计总伤害排序 · 占比为该项占该角色技能统计总伤害的比例{% if page.has_merged_rows %} · 普攻各段与同名子段已合并{% endif %}</span>
 </div>
 
 {% for group in page.groups %}
@@ -32,7 +32,7 @@
       <span>{{ group.profession }}</span>
     </div>
     <div class="skill-group-total">
-      <span>技能统计总伤 · 占全队 {{ group.team_share }}</span>
+      <span>技能统计总伤害 · 占全队 {{ group.team_share }}</span>
       <strong>{{ group.total_damage }}</strong>
       <span class="share-track"><i style="width: {{ group.team_share_width }}%"></i></span>
     </div>

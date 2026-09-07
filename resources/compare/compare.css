@@ -30,7 +30,7 @@
 }
 
 .cmp-side.is-a .cmp-tag { background: var(--action); }
-.cmp-side.is-b .cmp-tag { background: var(--blue); color: #fff; }
+.cmp-side.is-b .cmp-tag { background: var(--blue); color: var(--on-dark); }
 
 .cmp-side-text {
   min-width: 0;
@@ -294,7 +294,7 @@
 }
 
 .cmp-loadout.is-only-b .cmp-loadout-head em {
-  color: #fff;
+  color: var(--on-dark);
   background: var(--blue);
 }
 

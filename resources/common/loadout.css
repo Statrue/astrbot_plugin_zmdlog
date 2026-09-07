@@ -78,7 +78,7 @@
 }
 
 .pill--ink {
-  color: #fff;
+  color: var(--on-dark);
   background: var(--ink);
 }
 

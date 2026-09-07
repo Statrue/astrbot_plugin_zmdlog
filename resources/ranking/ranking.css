@@ -46,7 +46,7 @@
 .bm-slug {
   overflow-wrap: anywhere;
   padding: 2px 8px;
-  color: #fff;
+  color: var(--on-dark);
   background: var(--charcoal);
   font-family: var(--font-body);
   font-size: 12px;
@@ -155,7 +155,7 @@
   background: transparent;
 }
 
-.board-row.is-1 { background: linear-gradient(90deg, rgba(248, 211, 77, 0.18), transparent 42%); }
+.board-row.is-1 { background: linear-gradient(90deg, var(--yellow-tint), transparent 42%); }
 .board-row.is-1::before { background: var(--action); }
 .board-row.is-2::before { background: var(--ink); }
 .board-row.is-3::before { background: var(--muted); }

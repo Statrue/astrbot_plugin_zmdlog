@@ -80,7 +80,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         answers="这个榜谁强？这个角色在哪个榜强？",
                         description=(
                             "接榜单看各六星角色的 DPS 分布，接角色名看它在各榜的名次，"
-                            "不填看全部副本。"
+                            "不填看全部榜单。"
                         ),
                     ),
                     HelpCommand(

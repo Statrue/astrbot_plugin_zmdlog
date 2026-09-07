@@ -307,7 +307,7 @@ class CharacterStatsPageTests(unittest.TestCase):
     def test_global_scope_labels(self) -> None:
         stats = parse_character_statistics(character_statistics_payload(scope="all"))
         page = build_character_stats_page(stats, query="角色")
-        self.assertEqual(page.header.title, "全部副本")
+        self.assertEqual(page.header.title, "全部榜单")
         self.assertEqual(page.header.subtitle, "角色统计总榜")
         self.assertEqual(page.included_boss_count, 12)
 

@@ -29,7 +29,7 @@
     <span class="standings-head-board">榜单 · 阵容</span>
     <span class="standings-head-record">记录</span>
     <span class="standings-head-time">用时</span>
-    <span class="standings-head-dps">队伍 DPS</span>
+    <span class="standings-head-dps">DPS</span>
   </div>
   <ol class="standings-rows">
     {% for row in page.rows %}
@@ -51,7 +51,7 @@
         <b>{{ row.duration }}</b>
       </div>
       <div class="standings-dps">
-        <span>队伍 DPS</span>
+        <span>DPS</span>
         <b>{{ row.total_dps }}</b>
       </div>
       <div class="standings-team">
@@ -72,7 +72,7 @@
     {% endfor %}
   </ol>
   <p class="board-legend">
-    黄圈头像为该场主 C；名次下方为 ZMDLogs 公开排名的百分位；用时为通关时间，队伍 DPS 为整队合计；已下线的榜只有阵容名单。
+    黄圈头像为该场主 C；名次下方为 ZMDLogs 公开排名的百分位；用时为通关时间，DPS 为整队合计；已下线的榜只有阵容名单。
     <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
   </p>
 </section>

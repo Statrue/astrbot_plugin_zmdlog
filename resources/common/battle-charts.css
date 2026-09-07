@@ -57,11 +57,11 @@
   top: 0;
   bottom: 0;
   width: 1px;
-  background: rgba(28, 28, 28, 0.05);
+  background: var(--ink-05);
 }
 
 .hchart-grid.is-major {
-  background: rgba(28, 28, 28, 0.1);
+  background: var(--ink-10);
 }
 
 .hchart-gutter {
@@ -121,12 +121,12 @@
 /* Swatches match the lines. Written with two classes on purpose: the
    generic `.curve-legend i` rule above would otherwise outrank the
    single-class colour keys from battle.css and leave every swatch grey. */
-.curve-legend .share-seg--1 { background: var(--yellow-deep); }
-.curve-legend .share-seg--2 { background: var(--ink); }
-.curve-legend .share-seg--3 { background: var(--blue); }
-.curve-legend .share-seg--4 { background: var(--info); }
-.curve-legend .share-seg--5 { background: var(--special); }
-.curve-legend .share-seg--6 { background: var(--notify); }
+.curve-legend .share-seg--1 { background: var(--series-1); }
+.curve-legend .share-seg--2 { background: var(--series-2); }
+.curve-legend .share-seg--3 { background: var(--series-3); }
+.curve-legend .share-seg--4 { background: var(--series-4); }
+.curve-legend .share-seg--5 { background: var(--series-5); }
+.curve-legend .share-seg--6 { background: var(--series-6); }
 
 .curve-legend b {
   overflow: hidden;
@@ -204,7 +204,7 @@
   right: 0;
   left: 0;
   height: 1px;
-  background: rgba(28, 28, 28, 0.05);
+  background: var(--ink-05);
 }
 
 .curve-svg {
@@ -229,12 +229,12 @@
   stroke-dasharray: 5 4;
 }
 
-.share-line--1 { stroke: var(--yellow-deep); }
-.share-line--2 { stroke: var(--ink); }
-.share-line--3 { stroke: var(--blue); }
-.share-line--4 { stroke: var(--info); }
-.share-line--5 { stroke: var(--special); }
-.share-line--6 { stroke: var(--notify); }
+.share-line--1 { stroke: var(--series-1); }
+.share-line--2 { stroke: var(--series-2); }
+.share-line--3 { stroke: var(--series-3); }
+.share-line--4 { stroke: var(--series-4); }
+.share-line--5 { stroke: var(--series-5); }
+.share-line--6 { stroke: var(--series-6); }
 
 /* ---------- BUFF 覆盖 ---------- */
 
@@ -265,7 +265,7 @@
 .buff-zone {
   flex: 0 0 auto;
   padding: 1px 5px;
-  color: #fff;
+  color: var(--on-dark);
   background: var(--steel);
   font-family: var(--font-num);
   font-size: 10.5px;
@@ -283,9 +283,9 @@
    upstream draws them), the zone only the shade — so a damage-taken debuff
    never borrows the orange of a team damage buff. */
 .buff-row.is-enemy .buff-zone { background: var(--danger); }
-.buff-row.is-enemy .buff-zone.is-vuln_taken { background: #b0322f; }
+.buff-row.is-enemy .buff-zone.is-vuln_taken { background: var(--danger-deep); }
 .buff-row.is-enemy .buff-zone.is-res,
-.buff-row.is-enemy .buff-zone.is-dmg_inc { background: #8c2c2a; }
+.buff-row.is-enemy .buff-zone.is-dmg_inc { background: var(--danger-ink); }
 
 .buff-label b {
   overflow: hidden;
@@ -325,14 +325,14 @@
 .buff-span.is-res { background: var(--steel); }
 
 .buff-row.is-enemy .buff-span { background: var(--danger); }
-.buff-row.is-enemy .buff-span.is-vuln_taken { background: #b0322f; }
+.buff-row.is-enemy .buff-span.is-vuln_taken { background: var(--danger-deep); }
 .buff-row.is-enemy .buff-span.is-res,
-.buff-row.is-enemy .buff-span.is-dmg_inc { background: #8c2c2a; }
+.buff-row.is-enemy .buff-span.is-dmg_inc { background: var(--danger-ink); }
 
 /* the boss's own rows sit on a faintly warmer track */
 .buff-row.is-enemy .buff-track {
-  background: #faf3f2;
-  border-color: #eddedc;
+  background: var(--danger-paper);
+  border-color: var(--danger-line);
 }
 
 .buff-split {
@@ -350,7 +350,7 @@
 
 .buff-split-rule {
   height: 1px;
-  background: #eddedc;
+  background: var(--danger-line);
 }
 
 /* one application covering the whole team reads as a solid band */

@@ -1,49 +1,3 @@
-.battle-identity {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 24px;
-}
-
-.battle-identity > div,
-.battle-id-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  padding: 0 12px 0 0;
-  background: var(--charcoal);
-  clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
-}
-
-.battle-identity span,
-.battle-id-row span {
-  flex: 0 0 auto;
-  padding: 8px 9px 8px 11px;
-  color: var(--ink);
-  background: var(--action);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
-}
-
-.battle-identity strong,
-.battle-identity code,
-.battle-id-row code {
-  overflow: hidden;
-  color: #fff;
-  font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.battle-identity .battle-link {
-  grid-column: 1 / -1;
-}
-
 /* ---------- participants as comparable rows ---------- */
 
 .participant-list {
@@ -187,12 +141,12 @@
   background: var(--faint);
 }
 
-.share-seg--1 { background: var(--action); }
-.share-seg--2 { background: var(--ink); }
-.share-seg--3 { background: var(--blue); }
-.share-seg--4 { background: var(--info); }
-.share-seg--5 { background: var(--special); }
-.share-seg--6 { background: var(--notify); }
+.share-seg--1 { background: var(--series-1); }
+.share-seg--2 { background: var(--series-2); }
+.share-seg--3 { background: var(--series-3); }
+.share-seg--4 { background: var(--series-4); }
+.share-seg--5 { background: var(--series-5); }
+.share-seg--6 { background: var(--series-6); }
 
 .share-legend {
   display: flex;

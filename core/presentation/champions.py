@@ -6,8 +6,13 @@ from dataclasses import dataclass
 from ..elements import element_key
 from ..standings import CharacterTally, ProfessionUsage, TeamTally
 from .boards import RosterEntryView, _build_roster
-from .common import PageHeader, _initial, _safe_asset_url
-from .standings import _as_of_label
+from .common import (
+    PageHeader,
+    _as_of_label,
+    _bar_width,
+    _initial,
+    _safe_asset_url,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +119,7 @@ def build_character_champions_page(
             top_tens=tally.top_tens,
             boards=tally.boards,
             bar_width=(
-                round(tally.first_places / peak * 100, 2) if peak else 0.0
+                _bar_width(tally.first_places, peak)
             ),
             element_key=element_key(known.get(tally.name)),
         )

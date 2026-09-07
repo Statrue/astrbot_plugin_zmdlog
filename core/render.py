@@ -145,7 +145,7 @@ class TemplateRenderer:
         self.environment = Environment(
             loader=FileSystemLoader(str(self.resources_path)),
             autoescape=select_autoescape(
-                enabled_extensions=("html", "xml"),
+                enabled_extensions=("html", "xml", "css"),
                 default_for_string=True,
             ),
             undefined=StrictUndefined,
