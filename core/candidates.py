@@ -3,6 +3,7 @@
 import re
 import secrets
 import time
+import unicodedata
 from dataclasses import dataclass
 from enum import Enum
 
@@ -10,7 +11,9 @@ from .matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
 
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _CODE_RE = re.compile(r"候选编号 ?([A-Z2-9]{4})(?![A-Z2-9])")
-_SELECTION_RE = re.compile(r"^\s*(?:选|选择|第)?\s*(\d{1,2})\s*(?:号|个)?\s*$")
+_SELECTION_RE = re.compile(
+    r"^\s*(?:选|选择|第)?\s*(\d{1,2})\s*(?:号|个)?\s*[.。]?\s*$"
+)
 DEFAULT_CANDIDATE_TTL_SECONDS = 10 * 60
 MAX_CANDIDATES = 5
 
@@ -172,7 +175,8 @@ def extract_code(text: str | None) -> str | None:
 
 
 def parse_selection(text: str) -> int | None:
-    match = _SELECTION_RE.match(text or "")
+    # NFKC turns ② and ２ into 2; a trailing full stop is what phones add.
+    match = _SELECTION_RE.match(unicodedata.normalize("NFKC", text or ""))
     if match is None:
         return None
     value = int(match.group(1))

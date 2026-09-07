@@ -313,6 +313,64 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(searched, ["Re-Zero"])
         self.assertEqual((kind, result), ("image", "/tmp/account.png"))
 
+    # --- option composition -----------------------------------------------------
+
+    def test_element_and_profession_together_never_call_a_fielded_name_unseen(
+        self,
+    ) -> None:
+        from astrbot_plugin_zmdlog.core.models import CharacterType, parse_boss_ranking
+        from astrbot_plugin_zmdlog.core.ranking_index import IndexEntry
+        from tests.helpers import ranking_payload_with_rows
+
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        index = self.plugin.data.ranking_index
+        index._slugs = (ranking.boss_slug,)
+        index._entries[ranking.boss_slug] = IndexEntry(ranking, 0.0)
+
+        async def types():
+            return {
+                "黎风": CharacterType("黎风", "物理", "长枪", "近卫"),
+                "洛茜": CharacterType("洛茜", "自然", "手铳", "近卫"),
+            }
+
+        captured: dict = {}
+
+        async def render(tallies, **kwargs):
+            captured["tallies"] = tallies
+            captured.update(kwargs)
+            return "/tmp/champions.png"
+
+        self.plugin.data.get_character_types = types
+        self.plugin.renderer.render_character_champions = render
+
+        (kind, result), = self._zmdlog("zmdlog 角色排名 --属性 物理 --职业 近卫")
+
+        self.assertEqual((kind, result), ("image", "/tmp/champions.png"))
+        self.assertEqual([tally.name for tally in captured["tallies"]], ["黎风"])
+        # 洛茜 is fielded; she is merely not 物理, so she is not "unseen".
+        self.assertEqual(captured["unseen"], ())
+
+    def test_row_options_are_refused_on_a_dungeon_target(self) -> None:
+        first = hot_bosses_payload()[0]
+        second = dict(
+            first, bossSlug="dung01_group_bossrush03", bossName="危境再现·白垩界卫"
+        )
+        self.cards = parse_hot_bosses([first, second])
+
+        (kind, result), = self._zmdlog("zmdlog 测试区 --属性 物理")
+
+        self.assertEqual(kind, "plain")
+        self.assertIn("--属性 仅适用于", result)
+
+    def test_an_alias_of_only_punctuation_is_refused(self) -> None:
+        event = FakeEvent("zmdlog 别名 添加 三位一体 ·")
+        event.is_admin = lambda: True
+
+        (kind, result), = run(collect(self.plugin.zmdlog(event)))
+
+        self.assertEqual(kind, "plain")
+        self.assertIn("别名不能只有标点或符号", result)
+
     # --- parse-layer robustness -----------------------------------------------
 
     def test_an_absurd_top_value_gets_a_short_reply_not_a_traceback(self) -> None:

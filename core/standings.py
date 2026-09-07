@@ -13,7 +13,7 @@ from datetime import datetime
 
 from .models import BossRanking, BossRankingRosterEntry, BossRankingRow
 from .professions import normalize_profession
-from .timestamps import parse_timestamp
+from .timestamps import later_or_same, parse_timestamp
 
 PROFESSION_ORDER = ("近卫", "重装", "辅助", "突击", "术士", "先锋")
 
@@ -381,7 +381,7 @@ def account_tallies(
                 combos[names] = combos.get(names, 0) + 1
             # Nicknames change; the most recent upload carries the current one.
             newest = display.get(account)
-            if newest is None or row.battle_end_at >= newest[0]:
+            if newest is None or later_or_same(row.battle_end_at, newest[0]):
                 display[account] = (row.battle_end_at, row.account_display_name)
         for account, position in best.items():
             boards[account] = boards.get(account, 0) + 1

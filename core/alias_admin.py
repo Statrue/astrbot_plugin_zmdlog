@@ -21,6 +21,7 @@ from .matcher import (
     MatchStatus,
     RankingMatcher,
     TargetType,
+    normalize_search_text,
 )
 from .messages import shorten
 from .models import HotBossCard
@@ -80,6 +81,10 @@ class AliasAdmin:
     async def _add(self, argument: str) -> str:
         target_text, _, alias_text = argument.partition(" ")
         aliases = tuple(dict.fromkeys(alias_text.split()))
+        blank = [alias for alias in aliases if not normalize_search_text(alias)]
+        if blank:
+            # A lone "·" folds to nothing and could never match anything.
+            return "别名不能只有标点或符号：" + "、".join(blank)
         try:
             cards = await self._data.list_hot_bosses()
         except ZmdLogsClientError:

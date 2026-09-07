@@ -259,3 +259,37 @@ class CharacterStandingsRouteTests(unittest.TestCase):
         with self.assertRaises(RouteParseError):
             parse_zmdlog_payload("角色排名 诀 --范围 7d")
 
+
+class RangeAndCompareRoutingTests(unittest.TestCase):
+    def test_range_spellings_people_type_are_accepted(self) -> None:
+        for text, expected in (
+            ("一周", "7d"),
+            ("最近7天", "7d"),
+            ("两周", "14d"),
+            ("14日", "14d"),
+            ("近30天", "30d"),
+            ("一个月", "30d"),
+            ("ALL", "all"),
+        ):
+            with self.subTest(text=text):
+                route = parse_zmdlog_payload(f"角色统计 --范围 {text}")
+                self.assertEqual(route.stats_range, expected)
+        with self.assertRaises(RouteParseError):
+            parse_zmdlog_payload("角色统计 --范围 上周")
+
+    def test_records_only_take_a_bounded_window(self) -> None:
+        self.assertEqual(parse_zmdlog_payload("新纪录").stats_range, "7d")
+        self.assertEqual(
+            parse_zmdlog_payload("新纪录 --范围 一个月").stats_range, "30d"
+        )
+        with self.assertRaises(RouteParseError):
+            parse_zmdlog_payload("新纪录 --范围 all")
+
+    def test_compare_with_one_reference_is_a_usage_error(self) -> None:
+        with self.assertRaises(RouteParseError):
+            parse_zmdlog_payload("对比 btl_upload_aaaaaaaaaaaa")
+        route = parse_zmdlog_payload(
+            "对比 btl_upload_aaaaaaaaaaaa btl_upload_bbbbbbbbbbbb"
+        )
+        self.assertEqual(route.query, "btl_upload_aaaaaaaaaaaa")
+        self.assertEqual(route.compare_target, "btl_upload_bbbbbbbbbbbb")

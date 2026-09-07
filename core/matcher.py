@@ -62,12 +62,20 @@ class MatchStatus(str, Enum):
 class MatchLevel(IntEnum):
     STRUCTURED_ID = 1
     STANDARD_EXACT = 2
+    # An alias an admin wrote outranks one derived from a name, so 清波访客
+    # can be pinned to one difficulty when both boards derive it.
     ALIAS_EXACT = 3
-    NORMALIZED_EXACT = 4
-    PINYIN_EXACT = 5
-    PREFIX_SUFFIX = 6
-    CONTAINS = 7
-    SIMILARITY = 8
+    DERIVED_EXACT = 4
+    NORMALIZED_EXACT = 5
+    PINYIN_EXACT = 6
+    PREFIX_SUFFIX = 7
+    CONTAINS = 8
+    SIMILARITY = 9
+
+
+# A fuzzy hit below this is noise: 首 against 首领三 scores 0.11 and would
+# still be shown as "the closest board".
+MIN_SIMILARITY = 0.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +179,8 @@ class MatchTarget:
     query_text: str
     aliases: tuple[str, ...] = ()
     pinyin: tuple[str, ...] = ()
+    # The subset of ``aliases`` that came from the alias file.
+    configured_aliases: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +205,7 @@ class _SearchText:
     folded: str
     compact: str
     is_alias: bool
+    configured: bool = False
 
 
 class RankingMatcher:
@@ -577,6 +588,7 @@ def _build_targets(
                 query_text=slug,
                 aliases=merged,
                 pinyin=pinyin_keys((card.boss_name, *merged)),
+                configured_aliases=frozenset(aliases.boards.get(slug, ())),
             )
         )
 
@@ -596,6 +608,7 @@ def _build_targets(
                 query_text=dungeon_name,
                 aliases=merged,
                 pinyin=pinyin_keys((dungeon_name, *merged)),
+                configured_aliases=frozenset(aliases.dungeons.get(dungeon_name, ())),
             )
         )
 
@@ -713,7 +726,12 @@ def _score_target(
 
     texts = (
         _search_text(target.name, is_alias=False),
-        *(_search_text(alias, is_alias=True) for alias in target.aliases),
+        *(
+            _search_text(
+                alias, is_alias=True, configured=alias in target.configured_aliases
+            )
+            for alias in target.aliases
+        ),
     )
     matches = tuple(
         choice
@@ -757,7 +775,12 @@ def _score_search_text(
     compact_query: str,
 ) -> MatchChoice | None:
     if text.folded == folded_query:
-        level = MatchLevel.ALIAS_EXACT if text.is_alias else MatchLevel.STANDARD_EXACT
+        if not text.is_alias:
+            level = MatchLevel.STANDARD_EXACT
+        elif text.configured:
+            level = MatchLevel.ALIAS_EXACT
+        else:
+            level = MatchLevel.DERIVED_EXACT
         return MatchChoice(target, level, 1.0, text.raw)
     if text.compact == compact_query:
         return MatchChoice(target, MatchLevel.NORMALIZED_EXACT, 1.0, text.raw)
@@ -781,7 +804,7 @@ def _score_search_text(
         )
 
     similarity = _partial_similarity(compact_query, text.compact)
-    if similarity <= 0:
+    if similarity < MIN_SIMILARITY:
         return None
     return MatchChoice(
         target,
@@ -814,12 +837,15 @@ def _rank_choices(choices: tuple[MatchChoice, ...]) -> tuple[MatchChoice, ...]:
     )
 
 
-def _search_text(value: str, *, is_alias: bool) -> _SearchText:
+def _search_text(
+    value: str, *, is_alias: bool, configured: bool = False
+) -> _SearchText:
     return _SearchText(
         raw=value,
         folded=fold_text(value),
         compact=normalize_search_text(value),
         is_alias=is_alias,
+        configured=configured,
     )
 
 

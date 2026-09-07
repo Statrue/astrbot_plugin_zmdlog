@@ -890,3 +890,19 @@ class SnapshotPayloadTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TimestampOrderTests(unittest.TestCase):
+    def test_stamps_with_different_offsets_compare_as_instants(self) -> None:
+        from core.timestamps import later_or_same
+
+        # 05 00:00 +08:00 is 04 16:00 Z: earlier than 04 20:00 Z, whatever
+        # the text order says.
+        self.assertFalse(
+            later_or_same("2026-09-05T00:00:00+08:00", "2026-09-04T20:00:00Z")
+        )
+        self.assertTrue(
+            later_or_same("2026-09-05T00:00:00+08:00", "2026-09-04T15:00:00Z")
+        )
+        # Stamps that do not parse fall back to text order.
+        self.assertTrue(later_or_same("b", "a"))

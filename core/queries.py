@@ -36,6 +36,7 @@ from .characters import (
     pick_character_filter_scope,
     ranking_character_names,
     resolve_character_name,
+    row_fields,
 )
 from .client import (
     ZmdLogsAPIError,
@@ -70,7 +71,7 @@ from .models import (
 )
 from .rank_watch import RankWatcher
 from .render import LongImageRenderer
-from .routing import DEFAULT_RANKING_TOP, RouteKind, RouteRequest
+from .routing import DEFAULT_RANKING_TOP, OPTION_USAGE, RouteKind, RouteRequest
 from .settings import PluginSettings
 from .standings import (
     account_tallies,
@@ -499,14 +500,14 @@ class QueryService:
         if target.target_type is TargetType.BOARD:
             return await self._render_board(target.key, query=query, pending=pending)
 
+        # A dungeon or a scope draws top-three cards, which none of the row
+        # options can filter; say where the option works instead.
         if pending.ranking_top is not None:
-            return Outcome(
-                message="--top 仅适用于具体榜单查询，请补充具体榜单关键词。"
-            )
+            return Outcome(message=OPTION_USAGE["top"])
         if pending.character_filter is not None:
-            return Outcome(
-                message="--角色 仅适用于具体榜单查询，请补充具体榜单关键词。"
-            )
+            return Outcome(message=OPTION_USAGE["character"])
+        if pending.element_filter is not None:
+            return Outcome(message=OPTION_USAGE["element"])
         selected_slugs = set(target.boss_slugs)
         selected_cards = tuple(
             card for card in cards if card.boss_slug in selected_slugs
@@ -662,7 +663,7 @@ class QueryService:
         index = self._data.ranking_index
         await index.ensure_filled()
         rankings = tuple(entry.ranking for entry in index.entries())
-        span = time_range if time_range != "all" else "30d"
+        span = time_range if time_range != "all" else "7d"
         since = window_start(span, now=datetime.now(UTC))
         log = self._data.event_log
         image_path = await self._renderer().render_records(
@@ -721,11 +722,14 @@ class QueryService:
             unseen: tuple[str, ...] = ()
             if profession_filter is not None:
                 tallies = by_profession(tallies, profession_filter)
-                unseen = unseen_characters(
-                    tallies,
-                    await self._data.character_professions(),
-                    profession=profession_filter,
-                )
+                if element_filter is None:
+                    # Cut by element first, every member of another element
+                    # would read as "never fielded".
+                    unseen = unseen_characters(
+                        tallies,
+                        await self._data.character_professions(),
+                        profession=profession_filter,
+                    )
             image_path = await self._renderer().render_character_champions(
                 tallies,
                 board_count=len(rankings),
@@ -964,6 +968,23 @@ class QueryService:
                     f"{element_filter}属性的记录。"
                 )
             )
+        if (
+            element_filter is not None
+            and character_filter is not None
+            and not any(
+                elements.get(row.character_name) == element_filter
+                and row_fields(row, character_filter, character_filter_scope)
+                for row in ranking.rows
+            )
+        ):
+            # Each filter alone has rows; together they would draw an empty
+            # page, which reads as a broken render rather than an answer.
+            return Outcome(
+                message=(
+                    f"「{ranking.boss_name}」的公开排名里没有主 C 为"
+                    f"{element_filter}属性且带「{'、'.join(character_filter)}」的记录。"
+                )
+            )
         image_path = await renderer.render_ranking(
             ranking,
             query=query,
@@ -1190,7 +1211,12 @@ def pending_from_route(route: RouteRequest) -> PendingCandidates:
 
 
 def looks_like_direct_slug(query: str) -> bool:
-    return is_valid_boss_slug(query) and ("_" in query or "-" in query)
+    # Battle and account ids share the slug alphabet but never name a board.
+    return (
+        is_valid_boss_slug(query)
+        and ("_" in query or "-" in query)
+        and not query.startswith(("btl_", "usr_"))
+    )
 
 
 def _plain_ranking_query(view: CandidateView, pending: PendingCandidates) -> bool:

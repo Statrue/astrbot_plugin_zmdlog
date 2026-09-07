@@ -23,3 +23,16 @@ def parse_timestamp(value: str | None) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None
+
+
+def later_or_same(value: str, than: str) -> bool:
+    """Whether stamp ``value`` is at or after ``than``.
+
+    Compared as instants when both parse — ``+08:00`` and ``Z`` stamps
+    mis-order as text — and as text when one does not.
+    """
+
+    left, right = parse_timestamp(value), parse_timestamp(than)
+    if left is not None and right is not None:
+        return left >= right
+    return value >= than

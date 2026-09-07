@@ -22,16 +22,36 @@ DEFAULT_TREND_RANGE = "30d"
 
 _BATTLE_RANK_RE = re.compile(r"^(?:第|#)?([0-9]{1,3})(?:名)?$")
 
+# Every spelling of a window that people and models actually type; the
+# LLM tools read the same table, so the two never drift apart again.
 _RANGE_ALIASES = {
-    "7天": "7d",
-    "7日": "7d",
-    "14天": "14d",
-    "14日": "14d",
-    "30天": "30d",
-    "30日": "30d",
-    "全部": "all",
-    "所有": "all",
+    "7天": "7d", "7日": "7d", "一周": "7d", "1周": "7d", "一星期": "7d",
+    "本周": "7d", "这周": "7d", "最近一周": "7d", "近一周": "7d", "week": "7d",
+    "14天": "14d", "14日": "14d", "两周": "14d", "2周": "14d", "两星期": "14d",
+    "半个月": "14d", "最近两周": "14d", "近两周": "14d",
+    "30天": "30d", "30日": "30d", "一个月": "30d", "1个月": "30d", "本月": "30d",
+    "最近一个月": "30d", "近一个月": "30d", "month": "30d",
+    "全部": "all", "所有": "all", "不限": "all", "全部时间": "all",
 }
+_RANGE_DAYS_RE = re.compile(r"^(?:最近|近|过去)?(\d{1,3})\s*(?:天|日|d)$")
+
+
+def parse_range_text(text: str) -> str | None:
+    """``7d`` / ``14d`` / ``30d`` / ``all`` for any accepted spelling; None otherwise.
+
+    Shared by the ``--范围`` option and the tools' ``range`` argument.
+    """
+
+    value = "".join(text.split())
+    folded = value.casefold()
+    if folded in STATS_RANGES:
+        return folded
+    if value in _RANGE_ALIASES:
+        return _RANGE_ALIASES[value]
+    match = _RANGE_DAYS_RE.match(folded)
+    if match is not None and f"{int(match.group(1))}d" in STATS_RANGES:
+        return f"{int(match.group(1))}d"
+    return None
 _POTENTIAL_ALIASES = {
     "0潜": "0",
     "零": "0",
@@ -67,7 +87,7 @@ _OPTION_LABEL = {
 }
 # Rejection text names where the option DOES work, not the current route —
 # "--潜能 不适用于榜单查询" reads like the option belongs somewhere unknown.
-_OPTION_USAGE = {
+OPTION_USAGE = {
     "top": "--top 仅适用于具体榜单和阵容查询。",
     "character": (
         "--角色 仅适用于具体榜单查询，例如：罗丹 --角色 黎风，"
@@ -161,7 +181,7 @@ class RouteOptions:
             "top", "character", "range", "potential", "element", "profession"
         ):
             if name in self.present and name not in allowed:
-                raise RouteParseError(_OPTION_USAGE[name])
+                raise RouteParseError(OPTION_USAGE[name])
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,9 +218,9 @@ class RouteRequest:
 def parse_zmdlog_payload(payload: str) -> RouteRequest:
     """Resolve the text following ``zmdlog`` into a stable route.
 
-    This layer only decides which feature owns the request. Matching board,
-    dungeon, scope, and (in a later version) account candidates belongs to the
-    unified matcher rather than the command handler.
+    This layer only decides which feature owns the request. Matching boards,
+    dungeons and scopes belongs to the matcher, and nicknames to the account
+    search, never to the command handler.
     """
 
     normalized, options = _extract_options(" ".join(payload.split()))
@@ -264,6 +284,10 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         if remainder:
             raise RouteParseError(
                 "新纪录不接参数，只能加 --范围，例如：新纪录 --范围 30d。"
+            )
+        if "range" in options.present and options.stats_range == "all":
+            raise RouteParseError(
+                "新纪录的 --范围 只支持 7d / 14d / 30d，例如：新纪录 --范围 30d。"
             )
         return RouteRequest(
             RouteKind.RECORDS_QUERY,
@@ -437,7 +461,7 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
         element_filter=element_filter,
         profession_filter=profession_filter,
         stats_range=(
-            _parse_choice(values["range"], STATS_RANGES, _RANGE_ALIASES, "--范围")
+            _parse_range(values["range"])
             if "range" in values
             else DEFAULT_STATS_RANGE
         ),
@@ -478,6 +502,10 @@ def _parse_compare(remainder: str) -> RouteRequest:
 
     tokens = remainder.split()
     if not tokens:
+        raise RouteParseError(_COMPARE_USAGE)
+    if len(tokens) == 1 and _REFERENCE_RE.match(tokens[0]):
+        # One battle id is not a board keyword; it would otherwise go
+        # upstream as one and come back as "no such board".
         raise RouteParseError(_COMPARE_USAGE)
     if len(tokens) == 2 and all(_REFERENCE_RE.match(token) for token in tokens):
         return RouteRequest(
@@ -530,14 +558,22 @@ def _split_battle_rank(remainder: str) -> tuple[str, int]:
 
 
 def _parse_top(raw_top: str) -> int:
-    # int() raises a plain ValueError past ~4300 digits; the maximum is two
-    # digits, so anything longer is rejected before conversion.
+    # int() raises a plain ValueError past ~4300 digits; the maximum has two
+    # digits, so anything past three (a leading zero is tolerated) is
+    # rejected before conversion.
     if not raw_top.isascii() or not raw_top.isdecimal() or len(raw_top) > 3:
         raise RouteParseError("--top 只支持 1–30 的整数。")
     ranking_top = int(raw_top)
     if not MIN_RANKING_TOP <= ranking_top <= MAX_RANKING_TOP:
         raise RouteParseError("--top 只支持 1–30 的整数。")
     return ranking_top
+
+
+def _parse_range(raw: str) -> str:
+    value = parse_range_text(raw)
+    if value is None:
+        raise RouteParseError(f"--范围 只支持 {' / '.join(STATS_RANGES)}。")
+    return value
 
 
 def _parse_choice(

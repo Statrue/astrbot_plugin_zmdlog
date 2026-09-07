@@ -377,3 +377,36 @@ class MatcherCacheTests(unittest.TestCase):
     def test_thresholds_are_validated_once_at_construction(self) -> None:
         with self.assertRaises(ValueError):
             MatcherCache(fuzzy_threshold=65)
+
+
+class AliasPrecedenceTests(unittest.TestCase):
+    """An admin alias must be able to pin a name both difficulties derive."""
+
+    @staticmethod
+    def _cards():
+        dungeon = "影拓丰碑4期 · 山中见犼"
+        return (
+            make_card("kunan", "清波访客·苦难", dungeon),
+            make_card("cankuk", "清波访客·残酷", dungeon),
+        )
+
+    def test_two_difficulties_derive_the_same_alias_and_tie(self) -> None:
+        result = RankingMatcher(self._cards(), AliasConfig.empty()).match("清波访客")
+
+        self.assertEqual(result.status, MatchStatus.AMBIGUOUS)
+
+    def test_a_configured_alias_outranks_the_derived_one(self) -> None:
+        aliases = AliasConfig(boards={"kunan": ("清波访客",)}, dungeons={})
+
+        result = RankingMatcher(self._cards(), aliases).match("清波访客")
+
+        self.assertEqual(result.status, MatchStatus.MATCHED)
+        self.assertEqual(result.selected.target.key, "kunan")
+        self.assertEqual(result.selected.level, MatchLevel.ALIAS_EXACT)
+
+    def test_a_fuzzy_hit_below_the_floor_is_a_miss(self) -> None:
+        # 一二三四 shares one character with 首领一; that used to be a 0.33
+        # "closest board" instead of a miss.
+        result = RankingMatcher(_cards(), AliasConfig.empty()).match("一二三四")
+
+        self.assertEqual(result.status, MatchStatus.NOT_FOUND)

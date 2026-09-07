@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .matcher import fold_text, normalize_search_text, pinyin_keys
-from .models import BossRanking
+from .models import BossRanking, BossRankingRow
 
 
 class CharacterResolutionStatus(str, Enum):
@@ -142,3 +142,22 @@ def pick_character_filter_scope(
     ):
         return CharacterFilterScope.ROSTER
     return CharacterFilterScope.NONE
+
+
+def row_fields(
+    row: BossRankingRow,
+    names: tuple[str, ...],
+    scope: CharacterFilterScope,
+) -> bool:
+    """Whether one ranking row passes a resolved ``--角色`` filter.
+
+    MAIN wants the first name as the row's main C; ROSTER wants every name
+    somewhere in the team; NONE passes nothing.
+    """
+
+    if scope is CharacterFilterScope.MAIN:
+        return bool(names) and row.character_name == names[0]
+    if scope is CharacterFilterScope.ROSTER:
+        fielded = {entry.character_name for entry in row.roster_entries}
+        return bool(names) and all(name in fielded for name in names)
+    return False

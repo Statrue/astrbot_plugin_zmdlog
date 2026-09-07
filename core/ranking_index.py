@@ -29,6 +29,7 @@ from .models import (
     PublicUserRanking,
     PublicUserRankings,
 )
+from .timestamps import later_or_same
 
 DEFAULT_PACE_SECONDS = 20.0
 # One hot-bosses read a minute: what a single keyword query a minute would
@@ -329,7 +330,7 @@ def account_rankings(
         best = min(mine, key=lambda row: row.rank)
         for row in mine:
             # Nicknames change; the most recent upload carries the current one.
-            if row.battle_end_at >= newest:
+            if not newest or later_or_same(row.battle_end_at, newest):
                 newest = row.battle_end_at
                 display_name = row.account_display_name
         rankings.append(
