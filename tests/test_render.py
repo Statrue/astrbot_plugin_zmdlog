@@ -549,6 +549,119 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class AssetRoutingTests(unittest.TestCase):
+    """The capture-time image gate: what it fetches, caches and refuses."""
+
+    class FakeRequest:
+        def __init__(self, url, resource_type="image"):
+            self.url = url
+            self.resource_type = resource_type
+
+    class FakeRoute:
+        def __init__(self, request, responses):
+            self.request = request
+            self._responses = responses
+            self.fetched: list[str] = []
+            self.fulfilled = None
+            self.aborted = False
+
+        async def fetch(self, url=None, max_redirects=None):
+            target = url or self.request.url
+            self.fetched.append(target)
+            reply = self._responses.get(target)
+            if reply is None:
+                raise RuntimeError("no such asset")
+            return reply
+
+        async def fulfill(self, *, status, content_type, body):
+            self.fulfilled = (status, content_type, body)
+
+        async def abort(self):
+            self.aborted = True
+
+        async def continue_(self):
+            self.aborted = False
+
+    class FakeResponse:
+        def __init__(self, status, body, content_type="image/png"):
+            self.status = status
+            self._body = body
+            self.headers = {"content-type": content_type}
+
+        async def body(self):
+            return self._body
+
+    ORIGIN = "https://zmdlogs.com"
+    PATH = "/images/character/charremoteicon/icon_chr_0032.png"
+
+    def _renderer(self):
+        return LongImageRenderer(
+            Path(__file__).parents[1],
+            allowed_image_origins=(self.ORIGIN,),
+        )
+
+    def _thumb(self):
+        from urllib.parse import quote
+
+        return (
+            f"{self.ORIGIN}/_next/image?url={quote(self.PATH, safe='')}&w=128&q=75"
+        )
+
+    def test_a_site_image_is_fetched_resized(self) -> None:
+        # Upstream portraits are about 1 MB each; a page of them cannot load
+        # inside the capture's image budget.
+        renderer = self._renderer()
+        route = self.FakeRoute(
+            self.FakeRequest(self.ORIGIN + self.PATH),
+            {self._thumb(): self.FakeResponse(200, b"small")},
+        )
+
+        asyncio.run(renderer._route_asset_request(route))
+
+        self.assertEqual(route.fetched, [self._thumb()])
+        self.assertEqual(route.fulfilled, (200, "image/png", b"small"))
+        # Cached under the URL the page asked for, not the resized one.
+        self.assertIsNotNone(renderer._asset_cache.get(self.ORIGIN + self.PATH))
+
+    def test_the_original_is_used_when_there_is_no_resized_copy(self) -> None:
+        renderer = self._renderer()
+        route = self.FakeRoute(
+            self.FakeRequest(self.ORIGIN + self.PATH),
+            {
+                self._thumb(): self.FakeResponse(404, b"gone"),
+                self.ORIGIN + self.PATH: self.FakeResponse(200, b"whole"),
+            },
+        )
+
+        asyncio.run(renderer._route_asset_request(route))
+
+        self.assertEqual(route.fulfilled, (200, "image/png", b"whole"))
+
+    def test_a_foreign_origin_is_refused(self) -> None:
+        renderer = self._renderer()
+        route = self.FakeRoute(self.FakeRequest("https://evil.example/a.png"), {})
+
+        asyncio.run(renderer._route_asset_request(route))
+
+        self.assertTrue(route.aborted)
+        self.assertEqual(route.fetched, [])
+
+    def test_a_redirect_is_refused(self) -> None:
+        renderer = self._renderer()
+        route = self.FakeRoute(
+            self.FakeRequest(self.ORIGIN + self.PATH),
+            {
+                self._thumb(): self.FakeResponse(302, b""),
+                self.ORIGIN + self.PATH: self.FakeResponse(302, b""),
+            },
+        )
+
+        asyncio.run(renderer._route_asset_request(route))
+
+        self.assertTrue(route.aborted)
+        self.assertIsNone(route.fulfilled)
+
+
 class RenderQueueTests(unittest.IsolatedAsyncioTestCase):
     """The semaphore bounds concurrency; the queue behind it needs bounds too."""
 

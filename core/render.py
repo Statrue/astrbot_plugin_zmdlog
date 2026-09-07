@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from jinja2 import (
     Environment,
@@ -623,6 +623,15 @@ class TemplateRenderer:
 # and a miss, an existing file changing is an art patch months apart. So
 # the cache lives as long as the process does in practice; the byte caps
 # below, not the clock, bound it.
+# Upstream serves portraits at full size: one character icon is about 1 MB,
+# so a champions page asks for some 30 MB of images it draws at 36 px. The
+# site is a Next.js app, and its own image endpoint returns the same picture
+# resized (128 px wide is 13 KB, and covers the 64 px hero at 2x). Asking
+# for that instead is what makes a cold page render at all on a slow link.
+_THUMBNAIL_ENDPOINT = "/_next/image"
+_THUMBNAIL_WIDTH = 128
+_THUMBNAIL_QUALITY = 75
+_THUMBNAIL_PATH_PREFIX = "/images/"
 _ASSET_CACHE_TTL_SECONDS = 30 * 24 * 3600.0
 _ASSET_CACHE_MAX_TOTAL_BYTES = 32 * 1024 * 1024
 _ASSET_CACHE_MAX_ITEM_BYTES = 2 * 1024 * 1024
@@ -1092,11 +1101,24 @@ class LongImageRenderer:
         # Fetch here instead of letting Chromium follow the request: this
         # handler only ever sees the first hop, so a redirect served by an
         # allowed origin would otherwise pull the image from anywhere.
-        try:
-            response = await route.fetch(max_redirects=0)
-        except Exception:
-            await route.abort()
-            return
+        response = None
+        thumbnail = _thumbnail_url(origin, parsed.path)
+        if thumbnail is not None:
+            # The resized copy, when the site can make one. Anything other
+            # than a 200 falls through to the original below, so a site that
+            # drops the endpoint costs nothing but a wasted request.
+            try:
+                candidate = await route.fetch(url=thumbnail, max_redirects=0)
+                if candidate.status == 200:
+                    response = candidate
+            except Exception:
+                response = None
+        if response is None:
+            try:
+                response = await route.fetch(max_redirects=0)
+            except Exception:
+                await route.abort()
+                return
         if 300 <= response.status < 400:
             await route.abort()
             return
@@ -1331,3 +1353,18 @@ def _positive_number(value: float, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
         raise TemplateConfigurationError(f"{name} must be a positive number")
     return float(value)
+
+
+def _thumbnail_url(origin: str, path: str) -> str | None:
+    """The site's own resized copy of one image, or None to fetch it whole.
+
+    Only for images the site serves itself: an absolute CDN URL is not
+    something its optimizer accepts, and asking would just cost a 404.
+    """
+
+    if not path.startswith(_THUMBNAIL_PATH_PREFIX):
+        return None
+    return (
+        f"{origin}{_THUMBNAIL_ENDPOINT}?url={quote(path, safe='')}"
+        f"&w={_THUMBNAIL_WIDTH}&q={_THUMBNAIL_QUALITY}"
+    )
