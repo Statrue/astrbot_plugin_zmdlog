@@ -187,11 +187,13 @@ def format_boards_overview(
         return _joined(lines)
     lines.append("")
     for card in cards:
-        label = (
-            card.boss_name
-            if card.boss_name.startswith(card.dungeon_name.split(" ")[0])
-            else f"{card.dungeon_name} · {card.boss_name}"
-        )
+        if card.dungeon_name == title or card.boss_name.startswith(
+            card.dungeon_name.split(" ")[0]
+        ):
+            # The title already names the dungeon, or the boss name carries it.
+            label = card.boss_name
+        else:
+            label = f"{card.dungeon_name} · {card.boss_name}"
         runs = card.top_speed_runs[: max(1, runs_per_board)]
         if not runs:
             lines.append(f"{label}：暂无公开记录")
@@ -339,7 +341,7 @@ def format_battle(
         f"{battle.dungeon_name} · {battle.boss_name}",
         f"用时 {_duration(battle.duration_ms)} · 全队 DPS {battle.total_dps:,.0f}"
         f" · 总伤害 {battle.total_damage:,}",
-        f"上传者 {battle.uploader_display_name} · 战斗时间 {battle.battle_end_at}",
+        f"上传者 {battle.uploader_display_name} · 战斗时间 {_when(battle.battle_end_at)}",
     ]
     if battle.participants:
         lines.append("")
