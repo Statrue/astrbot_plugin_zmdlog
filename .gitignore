@@ -11,3 +11,10 @@ __pycache__/
 
 # AstrBot data dir created when driving main.py locally
 /data/
+
+# Tool caches and local environments
+/.venv/
+/venv/
+/.ruff_cache/
+/.pytest_cache/
+/.claude/
