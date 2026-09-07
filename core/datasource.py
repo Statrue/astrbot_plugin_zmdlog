@@ -152,14 +152,22 @@ class ZmdLogsDataSource:
     async def list_hot_bosses(self) -> tuple[HotBossCard, ...]:
         """The board index; stale or from disk when upstream is unreachable."""
 
-        result = await self.hot_boss_cache.get_or_load(
-            _HOT_BOSSES_KEY,
-            self._fetch_hot_bosses,
-            allow_stale_on_error=True,
+        return await self._stale_tolerant(
+            self.hot_boss_cache, _HOT_BOSSES_KEY, self._fetch_hot_bosses, "hot-bosses"
         )
+
+    async def _stale_tolerant(self, cache, key, loader, what: str):
+        """Read through a cache that may serve its last value when upstream fails.
+
+        Three reads work this way — the board list and the two game-data
+        catalogs — because a page missing a whole section is worse than one
+        a while out of date; the staleness is logged so it is not invisible.
+        """
+
+        result = await cache.get_or_load(key, loader, allow_stale_on_error=True)
         if result.state is CacheState.STALE:
             self._logger.warning(
-                "ZmdLogBot is using stale hot-bosses data after refresh failure."
+                "ZmdLogBot is using stale %s data after a refresh failure.", what
             )
         return result.value
 
@@ -218,16 +226,12 @@ class ZmdLogsDataSource:
         for a whole page is worse than a label a while out of date.
         """
 
-        result = await self.equip_catalog_cache.get_or_load(
+        return await self._stale_tolerant(
+            self.equip_catalog_cache,
             _EQUIP_CATALOG_KEY,
             self._fetch_equip_suits,
-            allow_stale_on_error=True,
+            "equip catalog",
         )
-        if result.state is CacheState.STALE:
-            self._logger.warning(
-                "ZmdLogBot is using a stale equip catalog after refresh failure."
-            )
-        return result.value
 
     async def _fetch_equip_suits(self) -> dict[str, str]:
         suits = await self.client.get_equip_catalog()
@@ -236,16 +240,12 @@ class ZmdLogsDataSource:
     async def get_character_types(self) -> dict[str, CharacterType]:
         """Name to element and weapon type; kept for a month like the suits."""
 
-        result = await self.character_type_cache.get_or_load(
+        return await self._stale_tolerant(
+            self.character_type_cache,
             _CHARACTER_TYPES_KEY,
             self._fetch_character_types,
-            allow_stale_on_error=True,
+            "character catalog",
         )
-        if result.state is CacheState.STALE:
-            self._logger.warning(
-                "ZmdLogBot is using a stale character catalog after refresh failure."
-            )
-        return result.value
 
     async def _fetch_character_types(self) -> dict[str, CharacterType]:
         return {entry.name: entry for entry in await self.client.get_character_types()}

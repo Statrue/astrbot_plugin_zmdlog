@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +19,7 @@ from core.persistence import JsonStore, load_json
 from core.ranking_index import IndexEntry
 from core.settings import PluginSettings
 from tests.helpers import (
+    CapturingLogger,
     character_statistics_payload,
     hot_bosses_payload,
     ranking_payload_with_rows,
@@ -49,15 +49,6 @@ class FakeClient:
     async def get_public_user_rankings(self, account_id):
         self.account_reads += 1
         raise ZmdLogsClientError("endpoint answered instead of the index")
-
-
-class CapturingLogger(logging.Logger):
-    def __init__(self) -> None:
-        super().__init__("test")
-        self.messages: list[str] = []
-
-    def handle(self, record: logging.LogRecord) -> None:
-        self.messages.append(record.getMessage())
 
 
 def run(coro):

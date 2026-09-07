@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import unittest
 from pathlib import Path
@@ -8,7 +9,6 @@ from core.settings import (
     MIN_RANK_WATCH_INTERVAL_SECONDS,
     PluginSettings,
     load_settings,
-    setting_names,
 )
 
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "_conf_schema.json"
@@ -21,7 +21,9 @@ class SettingsTests(unittest.TestCase):
         schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
         defaults = PluginSettings()
 
-        self.assertEqual(set(schema), set(setting_names()))
+        self.assertEqual(
+            set(schema), {field.name for field in dataclasses.fields(PluginSettings)}
+        )
         for name, spec in schema.items():
             with self.subTest(name=name):
                 self.assertEqual(getattr(defaults, name), spec["default"])

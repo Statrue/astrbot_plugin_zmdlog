@@ -108,6 +108,7 @@ class ZmdLogsClient:
             base_url=base_url,
             timeout=timeout_seconds,
             transport=transport,
+            verify=_ssl_context(),
             headers={
                 "Accept": "application/json",
                 "User-Agent": "astrbot_plugin_zmdlog",
@@ -407,3 +408,19 @@ def _read_api_error(response: httpx.Response) -> tuple[str, str]:
         code if isinstance(code, str) else default_code,
         message if isinstance(message, str) else default_message,
     )
+
+
+_SSL_CONTEXT = None
+
+
+def _ssl_context():
+    """One verified SSL context per process.
+
+    Building one loads the system trust store (about 150 ms); httpx builds
+    a fresh one per client, and every plugin reload makes a client.
+    """
+
+    global _SSL_CONTEXT
+    if _SSL_CONTEXT is None:
+        _SSL_CONTEXT = httpx.create_ssl_context()
+    return _SSL_CONTEXT

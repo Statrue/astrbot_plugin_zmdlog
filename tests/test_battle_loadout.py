@@ -693,7 +693,6 @@ class BattleCandidateViewTests(unittest.TestCase):
                 name=name,
                 dungeon_names=("测试副本",),
                 boss_slugs=(slug,),
-                query_text="测",
             ),
             level=MatchLevel.NORMALIZED_EXACT,
             score=1.0,

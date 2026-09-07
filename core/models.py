@@ -1,5 +1,6 @@
 """Typed adapters for the public ZMDLogs ranking responses."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -514,15 +515,6 @@ def parse_character_boss_statistics(payload: Any) -> CharacterBossStatistics:
 
     path = "character-boss-statistics"
     item = _mapping(payload, path)
-    metric = _string(item.get("metric"), f"{path}.metric")
-    if metric != "dps":
-        raise ModelValidationError(f"{path}.metric must be 'dps'")
-    time_range = _string(item.get("range"), f"{path}.range")
-    if time_range not in ("7d", "14d", "30d", "all"):
-        raise ModelValidationError(f"{path}.range is not a known range")
-    potential = _string(item.get("potential"), f"{path}.potential")
-    if potential not in ("0", "1-5", "all"):
-        raise ModelValidationError(f"{path}.potential is not a known filter")
     rows = _list(item.get("rows"), f"{path}.rows")
     return CharacterBossStatistics(
         character_key=_string(item.get("characterKey"), f"{path}.characterKey"),
@@ -533,20 +525,7 @@ def parse_character_boss_statistics(payload: Any) -> CharacterBossStatistics:
         character_avatar_url=_optional_string(
             item.get("characterAvatarUrl"), f"{path}.characterAvatarUrl"
         ),
-        range=time_range,
-        potential=potential,
-        included_boss_count=_non_negative(
-            item.get("includedBossCount"), f"{path}.includedBossCount"
-        ),
-        minimum_sample_count=_non_negative(
-            item.get("minimumSampleCount"), f"{path}.minimumSampleCount"
-        ),
-        total_sample_count=_non_negative(
-            item.get("totalSampleCount"), f"{path}.totalSampleCount"
-        ),
-        total_outlier_count=_non_negative(
-            item.get("totalOutlierCount"), f"{path}.totalOutlierCount"
-        ),
+        **_parse_statistics_envelope(item, path),
         rows=tuple(
             _parse_character_boss_row(row, f"{path}.rows[{index}]")
             for index, row in enumerate(rows)
@@ -554,8 +533,39 @@ def parse_character_boss_statistics(payload: Any) -> CharacterBossStatistics:
     )
 
 
-def _parse_character_boss_row(value: Any, path: str) -> CharacterBossStatisticsRow:
-    item = _mapping(value, path)
+def _parse_statistics_envelope(item: Mapping[str, Any], path: str) -> dict[str, Any]:
+    """The fields both statistics responses carry: metric, window, counts."""
+
+    metric = _string(item.get("metric"), f"{path}.metric")
+    if metric != "dps":
+        raise ModelValidationError(f"{path}.metric must be 'dps'")
+    time_range = _string(item.get("range"), f"{path}.range")
+    if time_range not in ("7d", "14d", "30d", "all"):
+        raise ModelValidationError(f"{path}.range is not a known range")
+    potential = _string(item.get("potential"), f"{path}.potential")
+    if potential not in ("0", "1-5", "all"):
+        raise ModelValidationError(f"{path}.potential is not a known filter")
+    return {
+        "range": time_range,
+        "potential": potential,
+        "included_boss_count": _non_negative(
+            item.get("includedBossCount"), f"{path}.includedBossCount"
+        ),
+        "minimum_sample_count": _non_negative(
+            item.get("minimumSampleCount"), f"{path}.minimumSampleCount"
+        ),
+        "total_sample_count": _non_negative(
+            item.get("totalSampleCount"), f"{path}.totalSampleCount"
+        ),
+        "total_outlier_count": _non_negative(
+            item.get("totalOutlierCount"), f"{path}.totalOutlierCount"
+        ),
+    }
+
+
+def _parse_statistics_row(item: Mapping[str, Any], path: str) -> dict[str, Any]:
+    """The distribution fields both statistics rows carry."""
+
     insufficient = _boolean(
         item.get("insufficientSamples"), f"{path}.insufficientSamples"
     )
@@ -577,6 +587,34 @@ def _parse_character_boss_row(value: Any, path: str) -> CharacterBossStatisticsR
                 _non_negative(outlier_item.get("count"), f"{outlier_path}.count"),
             )
         )
+    return {
+        "sample_count": _non_negative(item.get("sampleCount"), f"{path}.sampleCount"),
+        "normal_sample_count": _non_negative(
+            item.get("normalSampleCount"), f"{path}.normalSampleCount"
+        ),
+        "outlier_count": _non_negative(
+            item.get("outlierCount"), f"{path}.outlierCount"
+        ),
+        "insufficient_samples": insufficient,
+        "rank": rank,
+        "lower_whisker": _optional_stat(
+            item.get("lowerWhisker"), f"{path}.lowerWhisker"
+        ),
+        "p10": _optional_stat(item.get("p10"), f"{path}.p10"),
+        "p25": _optional_stat(item.get("p25"), f"{path}.p25"),
+        "median": _optional_stat(item.get("median"), f"{path}.median"),
+        "p75": _optional_stat(item.get("p75"), f"{path}.p75"),
+        "p90": _optional_stat(item.get("p90"), f"{path}.p90"),
+        "upper_whisker": _optional_stat(
+            item.get("upperWhisker"), f"{path}.upperWhisker"
+        ),
+        "maximum": _optional_stat(item.get("maximum"), f"{path}.maximum"),
+        "outliers": tuple(outliers),
+    }
+
+
+def _parse_character_boss_row(value: Any, path: str) -> CharacterBossStatisticsRow:
+    item = _mapping(value, path)
     return CharacterBossStatisticsRow(
         boss_slug=_string(item.get("bossSlug"), f"{path}.bossSlug"),
         boss_name=_string(item.get("bossName"), f"{path}.bossName"),
@@ -584,22 +622,7 @@ def _parse_character_boss_row(value: Any, path: str) -> CharacterBossStatisticsR
         ranked_character_count=_non_negative(
             item.get("rankedCharacterCount"), f"{path}.rankedCharacterCount"
         ),
-        sample_count=_non_negative(item.get("sampleCount"), f"{path}.sampleCount"),
-        normal_sample_count=_non_negative(
-            item.get("normalSampleCount"), f"{path}.normalSampleCount"
-        ),
-        outlier_count=_non_negative(item.get("outlierCount"), f"{path}.outlierCount"),
-        insufficient_samples=insufficient,
-        rank=rank,
-        lower_whisker=_optional_stat(item.get("lowerWhisker"), f"{path}.lowerWhisker"),
-        p10=_optional_stat(item.get("p10"), f"{path}.p10"),
-        p25=_optional_stat(item.get("p25"), f"{path}.p25"),
-        median=_optional_stat(item.get("median"), f"{path}.median"),
-        p75=_optional_stat(item.get("p75"), f"{path}.p75"),
-        p90=_optional_stat(item.get("p90"), f"{path}.p90"),
-        upper_whisker=_optional_stat(item.get("upperWhisker"), f"{path}.upperWhisker"),
-        maximum=_optional_stat(item.get("maximum"), f"{path}.maximum"),
-        outliers=tuple(outliers),
+        **_parse_statistics_row(item, path),
     )
 
 
@@ -608,41 +631,19 @@ def parse_character_statistics(payload: Any) -> CharacterStatistics:
 
     item = _mapping(payload, "character-statistics")
     path = "character-statistics"
-    metric = _string(item.get("metric"), f"{path}.metric")
-    if metric != "dps":
-        raise ModelValidationError(f"{path}.metric must be 'dps'")
     scope = _string(item.get("scope"), f"{path}.scope")
     if scope not in ("boss", "all"):
         raise ModelValidationError(f"{path}.scope must be 'boss' or 'all'")
-    time_range = _string(item.get("range"), f"{path}.range")
-    if time_range not in ("7d", "14d", "30d", "all"):
-        raise ModelValidationError(f"{path}.range is not a known range")
-    potential = _string(item.get("potential"), f"{path}.potential")
-    if potential not in ("0", "1-5", "all"):
-        raise ModelValidationError(f"{path}.potential is not a known filter")
     rows = _list(item.get("rows"), f"{path}.rows")
     return CharacterStatistics(
         scope=scope,
         boss_slug=_string(item.get("bossSlug"), f"{path}.bossSlug"),
         boss_name=_string(item.get("bossName"), f"{path}.bossName"),
         dungeon_name=_string(item.get("dungeonName"), f"{path}.dungeonName"),
-        range=time_range,
-        potential=potential,
-        included_boss_count=_non_negative(
-            item.get("includedBossCount"), f"{path}.includedBossCount"
-        ),
-        minimum_sample_count=_non_negative(
-            item.get("minimumSampleCount"), f"{path}.minimumSampleCount"
-        ),
         eligible_battle_count=_non_negative(
             item.get("eligibleBattleCount"), f"{path}.eligibleBattleCount"
         ),
-        total_sample_count=_non_negative(
-            item.get("totalSampleCount"), f"{path}.totalSampleCount"
-        ),
-        total_outlier_count=_non_negative(
-            item.get("totalOutlierCount"), f"{path}.totalOutlierCount"
-        ),
+        **_parse_statistics_envelope(item, path),
         rows=tuple(
             _parse_character_statistics_row(row, f"{path}.rows[{index}]")
             for index, row in enumerate(rows)
@@ -652,52 +653,16 @@ def parse_character_statistics(payload: Any) -> CharacterStatistics:
 
 def _parse_character_statistics_row(value: Any, path: str) -> CharacterStatisticsRow:
     item = _mapping(value, path)
-    insufficient = _boolean(
-        item.get("insufficientSamples"), f"{path}.insufficientSamples"
-    )
-    rank = _optional_integer(item.get("rank"), f"{path}.rank")
-    if rank is None and not insufficient:
-        raise ModelValidationError(f"{path}.rank is required for ranked rows")
-    if rank is not None and (insufficient or rank < 1):
-        raise ModelValidationError(f"{path}.rank must be a positive ranked index")
-    outliers_raw = _list(item.get("outliers", []), f"{path}.outliers")
-    outliers = []
-    for index, outlier in enumerate(outliers_raw):
-        outlier_path = f"{path}.outliers[{index}]"
-        outlier_item = _mapping(outlier, outlier_path)
-        outliers.append(
-            (
-                _non_negative_number(
-                    outlier_item.get("value"), f"{outlier_path}.value"
-                ),
-                _non_negative(outlier_item.get("count"), f"{outlier_path}.count"),
-            )
-        )
     return CharacterStatisticsRow(
         character_key=_string(item.get("characterKey"), f"{path}.characterKey"),
         character_name=_string(item.get("characterName"), f"{path}.characterName"),
         character_profession=_string(
             item.get("characterProfession"), f"{path}.characterProfession"
         ),
-        sample_count=_non_negative(item.get("sampleCount"), f"{path}.sampleCount"),
-        normal_sample_count=_non_negative(
-            item.get("normalSampleCount"), f"{path}.normalSampleCount"
-        ),
-        outlier_count=_non_negative(item.get("outlierCount"), f"{path}.outlierCount"),
-        insufficient_samples=insufficient,
-        rank=rank,
         character_avatar_url=_optional_string(
             item.get("characterAvatarUrl"), f"{path}.characterAvatarUrl"
         ),
-        lower_whisker=_optional_stat(item.get("lowerWhisker"), f"{path}.lowerWhisker"),
-        p10=_optional_stat(item.get("p10"), f"{path}.p10"),
-        p25=_optional_stat(item.get("p25"), f"{path}.p25"),
-        median=_optional_stat(item.get("median"), f"{path}.median"),
-        p75=_optional_stat(item.get("p75"), f"{path}.p75"),
-        p90=_optional_stat(item.get("p90"), f"{path}.p90"),
-        upper_whisker=_optional_stat(item.get("upperWhisker"), f"{path}.upperWhisker"),
-        maximum=_optional_stat(item.get("maximum"), f"{path}.maximum"),
-        outliers=tuple(outliers),
+        **_parse_statistics_row(item, path),
     )
 
 

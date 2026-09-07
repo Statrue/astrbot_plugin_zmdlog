@@ -1,24 +1,5 @@
-"""Core services for the ZmdLogBot plugin."""
+"""Everything the plugin does, without AstrBot: import the modules directly.
 
-from .cache import AsyncTTLCache, CacheResult, CacheState
-from .client import ZmdLogsClient
-from .matcher import AliasConfig, RankingMatcher
-from .routing import (
-    RouteKind,
-    RouteParseError,
-    RouteRequest,
-    parse_zmdlog_payload,
-)
-
-__all__ = [
-    "AliasConfig",
-    "AsyncTTLCache",
-    "CacheResult",
-    "CacheState",
-    "RankingMatcher",
-    "RouteKind",
-    "RouteParseError",
-    "RouteRequest",
-    "ZmdLogsClient",
-    "parse_zmdlog_payload",
-]
+``main.py`` is the only AstrBot-aware file; nothing under ``core`` imports
+the host, which is what keeps it unit-testable.
+"""

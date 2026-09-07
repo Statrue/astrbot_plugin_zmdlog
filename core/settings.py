@@ -8,7 +8,7 @@ the ones ``_conf_schema.json`` declares; a test keeps the two in step.
 """
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -115,12 +115,6 @@ def load_settings(
             1, int(reader.positive_number("rank_watch_rank_threshold"))
         ),
     )
-
-
-def setting_names() -> tuple[str, ...]:
-    """Every configurable key, in declaration order."""
-
-    return tuple(field.name for field in fields(PluginSettings))
 
 
 def _is_usable_base_url(value: str) -> bool:

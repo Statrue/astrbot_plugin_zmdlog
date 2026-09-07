@@ -581,10 +581,7 @@ class ToolService:
                 return target
             if not isinstance(target, str):
                 choice, _cards = target
-                return ToolAnswer(
-                    f"「{shorten(board)}」是副本，角色统计要按具体榜单看：请指明"
-                    f"「{choice.target.name}」下的一个榜单。"
-                )
+                return _dungeon_statistics_refusal(board, choice)
             slug, query = target, board
         stats = await self._data.get_character_statistics(
             slug, time_range=span, potential=potential
@@ -612,10 +609,7 @@ class ToolService:
             return target
         if not isinstance(target, str):
             choice, _cards = target
-            return ToolAnswer(
-                f"「{shorten(board)}」是副本，角色统计要按具体榜单看：请指明"
-                f"「{choice.target.name}」下的一个榜单。"
-            )
+            return _dungeon_statistics_refusal(board, choice)
         stats = await self._data.get_character_statistics(
             target, time_range=span, potential=potential
         )
@@ -930,6 +924,15 @@ def _index_note(index) -> str:
     if not missing:
         return ""
     return f"（榜单索引有 {missing} 个榜没读到，以下未计入它们。）"
+
+
+def _dungeon_statistics_refusal(board: str, choice: MatchChoice) -> ToolAnswer:
+    """Statistics exist per board; a dungeon keyword has to be narrowed."""
+
+    return ToolAnswer(
+        f"「{shorten(board)}」是副本，角色统计要按具体榜单看：请指明"
+        f"「{choice.target.name}」下的一个榜单。"
+    )
 
 
 def _means_every_board(keyword: str) -> bool:

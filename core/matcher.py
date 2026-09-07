@@ -176,7 +176,6 @@ class MatchTarget:
     name: str
     dungeon_names: tuple[str, ...]
     boss_slugs: tuple[str, ...]
-    query_text: str
     aliases: tuple[str, ...] = ()
     pinyin: tuple[str, ...] = ()
     # The subset of ``aliases`` that came from the alias file.
@@ -476,7 +475,6 @@ class RankingMatcher:
             name=_scope_name(family, dungeon_names),
             dungeon_names=dungeon_names,
             boss_slugs=boss_slugs,
-            query_text=query,
         )
         return MatchChoice(
             target=target,
@@ -585,7 +583,6 @@ def _build_targets(
                 name=card.boss_name,
                 dungeon_names=(card.dungeon_name,),
                 boss_slugs=(slug,),
-                query_text=slug,
                 aliases=merged,
                 pinyin=pinyin_keys((card.boss_name, *merged)),
                 configured_aliases=frozenset(aliases.boards.get(slug, ())),
@@ -605,7 +602,6 @@ def _build_targets(
                 name=dungeon_name,
                 dungeon_names=(dungeon_name,),
                 boss_slugs=tuple(card.boss_slug for card in grouped_cards),
-                query_text=dungeon_name,
                 aliases=merged,
                 pinyin=pinyin_keys((dungeon_name, *merged)),
                 configured_aliases=frozenset(aliases.dungeons.get(dungeon_name, ())),

@@ -22,7 +22,6 @@ class ChampionChangeView:
     previous_account_display_name: str
     previous_character_name: str
     previous_duration: str
-    battle_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +36,6 @@ class NewRecordView:
     dps: str
     fought_label: str
     seen_label: str
-    battle_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +106,6 @@ def build_records_page(
                 previous_account_display_name=event.previous_account_display_name,
                 previous_character_name=event.previous_character_name,
                 previous_duration=format_duration(event.previous_duration_ms),
-                battle_id=event.battle_id,
             )
             for event in changes[:MAX_CHANGES]
         ),
@@ -125,7 +122,6 @@ def build_records_page(
                 dps=format_number(event.dps),
                 fought_label=_format_datetime(event.battle_end_at),
                 seen_label=_format_datetime(event.seen_at),
-                battle_id=event.battle_id,
             )
             for event in records[:MAX_RECORDS]
         ),

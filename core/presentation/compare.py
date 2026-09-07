@@ -18,6 +18,7 @@ from .charts import (
     _CURVE_MAX_POINTS,
     RailTickView,
     _horizontal_ticks,
+    polyline_points,
 )
 from .common import (
     PageHeader,
@@ -300,11 +301,7 @@ def _compare_curve(
         return None
 
     def polyline(series) -> str:
-        return " ".join(
-            f"{point.at_ms / shared_ms * 100:.2f},"
-            f"{100 - min(point.dps, axis_max) / axis_max * 100:.2f}"
-            for point in series.points
-        )
+        return polyline_points(series.points, duration_ms=shared_ms, axis_max=axis_max)
 
     return CompareCurveView(
         polyline_a=polyline(curve_a.team),
@@ -318,9 +315,6 @@ def _compare_curve(
         dps_a=format_number(round(curve_a.team.final_dps, 2)),
         dps_b=format_number(round(curve_b.team.final_dps, 2)),
     )
-
-
-_COMPARE_PARTS = ("护手", "护甲", "配件", "配件")
 
 
 def _compare_loadouts(

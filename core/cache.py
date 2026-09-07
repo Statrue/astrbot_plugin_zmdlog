@@ -121,14 +121,6 @@ class AsyncTTLCache(Generic[K, V]):
             while len(self._entries) > self.max_entries:
                 self._entries.popitem(last=False)
 
-    async def invalidate(self, key: K) -> None:
-        async with self._lock:
-            self._entries.pop(key, None)
-
-    async def clear(self) -> None:
-        async with self._lock:
-            self._entries.clear()
-
     async def close(self) -> None:
         async with self._lock:
             tasks = tuple(self._inflight.values())

@@ -21,8 +21,6 @@ MAX_DROPS_PER_NOTICE = 5
 _MAX_ACCOUNTS_PER_MESSAGE = 3
 _MAX_BOARDS_PER_MESSAGE = 3
 
-__all__ = ["board_label", "parse_timestamp"]
-
 
 @dataclass(frozen=True, slots=True)
 class AccountSnapshot:

@@ -113,7 +113,6 @@ def _account_choice(account_id: str, name: str) -> MatchChoice:
             name=name,
             dungeon_names=(),
             boss_slugs=(),
-            query_text="cpu",
         ),
         level=MatchLevel.STANDARD_EXACT,
         score=1.0,

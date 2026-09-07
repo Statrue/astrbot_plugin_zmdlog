@@ -183,7 +183,6 @@ class BattlePage:
     battle_id: str
     report_url: str
     account_id: str
-    account_url: str
     uploader_display_name: str
     duration: str
     total_dps: str
@@ -245,11 +244,6 @@ def build_battle_page(
             battle.battle_id,
         ),
         account_id=battle.uploader_user_id,
-        account_url=public_url(
-            web_base_url,
-            "records",
-            battle.uploader_user_id,
-        ),
         uploader_display_name=battle.uploader_display_name,
         duration=format_duration(battle.duration_ms),
         total_dps=format_number(battle.total_dps),
@@ -363,13 +357,7 @@ def build_loadout_page(
             target_type="战报配装",
             footer_note="公开战报 · 上传时记录的阵容配装",
         ),
-        battle_id=battle.battle_id,
-        report_url=public_url(web_base_url, "battle", battle.battle_id),
-        uploader_display_name=battle.uploader_display_name,
-        duration=format_duration(battle.duration_ms),
-        total_dps=format_number(battle.total_dps),
-        total_damage=format_number(battle.total_damage),
-        battle_date=_format_datetime(battle.battle_end_at),
+        **_report_facts(battle, web_base_url),
         loadouts=loadouts,
         stat_lines_available=any(
             equip.stats for load in loadouts for equip in load.equips
@@ -416,13 +404,7 @@ def build_skill_page(
             target_type="技能统计",
             footer_note="公开战报 · 各角色技能伤害统计",
         ),
-        battle_id=battle.battle_id,
-        report_url=public_url(web_base_url, "battle", battle.battle_id),
-        uploader_display_name=battle.uploader_display_name,
-        duration=format_duration(battle.duration_ms),
-        total_dps=format_number(battle.total_dps),
-        total_damage=format_number(battle.total_damage),
-        battle_date=_format_datetime(battle.battle_end_at),
+        **_report_facts(battle, web_base_url),
         groups=tuple(views),
         has_merged_rows=any(
             row.merged_count > 1 for group in groups for row in group.rows
@@ -610,3 +592,17 @@ def _roster_identities(
             ),
         )
     return identities
+
+
+def _report_facts(battle: BattleDetailSummary, web_base_url: str) -> dict[str, str]:
+    """The identity line every battle page repeats: id, link, uploader, totals."""
+
+    return {
+        "battle_id": battle.battle_id,
+        "report_url": public_url(web_base_url, "battle", battle.battle_id),
+        "uploader_display_name": battle.uploader_display_name,
+        "duration": format_duration(battle.duration_ms),
+        "total_dps": format_number(battle.total_dps),
+        "total_damage": format_number(battle.total_damage),
+        "battle_date": _format_datetime(battle.battle_end_at),
+    }

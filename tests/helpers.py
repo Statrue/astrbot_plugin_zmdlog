@@ -1,6 +1,30 @@
 """Shared model and API payload builders for tests."""
 
-from core.models import HotBossCard, HotBossRun
+import logging
+
+from core.models import HotBossCard, HotBossRun, parse_boss_ranking
+
+
+class CapturingLogger(logging.Logger):
+    """A logger whose records are kept as plain messages, for assertions."""
+
+    def __init__(self) -> None:
+        super().__init__("test")
+        self.messages: list[str] = []
+
+    def handle(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+def named_ranking(slug: str, boss_name: str, *, rows: int | None = None):
+    """The rows fixture parsed as one board under another name, cut to ``rows``."""
+
+    payload = ranking_payload_with_rows()
+    payload["bossSlug"] = slug
+    payload["bossName"] = boss_name
+    if rows is not None:
+        payload["rows"] = payload["rows"][:rows]
+    return parse_boss_ranking(payload)
 
 
 def make_card(

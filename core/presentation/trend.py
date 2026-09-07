@@ -38,7 +38,6 @@ class TrendRowView:
     axis_top: str
     axis_bottom: str
     last_change: str
-    point_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +45,6 @@ class TrendPage:
     header: PageHeader
     account_id: str
     account_url: str
-    display_name: str
     range_label: str
     tracked_since: str
     tracked_days: str
@@ -109,7 +107,6 @@ def build_trend_page(
         ),
         account_id=history.account_id,
         account_url=public_url(web_base_url, "records", history.account_id),
-        display_name=history.display_name,
         range_label=_RANGE_LABELS.get(time_range, time_range),
         tracked_since=(
             _format_date(first_seen.isoformat()) if first_seen is not None else "—"
@@ -185,5 +182,4 @@ def _trend_row(
         axis_top=f"#{best}",
         axis_bottom=f"#{worst}",
         last_change=_format_date(points[-1].checked_at),
-        point_count=len(points),
     )

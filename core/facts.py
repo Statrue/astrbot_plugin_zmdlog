@@ -64,6 +64,7 @@ _TOP_DAMAGE_SOURCES = 3
 _TOP_BUFFS = 6
 _TOP_USAGE = 6
 _TOP_TEAMS = 5
+_NO_RECORDS_READ = "读过的榜单里没有任何公开记录。"
 # Boards named in an overview past this many print their leader only.
 _OVERVIEW_RUNS = 3
 
@@ -659,7 +660,7 @@ def format_character_tallies(
     ]
     if not tallies:
         if element is None and profession is None:
-            lines.append("读过的榜单里没有任何公开记录。")
+            lines.append(_NO_RECORDS_READ)
         else:
             lines.append(f"公开记录里没有{who}出场。")
         if unseen:
@@ -801,7 +802,7 @@ def format_account_tallies(
         "",
     ]
     if not tallies:
-        lines.append("读过的榜单里没有任何公开记录。")
+        lines.append(_NO_RECORDS_READ)
         return _joined(lines)
     top = tallies[0]
     most_records = max(tallies, key=lambda t: t.records)

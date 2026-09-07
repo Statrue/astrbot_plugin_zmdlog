@@ -72,8 +72,7 @@ class RosterEntryView:
     profession: str
     character_initial: str
     avatar_url: str | None
-    # Catalog element label and its CSS key; None when the catalog lacks the name.
-    element: str | None = None
+    # The CSS key of the catalog element; None when the catalog lacks the name.
     element_key: str | None = None
 
 
@@ -83,7 +82,6 @@ class RankingRowView:
     percentile: str
     account_display_name: str
     character_name: str
-    character_profession: str
     character_initial: str
     character_avatar_url: str | None
     roster: tuple[RosterEntryView, ...]
@@ -319,7 +317,6 @@ def build_ranking_page(
                 percentile=f"{format_number(row.score_percent)}%",
                 account_display_name=row.account_display_name,
                 character_name=row.character_name,
-                character_profession=row.character_profession,
                 character_initial=_initial(row.character_name),
                 character_avatar_url=_safe_asset_url(
                     row.character_avatar_url,
@@ -552,7 +549,6 @@ def _build_roster(
                     entry.avatar_url,
                     base_url=web_base_url,
                 ),
-                element=known.get(entry.character_name),
                 element_key=element_key(known.get(entry.character_name)),
             )
             for entry in entries
@@ -563,7 +559,6 @@ def _build_roster(
             profession="",
             character_initial=_initial(name),
             avatar_url=None,
-            element=known.get(name),
             element_key=element_key(known.get(name)),
         )
         for name in summary

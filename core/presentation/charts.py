@@ -121,10 +121,8 @@ def build_dps_curve_view(
     }
 
     def polyline(series) -> str:
-        return " ".join(
-            f"{point.at_ms / curve.duration_ms * 100:.2f},"
-            f"{100 - min(point.dps, axis_max) / axis_max * 100:.2f}"
-            for point in series.points
+        return polyline_points(
+            series.points, duration_ms=curve.duration_ms, axis_max=axis_max
         )
 
     total_damage = max(battle.total_damage, 1)
@@ -273,3 +271,13 @@ def _clock_label(ms: int) -> str:
         return f"{seconds}s"
     minutes, rest = divmod(seconds, 60)
     return f"{minutes}:{rest:02d}"
+
+
+def polyline_points(points, *, duration_ms: int, axis_max: float) -> str:
+    """SVG polyline coordinates in a 100×100 box: time across, DPS up."""
+
+    return " ".join(
+        f"{point.at_ms / duration_ms * 100:.2f},"
+        f"{100 - min(point.dps, axis_max) / axis_max * 100:.2f}"
+        for point in points
+    )

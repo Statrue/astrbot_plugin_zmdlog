@@ -6,6 +6,8 @@ is what the page CSS uses too. Players type 火 for 灼热 and 雷 for 电磁,
 so a small alias table stands between what was typed and the label.
 """
 
+from .labels import normalize_label
+
 ELEMENT_KEYS: dict[str, str] = {
     "物理": "physical",
     "灼热": "fire",
@@ -43,14 +45,9 @@ _SUFFIXES = ("属性", "系", "队", "元素")
 def normalize_element(text: str) -> str | None:
     """The catalog label for what was typed, or None when it is no element."""
 
-    value = text.strip()
-    for suffix in _SUFFIXES:
-        if len(value) > len(suffix) and value.endswith(suffix):
-            value = value[: -len(suffix)]
-            break
-    if value in ELEMENT_KEYS:
-        return value
-    return _ALIASES.get(value.casefold())
+    return normalize_label(
+        text, labels=ELEMENT_KEYS, aliases=_ALIASES, suffixes=_SUFFIXES
+    )
 
 
 def element_key(label: str | None) -> str | None:

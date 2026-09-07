@@ -63,7 +63,6 @@ class CharacterChampionsPage:
     # Characters fielded somewhere but never in a top-three record.
     others: tuple[str, ...]
     # The element the board was filtered to, if any.
-    element: str | None = None
     # The profession the board was restricted to, if any: then every member
     # is a row, zeros included, and ``others`` is empty.
     profession: str | None = None
@@ -175,7 +174,6 @@ def build_character_champions_page(
         as_of_label=_as_of_label(age_seconds),
         top_main=top_main,
         top_team=top_team,
-        element=element,
         profession=profession,
         window_label=window_label,
         teams=team_views,

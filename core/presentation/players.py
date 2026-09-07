@@ -90,12 +90,3 @@ def build_player_champions_page(
         ],
         window_label=window_label,
     )
-
-
-def _habits_label(tally: AccountTally) -> str:
-    parts = []
-    if tally.main_c:
-        parts.append(f"常用主 C {tally.main_c} ×{tally.main_c_count}")
-    if tally.team:
-        parts.append("常用阵容 " + "、".join(tally.team) + f" ×{tally.team_count}")
-    return " · ".join(parts)

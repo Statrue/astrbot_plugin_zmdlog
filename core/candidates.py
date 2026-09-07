@@ -228,7 +228,6 @@ def account_choice(account_id: str, display_name: str, *, query: str) -> MatchCh
             name=display_name,
             dungeon_names=(),
             boss_slugs=(),
-            query_text=query,
         ),
         level=MatchLevel.STANDARD_EXACT,
         score=1.0,

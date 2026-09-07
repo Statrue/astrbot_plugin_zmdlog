@@ -10,11 +10,11 @@ from core.models import (
     parse_boss_ranking,
     parse_public_user_rankings,
 )
+from core.timestamps import parse_timestamp
 from core.watch import (
     AccountSnapshot,
     BoardSnapshot,
     BoardTopRun,
-    board_label,
     board_snapshot_is_usable,
     board_snapshot_payload,
     build_board_snapshot,
@@ -28,7 +28,6 @@ from core.watch import (
     join_rank_drop_notices,
     parse_board_snapshot_payload,
     parse_snapshot_payload,
-    parse_timestamp,
     snapshot_is_usable,
     snapshot_payload,
     snapshot_ranks,
@@ -37,6 +36,7 @@ from core.watchlist import (
     WatchedAccount,
     WatchedBoard,
     WatchList,
+    board_label,
     format_watchlist,
     parse_watchlist,
 )

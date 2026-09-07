@@ -7,6 +7,8 @@ and one label — the records' spelling, which every page already prints —
 the same shape as ``elements``.
 """
 
+from .labels import normalize_label
+
 PROFESSIONS: tuple[str, ...] = ("先锋", "近卫", "重装", "术士", "突击", "辅助")
 
 _ALIASES: dict[str, str] = {
@@ -36,11 +38,6 @@ _SUFFIXES = ("职业", "干员", "角色", "位", "队")
 def normalize_profession(text: str) -> str | None:
     """The records' label for what was typed, or None when it is no profession."""
 
-    value = text.strip()
-    for suffix in _SUFFIXES:
-        if len(value) > len(suffix) and value.endswith(suffix):
-            value = value[: -len(suffix)]
-            break
-    if value in PROFESSIONS:
-        return value
-    return _ALIASES.get(value.casefold())
+    return normalize_label(
+        text, labels=PROFESSIONS, aliases=_ALIASES, suffixes=_SUFFIXES
+    )

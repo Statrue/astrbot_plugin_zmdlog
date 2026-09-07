@@ -39,7 +39,6 @@ class CandidateAbuseTests(unittest.TestCase):
                 name=name,
                 dungeon_names=(),
                 boss_slugs=(),
-                query_text=name,
             ),
             level=MatchLevel.STANDARD_EXACT,
             score=1.0,

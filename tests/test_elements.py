@@ -180,7 +180,6 @@ class PageTests(unittest.TestCase):
             elements=self.elements,
         )
 
-        self.assertEqual(page.element, "自然")
         self.assertIn("自然", page.header.title)
         self.assertTrue(all(row.element_key == "natural" for row in page.rows))
 

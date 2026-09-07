@@ -4,22 +4,15 @@ import unittest
 from pathlib import Path
 
 from core import facts
-from core.models import parse_boss_ranking
 from core.presentation import build_player_champions_page
 from core.render import TemplateRenderer
 from core.standings import account_tallies, account_tally
-from tests.helpers import ranking_payload_with_rows
+from tests.helpers import named_ranking
 
 WEB = "https://zmdlogs.com"
 
 
-def ranking(slug: str, boss_name: str, *, rows: int | None = None):
-    payload = ranking_payload_with_rows()
-    payload["bossSlug"] = slug
-    payload["bossName"] = boss_name
-    if rows is not None:
-        payload["rows"] = payload["rows"][:rows]
-    return parse_boss_ranking(payload)
+ranking = named_ranking
 
 
 class AccountTalliesTests(unittest.TestCase):

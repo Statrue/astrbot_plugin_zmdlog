@@ -4,24 +4,18 @@ import unittest
 from pathlib import Path
 
 from core import facts
-from core.models import parse_boss_ranking, parse_character_types
+from core.models import parse_character_types
 from core.presentation import build_character_champions_page
 from core.professions import PROFESSIONS, normalize_profession
 from core.render import TemplateRenderer
 from core.routing import RouteKind, RouteParseError, parse_zmdlog_payload
 from core.standings import by_profession, character_tallies, unseen_characters
-from tests.helpers import ranking_payload_with_rows
+from tests.helpers import named_ranking
 
 WEB = "https://zmdlogs.com"
 
 
-def ranking(slug: str, boss_name: str, *, rows: int | None = None):
-    payload = ranking_payload_with_rows()
-    payload["bossSlug"] = slug
-    payload["bossName"] = boss_name
-    if rows is not None:
-        payload["rows"] = payload["rows"][:rows]
-    return parse_boss_ranking(payload)
+ranking = named_ranking
 
 
 class NormalizeTests(unittest.TestCase):

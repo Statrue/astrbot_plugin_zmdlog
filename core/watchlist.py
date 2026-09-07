@@ -11,12 +11,9 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from .matcher import fold_text
-from .timestamps import utc_now_text
 
 WATCHLIST_VERSION = 2
 _BOARD_PART_RE = re.compile(r"\s*·\s*")
-
-__all__ = ["utc_now_text"]
 
 
 def board_label(dungeon_name: str, boss_name: str) -> str:

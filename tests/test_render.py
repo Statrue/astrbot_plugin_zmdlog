@@ -313,7 +313,6 @@ class TemplateRendererTests(unittest.TestCase):
                 name="影拓丰碑1—2期",
                 dungeon_names=("影拓丰碑1期", "影拓丰碑2期"),
                 boss_slugs=tuple(card.boss_slug for card in cards),
-                query_text="丰碑",
             ),
             level=MatchLevel.NORMALIZED_EXACT,
             score=1.0,
@@ -595,6 +594,8 @@ class RenderQueueTests(unittest.IsolatedAsyncioTestCase):
         renderer = LongImageRenderer(
             self.root, render_timeout_ms=1_000, max_concurrent_renders=1
         )
+        # The wait is what is under test, not a real second of it.
+        renderer.render_timeout_ms = 50
         release = asyncio.Event()
 
         async def capture_once(html: str, page_kind: str) -> str:

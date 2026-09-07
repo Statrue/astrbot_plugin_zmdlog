@@ -459,7 +459,7 @@ class RankWatcher:
             entry,
             ttl_seconds=self._candidates.ttl_seconds,
             note=(
-                "还有更多同名结果未列出，可输入更完整的昵称。"
+                messages.MORE_NICKNAME_HITS
                 if search.has_more
                 else None
             ),

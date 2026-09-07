@@ -2,7 +2,6 @@
 
 import asyncio
 import copy
-import logging
 import unittest
 
 from core.client import ZmdLogsClientError
@@ -13,7 +12,7 @@ from core.ranking_index import (
     RankingIndex,
     account_rankings,
 )
-from tests.helpers import hot_bosses_payload, ranking_payload_with_rows
+from tests.helpers import CapturingLogger, hot_bosses_payload, ranking_payload_with_rows
 
 SLUGS = ("dung01_group_bossrush02", "dung01_group_bossrush03")
 # The fixture ranking's first three battle ids, as hot-bosses would list them.
@@ -73,15 +72,6 @@ class FakeUpstream:
         if self.fail:
             raise ZmdLogsClientError("offline")
         return self.cards
-
-
-class CapturingLogger(logging.Logger):
-    def __init__(self) -> None:
-        super().__init__("test")
-        self.messages: list[str] = []
-
-    def handle(self, record: logging.LogRecord) -> None:
-        self.messages.append(record.getMessage())
 
 
 class RankingIndexTests(unittest.TestCase):

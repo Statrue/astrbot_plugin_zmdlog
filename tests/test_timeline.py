@@ -457,7 +457,6 @@ class TimelineRouteTests(unittest.TestCase):
                 name="榜单甲",
                 dungeon_names=("副本",),
                 boss_slugs=("a",),
-                query_text="榜",
             ),
             level=MatchLevel.NORMALIZED_EXACT,
             score=1.0,

@@ -109,6 +109,44 @@ class CharacterBossPage:
 _POTENTIAL_LABELS = {"0": "0 潜能", "1-5": "1–5 潜能", "all": "全部潜能"}
 
 
+def _box_plot(row, axis_max: float) -> dict[str, object]:
+    """One row's box-plot geometry as percentages of the shared axis.
+
+    The same twelve fields on both statistics pages: sample counts, the
+    formatted median and maximum, and whisker / box / median / p10 / p90
+    positions, with an outlier maximum pinned to the right edge.
+    """
+
+    def percent(value: float | None) -> float:
+        if value is None or axis_max <= 0:
+            return 0.0
+        return round(max(0.0, min(100.0, value / axis_max * 100)), 2)
+
+    low = row.lower_whisker if row.lower_whisker is not None else row.p25
+    high = row.upper_whisker if row.upper_whisker is not None else row.p75
+    p25 = row.p25 if row.p25 is not None else row.median
+    p75 = row.p75 if row.p75 is not None else row.median
+    whisker_left = percent(low)
+    box_left = percent(p25)
+    maximum_left = None
+    if row.maximum is not None and high is not None and row.maximum > high:
+        maximum_left = min(percent(row.maximum), 100.0)
+    return {
+        "sample_count": row.normal_sample_count,
+        "outlier_count": row.outlier_count,
+        "median": format_number(row.median) if row.median is not None else "—",
+        "maximum": format_number(row.maximum) if row.maximum is not None else "—",
+        "whisker_left": whisker_left,
+        "whisker_width": round(max(0.0, percent(high) - whisker_left), 2),
+        "box_left": box_left,
+        "box_width": round(max(0.0, percent(p75) - box_left), 2),
+        "median_left": percent(row.median),
+        "p10_left": percent(row.p10 if row.p10 is not None else p25),
+        "p90_left": percent(row.p90 if row.p90 is not None else p75),
+        "maximum_left": maximum_left,
+    }
+
+
 def build_character_stats_page(
     stats: CharacterStatistics,
     *,
@@ -132,50 +170,19 @@ def build_character_stats_page(
     step = axis_max / 4 if axis_max else 0
     axis_labels = tuple(_format_axis_value(step * index) for index in range(5))
 
-    def percent(value: float | None) -> float:
-        if value is None or axis_max <= 0:
-            return 0.0
-        return round(max(0.0, min(100.0, value / axis_max * 100)), 2)
-
-    rows: list[CharacterStatRowView] = []
-    for row in ranked:
-        low = row.lower_whisker if row.lower_whisker is not None else row.p25
-        high = row.upper_whisker if row.upper_whisker is not None else row.p75
-        p25 = row.p25 if row.p25 is not None else row.median
-        p75 = row.p75 if row.p75 is not None else row.median
-        whisker_left = percent(low)
-        whisker_right = percent(high)
-        box_left = percent(p25)
-        box_right = percent(p75)
-        maximum_left = None
-        if row.maximum is not None and high is not None and row.maximum > high:
-            # Outlier maxima can dwarf the whisker scale; pin them to the edge.
-            maximum_left = min(percent(row.maximum), 100.0)
-        rows.append(
-            CharacterStatRowView(
-                rank=row.rank or 0,
-                character_name=row.character_name,
-                character_profession=row.character_profession,
-                character_initial=_initial(row.character_name),
-                character_avatar_url=_safe_asset_url(
-                    row.character_avatar_url, base_url=web_base_url
-                ),
-                sample_count=row.normal_sample_count,
-                outlier_count=row.outlier_count,
-                median=format_number(row.median) if row.median is not None else "—",
-                maximum=(
-                    format_number(row.maximum) if row.maximum is not None else "—"
-                ),
-                whisker_left=whisker_left,
-                whisker_width=round(max(0.0, whisker_right - whisker_left), 2),
-                box_left=box_left,
-                box_width=round(max(0.0, box_right - box_left), 2),
-                median_left=percent(row.median),
-                p10_left=percent(row.p10 if row.p10 is not None else p25),
-                p90_left=percent(row.p90 if row.p90 is not None else p75),
-                maximum_left=maximum_left,
-            )
+    rows = tuple(
+        CharacterStatRowView(
+            rank=row.rank or 0,
+            character_name=row.character_name,
+            character_profession=row.character_profession,
+            character_initial=_initial(row.character_name),
+            character_avatar_url=_safe_asset_url(
+                row.character_avatar_url, base_url=web_base_url
+            ),
+            **_box_plot(row, axis_max),
         )
+        for row in ranked
+    )
 
     insufficient = tuple(
         CharacterStatChipView(
@@ -234,46 +241,16 @@ def build_character_boss_page(
     step = axis_max / 4 if axis_max else 0
     axis_labels = tuple(_format_axis_value(step * index) for index in range(5))
 
-    def percent(value: float | None) -> float:
-        if value is None or axis_max <= 0:
-            return 0.0
-        return round(max(0.0, min(100.0, value / axis_max * 100)), 2)
-
-    rows: list[CharacterBossRowView] = []
-    for row in ranked:
-        low = row.lower_whisker if row.lower_whisker is not None else row.p25
-        high = row.upper_whisker if row.upper_whisker is not None else row.p75
-        p25 = row.p25 if row.p25 is not None else row.median
-        p75 = row.p75 if row.p75 is not None else row.median
-        whisker_left = percent(low)
-        whisker_right = percent(high)
-        box_left = percent(p25)
-        box_right = percent(p75)
-        maximum_left = None
-        if row.maximum is not None and high is not None and row.maximum > high:
-            maximum_left = min(percent(row.maximum), 100.0)
-        rows.append(
-            CharacterBossRowView(
-                boss_name=row.boss_name,
-                dungeon_name=row.dungeon_name,
-                rank=row.rank or 0,
-                ranked_character_count=row.ranked_character_count,
-                sample_count=row.normal_sample_count,
-                outlier_count=row.outlier_count,
-                median=format_number(row.median) if row.median is not None else "—",
-                maximum=(
-                    format_number(row.maximum) if row.maximum is not None else "—"
-                ),
-                whisker_left=whisker_left,
-                whisker_width=round(max(0.0, whisker_right - whisker_left), 2),
-                box_left=box_left,
-                box_width=round(max(0.0, box_right - box_left), 2),
-                median_left=percent(row.median),
-                p10_left=percent(row.p10 if row.p10 is not None else p25),
-                p90_left=percent(row.p90 if row.p90 is not None else p75),
-                maximum_left=maximum_left,
-            )
+    rows = tuple(
+        CharacterBossRowView(
+            boss_name=row.boss_name,
+            dungeon_name=row.dungeon_name,
+            rank=row.rank or 0,
+            ranked_character_count=row.ranked_character_count,
+            **_box_plot(row, axis_max),
         )
+        for row in ranked
+    )
 
     insufficient = tuple(
         CharacterBossChipView(

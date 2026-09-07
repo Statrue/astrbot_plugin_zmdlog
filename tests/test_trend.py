@@ -351,7 +351,6 @@ class TrendCandidateTests(unittest.TestCase):
                 name="CPU 0",
                 dungeon_names=(),
                 boss_slugs=(),
-                query_text="cpu",
             ),
             level=MatchLevel.STANDARD_EXACT,
             score=1.0,
