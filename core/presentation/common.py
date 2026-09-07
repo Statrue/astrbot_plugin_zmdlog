@@ -186,6 +186,12 @@ def _displayed(value: str) -> datetime:
     return parsed.astimezone(DISPLAY_TZ) if parsed.tzinfo is not None else parsed
 
 
+def _format_month_day(value: str) -> str:
+    """月-日：窗口最长 30 天的页面上，年份只是噪音。"""
+
+    return _format_date(value)[5:] or _format_date(value)
+
+
 def _format_date(value: str) -> str:
     try:
         return _displayed(value).strftime("%Y-%m-%d")

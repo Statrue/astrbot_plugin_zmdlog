@@ -161,9 +161,12 @@ class AccountMedalTests(unittest.TestCase):
             account, query="q", web_base_url="https://zmdlogs.com"
         )
         self.assertEqual(len(page.rows), 4)
-        self.assertEqual(html.count('class="standings-row is-first"'), 1)
-        self.assertEqual(html.count('class="standings-row is-podium"'), 2)
-        self.assertEqual(html.count('class="standings-row"'), 1)
+        # One graded rule for every table with a 名次 column: 1/2/3 get a
+        # left bar, only the first gets the row tint, nobody gets a badge.
+        self.assertEqual(html.count('class="standings-row rank-row is-1"'), 1)
+        self.assertEqual(html.count('class="standings-row rank-row is-2"'), 1)
+        self.assertEqual(html.count('class="standings-row rank-row is-3"'), 1)
+        self.assertEqual(html.count('class="standings-row rank-row"'), 1)
 
 
 if __name__ == "__main__":

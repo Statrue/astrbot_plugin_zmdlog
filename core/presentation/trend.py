@@ -16,6 +16,7 @@ from .common import (
     PageHeader,
     _format_date,
     _format_datetime,
+    _format_month_day,
     public_url,
 )
 
@@ -181,5 +182,5 @@ def _trend_row(
         ),
         axis_top=f"#{best}",
         axis_bottom=f"#{worst}",
-        last_change=_format_date(points[-1].checked_at),
+        last_change=_format_month_day(points[-1].checked_at),
     )

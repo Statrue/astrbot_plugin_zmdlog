@@ -37,7 +37,7 @@
   --ink-05: rgba(28, 28, 28, 0.05);
   --ink-10: rgba(28, 28, 28, 0.1);
   --ink-22: rgba(28, 28, 28, 0.22);
-  --yellow-tint: var(--yellow-tint);
+  --yellow-tint: rgba(248, 211, 77, 0.18);
   --danger-deep: #b0322f;
   --danger-ink: #8c2c2a;
   --danger-paper: #faf3f2;
@@ -671,8 +671,35 @@ body {
 }
 
 .top3-run:nth-child(1) {
-  background: linear-gradient(90deg, var(--yellow-tint), transparent 55%);
+  background: linear-gradient(90deg, var(--yellow-tint), transparent 42%);
 }
+
+/* ---------- 名次分级：任何带名次列的表都用这一套 ----------
+   第一名整行浅黄底，前三名左缘一条 5px 色脊（1/2/3 依次是 accent / ink /
+   muted），其余行只有一条极浅的边。第一名的数字不再另加黄块：整行底色已经
+   说明了，块只是把同一件事说第二遍。没有名次列的前三卡片保留奖牌样式。 */
+
+.rank-row {
+  position: relative;
+}
+
+.rank-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
+  background: var(--faint);
+}
+
+.rank-row.is-1 {
+  background: linear-gradient(90deg, var(--yellow-tint), transparent 42%);
+}
+
+.rank-row.is-1::before { background: var(--action); }
+.rank-row.is-2::before { background: var(--ink); }
+.rank-row.is-3::before { background: var(--muted); }
 
 /* skewed badge whose text stays upright */
 .rank-medal,

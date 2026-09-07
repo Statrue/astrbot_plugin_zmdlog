@@ -242,7 +242,9 @@ class TrendPageTests(unittest.TestCase):
         )
         self.assertEqual(rodan.dots[0], (0.0, 86.36))
         self.assertEqual(len(rodan.dots), 4)
-        self.assertEqual(rodan.last_change, "2026-08-31")
+        # 月-日: the window is 30 days at most, so the year is noise and
+        # the column used to clip it to "2026-0…".
+        self.assertEqual(rodan.last_change, "08-31")
         self.assertEqual((rodan.axis_top, rodan.axis_bottom), ("#1", "#4"))
         flat = page.rows[0]
         self.assertEqual(flat.delta_kind, "flat")

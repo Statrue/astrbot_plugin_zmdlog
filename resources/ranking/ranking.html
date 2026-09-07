@@ -64,7 +64,7 @@
 
   <ol class="board-rows">
     {% for row in page.rows %}
-    <li class="board-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
+    <li class="board-row rank-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
       <div class="cell-rank">
         <span class="rank-num">{{ row.rank }}</span>
         <span class="percentile">{{ row.percentile }}</span>

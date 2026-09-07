@@ -49,7 +49,7 @@
   </div>
   <ol class="standings-rows">
     {% for row in page.rows %}
-    <li class="standings-row{% if row.rank == 1 %} is-first{% elif row.rank <= 3 %} is-podium{% endif %}">
+    <li class="standings-row rank-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
       <div class="standings-rank">
         <b>{{ row.rank }}</b>
         <i>/ {{ row.total_rows }}</i>

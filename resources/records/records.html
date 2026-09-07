@@ -23,7 +23,7 @@
 {% if page.changes %}
 <ol class="rec-list">
   {% for item in page.changes %}
-  <li class="rec-row rec-row--change">
+  <li class="rec-row rec-row--change rank-row is-1">
     <span class="rec-when">{{ item.seen_label }}</span>
     <span class="rec-board"><strong>{{ item.boss_name }}</strong><em>{{ item.dungeon_name }}</em></span>
     <span class="rec-new">
@@ -53,7 +53,7 @@
 {% if page.records %}
 <ol class="rec-list">
   {% for item in page.records %}
-  <li class="rec-row rec-row--new{% if item.rank == 1 %} is-first{% elif item.rank <= 3 %} is-podium{% endif %}">
+  <li class="rec-row rec-row--new rank-row{% if item.rank <= 3 %} is-{{ item.rank }}{% endif %}">
     <span class="rec-when">{{ item.seen_label }}</span>
     <span class="rec-rank"><b>{{ item.rank }}</b></span>
     <span class="rec-board"><strong>{{ item.boss_name }}</strong><em>{{ item.dungeon_name }}</em></span>

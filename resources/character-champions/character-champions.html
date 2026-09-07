@@ -38,7 +38,7 @@
   </div>
   <ol class="champ-rows">
     {% for row in page.rows %}
-    <li class="champ-row{% if row.position == 1 %} is-first{% elif row.position <= 3 %} is-podium{% endif %}">
+    <li class="champ-row rank-row{% if row.position <= 3 %} is-{{ row.position }}{% endif %}">
       <span class="champ-pos">{{ row.position }}</span>
       <span class="champ-char">
         <span class="avatar{% if row.element_key %} el-{{ row.element_key }}{% endif %}">

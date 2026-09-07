@@ -144,22 +144,6 @@
   border-top: 1px solid var(--line-soft);
 }
 
-/* 前三名走左缘色脊；榜首另加极浅黄色晕，与站内 top3 卡一致 */
-.board-row::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 5px;
-  background: transparent;
-}
-
-.board-row.is-1 { background: linear-gradient(90deg, var(--yellow-tint), transparent 42%); }
-.board-row.is-1::before { background: var(--action); }
-.board-row.is-2::before { background: var(--ink); }
-.board-row.is-3::before { background: var(--muted); }
-
 .cell-rank {
   grid-row: 1 / span 2;
   align-self: center;

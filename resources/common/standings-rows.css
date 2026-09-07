@@ -65,11 +65,7 @@
   border-bottom: 1px solid var(--line-soft);
 }
 
-.standings-row.is-first {
-  background: linear-gradient(90deg, var(--yellow-soft) 0, var(--card) 260px);
-}
-
-/* 名次块：深色反白，第一名黄字，左缘色条随档位 */
+/* 名次块：大号数字，左缘色脊由 .rank-row 统一画 */
 
 .standings-rank {
   grid-row: 1 / span 2;
@@ -78,16 +74,7 @@
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  padding: 0 0 0 18px;
-  border-left: 5px solid var(--faint);
-}
-
-.standings-row.is-podium .standings-rank {
-  border-left-color: var(--ink);
-}
-
-.standings-row.is-first .standings-rank {
-  border-left-color: var(--yellow-deep);
+  padding: 0 0 0 23px;
 }
 
 .standings-rank b {
@@ -97,14 +84,6 @@
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   line-height: 1;
-}
-
-.standings-row.is-first .standings-rank b {
-  display: inline-block;
-  padding: 2px 8px;
-  color: var(--ink);
-  background: var(--yellow);
-  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
 }
 
 .standings-rank i {
