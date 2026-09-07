@@ -34,6 +34,8 @@ from .ranking_index import RankingIndex, account_rankings, rows_by_battle
 from .settings import PluginSettings
 
 HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
+# ``get_boss_ranking``'s default, distinct from ``None`` (whatever is held).
+_CONFIGURED_AGE = object()
 RECORD_EVENTS_FILE = "record-events.json"
 _HOT_BOSSES_KEY = "all_board_top3"
 # A parsed battle carries its damage points and buff spans and measures
@@ -298,15 +300,16 @@ class ZmdLogsDataSource:
         self,
         boss_slug: str,
         *,
-        max_age: float | None = None,
+        max_age: float | None | object = _CONFIGURED_AGE,
     ) -> BossRanking:
         """One board's ranking, no older than ``max_age`` seconds.
 
         The default is the configured ranking cache TTL, which is what a
-        board page expects; ``None`` takes whatever the index holds.
+        board page expects; ``None`` takes whatever the index holds, with no
+        request — the rank watch reads the copy its ranks came from.
         """
 
-        age = self._ranking_max_age if max_age is None else max_age
+        age = self._ranking_max_age if max_age is _CONFIGURED_AGE else max_age
         return await self.ranking_index.get(boss_slug, max_age=age)
 
     async def get_account_rankings(self, account_id: str) -> PublicUserRankings:
@@ -403,7 +406,7 @@ class ZmdLogsDataSource:
 
         index = self.ranking_index
         try:
-            await index.ensure_filled()
+            await index.wait_filled()
         except ZmdLogsClientError:
             pass
         rows = rows_by_battle(index.entries(), battle_ids)

@@ -101,7 +101,7 @@
   "ranking_index_pace_seconds": {
     "description": "榜单索引重读节奏（秒/榜）",
     "type": "int",
-    "default": 20,
+    "default": 30,
     "hint": "每隔这么多秒重读一个榜，49 个榜一圈约 16 分钟；前三名有变化的榜不等轮到就重读。最低 5 秒。"
   }
 }

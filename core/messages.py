@@ -7,6 +7,7 @@ route that produces them.
 """
 
 UPSTREAM_UNAVAILABLE = "ZMDLogs 暂时不可用，请稍后重试。"
+INDEX_FILLING = "榜单索引还在建立（启动后约需十几秒），请稍后再试。"
 UNEXPECTED_FAILURE = "ZmdLogBot 暂时无法完成查询，请稍后重试。"
 RENDER_FAILURE = "图片生成失败，请稍后重试。"
 ACCOUNT_NOT_FOUND = "没有找到这个公开账号，或该账号暂无公开榜单记录。"

@@ -674,12 +674,17 @@ class RankWatcher:
                 if account_id in watching
             }
         )
+        # A 关注 while the notices were being delivered seeded its first
+        # point into the live map; this cycle's copy predates it, so merge
+        # the cycle's changes onto the live state rather than replacing it.
+        merged_history = dict(self.rank_history)
+        merged_history.update(history)
         kept_history = {
             account_id: entry
-            for account_id, entry in history.items()
+            for account_id, entry in merged_history.items()
             if account_id in watching
         }
-        if history_changed or len(kept_history) != len(history):
+        if history_changed or kept_history.keys() != self.rank_history.keys():
             self._save_history(kept_history)
         renamed, changed = self.watchlist.with_display_names(live_names)
         if changed:

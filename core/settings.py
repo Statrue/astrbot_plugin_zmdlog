@@ -50,7 +50,7 @@ class PluginSettings:
     rank_watch_interval_seconds: float = 900.0
     rank_watch_rank_threshold: int = DEFAULT_RANK_THRESHOLD
     ranking_index_enabled: bool = True
-    ranking_index_pace_seconds: float = 20.0
+    ranking_index_pace_seconds: float = 30.0
 
     @property
     def rank_snapshot_max_age_seconds(self) -> float:

@@ -228,12 +228,79 @@ class RankingIndexTests(unittest.TestCase):
         async def scenario():
             self.index.start()
             self.index.start()
+            # Two turns: one for the loop to begin its fill, one for the
+            # fill to read the board list.
+            await asyncio.sleep(0)
             await asyncio.sleep(0)
             await self.index.stop()
+            return [task for task in asyncio.all_tasks() if not task.done()]
 
-        run(scenario())
+        pending = run(scenario())
 
         self.assertEqual(self.upstream.board_calls, 1)
+        # Only the scenario itself was still running: the loop, the fill and
+        # every fetch in flight were cancelled and awaited.
+        self.assertEqual(len(pending), 1)
+
+
+    def test_a_persistent_disagreement_is_read_once_then_waited_out(self) -> None:
+        run(self.index.ensure_filled())
+        calls_before = len(self.upstream.ranking_calls)
+        # The card says two records, the ranking keeps saying ten: a
+        # server-side cache lag that would otherwise cost a re-read a minute.
+        cards = parse_hot_bosses(cards_payload({slug: TOP3[:2] for slug in SLUGS}))
+
+        run(self.index.apply_signal(cards))
+        run(self.index.apply_signal(cards))
+        run(self.index.apply_signal(cards))
+
+        self.assertEqual(len(self.upstream.ranking_calls), calls_before + len(SLUGS))
+        self.assertEqual(
+            sum("disagree" in message for message in self.logger.messages),
+            len(SLUGS),
+        )
+
+    def test_a_fill_that_keeps_failing_backs_off(self) -> None:
+        async def failing(slug):
+            raise ZmdLogsClientError("offline")
+
+        index = RankingIndex(
+            fetch_ranking=failing,
+            fetch_boards=self.upstream.fetch_boards,
+            logger=self.logger,
+            clock=lambda: self.now[0],
+            pace_seconds=20.0,
+        )
+
+        run(index.ensure_filled())
+        self.assertFalse(index.complete)
+        self.assertEqual(index.missing_count, len(SLUGS))
+        self.assertEqual(index._delay(), 40.0)
+        run(index.ensure_filled())
+        self.assertEqual(index._delay(), 80.0)
+
+    def test_waiting_for_a_fill_is_bounded_and_the_fill_goes_on(self) -> None:
+        gate = asyncio.Event()
+
+        async def slow_boards():
+            await gate.wait()
+            return await self.upstream.fetch_boards()
+
+        index = RankingIndex(
+            fetch_ranking=self.upstream.fetch_ranking,
+            fetch_boards=slow_boards,
+            logger=self.logger,
+            clock=lambda: self.now[0],
+        )
+
+        async def scenario():
+            first = await index.wait_filled(timeout=0.01)
+            gate.set()
+            second = await index.wait_filled(timeout=1.0)
+            return first, second
+
+        self.assertEqual(run(scenario()), (False, True))
+        self.assertTrue(index.complete)
 
 
 if __name__ == "__main__":

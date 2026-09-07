@@ -231,7 +231,8 @@ class ToolService:
         if span == "all":
             span = "7d"
         index = self._data.ranking_index
-        await index.ensure_filled()
+        if not await index.wait_filled():
+            return ToolAnswer(messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
         since = window_start(span, now=datetime.now(UTC))
         log = self._data.event_log
@@ -401,7 +402,8 @@ class ToolService:
         # Standings come from the ranking index and cover every rarity; the
         # DPS distribution needs a six-star key and is added when there is one.
         index = self._data.ranking_index
-        await index.ensure_filled()
+        if not await index.wait_filled():
+            return ToolAnswer(messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
         resolution = resolve_character_name(name, roster_character_names(rankings))
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
@@ -437,7 +439,11 @@ class ToolService:
         ]
         if stats is not None:
             parts.append(facts.format_character_boards(stats))
-        return ToolAnswer(facts.join_sections(*parts), image).noted(range_note)
+        return (
+            ToolAnswer(facts.join_sections(*parts), image)
+            .noted(_index_note(index))
+            .noted(range_note)
+        )
 
     async def _champions(
         self,
@@ -456,7 +462,8 @@ class ToolService:
         """
 
         index = self._data.ranking_index
-        await index.ensure_filled()
+        if not await index.wait_filled():
+            return ToolAnswer(messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
         elements = await self._data.character_elements()
         professions = await self._data.character_professions()
@@ -505,7 +512,7 @@ class ToolService:
                 unseen=unseen,
             )
         )
-        return ToolAnswer(text, image)
+        return ToolAnswer(text, image).noted(_index_note(index))
 
     @staticmethod
     def _element(text: str) -> str | ToolAnswer:
@@ -787,7 +794,8 @@ class ToolService:
 
         span, range_note = _time_range(time_range)
         index = self._data.ranking_index
-        await index.ensure_filled()
+        if not await index.wait_filled():
+            return ToolAnswer(messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
         since = window_start(span, now=datetime.now(UTC))
         tallies = account_tallies(rankings, since=since)
@@ -809,7 +817,7 @@ class ToolService:
                 window_label=label,
             )
         )
-        return ToolAnswer(text, image).noted(range_note)
+        return ToolAnswer(text, image).noted(_index_note(index)).noted(range_note)
 
     # --- shared -------------------------------------------------------------------
 
@@ -913,6 +921,15 @@ class ToolService:
                 "ZmdLogBot tool could not render its page: %s", type(exc).__name__
             )
             return None
+
+
+def _index_note(index) -> str:
+    """One line when the index is missing boards, so counts are not taken as whole."""
+
+    missing = index.missing_count
+    if not missing:
+        return ""
+    return f"（榜单索引有 {missing} 个榜没读到，以下未计入它们。）"
 
 
 def _means_every_board(keyword: str) -> bool:

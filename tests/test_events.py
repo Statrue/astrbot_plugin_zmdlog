@@ -132,6 +132,21 @@ class PruneAndPayloadTests(unittest.TestCase):
 
 
 class EventLogTests(unittest.TestCase):
+    def test_a_record_that_leaves_and_re_enters_is_new_once(self) -> None:
+        store = JsonStore(None, label="record events", warn=lambda _: None)
+        log = EventLog(store, clock=lambda: NOW, stamp=lambda: STAMP)
+
+        log.record(board(), board(extra_first=True))
+        # Upstream drops a borderline record as the median moves (not an
+        # event) and it comes back: new once, though it leads again.
+        log.record(board(extra_first=True), board())
+        log.record(board(), board(extra_first=True))
+
+        self.assertEqual(
+            [e.kind for e in log.events],
+            [NEW_RECORD, CHAMPION_CHANGE, CHAMPION_CHANGE],
+        )
+
     def test_the_log_records_saves_and_reloads(self) -> None:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)

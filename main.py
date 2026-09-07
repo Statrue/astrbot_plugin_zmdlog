@@ -927,8 +927,11 @@ class ZmdLogBotPlugin(Star):
     async def terminate(self) -> None:
         """Release HTTP, browser, and generated-image resources."""
 
-        for task in tuple(self._background_tasks):
+        tasks = tuple(self._background_tasks)
+        for task in tasks:
             task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         await self.watcher.stop()
         await self.data.close()
         try:

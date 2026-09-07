@@ -132,6 +132,30 @@ class PersistenceTests(unittest.TestCase):
             self.assertIsNone(load_json(Path(directory) / "missing.json"))
             self.assertEqual(list(Path(directory, "nested").iterdir()), [path])
 
+    def test_a_corrupt_store_is_set_aside_and_reported(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from core.persistence import JsonStore
+
+        warnings: list[str] = []
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "watchlist.json"
+            path.write_text("{not json", encoding="utf-8")
+            store = JsonStore(path, label="watch list", warn=warnings.append)
+
+            self.assertIsNone(store.load())
+
+            self.assertEqual(len(warnings), 1)
+            self.assertIn("watch list", warnings[0])
+            self.assertFalse(path.exists())
+            aside = [p.name for p in Path(directory).iterdir()]
+            self.assertEqual(len(aside), 1)
+            self.assertTrue(aside[0].startswith("watchlist.json.corrupt-"))
+            # A missing file is simply empty, with nothing to report.
+            self.assertIsNone(store.load())
+            self.assertEqual(len(warnings), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

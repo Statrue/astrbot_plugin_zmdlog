@@ -661,7 +661,8 @@ class QueryService:
         """New records and first places changing hands, from the event log."""
 
         index = self._data.ranking_index
-        await index.ensure_filled()
+        if not await index.wait_filled():
+            return Outcome(message=messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
         span = time_range if time_range != "all" else "7d"
         since = window_start(span, now=datetime.now(UTC))
@@ -680,7 +681,8 @@ class QueryService:
         """Which public accounts uploaded the most first places, from the index."""
 
         index = self._data.ranking_index
-        await index.ensure_filled()
+        if not await index.wait_filled():
+            return Outcome(message=messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
         since = window_start(time_range, now=datetime.now(UTC))
         image_path = await self._renderer().render_player_champions(
@@ -708,7 +710,8 @@ class QueryService:
         """
 
         index = self._data.ranking_index
-        await index.ensure_filled()
+        if not await index.wait_filled():
+            return Outcome(message=messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
         elements = await self._data.character_elements()
         if not query.strip():

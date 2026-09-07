@@ -99,6 +99,7 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
     }
 )
 _MAX_CAPTURE_HEIGHT_PX = 15_000
+_BROWSER_CLOSE_TIMEOUT_SECONDS = 10.0
 DEFAULT_MAX_CONCURRENT_RENDERS = 2
 # The semaphore bounds how many captures run at once, not how many callers
 # wait for one. A burst from several chats would otherwise queue without
@@ -967,7 +968,12 @@ class LongImageRenderer:
         return context, page, metrics
 
     async def _reserve_output_path(self, page_kind: str) -> Path:
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            # Inside the error ladder like every other capture failure, so
+            # the AstrBot fallback still gets the page.
+            raise RenderError("cannot create the render output directory") from exc
         async with self._output_lock:
             self._prune_output_files_locked()
             output_path = self.output_dir / (
@@ -1183,7 +1189,12 @@ class LongImageRenderer:
             await asyncio.gather(cleanup_task, return_exceptions=True)
         try:
             if self._browser is not None:
-                await self._browser.close()
+                # A hung Chromium must not hang the plugin's reload with it.
+                await asyncio.wait_for(
+                    self._browser.close(), timeout=_BROWSER_CLOSE_TIMEOUT_SECONDS
+                )
+        except (TimeoutError, Exception):
+            pass
         finally:
             try:
                 if self._playwright is not None:

@@ -255,6 +255,17 @@ class EventLog:
         """Turn one board re-read into events; save only when there are any."""
 
         fresh = diff_rankings(previous, current, seen_at=self._stamp())
+        # Upstream drops a record below 60% of the board's median damage, so
+        # a borderline one leaves and re-enters as the median moves; it is
+        # new once.
+        announced = {
+            event.battle_id for event in self.events if event.kind == NEW_RECORD
+        }
+        fresh = tuple(
+            event
+            for event in fresh
+            if not (event.kind == NEW_RECORD and event.battle_id in announced)
+        )
         if not fresh:
             return
         self.events = prune_events((*self.events, *fresh), now=self._clock())

@@ -73,6 +73,11 @@ class FakeIndex:
     async def ensure_filled(self) -> None:
         return None
 
+    async def wait_filled(self, timeout=None) -> bool:
+        return True
+
+    missing_count = 0
+
     def entries(self):
         return self._entries
 

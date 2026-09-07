@@ -251,6 +251,20 @@ class AccountRankingsSourceTests(DataSourceTests):
         self.assertEqual(derived.rankings[0].rank, 1)
         self.assertEqual(client.account_reads, 0)
 
+    def test_any_age_reads_the_held_copy_without_a_request(self) -> None:
+        client = FakeClient()
+        source = self._source(client)
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        index = source.ranking_index
+        index._slugs = (ranking.boss_slug,)
+        # Held for longer than the 60 s TTL: the default would refresh it.
+        index._entries[ranking.boss_slug] = IndexEntry(ranking, 0.0)
+
+        held = run(source.get_boss_ranking(ranking.boss_slug, max_age=None))
+
+        self.assertIs(held, ranking)
+        self.assertEqual(index.entry(ranking.boss_slug).loaded_at, 0.0)
+
     def test_an_account_absent_from_the_index_falls_back_to_the_endpoint(self) -> None:
         client = FakeClient()
         source = self._source(client)
