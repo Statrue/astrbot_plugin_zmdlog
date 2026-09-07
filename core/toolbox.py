@@ -806,7 +806,7 @@ class ToolService:
             lambda renderer: renderer.render_player_champions(
                 tallies,
                 board_count=len(rankings),
-                query="玩家冠军榜",
+                query="玩家排名",
                 age_seconds=age,
                 window_label=label,
             )

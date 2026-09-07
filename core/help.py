@@ -105,11 +105,12 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
-                        command=f"{command} 玩家冠军榜 [--范围 7d|14d|30d]",
+                        command=f"{command} 玩家排名 [--范围 7d|14d|30d]",
                         answers="哪个玩家的冠军最多？",
                         description=(
                             "各公开账号上传的第一名、前三、前十各几个，"
-                            "附常用主C 和常用阵容；--范围 只算这段时间。"
+                            "附常用主C 和常用阵容；写昵称则是那个人的成绩，"
+                            "与 角色排名 同形。"
                         ),
                     ),
                 ),

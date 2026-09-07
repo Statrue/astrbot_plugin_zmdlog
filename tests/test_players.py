@@ -1,4 +1,4 @@
-"""玩家冠军榜: every uploading account counted over all boards."""
+"""玩家排名: every uploading account counted over all boards."""
 
 import unittest
 from pathlib import Path
@@ -87,10 +87,10 @@ class PlayerPageTests(unittest.TestCase):
 
     def test_the_page_ranks_accounts_and_folds_the_rest(self) -> None:
         page = build_player_champions_page(
-            self.tallies, board_count=2, query="玩家冠军榜", window_label="近 7 天"
+            self.tallies, board_count=2, query="玩家排名", window_label="近 7 天"
         )
 
-        self.assertEqual(page.header.target_type, "玩家冠军榜")
+        self.assertEqual(page.header.target_type, "玩家排名")
         self.assertIn("近 7 天", page.header.title)
         self.assertEqual(page.rows[0].position, 1)
         self.assertEqual(page.rows[0].bar_width, 100.0)
@@ -103,7 +103,7 @@ class PlayerPageTests(unittest.TestCase):
         renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
 
         html = renderer.render_player_champions(
-            self.tallies, board_count=2, query="玩家冠军榜"
+            self.tallies, board_count=2, query="玩家排名"
         )
 
         self.assertIn("玩家冠军榜", html)

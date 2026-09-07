@@ -688,7 +688,7 @@ class QueryService:
         image_path = await self._renderer().render_player_champions(
             account_tallies(rankings, since=since),
             board_count=len(rankings),
-            query="玩家冠军榜",
+            query="玩家排名",
             age_seconds=index.oldest_age_seconds(),
             window_label=window_label(time_range),
         )

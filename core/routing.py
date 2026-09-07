@@ -104,7 +104,7 @@ OPTION_USAGE = {
         "或 罗丹 --角色 黎风 洛茜（同时带上两人的队伍）。"
     ),
     "range": (
-        "--范围 仅适用于角色统计、名次趋势、新纪录和不带角色名的角色排名、玩家冠军榜，"
+        "--范围 仅适用于角色统计、名次趋势、新纪录和不带名字的角色排名、玩家排名，"
         "例如：角色统计 罗丹 --范围 7d。"
     ),
     "potential": "--潜能 仅适用于角色统计，例如：角色统计 罗丹 --潜能 0。",
@@ -306,12 +306,16 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
             ),
         )
 
-    if command in {"玩家冠军榜", "玩家榜"}:
+    if command in {"玩家排名", "玩家榜", "玩家冠军榜"}:
+        # The same shape as 角色排名: bare is the board of everyone, a name
+        # is that one player, which is what 账号 draws.
         options.reject_except("range")
         if remainder:
-            raise RouteParseError(
-                "玩家冠军榜不接名字；查某个人用 账号，例如：账号 CPU 0。"
-            )
+            if "range" in options.present:
+                raise RouteParseError(
+                    "--范围 只在不带昵称的玩家排名里用，例如：玩家排名 --范围 7d。"
+                )
+            return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder)
         return RouteRequest(RouteKind.PLAYER_CHAMPIONS, stats_range=options.stats_range)
 
     if command in {"角色排名", "角色榜"}:

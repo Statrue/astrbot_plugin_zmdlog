@@ -77,7 +77,7 @@ def build_player_champions_page(
             subtitle=f"公开账号在{scope}拿下的第一名、前三与前十",
             query=query,
             matched_name=f"全部 {board_count} 个榜单 · 玩家冠军榜",
-            target_type="玩家冠军榜",
+            target_type="玩家排名",
             footer_note="公开榜单 · 第一名记录的上传者算一个冠军",
         ),
         board_count=board_count,
