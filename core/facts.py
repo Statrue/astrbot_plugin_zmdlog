@@ -341,7 +341,8 @@ def format_battle(
         f"{battle.dungeon_name} · {battle.boss_name}",
         f"用时 {_duration(battle.duration_ms)} · 全队 DPS {battle.total_dps:,.0f}"
         f" · 总伤害 {battle.total_damage:,}",
-        f"上传者 {battle.uploader_display_name} · 战斗时间 {_when(battle.battle_end_at)}",
+        f"上传者 {battle.uploader_display_name}"
+        f" · 战斗时间 {_when(battle.battle_end_at)}",
     ]
     if battle.participants:
         lines.append("")
