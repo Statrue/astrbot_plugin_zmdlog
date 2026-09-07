@@ -371,6 +371,35 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(kind, "plain")
         self.assertIn("别名不能只有标点或符号", result)
 
+    # --- tool reply shaping -----------------------------------------------------
+
+    def test_a_long_tool_reply_is_cut_at_a_line_and_keeps_its_source(self) -> None:
+        note = plugin_main.facts.SOURCE_NOTE
+        text = "\n".join(f"#{i} 行 {'x' * 60}" for i in range(120)) + "\n\n" + note
+
+        cut = plugin_main._shorten_tool_reply(text)
+
+        self.assertLess(len(cut), len(text))
+        self.assertTrue(cut.endswith(note))
+        body, _, _ = cut.partition("（篇幅所限")
+        # The cut lands on a line boundary: the last kept row is complete.
+        self.assertTrue(body.rstrip().endswith("x" * 60), body[-80:])
+
+    def test_counts_the_model_writes_in_words_are_understood(self) -> None:
+        for raw, expected in (
+            ("5", 5),
+            ("前5", 5),
+            ("五名", 5),
+            ("二十", 20),
+            ("十", 10),
+            ("十五", 15),
+            ("１０", 10),
+            ("abc", 10),
+            ("0", 10),
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(plugin_main._positive_int(raw, 10), expected)
+
     # --- parse-layer robustness -----------------------------------------------
 
     def test_an_absurd_top_value_gets_a_short_reply_not_a_traceback(self) -> None:

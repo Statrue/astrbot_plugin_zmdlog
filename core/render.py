@@ -230,6 +230,7 @@ class TemplateRenderer:
         character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
         element_filter: str | None = None,
         elements: Mapping[str, str] | None = None,
+        profession_filter: str | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_ranking_page(
@@ -241,6 +242,7 @@ class TemplateRenderer:
             character_filter_scope=character_filter_scope,
             element_filter=element_filter,
             elements=elements,
+            profession_filter=profession_filter,
         )
         return self._render(
             "ranking/ranking.html",

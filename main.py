@@ -1,7 +1,9 @@
 """AstrBot entry point for ZmdLogBot."""
 
 import asyncio
+import re
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -52,6 +54,7 @@ from .core.queries import (
     api_error_message,
     battle_link_error_message,
     board_api_error_message,
+    tool_api_error_message,
 )
 from .core.rank_watch import RankWatcher
 from .core.render import (
@@ -85,7 +88,12 @@ _NOTICE_SEND_TIMEOUT_SECONDS = 30.0
 _TOOL_PICTURES = "_zmdlog_tool_pictures"
 # What one tool may put into the model's context. The picture carries the
 # detail; a wall of text past this only crowds out the conversation.
-_MAX_TOOL_REPLY_CHARS = 3_000
+_MAX_TOOL_REPLY_CHARS = 4_500
+_CJK_DIGITS = {
+    "零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+}
+_CJK_NUMBER_RE = re.compile(r"([一二两三四五六七八九])?(十)?([一二三四五六七八九])?")
 _PLUGIN_DATA_NAME = "astrbot_plugin_zmdlog"
 _BATTLE_LINK_FILTER = (
     r"https?://[^\s<>\"']+/(?:battle|share|axis)/btl_[A-Za-z0-9_-]+"
@@ -172,6 +180,7 @@ class ZmdLogBotPlugin(Star):
             board_matcher=board_matcher,
             settings=settings,
             logger=logger,
+            watcher=self.watcher,
         )
         self._auto_expand_lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
@@ -677,27 +686,33 @@ class ZmdLogBotPlugin(Star):
         limit: str = "",
         element: str = "",
         range: str = "",
+        profession: str = "",
     ):
-        """查询终末地某个首领榜单的公开速通记录：前几名的用时、DPS、主C、
-        阵容和 battleId，该榜各职业位的角色出场率，以及出现过的阵容组合各几次；
-        board 只填首领或副本名；问的是某个角色（干员）的第一、冠军、排名时，
-        改用 zmdlogs_character_standings，不要在这里猜它是不是首领。
+        """查询终末地某个首领榜单的公开速通记录：前几名的用时、DPS、主C、阵容、
+        战斗日期、落后第一几秒和 battleId，最快/中位/平均用时，各职业位的角色出场率，
+        出现过的阵容组合各几次。board 填首领或副本名；填副本或期数（如“影拓丰碑4期”）
+        则列出该副本下每个榜的前三；填“全部”则列出所有榜的第一名。
+        问的是某个角色（干员）的第一、冠军、排名时改用 zmdlogs_character_standings。
         给了角色名则只看带这个角色的记录，并统计它最常和谁同队。
         榜单留空则回答“最近有什么新纪录”：哪些榜的第一名被谁刷新了、
         新上传了哪些记录、哪个榜最近最活跃。
         只查一个对象时会自动附长图，图里有完整数值，你不要复述数字，只解读；
         这次回答里查了多个对象就不附图，不要让用户看图。
-        数据只有公开上传的成功记录，没有失败样本，出场次数和名次都不代表谁更强。
-        数据全部来自 ZMDLogs 上玩家自愿上传的公开记录，不是全服统计，回答时要说明。
+        数据只有玩家自愿上传的公开成功记录，不是全服统计，没有失败样本，
+        出场次数和名次都不代表谁更强，回答时要说明。
 
         Args:
-            board(string): 榜单或副本关键词，例如“罗丹”“呼吼炽焰”
-            character(string): 只看阵容里带这个角色的记录并统计它的同队伙伴，
+            board(string): 榜单、副本或期数关键词，例如“罗丹”“呼吼炽焰”“丰碑4”；
+                “全部”看所有榜的第一名
+            character(string): 只看带这个角色的记录并统计它的同队伙伴，
                 例如“提弗洛斯”，不筛选就留空
             limit(string): 列出前几名，默认 10，最多 30
             element(string): 只看主C 为该属性的记录，填 物理、灼热、寒冷、自然 或 电磁，
                 不筛选就留空
-            range(string): 榜单留空时看这段时间的新纪录，填 7d、14d 或 30d，默认 7d
+            range(string): 填 7d、14d 或 30d：给了榜单就只看这段时间打出的记录和
+                第一名变化，榜单留空则看这段时间的新纪录（默认 7d）
+            profession(string): 只看主C 为该职业的记录，填 先锋、近卫、重装、术士、
+                突击 或 辅助，不筛选就留空
         """
 
         return await self._run_tool(
@@ -708,6 +723,7 @@ class ZmdLogBotPlugin(Star):
                 limit=_positive_int(limit, facts.DEFAULT_ROW_LIMIT),
                 element=element,
                 time_range=range,
+                profession=profession,
             ),
         )
 
@@ -718,13 +734,15 @@ class ZmdLogBotPlugin(Star):
         battle: str,
         compare_with: str = "",
     ):
-        """查询终末地某一场公开战报：用时、全队与各角色 DPS 和伤害占比、
-        每人的等级潜能武器精炼技能等级、主要伤害来源、BUFF 覆盖率、各类招式施放次数。
-        给了第二场就改为对比同一首领的两场：用时差、DPS 差、阵容差异、
-        同名角色的养成与装备差异；跨首领没有可比性。只查一个对象时会自动附长图，
-        图里有完整数值，你不要复述数字，只解读；这次回答里查了多个对象就不附图，
-        不要让用户看图。工具只列出记录本身和两份记录的差异，
-        哪一处造成了时间差公开数据无法判定，不要替它下因果结论。
+        """查询终末地某一场公开战报：用时、全队与各角色 DPS、伤害占比、暴击率、
+        最大单次，
+        每人的等级潜能、武器精炼、套装、技能等级，主要伤害来源、BUFF 覆盖率、
+        各类招式施放次数和每人的开场顺序。给了第二场就改为对比同一首领的两场：
+        用时差、DPS 差、阵容差异、同名角色的养成与装备差异；跨首领没有可比性。
+        只查一个对象时会自动附长图，图里有完整数值，你不要复述数字，只解读；
+        这次回答里查了多个对象就不附图，不要让用户看图。工具只列出记录本身和两份记录的差异，
+        哪一处造成了时间差公开数据无法判定，不要替它下因果结论；
+        “大家给某角色配什么”没有统计，只能逐场看战报。
         要按名次找某一场，先用榜单工具拿到那一名的 battleId。
         数据全部来自 ZMDLogs 上玩家自愿上传的公开记录，不是全服统计，回答时要说明。
 
@@ -746,37 +764,50 @@ class ZmdLogBotPlugin(Star):
         element: str = "",
         range: str = "",
         profession: str = "",
+        potential: str = "",
     ):
-        """凡是问某个角色（干员）的“第一、冠军、第一名、排第几、成绩、上了哪些榜”，
-        例如“别礼的第一呢”“洛茜有几个冠军”，都用这个工具，把名字原样填进 character：
-        名字是不是角色由工具判断并回答，你不要自己猜，更不要因为不认识就说它不是角色。
+        """凡是问某个角色（干员）的“第一、冠军、第一名、排第几、成绩、上了哪些榜、
+        最常和谁同队”，例如“别礼的第一呢”“洛茜有几个冠军”，都用这个工具，把名字原样
+        填进 character：名字是不是角色由工具判断并回答，你不要自己猜。
         查询终末地某个角色在公开记录里的表现：带它的队伍在每个榜单的最好名次、
-        用时、DPS 和阵容（这是队伍的成绩，任何星级的角色都能查），六星干员再附上
-        DPS 分布：中位数、四分位、样本量和各榜名次；给了榜单则只看那个榜的 DPS 分布。
+        用时、DPS 和阵容（这是队伍的成绩，任何星级的角色都能查），最常同队的角色，
+        六星干员再附上 DPS 分布：中位数、四分位、样本量和各榜名次；
+        给了榜单则只看那个榜的 DPS 分布，角色名留空而给了榜单则是该榜每个六星的分布，
+        board 填“全部”则是全部副本合计。range 和 potential 只作用于 DPS 分布。
         只查一个对象时会自动附长图，图里有完整数值，你不要复述数字，只解读；
         这次回答里查了多个对象就不附图，不要让用户看图。
-        DPS 名次只看去极值后的正常样本，正常样本不足的角色没有名次，
-        记录多但分布很散时也会这样。角色名留空则回答“谁的冠军最多/最少”：
-        每个角色的队伍在全部榜单拿下的第一名、前三、前十各几个；填了 profession
-        就把该职业的角色全部列出，0 个也列，从没上过榜的也点名。
-        这些数字来自公开速通记录，受玩家水平和配装影响，不是角色强度的判据。
+        DPS 名次只看去极值后的正常样本，正常样本不足的角色没有名次。
+        角色名和榜单都留空则回答“谁的冠军最多/最少”：每个角色的队伍在全部榜单
+        拿下的第一名、前三、前十各几个；填了 profession 就把该职业的角色全部列出，
+        0 个也列，从没上过榜的也点名。角色的属性、职业、技能说明是图鉴问题，不在这里。
+        这些数字来自公开速通记录，受玩家水平和配装影响，不是角色强度的判据；
+        不回答“谁更强”“循环 DPS”“专武收益”。
         数据全部来自 ZMDLogs 上玩家自愿上传的公开记录，不是全服统计，回答时要说明。
 
         Args:
             character(string): 角色全名，例如“提弗洛斯”“余烬”；留空看全角色冠军榜
-            board(string): 只看某个榜单，例如“罗丹”，留空则看它在所有榜单的表现
+                或某榜的分布
+            board(string): 只看某个榜单的 DPS 分布，例如“罗丹”；“全部”为全部副本合计；
+                留空看它在所有榜单的表现
             element(string): 角色名留空时只看该属性的角色，填 物理、灼热、寒冷、自然
                 或 电磁；问“物理队有什么冠军”就填 物理
-            range(string): 角色名留空时只算这段时间的记录，填 7d、14d 或 30d；
-                问“最近一周谁冠军多”就填 7d，不限时间留空
+            range(string): 填 7d、14d 或 30d：冠军榜只算这段时间的记录，DPS 分布
+                只算这段时间的样本；不限时间留空
             profession(string): 角色名留空时只看该职业的角色，填 先锋、近卫、重装、
-                术士（术师）、突击 或 辅助；问“谁是冠军最少的突击”就填 突击
+                术士（术师）、突击 或 辅助
+            potential(string): DPS 分布的潜能档，填 0（零潜）、1-5（有潜能，合并）
+                或留空（全部）；ZMDLogs 不按具体层数拆分
         """
 
         return await self._run_tool(
             event,
             lambda: self.tools.character(
-                character, board, element, range, profession=profession
+                character,
+                board,
+                element,
+                range,
+                profession=profession,
+                potential=potential,
             ),
         )
 
@@ -787,9 +818,11 @@ class ZmdLogBotPlugin(Star):
         account: str = "",
         range: str = "",
     ):
-        """查询终末地某个公开账号在各首领榜单的最好成绩：名次、用时、DPS、
-        阵容和 battleId，以及它的公开记录数、冠军数、常用主C 和常用阵容。
-        账号留空则回答“哪个玩家冠军最多”：各公开账号上传的第一名、前三、前十各几个。
+        """查询终末地某个公开账号（玩家、昵称）在各首领榜单的最好成绩：名次、用时、
+        DPS、阵容、战斗日期和 battleId，它的公开记录数、冠军数、常用主C 和常用阵容，
+        以及名次变化（掉了几名、最好和最差名次）——名次变化只有被本群关注过的账号才有记录。
+        账号留空则回答“哪个玩家冠军最多、谁上传最多”：各公开账号的第一名、前三、前十各几个。
+        角色（干员）的成绩不在这里，用 zmdlogs_character_standings。
         只查一个对象时会自动附长图，图里有完整数值，你不要复述数字，只解读；
         这次回答里查了多个对象就不附图，不要让用户看图。
         只有把记录设为公开的玩家才查得到。
@@ -798,7 +831,8 @@ class ZmdLogBotPlugin(Star):
         Args:
             account(string): 公开昵称、accountId 或 ZMDLogs 账号主页链接；
                 留空看玩家冠军榜
-            range(string): 账号留空时只算这段时间的记录，填 7d、14d 或 30d，不限时间留空
+            range(string): 填 7d、14d 或 30d：给了账号则只看这段时间打出的最好记录
+                和名次变化，账号留空则只算这段时间的记录；不限时间留空
         """
 
         return await self._run_tool(
@@ -821,7 +855,7 @@ class ZmdLogBotPlugin(Star):
             answer = await action()
         except ZmdLogsAPIError as exc:
             logger.warning("ZmdLogBot tool API request failed: %s", exc.code)
-            return messages.UPSTREAM_UNAVAILABLE
+            return tool_api_error_message(exc)
         except ZmdLogsClientError as exc:
             logger.warning(
                 "ZmdLogBot tool request failed: %s", type(exc).__name__
@@ -906,18 +940,39 @@ class ZmdLogBotPlugin(Star):
 
 
 def _shorten_tool_reply(text: str) -> str:
-    """Cap what one tool puts into the model's context."""
+    """Cap what one tool puts into the model's context, at a line boundary.
+
+    A cut in the middle of a row read as a row; the source line at the end
+    is what tells the model the numbers are a leaderboard's, so it is put
+    back after the cut.
+    """
 
     if len(text) <= _MAX_TOOL_REPLY_CHARS:
         return text
-    return text[: _MAX_TOOL_REPLY_CHARS - 1] + "…"
+    cut = text[:_MAX_TOOL_REPLY_CHARS]
+    head, _, _ = cut.rpartition("\n")
+    kept = (head or cut).rstrip()
+    return facts.with_source(kept + "\n（篇幅所限，其余略；完整内容见图）")
 
 
 def _positive_int(raw: str, default: int) -> int:
-    """A count the model wrote as a string; anything odd falls back."""
+    """A count the model wrote as a string — 5, 前5, 五名, １０ — else the default."""
 
-    try:
-        value = int(str(raw).strip())
-    except (TypeError, ValueError):
-        return default
-    return value if value > 0 else default
+    text = unicodedata.normalize("NFKC", str(raw)).strip()
+    digits = "".join(character for character in text if character.isdigit())
+    if digits:
+        value = int(digits[:4])
+        return value if value > 0 else default
+    for match in _CJK_NUMBER_RE.finditer(text):
+        if not match.group(0):
+            continue
+        tens, ten, ones = match.groups()
+        value = 0
+        if ten:
+            value = (_CJK_DIGITS[tens] if tens else 1) * 10
+        elif tens:
+            value = _CJK_DIGITS[tens]
+        if ones:
+            value += _CJK_DIGITS[ones]
+        return value if value > 0 else default
+    return default

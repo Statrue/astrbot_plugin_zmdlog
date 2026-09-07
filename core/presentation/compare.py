@@ -119,8 +119,12 @@ def build_compare_page(
     is the number the 战报 card would print for that fight on its own.
     """
 
-    page_a = build_battle_page(a, query=query, web_base_url=web_base_url)
-    page_b = build_battle_page(b, query=query, web_base_url=web_base_url)
+    page_a = build_battle_page(
+        a, query=query, web_base_url=web_base_url, suits=suits
+    )
+    page_b = build_battle_page(
+        b, query=query, web_base_url=web_base_url, suits=suits
+    )
     # Both fights are on the same boss: the handler refuses anything else,
     # because every boss has its own rotation and a cross-boss page would
     # compare two different games.

@@ -747,9 +747,8 @@ class QueryService:
             return Outcome(image_path=image_path)
         resolution = resolve_character_name(query, roster_character_names(rankings))
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
-            options = " / ".join(resolution.candidates)
             return Outcome(
-                message=f"「{messages.shorten(query)}」可能是：{options}，请写全名。"
+                message=messages.ambiguous_character(query, resolution.candidates)
             )
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
             return Outcome(message=messages.CHARACTER_NOT_IN_RECORDS)
@@ -810,9 +809,10 @@ class QueryService:
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
             return None
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
-            options = " / ".join(resolution.candidates)
             return Outcome(
-                message=f"「{resolution.query}」可能是：{options}，请写全名。"
+                message=messages.ambiguous_character(
+                    resolution.query, resolution.candidates
+                )
             )
         character_key = next(
             entry.key for entry in entries if entry.name == resolution.name
@@ -1251,9 +1251,10 @@ def _resolve_filter_names(ranking, character_filter: str) -> tuple[str, ...] | O
     for wanted in character_filter.split():
         resolution = resolve_character_name(wanted, ranking_character_names(ranking))
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
-            options = " / ".join(resolution.candidates)
             return Outcome(
-                message=f"「{shorten(resolution.query)}」可能是：{options}，请写全名。"
+                message=messages.ambiguous_character(
+                    resolution.query, resolution.candidates
+                )
             )
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
             return Outcome(
@@ -1304,6 +1305,29 @@ def board_api_error_message(error: ZmdLogsAPIError) -> str:
 def battle_link_error_message(error: ZmdLogsAPIError) -> str:
     if error.status_code == 404:
         return messages.BATTLE_LINK_NOT_FOUND
+    return messages.UPSTREAM_UNAVAILABLE
+
+
+def tool_api_error_message(error: ZmdLogsAPIError) -> str:
+    """The reply for an upstream error inside a tool, by the code upstream gave.
+
+    A tool has no route kind to say what was asked, but upstream's own code
+    does: a crisis-contract statistics read must not come back as "the
+    service is down".
+    """
+
+    if error.status_code == 404:
+        if error.code == CHARACTER_STATS_UNAVAILABLE:
+            return messages.CRISIS_CONTRACT_NO_STATISTICS
+        if error.code == "boss_not_found":
+            return messages.BOARD_NOT_FOUND
+        if error.code == "character_not_found":
+            return messages.CHARACTER_NOT_IN_RECORDS
+        if error.code == "battle_not_found":
+            return messages.BATTLE_NOT_FOUND
+        return messages.PUBLIC_DATA_NOT_FOUND
+    if error.status_code == 429:
+        return messages.RATE_LIMITED
     return messages.UPSTREAM_UNAVAILABLE
 
 

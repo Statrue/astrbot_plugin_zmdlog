@@ -22,8 +22,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from . import facts
-from .characters import CharacterResolutionStatus, resolve_character_name
+from . import facts, messages
+from .candidates import MAX_CANDIDATES
+from .characters import (
+    CharacterFilterScope,
+    CharacterResolutionStatus,
+    pick_character_filter_scope,
+    ranking_character_names,
+    resolve_character_name,
+)
 from .client import (
     ZmdLogsAPIError,
     ZmdLogsClient,
@@ -42,15 +49,19 @@ from .identifiers import (
 from .logs import LogSink
 from .matcher import (
     BOARD_QUERY_TARGETS,
+    MatchChoice,
     MatchLevel,
     MatchStatus,
     RankingMatcher,
     TargetType,
+    fold_text,
 )
 from .messages import shorten
 from .models import BossRanking, HotBossCard
 from .professions import PROFESSIONS, normalize_profession
+from .rank_watch import RankWatcher
 from .render import LongImageRenderer
+from .routing import parse_potential_text, parse_range_text
 from .settings import PluginSettings
 from .standings import (
     account_tallies,
@@ -66,6 +77,13 @@ from .standings import (
 
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
+# What people say when they mean every board at once.
+_EVERY_BOARD = frozenset(
+    {
+        "全部", "所有", "全部榜单", "所有榜单", "全部副本", "所有副本",
+        "所有首领", "全部首领", "all",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +98,13 @@ class ToolAnswer:
     text: str
     image_path: str | None = None
 
+    def noted(self, note: str) -> "ToolAnswer":
+        """The same answer with a one-line note in front, when there is one."""
+
+        if not note:
+            return self
+        return ToolAnswer(note + "\n" + self.text, self.image_path)
+
 
 class ToolService:
     """Answer the questions the LLM tools accept."""
@@ -93,6 +118,7 @@ class ToolService:
         board_matcher: BoardMatcher,
         settings: PluginSettings,
         logger: LogSink,
+        watcher: RankWatcher | None = None,
     ) -> None:
         self._client = client
         self._data = data
@@ -100,6 +126,9 @@ class ToolService:
         self._board_matcher = board_matcher
         self._web_base_url = settings.web_base_url
         self._logger = logger
+        # The rank watch's trace is the only rank history there is; the
+        # account tool reads it when it has one.
+        self._watcher = watcher
 
     # --- boards -----------------------------------------------------------------
 
@@ -111,55 +140,94 @@ class ToolService:
         limit: int = facts.DEFAULT_ROW_LIMIT,
         element: str = "",
         time_range: str = "",
+        profession: str = "",
     ) -> ToolAnswer:
         if not keyword.strip():
             return await self._records(time_range)
+        span, range_note = _time_range(time_range)
         wanted = self._element(element)
         if isinstance(wanted, ToolAnswer):
             return wanted
-        slug = await self._resolve_board(keyword)
-        if isinstance(slug, ToolAnswer):
-            return slug
-        ranking = await self._data.get_boss_ranking(slug)
-        elements = await self._elements()
-        name = ""
-        if character:
-            name = self._resolve_character(ranking, character)
-            if name is None:
+        role = self._profession(profession)
+        if isinstance(role, ToolAnswer):
+            return role
+        if _means_every_board(keyword):
+            return await self._boards_overview(keyword)
+        target = await self._resolve_target(keyword)
+        if isinstance(target, ToolAnswer):
+            return target
+        if not isinstance(target, str):
+            choice, cards = target
+            return await self._dungeon_overview(keyword, choice, cards)
+        ranking = await self._data.get_boss_ranking(target)
+        elements = await self._data.character_elements()
+        name, scope = "", CharacterFilterScope.ROSTER
+        if character.strip():
+            resolved = self._resolve_character(ranking, character)
+            if isinstance(resolved, ToolAnswer):
+                return resolved
+            name = resolved
+            # Main-C rows when there are any, the whole roster otherwise —
+            # the same choice the command makes, so page and text agree.
+            scope = pick_character_filter_scope(ranking, name)
+        if wanted:
+            if not elements:
                 return ToolAnswer(
-                    f"「{ranking.boss_name}」的公开记录里没有"
-                    f"「{shorten(character)}」这个角色，可能是名字不对。"
+                    "角色属性目录暂时读不到，无法按属性筛选，请稍后再试。"
                 )
-        if wanted and not any(
-            elements.get(row.character_name) == wanted for row in ranking.rows
+            if not any(
+                elements.get(row.character_name) == wanted for row in ranking.rows
+            ):
+                return ToolAnswer(
+                    f"「{ranking.boss_name}」的公开记录里没有主C 为{wanted}属性的队伍。"
+                )
+        if role and not any(
+            normalize_profession(row.character_profession or "") == role
+            for row in ranking.rows
         ):
             return ToolAnswer(
-                f"「{ranking.boss_name}」的公开记录里没有主C 为{wanted}属性的队伍。"
+                f"「{ranking.boss_name}」的公开记录里没有主C 为{role}的队伍。"
             )
+        since = window_start(span, now=datetime.now(UTC))
+        events = ()
+        if since is not None:
+            events = tuple(
+                event
+                for event in self._data.event_log.recent(since=since)
+                if event.boss_slug == ranking.boss_slug
+            )
+        limit = max(1, min(limit, facts.MAX_ROW_LIMIT))
         text = facts.format_board_ranking(
             ranking,
             limit=limit,
             character=name or None,
+            character_scope=scope,
             element=wanted or None,
             elements=elements,
+            profession=role or None,
+            since=since,
+            window_label=window_label(span),
+            events=events,
         )
         image = await self._render(
             lambda renderer: renderer.render_ranking(
                 ranking,
                 query=keyword,
-                ranking_limit=max(limit, 10),
+                ranking_limit=max(limit, facts.DEFAULT_ROW_LIMIT),
                 web_base_url=self._web_base_url,
                 character_filter=(name,) if name else None,
+                character_filter_scope=scope,
                 element_filter=wanted or None,
+                profession_filter=role or None,
                 elements=elements,
             )
         )
-        return ToolAnswer(text, image)
+        return ToolAnswer(text, image).noted(range_note)
 
     async def _records(self, time_range: str) -> ToolAnswer:
         """New records, first places changing hands and board activity."""
 
-        span = _time_range(time_range)
+        span, range_note = _time_range(time_range)
         if span == "all":
             span = "7d"
         index = self._data.ranking_index
@@ -188,6 +256,38 @@ class ToolService:
                 log_since=log.oldest_seen_at(),
             )
         )
+        return ToolAnswer(text, image).noted(range_note)
+
+    async def _boards_overview(self, keyword: str) -> ToolAnswer:
+        """Every board's first place, from the board list itself."""
+
+        cards = await self._data.list_hot_bosses()
+        text = facts.format_boards_overview(
+            cards, title="全部公开榜单", runs_per_board=1
+        )
+        image = await self._render(
+            lambda renderer: renderer.render_all_top3(
+                cards, query=keyword, web_base_url=self._web_base_url
+            )
+        )
+        return ToolAnswer(text, image)
+
+    async def _dungeon_overview(
+        self,
+        keyword: str,
+        choice: MatchChoice,
+        cards: tuple[HotBossCard, ...],
+    ) -> ToolAnswer:
+        """The top three of every board of one dungeon or phase."""
+
+        text = facts.format_boards_overview(
+            cards, title=choice.target.name, runs_per_board=3
+        )
+        image = await self._render(
+            lambda renderer: renderer.render_dungeon_top3(
+                choice, cards, query=keyword, web_base_url=self._web_base_url
+            )
+        )
         return ToolAnswer(text, image)
 
     # --- battles ----------------------------------------------------------------
@@ -213,9 +313,9 @@ class ToolService:
         )
         if isinstance(detail, BaseException):
             if isinstance(detail, ZmdLogsAPIError) and detail.status_code == 404:
-                return ToolAnswer("这场战报不存在、未公开或已删除。")
+                return ToolAnswer(messages.BATTLE_NOT_FOUND)
             raise detail
-        text = facts.format_battle(detail, export=export)
+        text = facts.format_battle(detail, export=export, suits=suits)
         image = await self._render(
             lambda renderer: renderer.render_battle(
                 detail,
@@ -236,19 +336,21 @@ class ToolService:
                 "先用榜单工具拿到那两名的 battleId。"
             )
         if left == right:
-            return ToolAnswer("两边是同一场战报，没有可比的。")
-        details = await asyncio.gather(
+            return ToolAnswer(messages.COMPARE_SAME_BATTLE)
+        detail_a, detail_b, suits = await asyncio.gather(
             self._data.get_battle_detail(left),
             self._data.get_battle_detail(right),
+            self._equip_suits(),
             return_exceptions=True,
         )
-        for outcome in details:
+        for outcome in (detail_a, detail_b):
             if isinstance(outcome, ZmdLogsAPIError) and outcome.status_code == 404:
                 return ToolAnswer("其中一场战报不存在、未公开或已删除。")
             if isinstance(outcome, BaseException):
                 raise outcome
-        detail_a, detail_b = details
-        text = facts.format_battle_comparison(detail_a, detail_b)
+        if isinstance(suits, BaseException):
+            suits = {}
+        text = facts.format_battle_comparison(detail_a, detail_b, suits=suits)
         if detail_a.boss_name != detail_b.boss_name:
             return ToolAnswer(text)
         image = await self._render(
@@ -257,6 +359,7 @@ class ToolService:
                 detail_b,
                 query=f"{left} vs {right}",
                 web_base_url=self._web_base_url,
+                suits=suits,
             )
         )
         return ToolAnswer(text, image)
@@ -270,9 +373,20 @@ class ToolService:
         element: str = "",
         time_range: str = "",
         profession: str = "",
+        potential: str = "",
     ) -> ToolAnswer:
-        if board:
-            return await self._character_on_board(name, board)
+        span, range_note = _time_range(time_range)
+        wanted_potential = self._potential(potential)
+        if isinstance(wanted_potential, ToolAnswer):
+            return wanted_potential
+        if board.strip():
+            if not name.strip():
+                answer = await self._board_statistics(board, span, wanted_potential)
+            else:
+                answer = await self._character_on_board(
+                    name, board, span, wanted_potential
+                )
+            return answer.noted(range_note)
         if not name.strip():
             wanted = self._element(element)
             if isinstance(wanted, ToolAnswer):
@@ -280,9 +394,10 @@ class ToolService:
             role = self._profession(profession)
             if isinstance(role, ToolAnswer):
                 return role
-            return await self._champions(
-                wanted or None, profession=role or None, time_range=time_range
+            answer = await self._champions(
+                wanted or None, profession=role or None, span=span
             )
+            return answer.noted(range_note)
         # Standings come from the ranking index and cover every rarity; the
         # DPS distribution needs a six-star key and is added when there is one.
         index = self._data.ranking_index
@@ -291,19 +406,21 @@ class ToolService:
         resolution = resolve_character_name(name, roster_character_names(rankings))
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
             return ToolAnswer(
-                f"「{shorten(name)}」可能是：{' / '.join(resolution.candidates)}，"
-                "请用全名再问一次。"
+                messages.ambiguous_character(name, resolution.candidates)
             )
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
-            return await self._character_distribution_only(name)
+            answer = await self._character_distribution_only(
+                name, span, wanted_potential
+            )
+            return answer.noted(range_note)
         standings = character_standings(rankings, resolution.name)
         age = index.oldest_age_seconds()
         key = await self._catalog_key(resolution.name)
         # The distribution is an upstream read of several seconds and the
         # render about one; they need nothing from each other, so they overlap.
-        elements = await self._elements()
+        elements = await self._data.character_elements()
         stats, image = await asyncio.gather(
-            self._boss_statistics(key),
+            self._boss_statistics(key, span, wanted_potential),
             self._render(
                 lambda renderer: renderer.render_character_standings(
                     standings,
@@ -314,17 +431,20 @@ class ToolService:
                 )
             ),
         )
-        parts = [facts.format_character_standings(standings, age_seconds=age)]
+        parts = [
+            facts.format_character_standings(standings, age_seconds=age),
+            facts.format_character_partners(rankings, resolution.name),
+        ]
         if stats is not None:
             parts.append(facts.format_character_boards(stats))
-        return ToolAnswer(facts.join_sections(*parts), image)
+        return ToolAnswer(facts.join_sections(*parts), image).noted(range_note)
 
     async def _champions(
         self,
         element: str | None = None,
         *,
         profession: str | None = None,
-        time_range: str = "",
+        span: str = "all",
     ) -> ToolAnswer:
         """Every character's first places over all boards, most first.
 
@@ -332,23 +452,22 @@ class ToolService:
         "物理队有什么冠军" is answered: the board, restricted to them.
         ``profession`` restricts it to one class and lists every member,
         zeros included, which is how "谁是冠军最少的突击" is answered.
-        ``time_range`` (7d / 14d / 30d) narrows every board to a window.
+        ``span`` (7d / 14d / 30d) narrows every board to a window.
         """
 
-        span = _time_range(time_range)
         index = self._data.ranking_index
         await index.ensure_filled()
         rankings = tuple(entry.ranking for entry in index.entries())
-        elements = await self._elements()
-        professions = await self._professions()
+        elements = await self._data.character_elements()
+        professions = await self._data.character_professions()
         since = window_start(span, now=datetime.now(UTC))
         tallies = character_tallies(rankings, since=since)
         if element is not None:
             tallies = tuple(t for t in tallies if elements.get(t.name) == element)
         if profession is not None:
             tallies = by_profession(tallies, profession)
-        # Who the catalog knows and no record fields; not worked out for an
-        # element alone, which the catalog dict here does not carry.
+        # Who the catalog knows and no record fields; not worked out after an
+        # element cut, which would call every member of another element unseen.
         unseen = (
             unseen_characters(tallies, professions, profession=profession)
             if element is None
@@ -401,15 +520,6 @@ class ToolService:
             )
         return label
 
-    async def _elements(self) -> dict[str, str]:
-        """Name to element label; empty when the catalog is unreachable."""
-
-        try:
-            types = await self._data.get_character_types()
-        except ZmdLogsClientError:
-            return {}
-        return {name: entry.element for name, entry in types.items()}
-
     @staticmethod
     def _profession(text: str) -> str | ToolAnswer:
         """The records' label for a profession the model typed; "" for none."""
@@ -424,40 +534,85 @@ class ToolService:
             )
         return label
 
-    async def _professions(self) -> dict[str, str]:
-        """Name to profession as the catalog spells it; empty when unreachable."""
+    @staticmethod
+    def _potential(text: str) -> str | ToolAnswer:
+        """``0`` / ``1-5`` / ``all`` for what the model typed; "" means all."""
 
-        try:
-            types = await self._data.get_character_types()
-        except ZmdLogsClientError:
-            return {}
-        return {
-            name: entry.profession for name, entry in types.items() if entry.profession
-        }
+        if not text.strip():
+            return "all"
+        value = parse_potential_text(text)
+        if value is None:
+            return ToolAnswer(
+                f"「{shorten(text)}」不是可用的潜能档：只分 0（零潜）、1-5（有潜能，"
+                "合并统计）和 all，ZMDLogs 不按具体潜能层数拆分。"
+            )
+        return value
 
-    async def _boss_statistics(self, key: str | None):
+    async def _boss_statistics(self, key: str | None, span: str, potential: str):
         """The six-star distribution, or nothing; the standings stand without it."""
 
         if key is None:
             return None
         try:
             return await self._data.get_character_boss_statistics(
-                key, time_range="all", potential="all"
+                key, time_range=span, potential=potential
             )
         except ZmdLogsClientError:
             return None
 
-    async def _character_on_board(self, name: str, board: str) -> ToolAnswer:
-        resolution = await self._resolve_six_star(name)
-        if isinstance(resolution, ToolAnswer):
-            return resolution
-        slug = await self._resolve_board(board)
-        if isinstance(slug, ToolAnswer):
-            return slug
+    async def _board_statistics(
+        self, board: str, span: str, potential: str
+    ) -> ToolAnswer:
+        """Every six-star's distribution on one board, or over all of them."""
+
+        if _means_every_board(board):
+            slug: str | None = None
+            query = "角色统计"
+        else:
+            target = await self._resolve_target(board)
+            if isinstance(target, ToolAnswer):
+                return target
+            if not isinstance(target, str):
+                choice, _cards = target
+                return ToolAnswer(
+                    f"「{shorten(board)}」是副本，角色统计要按具体榜单看：请指明"
+                    f"「{choice.target.name}」下的一个榜单。"
+                )
+            slug, query = target, board
         stats = await self._data.get_character_statistics(
-            slug, time_range="all", potential="all"
+            slug, time_range=span, potential=potential
         )
-        text = facts.format_character_statistics(stats, character=resolution)
+        text = facts.format_character_statistics(stats)
+        image = await self._render(
+            lambda renderer: renderer.render_character_stats(
+                stats, query=query, web_base_url=self._web_base_url
+            )
+        )
+        return ToolAnswer(text, image)
+
+    async def _character_on_board(
+        self, name: str, board: str, span: str, potential: str
+    ) -> ToolAnswer:
+        catalog_name = await self._resolve_six_star(name)
+        if isinstance(catalog_name, ToolAnswer):
+            return catalog_name
+        if catalog_name is None:
+            # Not a six-star, so there is no distribution; the records
+            # fielding it on that board are what the question is about.
+            return await self.board(board, character=name)
+        target = await self._resolve_target(board)
+        if isinstance(target, ToolAnswer):
+            return target
+        if not isinstance(target, str):
+            choice, _cards = target
+            return ToolAnswer(
+                f"「{shorten(board)}」是副本，角色统计要按具体榜单看：请指明"
+                f"「{choice.target.name}」下的一个榜单。"
+            )
+        stats = await self._data.get_character_statistics(
+            target, time_range=span, potential=potential
+        )
+        text = facts.format_character_statistics(stats, character=catalog_name)
         image = await self._render(
             lambda renderer: renderer.render_character_stats(
                 stats, query=board, web_base_url=self._web_base_url
@@ -465,26 +620,58 @@ class ToolService:
         )
         return ToolAnswer(text, image)
 
-    async def _character_distribution_only(self, name: str) -> ToolAnswer:
+    async def _character_distribution_only(
+        self, name: str, span: str, potential: str
+    ) -> ToolAnswer:
         """A six-star with no public record yet: the distribution page alone."""
 
-        resolution = await self._resolve_six_star(name)
-        if isinstance(resolution, ToolAnswer):
-            return resolution
-        key = await self._catalog_key(resolution)
+        catalog_name = await self._resolve_six_star(name)
+        if isinstance(catalog_name, ToolAnswer):
+            return catalog_name
+        if catalog_name is None:
+            return await self._not_a_character(name)
+        key = await self._catalog_key(catalog_name)
         stats = await self._data.get_character_boss_statistics(
-            key, time_range="all", potential="all"
+            key, time_range=span, potential=potential
         )
         text = facts.format_character_boards(stats)
         image = await self._render(
             lambda renderer: renderer.render_character_boss(
-                stats, query=resolution, web_base_url=self._web_base_url
+                stats, query=catalog_name, web_base_url=self._web_base_url
             )
         )
         return ToolAnswer(text, image)
 
-    async def _resolve_six_star(self, name: str) -> str | ToolAnswer:
-        """The catalog name for ``name``, or the reason there is none."""
+    async def _not_a_character(self, name: str) -> ToolAnswer:
+        """Why a name is not a character: a boss name, or simply unknown."""
+
+        try:
+            cards = await self._data.list_hot_bosses()
+        except ZmdLogsClientError:
+            cards = ()
+        if cards:
+            match = self._board_matcher(cards).match(
+                name, allowed_types=BOARD_QUERY_TARGETS
+            )
+            choice = match.selected
+            if (
+                match.status is MatchStatus.MATCHED
+                and choice is not None
+                and choice.level <= MatchLevel.PREFIX_SUFFIX
+            ):
+                # Nothing in any roster or the catalog, and a board's name
+                # starts or ends with it: it is the board.
+                return ToolAnswer(
+                    f"「{shorten(name)}」是榜单或副本（{choice.target.name}），"
+                    "不是角色；它的记录请用榜单工具查。"
+                )
+        return ToolAnswer(
+            f"公开记录里没有「{shorten(name)}」出场，"
+            "角色统计也只覆盖六星干员，可能是名字不对。"
+        )
+
+    async def _resolve_six_star(self, name: str) -> str | None | ToolAnswer:
+        """The catalog name for ``name``; None when the catalog has no such name."""
 
         entries = await self._data.get_character_catalog()
         resolution = resolve_character_name(name, tuple(e.name for e in entries))
@@ -495,14 +682,10 @@ class ToolService:
             resolution = resolve_character_name(name, tuple(e.name for e in entries))
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
             return ToolAnswer(
-                f"「{shorten(name)}」可能是：{' / '.join(resolution.candidates)}，"
-                "请用全名再问一次。"
+                messages.ambiguous_character(name, resolution.candidates)
             )
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
-            return ToolAnswer(
-                f"公开记录里没有「{shorten(name)}」出场，"
-                "角色统计也只覆盖六星干员，可能是名字不对。"
-            )
+            return None
         return resolution.name
 
     async def _catalog_key(self, name: str) -> str | None:
@@ -512,6 +695,7 @@ class ToolService:
     async def account(self, query: str, time_range: str = "") -> ToolAnswer:
         if not query.strip():
             return await self._player_champions(time_range)
+        span, range_note = _time_range(time_range)
         try:
             account_id = parse_account_reference(
                 query, web_base_url=self._web_base_url
@@ -519,35 +703,39 @@ class ToolService:
         except PublicReferenceError:
             account_id = None
         if account_id is None:
-            nickname = searchable_nickname(query)
-            if nickname is None:
-                return ToolAnswer(
-                    "请给出公开昵称（至少 2 个字符）、accountId 或主页链接。"
-                )
-            search = await self._client.search_public_accounts(nickname, limit=5)
-            if not search.accounts:
-                return ToolAnswer(
-                    f"没有找到昵称包含「{shorten(nickname)}」的公开账号。"
-                )
-            if len(search.accounts) > 1:
-                names = "、".join(
-                    hit.account_display_name for hit in search.accounts
-                )
-                return ToolAnswer(
-                    f"「{shorten(nickname)}」匹配到多个公开账号：{names}。"
-                    "请让对方说得更完整一些。"
-                )
-            account_id = search.accounts[0].account_id
+            resolved = await self._search_account(query)
+            if isinstance(resolved, ToolAnswer):
+                return resolved
+            account_id = resolved
         try:
             rankings = await self._data.get_public_user_rankings(account_id)
         except ZmdLogsAPIError as exc:
             if exc.status_code == 404:
-                return ToolAnswer("没有这个公开账号，或它暂无公开榜单记录。")
+                return ToolAnswer(messages.ACCOUNT_NOT_FOUND)
             raise
         # Habits come from whatever the index already holds; never wait for it.
         held = tuple(entry.ranking for entry in self._data.ranking_index.entries())
         habits = account_tally(held, account_id) if held else None
-        text = facts.format_account(rankings, habits=habits)
+        since = window_start(span, now=datetime.now(UTC))
+        label = window_label(span)
+        parts = [
+            facts.format_account(
+                rankings, habits=habits, since=since, window_label=label
+            )
+        ]
+        if self._watcher is not None:
+            history = self._watcher.history_for(account_id)
+            if history is not None and history.boards:
+                parts.append(
+                    facts.format_account_trend(
+                        history,
+                        since=since,
+                        window_label=label,
+                        last_checked=self._watcher.last_checked(account_id),
+                    )
+                )
+            else:
+                parts.append(facts.NO_RANK_HISTORY)
         rows, listed = await self._data.index_rows_for(
             row.battle_id for row in rankings.rankings
         )
@@ -562,12 +750,42 @@ class ToolService:
                 elements=elements,
             )
         )
-        return ToolAnswer(text, image)
+        return ToolAnswer(facts.join_sections(*parts), image).noted(range_note)
+
+    async def _search_account(self, query: str) -> str | ToolAnswer:
+        """One public account id for a nickname, or the reason there is not one.
+
+        An exact nickname wins over longer ones that merely contain it, as
+        the smart command already decides; anything still ambiguous is
+        listed for the model to ask about.
+        """
+
+        nickname = searchable_nickname(query)
+        if nickname is None:
+            return ToolAnswer(messages.ACCOUNT_REFERENCE_NEEDED)
+        search = await self._client.search_public_accounts(
+            nickname, limit=MAX_CANDIDATES
+        )
+        hits = search.accounts
+        if not hits:
+            return ToolAnswer(f"没有找到昵称包含「{shorten(nickname)}」的公开账号。")
+        folded = fold_text(nickname)
+        exact = [hit for hit in hits if fold_text(hit.account_display_name) == folded]
+        if len(exact) == 1:
+            return exact[0].account_id
+        if len(hits) == 1 and not search.has_more:
+            return hits[0].account_id
+        names = "、".join(hit.account_display_name for hit in hits)
+        more = "（还有更多同名结果未列出）" if search.has_more else ""
+        return ToolAnswer(
+            f"「{shorten(nickname)}」匹配到多个公开账号：{names}{more}。"
+            "请让对方给出完整昵称或 accountId。"
+        )
 
     async def _player_champions(self, time_range: str) -> ToolAnswer:
         """Which public accounts uploaded the most first places."""
 
-        span = _time_range(time_range)
+        span, range_note = _time_range(time_range)
         index = self._data.ranking_index
         await index.ensure_filled()
         rankings = tuple(entry.ranking for entry in index.entries())
@@ -591,7 +809,7 @@ class ToolService:
                 window_label=label,
             )
         )
-        return ToolAnswer(text, image)
+        return ToolAnswer(text, image).noted(range_note)
 
     # --- shared -------------------------------------------------------------------
 
@@ -611,8 +829,10 @@ class ToolService:
         except ZmdLogsClientError:
             return {}
 
-    async def _resolve_board(self, keyword: str) -> str | ToolAnswer:
-        """One board slug for ``keyword``, or the reason there is not one."""
+    async def _resolve_target(
+        self, keyword: str
+    ) -> str | tuple[MatchChoice, tuple[HotBossCard, ...]] | ToolAnswer:
+        """A board slug, a dungeon with its cards, or the reason there is neither."""
 
         cards = await self._data.list_hot_bosses()
         matcher = self._board_matcher(cards)
@@ -622,6 +842,16 @@ class ToolService:
                 f"没有找到与「{shorten(keyword)}」匹配的榜单或副本。"
             )
         if match.status is MatchStatus.AMBIGUOUS:
+            best = match.candidates[0] if match.candidates else None
+            if (
+                best is not None
+                and best.level is MatchLevel.SIMILARITY
+                and best.score < matcher.fuzzy_threshold
+            ):
+                # Several weak guesses are not options; they are noise.
+                return ToolAnswer(
+                    f"没有找到与「{shorten(keyword)}」匹配的榜单或副本。"
+                )
             names = "、".join(choice.target.name for choice in match.candidates[:5])
             return ToolAnswer(
                 f"「{shorten(keyword)}」可能指：{names}。请说得更具体一些。"
@@ -643,25 +873,25 @@ class ToolService:
         if choice.target.target_type is TargetType.BOARD:
             return choice.target.key
         boards = matcher.expand_to_boards((choice,))
-        if len(boards) > 1:
-            names = "、".join(entry.target.name for entry in boards[:5])
-            return ToolAnswer(
-                f"「{shorten(keyword)}」是副本，包含多个榜单：{names}。"
-                "请指明其中一个。"
-            )
-        return boards[0].target.key
+        if len(boards) == 1:
+            return boards[0].target.key
+        slugs = {entry.target.key for entry in boards}
+        selected = tuple(card for card in cards if card.boss_slug in slugs)
+        return choice, selected
 
     @staticmethod
-    def _resolve_character(ranking: BossRanking, name: str) -> str | None:
-        names = tuple(
-            entry.character_name
-            for row in ranking.rows
-            for entry in row.roster_entries
-        )
-        resolution = resolve_character_name(name, names)
+    def _resolve_character(ranking: BossRanking, name: str) -> str | ToolAnswer:
+        """The board's spelling of a character the model typed, or why not."""
+
+        resolution = resolve_character_name(name, ranking_character_names(ranking))
         if resolution.status is CharacterResolutionStatus.MATCHED:
             return resolution.name
-        return None
+        if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
+            return ToolAnswer(messages.ambiguous_character(name, resolution.candidates))
+        return ToolAnswer(
+            f"「{ranking.boss_name}」的公开记录里没有"
+            f"「{shorten(name)}」这个角色，可能是名字不对。"
+        )
 
     def _battle_reference(self, value: str) -> str | None:
         try:
@@ -685,16 +915,22 @@ class ToolService:
             return None
 
 
-_TIME_RANGES = {"7d": "7d", "14d": "14d", "30d": "30d", "all": "all", "": "all"}
-_TIME_RANGE_ALIASES = {
-    "7天": "7d", "一周": "7d", "week": "7d", "14天": "14d", "两周": "14d",
-    "30天": "30d", "一个月": "30d", "month": "30d", "全部": "all", "所有": "all",
-}
+def _means_every_board(keyword: str) -> bool:
+    return "".join(keyword.split()).casefold() in _EVERY_BOARD
 
 
-def _time_range(text: str) -> str:
-    """A model's range as the option spells it; anything odd means all time."""
+def _time_range(text: str) -> tuple[str, str]:
+    """A model's range as the option spells it, and a note when it was not understood.
 
-    value = text.strip().casefold()
-    return _TIME_RANGES.get(value) or _TIME_RANGE_ALIASES.get(value) or "all"
+    Anything unreadable means all time — but says so, because a model that
+    asked for a week and got everything would present it as the week.
+    """
 
+    if not text.strip():
+        return "all", ""
+    value = parse_range_text(text)
+    if value is not None:
+        return value, ""
+    return "all", (
+        f"（范围「{shorten(text)}」没看懂，按全部时间算；可写 7d、14d、30d。）"
+    )

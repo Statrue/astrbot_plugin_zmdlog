@@ -3,9 +3,13 @@
 import asyncio
 import logging
 import unittest
+from types import SimpleNamespace
 
-from core import facts
+from core import facts, messages
+from core.characters import CharacterFilterScope
+from core.client import ZmdLogsAPIError
 from core.datasource import CharacterCatalogEntry
+from core.history import AccountHistory, BoardHistory, RankPoint
 from core.matcher import AliasConfig, MatcherCache
 from core.models import (
     parse_battle_detail,
@@ -15,6 +19,7 @@ from core.models import (
     parse_hot_bosses,
     parse_public_user_rankings,
 )
+from core.queries import tool_api_error_message
 from core.ranking_index import IndexEntry
 from core.settings import PluginSettings
 from core.toolbox import ToolAnswer, ToolService
@@ -40,11 +45,13 @@ class FakeRenderer:
 
     def __init__(self, fail: bool = False) -> None:
         self.calls: list[str] = []
+        self.kwargs: dict[str, dict] = {}
         self.fail = fail
 
     def _page(self, kind):
         async def render(*args, **kwargs):
             self.calls.append(kind)
+            self.kwargs[kind] = kwargs
             if self.fail:
                 raise RuntimeError("no chromium")
             return f"/tmp/{kind}.png"
@@ -80,6 +87,11 @@ class FakeData:
         self.battles = battles or {}
         self.account = account
         self.ranking_index = FakeIndex(ranking)
+        self.stats_calls: list[tuple] = []
+
+    async def get_character_statistics(self, slug, *, time_range, potential):
+        self.stats_calls.append((slug, time_range, potential))
+        return parse_character_statistics(character_statistics_payload())
 
     async def list_hot_bosses(self):
         return self.cards
@@ -186,7 +198,9 @@ class ToolServiceTests(unittest.TestCase):
         answer = run(self.service.board("三位一体", character=name))
 
         self.assertEqual(answer.image_path, "/tmp/ranking.png")
-        self.assertIn(f"阵容包含「{name}」", answer.text)
+        # 黎风 leads records on this board, so the filter is main-C scoped,
+        # as the command would decide; the page gets the same scope.
+        self.assertIn(f"主C 为「{name}」", answer.text)
         self.assertIn("最常同队", answer.text)
         self.assertNotIn("常见阵容（全榜", answer.text)
 
@@ -457,3 +471,249 @@ class ToolAnswerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeClient:
+    """The one client call a tool makes itself: the nickname search."""
+
+    def __init__(self) -> None:
+        self.hits: list[tuple[str, str]] = []
+        self.has_more = False
+        self.queries: list[str] = []
+
+    async def search_public_accounts(self, query, *, limit):
+        self.queries.append(query)
+        return SimpleNamespace(
+            query=query,
+            has_more=self.has_more,
+            accounts=tuple(
+                SimpleNamespace(account_id=account_id, account_display_name=name)
+                for account_id, name in self.hits
+            ),
+        )
+
+
+class FakeWatcher:
+    def __init__(self, history) -> None:
+        self.history = history
+
+    def history_for(self, account_id):
+        return self.history
+
+    def last_checked(self, account_id):
+        return None
+
+
+class ToolSurfaceTests(unittest.TestCase):
+    """What a model can ask for since the release review closed the gaps."""
+
+    def setUp(self) -> None:
+        self.ranking = parse_boss_ranking(ranking_payload_with_rows())
+        self.data = FakeData(
+            ranking=self.ranking,
+            account=parse_public_user_rankings(public_user_rankings_payload()),
+        )
+        self.renderer = FakeRenderer()
+        self.matchers = MatcherCache()
+        self.client = FakeClient()
+        self.service = self._service()
+
+    def _service(self, watcher=None) -> ToolService:
+        return ToolService(
+            client=self.client,
+            data=self.data,
+            renderer=lambda: self.renderer,
+            board_matcher=lambda cards: self.matchers.matcher_for(
+                cards, AliasConfig.empty()
+            ),
+            settings=PluginSettings(web_base_url=WEB),
+            logger=logging.getLogger("test"),
+            watcher=watcher,
+        )
+
+    def test_a_prefix_resolves_a_character_the_board_fields_many_times(self) -> None:
+        answer = run(self.service.board("三位一体", character="黎"))
+
+        self.assertEqual(answer.image_path, "/tmp/ranking.png")
+        self.assertIn("主C 为「黎风」", answer.text)
+
+    def test_the_page_follows_the_texts_scope(self) -> None:
+        # 佩丽卡 never leads a record here: text and page both take the roster.
+        answer = run(self.service.board("三位一体", character="佩丽卡"))
+
+        self.assertIn("阵容包含「佩丽卡」", answer.text)
+        self.assertIs(
+            self.renderer.kwargs["ranking"]["character_filter_scope"],
+            CharacterFilterScope.ROSTER,
+        )
+
+    def test_a_limit_past_thirty_still_draws_the_page(self) -> None:
+        answer = run(self.service.board("三位一体", limit=50))
+
+        self.assertEqual(answer.image_path, "/tmp/ranking.png")
+        self.assertEqual(self.renderer.kwargs["ranking"]["ranking_limit"], 30)
+
+    def test_rows_carry_their_date_and_the_gap_to_the_leader(self) -> None:
+        answer = run(self.service.board("三位一体"))
+
+        self.assertIn("2026-07-13", answer.text)
+        self.assertIn("落后第一 1.00 秒", answer.text)
+        self.assertIn("最快 ", answer.text)
+
+    def test_a_profession_keeps_only_rows_led_by_that_class(self) -> None:
+        answer = run(self.service.board("三位一体", profession="术师"))
+
+        self.assertIn("主C 为术士", answer.text)
+        self.assertIn("#5 ", answer.text)
+        self.assertNotIn("#1 ", answer.text)
+        self.assertEqual(
+            self.renderer.kwargs["ranking"]["profession_filter"], "术士"
+        )
+
+    def test_a_window_keeps_the_records_fought_inside_it(self) -> None:
+        # The fixture's records date from 2026-07; a week holds none of them.
+        answer = run(self.service.board("三位一体", time_range="7天"))
+
+        self.assertIn("近 7 天打出的记录", answer.text)
+        self.assertIn("没有符合的公开记录", answer.text)
+
+    def test_an_unreadable_range_is_said_rather_than_silently_all_time(self) -> None:
+        answer = run(self.service.board("三位一体", time_range="上周"))
+
+        self.assertTrue(answer.text.startswith("（范围「上周」没看懂"), answer.text)
+
+    def test_every_board_means_the_overview_page(self) -> None:
+        answer = run(self.service.board("全部"))
+
+        self.assertEqual(answer.image_path, "/tmp/all_top3.png")
+        self.assertIn("全部公开榜单", answer.text)
+
+    def test_a_dungeon_lists_each_of_its_boards(self) -> None:
+        first = hot_bosses_payload()[0]
+        second = dict(
+            first, bossSlug="dung01_group_bossrush03", bossName="危境再现·白垩界卫"
+        )
+        self.data.cards = parse_hot_bosses([first, second])
+
+        answer = run(self.service.board("测试区"))
+
+        self.assertEqual(answer.image_path, "/tmp/dungeon_top3.png")
+        self.assertIn("白垩界卫", answer.text)
+        self.assertIn("三位一体", answer.text)
+
+    def test_a_blank_name_with_a_board_is_that_boards_distribution(self) -> None:
+        answer = run(self.service.character("", board="三位一体"))
+
+        self.assertEqual(answer.image_path, "/tmp/character_stats.png")
+        self.assertIn("角色 DPS 分布", answer.text)
+        self.assertEqual(
+            self.data.stats_calls[-1], ("dung01_group_bossrush02", "all", "all")
+        )
+
+    def test_range_and_potential_reach_the_distribution_read(self) -> None:
+        run(
+            self.service.character(
+                "洛茜", board="三位一体", time_range="7天", potential="零潜"
+            )
+        )
+        self.assertEqual(
+            self.data.stats_calls[-1], ("dung01_group_bossrush02", "7d", "0")
+        )
+
+        run(self.service.character("", board="全部", time_range="30d"))
+        self.assertEqual(self.data.stats_calls[-1], (None, "30d", "all"))
+
+    def test_an_impossible_potential_is_refused_with_the_available_tiers(self) -> None:
+        answer = run(self.service.character("洛茜", potential="满潜"))
+
+        self.assertIsNone(answer.image_path)
+        self.assertIn("不按具体潜能层数拆分", answer.text)
+
+    def test_a_four_star_with_a_board_gets_the_records_fielding_it(self) -> None:
+        # 黎风 is in the rosters but not in the six-star catalog.
+        answer = run(self.service.character("黎风", board="三位一体"))
+
+        self.assertEqual(answer.image_path, "/tmp/ranking.png")
+        self.assertIn("主C 为「黎风」", answer.text)
+
+    def test_a_boss_name_asked_as_a_character_points_at_the_board_tool(self) -> None:
+        answer = run(self.service.character("三位一体"))
+
+        self.assertIsNone(answer.image_path)
+        self.assertIn("是榜单或副本", answer.text)
+
+    def test_a_named_character_also_lists_its_partners(self) -> None:
+        answer = run(self.service.character("洛茜"))
+
+        self.assertIn("最常同队", answer.text)
+
+    def test_an_exact_nickname_beats_longer_ones_that_contain_it(self) -> None:
+        self.client.hits = [("usr_cpu", "CPU"), ("usr_cpu0", "CPU 0")]
+
+        answer = run(self.service.account("CPU"))
+
+        self.assertEqual(answer.image_path, "/tmp/account.png")
+        self.assertEqual(self.client.queries, ["CPU"])
+
+    def test_several_nicknames_are_listed_with_the_overflow_note(self) -> None:
+        self.client.hits = [("usr_a", "CPUa"), ("usr_b", "CPUb")]
+        self.client.has_more = True
+
+        answer = run(self.service.account("CPU"))
+
+        self.assertIsNone(answer.image_path)
+        self.assertIn("CPUa、CPUb", answer.text)
+        self.assertIn("还有更多同名结果", answer.text)
+
+    def test_an_unwatched_account_says_there_is_no_rank_history(self) -> None:
+        service = self._service(watcher=FakeWatcher(None))
+
+        answer = run(service.account("usr_1234567890abcdef"))
+
+        self.assertIn(facts.NO_RANK_HISTORY, answer.text)
+
+    def test_a_watched_account_gets_its_rank_changes(self) -> None:
+        history = AccountHistory(
+            account_id="usr_1234567890abcdef",
+            display_name="测试账号",
+            boards=(
+                BoardHistory(
+                    "dung01_group_bossrush01",
+                    "罗丹",
+                    "危境再现",
+                    points=(
+                        RankPoint("2026-08-01T00:00:00+08:00", 5),
+                        RankPoint("2026-08-05T00:00:00+08:00", 3),
+                    ),
+                ),
+            ),
+        )
+        service = self._service(watcher=FakeWatcher(history))
+
+        answer = run(service.account("usr_1234567890abcdef"))
+
+        self.assertIn("名次变化", answer.text)
+        self.assertIn("#5 → #3", answer.text)
+
+    def test_account_rows_carry_their_date_and_the_page_is_drawn(self) -> None:
+        answer = run(self.service.account("usr_1234567890abcdef"))
+
+        self.assertEqual(answer.image_path, "/tmp/account.png")
+        self.assertIn("2026-07-13", answer.text)
+
+
+class ToolErrorWordingTests(unittest.TestCase):
+    def test_upstream_codes_map_to_their_own_wording(self) -> None:
+        cases = (
+            (
+                ZmdLogsAPIError(404, "character_statistics_not_available", "x"),
+                messages.CRISIS_CONTRACT_NO_STATISTICS,
+            ),
+            (ZmdLogsAPIError(404, "boss_not_found", "x"), messages.BOARD_NOT_FOUND),
+            (ZmdLogsAPIError(404, "other", "x"), messages.PUBLIC_DATA_NOT_FOUND),
+            (ZmdLogsAPIError(429, "rate_limited", "x"), messages.RATE_LIMITED),
+            (ZmdLogsAPIError(500, "boom", "x"), messages.UPSTREAM_UNAVAILABLE),
+        )
+        for error, expected in cases:
+            with self.subTest(code=error.code):
+                self.assertEqual(tool_api_error_message(error), expected)

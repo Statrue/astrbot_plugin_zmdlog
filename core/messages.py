@@ -14,6 +14,8 @@ ACCOUNT_REFERENCE_NEEDED = (
     "请提供公开昵称（至少 2 个字符）、accountId 或 ZMDLogs 账号主页链接。"
 )
 BOARD_NOT_FOUND = "没有找到这个榜单，可能已下线或暂未公开。"
+PUBLIC_DATA_NOT_FOUND = "没有找到对应的公开数据。"
+RATE_LIMITED = "ZMDLogs 请求过于频繁，请稍后再试。"
 BATTLE_NOT_FOUND = "战报不存在、未公开或已删除。"
 BATTLE_LINK_NOT_FOUND = "链接对应的公开战报不存在、未公开或已删除。"
 CRISIS_CONTRACT_NO_STATISTICS = "危机合约不提供角色统计。"
@@ -57,3 +59,9 @@ def shorten(text: str, limit: int = ECHO_LIMIT) -> str:
     """Cut user text echoed in a reply so a huge message is never repeated."""
 
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def ambiguous_character(query: str, candidates) -> str:
+    """Several characters fit what was typed: name them, ask for the full one."""
+
+    return f"「{shorten(query)}」可能是：{' / '.join(candidates)}，请写全名。"

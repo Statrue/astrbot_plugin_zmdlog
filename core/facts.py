@@ -21,16 +21,27 @@ obeyed; the tool docstrings tell the model the same.
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
+from .characters import CharacterFilterScope, row_fields
 from .events import CHAMPION_CHANGE, NEW_RECORD, BoardActivity, RecordEvent
-from .loadout import group_skill_damage, skill_level_summary
+from .history import AccountHistory, trend_points
+from .loadout import (
+    group_skill_damage,
+    is_raw_item_name,
+    skill_level_summary,
+    suit_catalog_id,
+)
 from .models import (
     BattleDetailSummary,
+    BattleEquip,
     BattleExport,
+    BattleRosterEntry,
     BossRanking,
+    BossRankingRow,
     CharacterBossStatistics,
     CharacterStatistics,
+    HotBossCard,
     PublicUserRankings,
 )
 from .professions import normalize_profession
@@ -53,14 +64,8 @@ _TOP_DAMAGE_SOURCES = 3
 _TOP_BUFFS = 6
 _TOP_USAGE = 6
 _TOP_TEAMS = 5
-
-
-@dataclass(frozen=True, slots=True)
-class TeamUsage:
-    """How often one team, or one companion, appears in a set of records."""
-
-    label: str
-    count: int
+# Boards named in an overview past this many print their leader only.
+_OVERVIEW_RUNS = 3
 
 
 def format_board_ranking(
@@ -68,33 +73,53 @@ def format_board_ranking(
     *,
     limit: int = DEFAULT_ROW_LIMIT,
     character: str | None = None,
+    character_scope: CharacterFilterScope = CharacterFilterScope.ROSTER,
     element: str | None = None,
     elements: Mapping[str, str] | None = None,
+    profession: str | None = None,
+    since: datetime | None = None,
+    window_label: str = "",
+    events: tuple[RecordEvent, ...] = (),
 ) -> str:
     """The top runs of one board, and which characters that board runs.
 
-    ``character`` keeps only the rows fielding that name, which is how the
-    "带 X 能排第几" question is answered without claiming X caused the rank.
+    ``character`` keeps only the rows fielding that name (as main C when
+    ``character_scope`` says so), which is how "带 X 能排第几" is answered
+    without claiming X caused the rank. ``since`` keeps the records fought
+    inside a window and adds what the event log saw on this board in it.
     """
 
     rows = ranking.rows
+    filters = []
     if character:
         rows = tuple(
-            row
-            for row in rows
-            if any(
-                entry.character_name == character for entry in row.roster_entries
-            )
+            row for row in rows if row_fields(row, (character,), character_scope)
+        )
+        filters.append(
+            f"主C 为「{character}」"
+            if character_scope is CharacterFilterScope.MAIN
+            else f"阵容包含「{character}」"
         )
     if element:
         known = elements or {}
         rows = tuple(row for row in rows if known.get(row.character_name) == element)
-    lines = [f"榜单：{ranking.dungeon_name} · {ranking.boss_name}（DPS 口径）"]
-    filters = []
-    if character:
-        filters.append(f"阵容包含「{character}」")
-    if element:
         filters.append(f"主C 为{element}属性")
+    if profession:
+        rows = tuple(
+            row
+            for row in rows
+            if normalize_profession(row.character_profession or "") == profession
+        )
+        filters.append(f"主C 为{profession}")
+    if since is not None:
+        rows = tuple(
+            row
+            for row in rows
+            if (when := parse_timestamp(row.battle_end_at)) is not None
+            and when >= since
+        )
+        filters.append(f"{window_label}打出的记录（名次仍是全榜名次）")
+    lines = [f"榜单：{ranking.dungeon_name} · {ranking.boss_name}（DPS 口径）"]
     if filters:
         lines.append(
             f"筛选：{'，'.join(filters)}，{len(rows)} / {len(ranking.rows)} 条公开记录"
@@ -108,14 +133,24 @@ def format_board_ranking(
             else "这个榜目前没有公开记录。"
         )
         return _joined(lines)
+    lines.append(_duration_summary(rows))
+    if since is not None:
+        lines.extend(_board_window_events(events))
     lines.append("")
+    leader = ranking.rows[0]
     for row in rows[: _bounded(limit)]:
         team = "、".join(entry.character_name for entry in row.roster_entries)
+        gap = ""
+        if row.rank > 1 and row.duration_ms > leader.duration_ms:
+            gap = f" · 落后第一 {(row.duration_ms - leader.duration_ms) / 1000:.2f} 秒"
         lines.append(
             f"#{row.rank} {_duration(row.duration_ms)} · DPS {row.dps:,.0f}"
             f" · 主C {row.character_name} · {row.account_display_name}"
+            f" · {_date(row.battle_end_at)}{gap}"
         )
         lines.append(f"    阵容 {team} · battleId {row.battle_id}")
+    if len(rows) > _bounded(limit):
+        lines.append(f"（另有 {len(rows) - _bounded(limit)} 条未列出，图里有）")
     usage = _profession_usage(ranking)
     if usage:
         lines.append("")
@@ -137,23 +172,65 @@ def format_board_ranking(
     return _joined(lines)
 
 
-def format_board_teams(ranking: BossRanking, *, limit: int = _TOP_TEAMS) -> str:
-    """The team combinations this board's public records actually used."""
+def format_boards_overview(
+    cards: tuple[HotBossCard, ...],
+    *,
+    title: str,
+    runs_per_board: int = _OVERVIEW_RUNS,
+) -> str:
+    """The leaders of several boards at once, from the board list itself."""
 
-    teams = _team_counts(ranking)
-    lines = [
-        f"榜单：{ranking.dungeon_name} · {ranking.boss_name}",
-        f"公开记录 {len(ranking.rows)} 条，不同阵容 {len(teams)} 种",
-    ]
-    if not teams:
-        lines.append("这个榜目前没有公开记录。")
+    lines = [f"{title}：{len(cards)} 个榜单（DPS 口径，每榜最快的记录）"]
+    if not cards:
+        lines.append("目前没有公开榜单。")
         return _joined(lines)
     lines.append("")
-    for team, count in teams[:limit]:
-        lines.append(f"{count} 次 · {team}")
-    if len(teams) > limit:
-        lines.append(f"（另有 {len(teams) - limit} 种阵容各出现较少次数）")
+    for card in cards:
+        label = (
+            card.boss_name
+            if card.boss_name.startswith(card.dungeon_name.split(" ")[0])
+            else f"{card.dungeon_name} · {card.boss_name}"
+        )
+        runs = card.top_speed_runs[: max(1, runs_per_board)]
+        if not runs:
+            lines.append(f"{label}：暂无公开记录")
+            continue
+        for position, run in enumerate(runs, start=1):
+            prefix = f"{label}：" if position == 1 else "    "
+            lines.append(
+                f"{prefix}#{position} {_duration(run.duration_ms)}"
+                f" · 主C {run.character_name} · {run.uploader_nickname}"
+                f" · battleId {run.battle_id}"
+            )
     return _joined(lines)
+
+
+def _duration_summary(rows: tuple[BossRankingRow, ...]) -> str:
+    """最快 / 中位 / 平均 of the rows shown, so the model need not add up."""
+
+    durations = sorted(row.duration_ms for row in rows)
+    median = durations[len(durations) // 2]
+    mean = sum(durations) / len(durations)
+    return (
+        f"最快 {_duration(durations[0])} · 中位 {_duration(median)}"
+        f" · 平均 {_duration(int(mean))}（{len(rows)} 条）"
+    )
+
+
+def _board_window_events(events: tuple[RecordEvent, ...]) -> list[str]:
+    """What the event log saw on one board inside a window."""
+
+    changes = [event for event in events if event.kind == CHAMPION_CHANGE]
+    fresh = [event for event in events if event.kind == NEW_RECORD]
+    lines = [f"这段时间索引发现新上传 {len(fresh)} 条，第一名易主 {len(changes)} 次"]
+    for event in changes[:3]:
+        lines.append(
+            f"    {event.account_display_name}（主C {event.character_name}，"
+            f"{_duration(event.duration_ms)}）"
+            f"顶掉 {event.previous_account_display_name}"
+            f"（{_duration(event.previous_duration_ms)}）· battleId {event.battle_id}"
+        )
+    return lines
 
 
 def format_character_partners(
@@ -252,6 +329,7 @@ def format_battle(
     battle: BattleDetailSummary,
     *,
     export: BattleExport | None = None,
+    suits: Mapping[str, str] | None = None,
 ) -> str:
     """Everything one public battle recorded, already reduced to facts."""
 
@@ -271,12 +349,17 @@ def format_battle(
         )
         for participant in ordered:
             share = participant.total_damage / total
+            extra = ""
+            if participant.crit_rate is not None:
+                extra += f" · 暴击率 {participant.crit_rate:.0%}"
+            if participant.max_hit is not None:
+                extra += f" · 最大单次 {participant.max_hit:,}"
             lines.append(
                 f"    {participant.character_name}"
                 f" · DPS {participant.dps:,.0f}"
-                f" · 伤害占比 {share:.1%}"
+                f" · 伤害占比 {share:.1%}{extra}"
             )
-    roster = _roster_lines(battle)
+    roster = _roster_lines(battle, suits)
     if roster:
         lines.append("")
         lines.append("配装与养成：")
@@ -297,6 +380,11 @@ def format_battle(
             lines.append("")
             lines.append("施放次数：")
             lines.extend(casts)
+        opening = _opening_lines(export)
+        if opening:
+            lines.append("")
+            lines.append("开场顺序（每人前几个动作）：")
+            lines.extend(opening)
     elif not battle.roster:
         lines.append("")
         lines.append("这份战报由旧版客户端上传，没有记录阵容配装。")
@@ -309,6 +397,7 @@ def format_battle_comparison(
     *,
     label_a: str = "A",
     label_b: str = "B",
+    suits: Mapping[str, str] | None = None,
 ) -> str:
     """Two battles of the same boss, with the differences named.
 
@@ -353,7 +442,9 @@ def format_battle_comparison(
                 f"    {name} · {label_a} {dps_a[name]:,.0f}"
                 f" / {label_b} {dps_b[name]:,.0f}"
             )
-    gear = _gear_differences(first, second, label_a=label_a, label_b=label_b)
+    gear = _gear_differences(
+        first, second, label_a=label_a, label_b=label_b, suits=suits
+    )
     if gear:
         lines.append("")
         lines.append("配装差异：")
@@ -580,6 +671,10 @@ def format_character_tallies(
         f"冠军最多：{top_team.name} {top_team.first_places} 个榜；"
         f"当主C的冠军最多：{top_main.name} {top_main.first_places_as_main} 个榜。"
     )
+    lines.append(
+        f"上榜{noun} {len(tallies)} 个，其中有冠军的"
+        f" {sum(1 for t in tallies if t.first_places)} 个。"
+    )
     lines.append("")
     if profession is not None:
         # One class is a handful: list every member, zeros included.
@@ -709,7 +804,13 @@ def format_account_tallies(
         lines.append("读过的榜单里没有任何公开记录。")
         return _joined(lines)
     top = tallies[0]
+    most_records = max(tallies, key=lambda t: t.records)
     lines.append(f"冠军最多：{top.display_name} {top.first_places} 个榜。")
+    lines.append(
+        f"有公开记录的账号 {len(tallies)} 个，其中有冠军的"
+        f" {sum(1 for t in tallies if t.first_places)} 个；"
+        f"记录最多：{most_records.display_name} {most_records.records} 条。"
+    )
     lines.append("")
     shown, rest_note = _champions_cut(tallies, limit, "账号")
     for tally in shown:
@@ -728,13 +829,28 @@ def format_account_tallies(
     return _joined(lines)
 
 
+# The account tool's rows: past this the page carries the rest.
+ACCOUNT_ROW_LIMIT = 20
+NO_RANK_HISTORY = (
+    "名次变化：这个账号没被任何群关注，没有名次记录；"
+    "用 /zmdlog 关注 <昵称或accountId> 可以从下一轮检查起记录。"
+)
+
+
 def format_account(
     account: PublicUserRankings,
     *,
-    limit: int = MAX_ROW_LIMIT,
+    limit: int = ACCOUNT_ROW_LIMIT,
     habits: AccountTally | None = None,
+    since: datetime | None = None,
+    window_label: str = "",
 ) -> str:
-    """One public account's best record on each board."""
+    """One public account's best record on each board.
+
+    ``since`` keeps only the best records fought inside a window — the
+    endpoint carries one record per board, so this is "which of its bests
+    are recent", not every fight of the window.
+    """
 
     lines = [f"公开账号 {account.account_display_name}（{account.account_id}）"]
     if not account.rankings:
@@ -757,13 +873,73 @@ def format_account(
             )
     lines.append("")
     ordered = sorted(account.rankings, key=lambda row: row.rank)
+    if since is not None:
+        ordered = [
+            row
+            for row in ordered
+            if (when := parse_timestamp(row.battle_end_at)) is not None
+            and when >= since
+        ]
+        lines.append(
+            f"{window_label}打出的最好记录 {len(ordered)} 条"
+            "（每个榜只有一条最好记录，更早的最好记录不在其中）："
+        )
+        if not ordered:
+            lines.append("    没有")
+            return _joined(lines)
     for row in ordered[: _bounded(limit)]:
         team = "、".join(row.roster_summary) if row.roster_summary else "未记录"
         lines.append(
             f"#{row.rank} {row.dungeon_name} · {row.boss_name}"
             f" · {_duration(row.duration_ms)} · DPS {row.total_dps:,.0f}"
+            f" · {_date(row.battle_end_at)}"
         )
         lines.append(f"    阵容 {team} · battleId {row.battle_id}")
+    if len(ordered) > _bounded(limit):
+        lines.append(f"（另有 {len(ordered) - _bounded(limit)} 个榜未列出，图里有）")
+    return _joined(lines)
+
+
+def format_account_trend(
+    history: AccountHistory,
+    *,
+    since: datetime | None = None,
+    window_label: str = "",
+    last_checked: str | None = None,
+    limit: int = DEFAULT_ROW_LIMIT,
+) -> str:
+    """How a watched account's rank moved, per board, from the watch's trace.
+
+    Only accounts someone 关注'd have a trace, and a point is recorded only
+    when the rank moved, so "no change" is a real observation.
+    """
+
+    scope = window_label or "有记录以来"
+    checked = f"（最近检查 {_when(last_checked)}）" if last_checked else ""
+    lines = [f"名次变化（{scope}，来自名次通报的记录）{checked}"]
+    boards = []
+    for board in history.boards:
+        points = trend_points(board, start=since)
+        if not points:
+            continue
+        boards.append((points[-1].rank, board, points))
+    if not boards:
+        lines.append("    这段时间没有名次记录。")
+        return _joined(lines)
+    boards.sort(key=lambda item: (item[0], item[1].boss_name))
+    for current, board, points in boards[: _bounded(limit)]:
+        ranks = [point.rank for point in points]
+        moves = sum(1 for a, b in zip(ranks, ranks[1:], strict=False) if a != b)
+        if moves == 0:
+            lines.append(f"    {board.boss_name}：#{current}，没有变动")
+            continue
+        lines.append(
+            f"    {board.boss_name}：#{ranks[0]} → #{current}"
+            f"（最好 #{min(ranks)} · 最差 #{max(ranks)} · 变动 {moves} 次，"
+            f"最近一次 {_when(points[-1].checked_at)}）"
+        )
+    if len(boards) > _bounded(limit):
+        lines.append(f"    （另有 {len(boards) - _bounded(limit)} 个榜未列出）")
     return _joined(lines)
 
 
@@ -838,6 +1014,12 @@ def _when(value: str) -> str:
     return parsed.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
 
 
+def _date(value: str) -> str:
+    """The day of a stamp in the game's server time."""
+
+    return _when(value)[:10]
+
+
 def _stat(value: float | None) -> str:
     """Upstream leaves a quartile null when too few samples survive."""
 
@@ -875,7 +1057,9 @@ def _profession_usage(ranking: BossRanking) -> list[str]:
     return lines
 
 
-def _roster_lines(battle: BattleDetailSummary) -> list[str]:
+def _roster_lines(
+    battle: BattleDetailSummary, suits: Mapping[str, str] | None = None
+) -> list[str]:
     lines = []
     for entry in sorted(battle.roster, key=lambda item: item.slot):
         parts = [entry.character_name]
@@ -884,16 +1068,65 @@ def _roster_lines(battle: BattleDetailSummary) -> list[str]:
         if entry.character_potential is not None:
             parts.append(f"潜能{entry.character_potential}")
         if entry.weapon is not None:
-            weapon = entry.weapon.name
+            weapon = _weapon_name(entry)
             if entry.weapon.refine:
                 weapon += f"·精炼{entry.weapon.refine}"
             parts.append(weapon)
+        suit_summary = _suit_summary(entry, suits)
+        if suit_summary:
+            parts.append(f"套装 {suit_summary}")
         levels = skill_level_summary(entry)
         if levels:
             parts.append(
                 " ".join(f"{level.label}{level.level}" for level in levels)
             )
         lines.append("    " + " · ".join(parts))
+    return lines
+
+
+def _weapon_name(entry: BattleRosterEntry) -> str:
+    name = entry.weapon.name.strip() if entry.weapon is not None else ""
+    return name or "未知武器"
+
+
+def _suit_label(equip: BattleEquip, suits: Mapping[str, str] | None) -> str:
+    """The suit a piece belongs to, from the catalog first, upstream second."""
+
+    catalog_id = suit_catalog_id(equip.item_id)
+    name = (suits or {}).get(catalog_id, "") if catalog_id else ""
+    if not name and equip.suit_name:
+        name = equip.suit_name.strip()
+    if name:
+        return name
+    return "未收录" if is_raw_item_name(equip.piece_name, equip.item_id) else "散件"
+
+
+def _suit_summary(
+    entry: BattleRosterEntry, suits: Mapping[str, str] | None
+) -> str:
+    """险关×2 长息×2 — the four pieces counted by suit, most first."""
+
+    if not entry.equips:
+        return ""
+    counts: dict[str, int] = {}
+    for equip in entry.equips:
+        label = _suit_label(equip, suits)
+        counts[label] = counts.get(label, 0) + 1
+    return " ".join(f"{label}×{count}" for label, count in _ranked(counts))
+
+
+def _opening_lines(export: BattleExport, *, moves: int = 6) -> list[str]:
+    """Each character's first few moves in order, from the cast list."""
+
+    timeline = build_timeline(export)
+    lines = []
+    for lane in timeline.lanes:
+        steps = []
+        for event in lane.events[:moves]:
+            label = event.name if event.count == 1 else f"{event.name}×{event.count}"
+            steps.append(f"{event.start_ms / 1000:.1f}s {label}")
+        if steps:
+            lines.append(f"    {lane.character_name}：{' → '.join(steps)}")
     return lines
 
 
@@ -956,6 +1189,7 @@ def _gear_differences(
     *,
     label_a: str,
     label_b: str,
+    suits: Mapping[str, str] | None = None,
 ) -> list[str]:
     by_a = {entry.character_name: entry for entry in first.roster}
     by_b = {entry.character_name: entry for entry in second.roster}
@@ -968,8 +1202,8 @@ def _gear_differences(
                 f"潜能 {label_a}{left.character_potential}"
                 f"/{label_b}{right.character_potential}"
             )
-        weapon_a = left.weapon.name if left.weapon else None
-        weapon_b = right.weapon.name if right.weapon else None
+        weapon_a = _weapon_name(left) if left.weapon else None
+        weapon_b = _weapon_name(right) if right.weapon else None
         if weapon_a != weapon_b:
             differences.append(f"武器 {label_a}{weapon_a}/{label_b}{weapon_b}")
         elif left.weapon and right.weapon and left.weapon.refine != right.weapon.refine:
@@ -979,7 +1213,9 @@ def _gear_differences(
         items_a = sorted(item.item_id or "" for item in left.equips)
         items_b = sorted(item.item_id or "" for item in right.equips)
         if items_a != items_b:
-            differences.append("装备不同")
+            summary_a = _suit_summary(left, suits) or "未记录"
+            summary_b = _suit_summary(right, suits) or "未记录"
+            differences.append(f"装备 {label_a} {summary_a} / {label_b} {summary_b}")
         if differences:
             lines.append(f"    {name}：{'；'.join(differences)}")
     return lines or ["    两边同名角色的养成与装备一致。"]

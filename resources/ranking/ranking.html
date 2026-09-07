@@ -22,8 +22,11 @@
     {% if page.element_filter %}
     <span class="bm-filter">主 C {{ page.element_filter }}属性</span>
     {% endif %}
+    {% if page.profession_filter %}
+    <span class="bm-filter">主 C {{ page.profession_filter }}</span>
+    {% endif %}
     <span class="bm-count">
-      {% if page.character_filter or page.element_filter %}
+      {% if page.character_filter or page.element_filter or page.profession_filter %}
       筛选出 {{ page.filtered_count }} 条{% if page.rows|length < page.filtered_count %} · 展示前 {{ page.rows|length }} 名{% endif %} · 共 {{ page.row_count }} 条公开排名
       {% elif page.rows|length < page.row_count %}
       展示前 {{ page.rows|length }} 名 · 共 {{ page.row_count }} 条公开排名

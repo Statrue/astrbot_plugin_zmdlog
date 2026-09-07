@@ -13,6 +13,7 @@ from ..models import (
     BossRankingRow,
     HotBossCard,
 )
+from ..professions import normalize_profession
 from ..routing import (
     DEFAULT_RANKING_TOP,
     MAX_RANKING_TOP,
@@ -113,6 +114,8 @@ class RankingPage:
     character_filters: tuple[str, ...] = ()
     # Rows whose main C has this element, on top of the character filter.
     element_filter: str | None = None
+    # Rows whose main C has this profession, on top of the other filters.
+    profession_filter: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +236,7 @@ def build_ranking_page(
     character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
     element_filter: str | None = None,
     elements: Mapping[str, str] | None = None,
+    profession_filter: str | None = None,
 ) -> RankingPage:
     """Build the first public DPS rows in their upstream order.
 
@@ -276,6 +280,14 @@ def build_ranking_page(
             row
             for row in source_rows
             if known.get(row.character_name) == element_filter
+        )
+        filtered_count = len(source_rows)
+    if profession_filter is not None:
+        source_rows = tuple(
+            row
+            for row in source_rows
+            if normalize_profession(row.character_profession or "")
+            == profession_filter
         )
         filtered_count = len(source_rows)
     displayed_rows = source_rows[:display_limit]
@@ -336,6 +348,7 @@ def build_ranking_page(
         filtered_count=filtered_count,
         character_filters=filters,
         element_filter=element_filter,
+        profession_filter=profession_filter,
     )
 
 

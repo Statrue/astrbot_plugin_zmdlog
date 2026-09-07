@@ -36,6 +36,16 @@ _RANGE_ALIASES = {
 _RANGE_DAYS_RE = re.compile(r"^(?:最近|近|过去)?(\d{1,3})\s*(?:天|日|d)$")
 
 
+def parse_potential_text(text: str) -> str | None:
+    """``0`` / ``1-5`` / ``all`` for any accepted spelling; None otherwise."""
+
+    value = "".join(text.split())
+    folded = value.casefold()
+    if folded in STATS_POTENTIALS:
+        return folded
+    return _POTENTIAL_ALIASES.get(value)
+
+
 def parse_range_text(text: str) -> str | None:
     """``7d`` / ``14d`` / ``30d`` / ``all`` for any accepted spelling; None otherwise.
 
