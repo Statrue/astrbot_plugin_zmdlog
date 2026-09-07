@@ -284,6 +284,23 @@ class ProfessionUsage:
     entries: tuple[UsageEntry, ...]
 
 
+def profession_record_counts(ranking: BossRanking) -> dict[str, int]:
+    """How many of one board's records field each profession at all.
+
+    Upstream's per-board ``usagePercent`` is a share *within* one slot, so a
+    slot only one team in forty used still reads 100%. This is the
+    denominator that makes such a percentage safe to print.
+    """
+
+    counts: dict[str, int] = {}
+    for row in ranking.rows:
+        for profession in {
+            entry.profession for entry in row.roster_entries if entry.profession
+        }:
+            counts[profession] = counts.get(profession, 0) + 1
+    return counts
+
+
 def profession_usage(
     rankings: Iterable[BossRanking],
     *,

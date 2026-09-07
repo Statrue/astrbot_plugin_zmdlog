@@ -565,6 +565,25 @@ class ToolSurfaceTests(unittest.TestCase):
         self.assertIn("落后第一 1.00 秒", answer.text)
         self.assertIn("最快 ", answer.text)
 
+    def test_profession_shares_carry_the_records_that_field_the_slot(self) -> None:
+        # Upstream's percent is a share within one slot, so a slot one team
+        # in forty used still reads 100%; a model read that as "every team
+        # runs this character". The count is the denominator.
+        answer = run(self.service.board("三位一体"))
+
+        self.assertIn("分母是带这个位的记录数", answer.text)
+        self.assertIn("术士（5/5 条记录带）", answer.text)
+        self.assertNotIn("术士：", answer.text)
+
+    def test_no_character_leaves_the_page_unfiltered(self) -> None:
+        run(self.service.board("三位一体"))
+
+        kwargs = self.renderer.kwargs["ranking"]
+        self.assertIsNone(kwargs["character_filter"])
+        self.assertIs(
+            kwargs["character_filter_scope"], CharacterFilterScope.MAIN
+        )
+
     def test_a_profession_keeps_only_rows_led_by_that_class(self) -> None:
         answer = run(self.service.board("三位一体", profession="术师"))
 

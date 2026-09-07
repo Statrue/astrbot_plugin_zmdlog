@@ -214,6 +214,23 @@ class CharacterFilterPageTests(unittest.TestCase):
         self.assertIn("筛选出 1 条", html)
         self.assertIn("共 5 条公开排名", html)
 
+    def test_an_unfiltered_page_draws_no_filter_note(self) -> None:
+        # A scope passed without a filter used to render the roster-fallback
+        # note with the literal "None" in it.
+        renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+
+        html = renderer.render_ranking(
+            ranking,
+            query="q",
+            ranking_limit=10,
+            character_filter_scope=CharacterFilterScope.ROSTER,
+        )
+
+        self.assertNotIn("本榜没有以", html)
+        self.assertNotIn("None", html)
+        self.assertIn("5 条公开排名", html)
+
     def test_scope_prefers_the_main_c_and_falls_back_to_the_roster(self) -> None:
         ranking = parse_boss_ranking(ranking_payload_with_rows())
 

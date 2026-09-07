@@ -161,7 +161,7 @@ class ToolService:
             return await self._dungeon_overview(keyword, choice, cards)
         ranking = await self._data.get_boss_ranking(target)
         elements = await self._data.character_elements()
-        name, scope = "", CharacterFilterScope.ROSTER
+        name, scope = "", CharacterFilterScope.MAIN
         if character.strip():
             resolved = self._resolve_character(ranking, character)
             if isinstance(resolved, ToolAnswer):

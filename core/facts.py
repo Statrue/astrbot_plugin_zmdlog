@@ -51,6 +51,7 @@ from .standings import (
     CharacterTally,
     ProfessionUsage,
     TeamTally,
+    profession_record_counts,
 )
 from .telemetry import build_buff_coverage
 from .timeline import build_timeline
@@ -155,7 +156,10 @@ def format_board_ranking(
     usage = _profession_usage(ranking)
     if usage:
         lines.append("")
-        lines.append("全榜出场率（按职业位，上游统计）：")
+        lines.append(
+            "各职业位的角色占比（百分比的分母是带这个位的记录数，不是全部记录；"
+            "很多队伍不带某些位）："
+        )
         lines.extend(usage)
     if character:
         # The filtered rows above are every team fielding the character; this
@@ -1048,6 +1052,16 @@ def _duration(duration_ms: int) -> str:
 
 
 def _profession_usage(ranking: BossRanking) -> list[str]:
+    """Who fills each profession slot, and how many records field it at all.
+
+    Upstream's ``usagePercent`` is a share *within* one slot, so a slot only
+    one team in forty used still reads 100% — which a reader (or a model)
+    takes for "every team runs this character". The count in front is the
+    denominator that makes the percentage safe to quote.
+    """
+
+    fielding = profession_record_counts(ranking)
+    total = len(ranking.rows)
     lines = []
     for group in ranking.profession_groups:
         entries = [entry for entry in group.entries if entry.usage_percent > 0]
@@ -1057,8 +1071,10 @@ def _profession_usage(ranking: BossRanking) -> list[str]:
             f"{entry.character_name} {entry.usage_percent:.0f}%"
             for entry in entries[:_TOP_USAGE]
         )
-        lines.append(f"    {group.profession}：{shown}")
+        count = fielding.get(group.profession, 0)
+        lines.append(f"    {group.profession}（{count}/{total} 条记录带）：{shown}")
     return lines
+
 
 
 def _roster_lines(

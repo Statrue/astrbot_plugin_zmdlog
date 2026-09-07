@@ -36,11 +36,11 @@
     </span>
   </div>
 
-  {% if page.character_filter_scope == "roster" and page.character_filters|length > 1 %}
+  {% if page.character_filter and page.character_filter_scope == "roster" and page.character_filters|length > 1 %}
   <p class="board-fallback">
     只看阵容里同时带上「{{ page.character_filter }}」的队伍，共 {{ page.filtered_count }} 支。
   </p>
-  {% elif page.character_filter_scope == "roster" %}
+  {% elif page.character_filter and page.character_filter_scope == "roster" %}
   <p class="board-fallback">
     本榜没有以「{{ page.character_filter }}」为主 C 的公开记录，
     下面是阵容里带上它的 {{ page.filtered_count }} 支队伍。

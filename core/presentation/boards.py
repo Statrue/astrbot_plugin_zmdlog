@@ -19,6 +19,7 @@ from ..routing import (
     MAX_RANKING_TOP,
     MIN_RANKING_TOP,
 )
+from ..standings import profession_record_counts
 from .common import (
     _CRISIS_CONTRACT_BOSS_SLUG,
     PageHeader,
@@ -130,6 +131,9 @@ class ProfessionUsageView:
     profession: str
     entries: tuple[UsageEntryView, ...]
     hidden_count: int
+    # Records fielding this slot at all: the denominator behind the percents,
+    # which are shares within the slot, not shares of the board.
+    record_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,12 +390,14 @@ def build_roster_page(
     sample_rows = ranking.rows[:display_limit]
     sample_size = len(sample_rows)
 
+    fielding = profession_record_counts(ranking)
     profession_usage = []
     for group in ranking.profession_groups:
         entries = group.entries[:_MAX_USAGE_ENTRIES]
         peak = max((entry.usage_percent for entry in entries), default=0.0)
         profession_usage.append(
             ProfessionUsageView(
+                record_count=fielding.get(group.profession, 0),
                 profession=group.profession,
                 entries=tuple(
                     UsageEntryView(

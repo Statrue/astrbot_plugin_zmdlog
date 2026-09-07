@@ -5,13 +5,13 @@
 {% block content %}
 <div class="section-heading">
   <h2>职业位出场率</h2>
-  <span class="section-note">基于全部 {{ page.row_count }} 条公开排名 · 每个职业位内的占比</span>
+  <span class="section-note">基于全部 {{ page.row_count }} 条公开排名 · 括号是带这个位的记录数 · 百分比是该位内部的占比</span>
 </div>
 
 <section class="usage-grid" aria-label="职业位出场率">
   {% for group in page.profession_usage %}
   <div class="usage-column">
-    <h3 class="usage-title">{{ group.profession }}</h3>
+    <h3 class="usage-title">{{ group.profession }} <em>{{ group.record_count }}/{{ page.row_count }}</em></h3>
     {% if group.entries %}
     <ul class="usage-list">
       {% for entry in group.entries %}
