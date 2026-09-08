@@ -53,12 +53,10 @@
   border-top: 1px solid var(--line-soft);
 }
 
-.stats-row:nth-child(even) {
+/* The zebra stripe must not outrank the first place's tint: this file is
+   included after base.css, so equal specificity would let it win. */
+.stats-row:nth-child(even):not(.is-1) {
   background: var(--card-soft);
-}
-
-.stats-row--top {
-  background: linear-gradient(90deg, var(--yellow-tint), transparent 40%);
 }
 
 .stats-rank .ranking-position {

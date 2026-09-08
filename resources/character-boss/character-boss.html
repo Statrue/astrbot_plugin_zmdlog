@@ -50,7 +50,7 @@
     <span class="stats-head-max">最高</span>
   </div>
   {% for row in page.rows %}
-  <div class="stats-row stats-row--charboss{% if row.rank <= 3 %} stats-row--top{% endif %}">
+  <div class="stats-row stats-row--charboss rank-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
     <span class="charboss-rank{% if row.rank <= 3 %} charboss-rank--{{ row.rank }}{% endif %}">
       <b>#{{ row.rank }}</b><i>/ {{ row.ranked_character_count }}</i>
     </span>

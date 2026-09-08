@@ -683,18 +683,24 @@ body {
   position: relative;
 }
 
+/* Inset, not flush: a bar that runs into the row separators above and
+   below reads as a table border rather than as this row's mark. */
 .rank-row::before {
   content: "";
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 6px;
+  bottom: 6px;
   left: 0;
   width: 5px;
   background: var(--faint);
 }
 
+/* The card colour comes with the tint: this rule outranks a row family's
+   own `background: var(--card)`, so fading to bare `transparent` let the
+   page's paper show through the first-place row. */
 .rank-row.is-1 {
-  background: linear-gradient(90deg, var(--yellow-tint), transparent 42%);
+  background: linear-gradient(90deg, var(--yellow-tint), transparent 42%)
+    var(--card);
 }
 
 .rank-row.is-1::before { background: var(--action); }

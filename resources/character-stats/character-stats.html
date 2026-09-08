@@ -29,7 +29,7 @@
     <span class="stats-head-max">最高</span>
   </div>
   {% for row in page.rows %}
-  <div class="stats-row{% if row.rank <= 3 %} stats-row--top{% endif %}">
+  <div class="stats-row rank-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
     <span class="stats-rank"><span class="ranking-position">{{ row.rank }}</span></span>
     <span class="stats-char">
       <span class="avatar">
