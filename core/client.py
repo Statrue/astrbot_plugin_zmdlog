@@ -34,6 +34,9 @@ from .models import (
 )
 
 DEFAULT_API_BASE_URL = "https://zmdlogs.com"
+# Sent with every request so the site operator can tell this plugin apart and
+# name a version when something misbehaves.
+DEFAULT_USER_AGENT = "astrbot_plugin_zmdlog"
 DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 _BOSS_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 _MAX_REQUEST_ATTEMPTS = 2
@@ -100,6 +103,7 @@ class ZmdLogsClient:
         request_timeout_ms: int = DEFAULT_REQUEST_TIMEOUT_MS,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
+        user_agent: str = DEFAULT_USER_AGENT,
     ) -> None:
         base_url = _validate_base_url(api_base_url)
         timeout_seconds = _validate_timeout(request_timeout_ms) / 1000
@@ -111,7 +115,7 @@ class ZmdLogsClient:
             verify=_ssl_context(),
             headers={
                 "Accept": "application/json",
-                "User-Agent": "astrbot_plugin_zmdlog",
+                "User-Agent": user_agent,
             },
         )
 

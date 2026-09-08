@@ -35,6 +35,23 @@ class ZmdLogsClientTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(seen_user_agents[0].isascii())
 
+    async def test_the_user_agent_can_carry_the_plugin_version(self) -> None:
+        # The site operator reads it to name a version when asking for a change.
+        seen: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.headers["User-Agent"])
+            return httpx.Response(200, json=hot_bosses_payload())
+
+        client = ZmdLogsClient(
+            transport=httpx.MockTransport(handler),
+            user_agent="astrbot_plugin_zmdlog/9.9.9",
+        )
+        self.addAsyncCleanup(client.close)
+        await client.list_hot_bosses()
+
+        self.assertEqual(seen, ["astrbot_plugin_zmdlog/9.9.9"])
+
     async def test_hot_bosses_retries_one_5xx(self) -> None:
         calls = 0
 

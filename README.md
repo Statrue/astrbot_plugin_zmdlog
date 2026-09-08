@@ -207,8 +207,10 @@ python -m ruff check main.py core tests tools
 
 ## 📄 数据、许可与鸣谢
 
-- 只读取 ZMDLogs 已公开的榜单、账号成绩和战报，不处理登录凭据或私人记录；内容以上游为准。
-- [MIT License](LICENSE)。内嵌字体的许可见 [ASSETS.md](resources/common/ASSETS.md)。
+- **非官方项目。** 本插件是 [ZMDLogs](https://zmdlogs.com) 的第三方客户端，与 ZMDLogs 站方无从属关系，也与《明日方舟：终末地》的开发商上海鹰角网络无关。游戏名称、角色、头像等素材的版权归鹰角所有，本插件只在渲染时按公开地址引用，不在仓库内分发。
+- 只读取 ZMDLogs 已公开的榜单、账号成绩和战报，不处理登录凭据或私人记录；内容以上游为准。预览截图里的昵称与成绩都是当时榜单上的公开信息。
+- 请求量：稳态每分钟约 3 个请求（见[它是怎么工作的](#-它是怎么工作的)），User-Agent 标明了插件名与版本。若 ZMDLogs 站方希望调整频率或停用某项功能，请开 issue，我会照办。
+- [MIT License](LICENSE)，仅覆盖本仓库的代码与自绘素材。内嵌字体各有其许可，见 [ASSETS.md](resources/common/ASSETS.md)。
 - 感谢 [ZMDLogs](https://zmdlogs.com) 提供公开数据，[AstrBot](https://github.com/AstrBotDevs/AstrBot) 提供运行框架。
 
 <div align="center">

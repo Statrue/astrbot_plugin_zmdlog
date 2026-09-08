@@ -61,6 +61,7 @@ from .core.render import (
     LongImageRenderer,
     RenderError,
     TemplateConfigurationError,
+    read_plugin_version,
 )
 from .core.routing import (
     RouteKind,
@@ -100,6 +101,20 @@ _BATTLE_LINK_FILTER = (
 )
 
 
+def _user_agent() -> str:
+    """``astrbot_plugin_zmdlog/<version>``; the bare name if the manifest is odd.
+
+    Every request the plugin makes carries it, so the site it reads can see
+    which version is calling and ask for a change on a specific one.
+    """
+
+    try:
+        version = read_plugin_version(Path(__file__).parent / "metadata.yaml")
+    except Exception:  # pragma: no cover - a broken manifest must not stop load
+        return "astrbot_plugin_zmdlog"
+    return f"astrbot_plugin_zmdlog/{version}"
+
+
 def _agent_done_hook():
     """``filter.on_agent_done``: fires once, when the model has finished a turn.
 
@@ -128,6 +143,7 @@ class ZmdLogBotPlugin(Star):
         self.client = ZmdLogsClient(
             api_base_url=settings.api_base_url,
             request_timeout_ms=settings.request_timeout_ms,
+            user_agent=_user_agent(),
         )
         self.data_dir = self._plugin_data_dir()
         self.candidates = CandidateStore()
