@@ -342,6 +342,10 @@ class CharacterType:
     # ``professionName`` as the catalog spells it (术师 for the caster); "" when
     # the entry has none. ``professions.normalize_profession`` reads it.
     profession: str = ""
+    # ``icon``: the site-relative portrait path. The rankings carry one per
+    # roster entry, but a record on a board the index does not hold arrives
+    # as names alone, and this is where its face comes from.
+    icon_path: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -465,6 +469,7 @@ def parse_character_types(payload: Any) -> tuple[CharacterType, ...]:
         element = value.get("charTypeName")
         weapon = value.get("weaponTypeName")
         profession = value.get("professionName")
+        icon = value.get("icon")
         if not isinstance(name, str) or not isinstance(element, str):
             continue
         name, element = name.strip(), element.strip()
@@ -476,6 +481,7 @@ def parse_character_types(payload: Any) -> tuple[CharacterType, ...]:
                 element=element,
                 weapon_type=weapon.strip() if isinstance(weapon, str) else "",
                 profession=profession.strip() if isinstance(profession, str) else "",
+                icon_path=icon.strip() if isinstance(icon, str) else "",
             )
         )
     return tuple(types)

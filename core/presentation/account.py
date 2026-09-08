@@ -53,6 +53,7 @@ def build_account_page(
     rows_by_battle: Mapping[str, BossRankingRow] | None = None,
     listed_boards: Collection[str] | None = None,
     elements: Mapping[str, str] | None = None,
+    icons: Mapping[str, str] | None = None,
 ) -> AccountPage:
     """Build one exact public account's best-record overview.
 
@@ -105,6 +106,7 @@ def build_account_page(
                     row.roster_summary,
                     web_base_url=web_base_url,
                     elements=elements,
+                    icons=icons,
                 ),
                 contract_score=(
                     format_number(row.contract_tag_score)

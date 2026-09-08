@@ -381,6 +381,25 @@ class ZmdLogsDataSource:
         return {name: entry.element for name, entry in types.items()}
 
 
+    async def character_icons(self) -> dict[str, str]:
+        """Name to portrait path; empty when the catalog is unreachable.
+
+        Ranking rows carry a portrait per roster entry, but a record on a
+        board the index does not hold reaches a page as names alone. The
+        game-data catalog names the file for every character of every
+        rarity, so the face survives.
+        """
+
+        try:
+            types = await self.get_character_types()
+        except ZmdLogsClientError:
+            return {}
+        return {
+            name: entry.icon_path
+            for name, entry in types.items()
+            if entry.icon_path
+        }
+
     async def character_professions(self) -> dict[str, str]:
         """Name to profession as the catalog spells it; empty when unreachable."""
 

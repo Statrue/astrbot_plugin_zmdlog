@@ -546,18 +546,28 @@ def _build_roster(
     *,
     web_base_url: str | None,
     elements: Mapping[str, str] | None = None,
+    icons: Mapping[str, str] | None = None,
 ) -> tuple[RosterEntryView, ...]:
+    """The four faces of one record.
+
+    A ranking row names its roster and carries a portrait for each; a
+    record on a board the index does not hold arrives as names only, and
+    ``icons`` (the game-data catalog) is where those faces come from.
+    """
+
     known = elements or {}
+    portraits = icons or {}
+
+    def portrait(name: str, given: str | None) -> str | None:
+        return _safe_asset_url(given or portraits.get(name), base_url=web_base_url)
+
     if entries:
         return tuple(
             RosterEntryView(
                 character_name=entry.character_name,
                 profession=entry.profession,
                 character_initial=_initial(entry.character_name),
-                avatar_url=_safe_asset_url(
-                    entry.avatar_url,
-                    base_url=web_base_url,
-                ),
+                avatar_url=portrait(entry.character_name, entry.avatar_url),
                 element_key=element_key(known.get(entry.character_name)),
             )
             for entry in entries
@@ -567,7 +577,7 @@ def _build_roster(
             character_name=name,
             profession="",
             character_initial=_initial(name),
-            avatar_url=None,
+            avatar_url=portrait(name, None),
             element_key=element_key(known.get(name)),
         )
         for name in summary

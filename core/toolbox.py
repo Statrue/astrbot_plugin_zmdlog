@@ -741,6 +741,7 @@ class ToolService:
             row.battle_id for row in rankings.rankings
         )
         elements = await self._data.character_elements()
+        icons = await self._data.character_icons()
         image = await self._render(
             lambda renderer: renderer.render_account(
                 rankings,
@@ -749,6 +750,7 @@ class ToolService:
                 rows_by_battle=rows,
                 listed_boards=listed,
                 elements=elements,
+                icons=icons,
             )
         )
         return ToolAnswer(facts.join_sections(*parts), image).noted(range_note)

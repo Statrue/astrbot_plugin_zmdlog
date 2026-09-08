@@ -435,6 +435,7 @@ class TemplateRenderer:
         rows_by_battle: Mapping[str, BossRankingRow] | None = None,
         listed_boards: Collection[str] | None = None,
         elements: Mapping[str, str] | None = None,
+        icons: Mapping[str, str] | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_account_page(
@@ -444,6 +445,7 @@ class TemplateRenderer:
             rows_by_battle=rows_by_battle,
             listed_boards=listed_boards,
             elements=elements,
+            icons=icons,
         )
         return self._render(
             "account/account.html",

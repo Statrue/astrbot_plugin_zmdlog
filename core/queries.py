@@ -627,6 +627,7 @@ class QueryService:
             rows_by_battle=rows,
             listed_boards=listed,
             elements=await self._data.character_elements(),
+            icons=await self._data.character_icons(),
         )
         return Outcome(image_path=image_path)
 
