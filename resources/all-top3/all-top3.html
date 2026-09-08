@@ -1,5 +1,6 @@
 {% extends "common/base.html" %}
 {% from "common/top3-card.html" import render_top3_card %}
+{% from "common/top3-groups.html" import render_top3_groups %}
 
 {% block content %}
 <div class="section-heading">
@@ -8,9 +9,13 @@
     {{ page.dungeon_names|length }} 个标准副本 · {{ page.cards|length }} 个榜单
   </span>
 </div>
+{% if page.group_by_dungeon %}
+{{ render_top3_groups(page.card_groups) }}
+{% else %}
 <section class="top3-grid" aria-label="全部榜单前三名">
   {% for card in page.cards %}
   {{ render_top3_card(card) }}
   {% endfor %}
 </section>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,21 @@
+{% from "common/top3-card.html" import render_top3_card %}
+
+{# One section per dungeon: the name is the heading, so the cards inside
+   need not repeat it. #}
+{% macro render_top3_groups(groups) -%}
+<div class="dungeon-groups">
+  {% for group in groups %}
+  <section class="dungeon-group" aria-label="{{ group.dungeon_name }}榜单">
+    <div class="dungeon-group-heading">
+      <h3>{{ group.dungeon_name }}</h3>
+      <span>{{ group.cards|length }} 个榜单</span>
+    </div>
+    <div class="top3-grid dungeon-group-grid">
+      {% for card in group.cards %}
+      {{ render_top3_card(card, false) }}
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{%- endmacro %}

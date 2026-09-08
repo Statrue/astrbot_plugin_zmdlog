@@ -187,7 +187,10 @@ def build_all_top3_page(
         dungeon_names=_unique_dungeon_names(cards),
         cards=card_views,
         card_groups=_group_top_cards(card_views),
-        group_by_dungeon=False,
+        # Forty-nine cards in one run read as a wall; by dungeon they are
+        # ten labelled sections, and the name moves off every card onto
+        # the heading that already says it.
+        group_by_dungeon=True,
     )
 
 
