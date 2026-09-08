@@ -11,10 +11,12 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
 from functools import partial
+from html import unescape
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
 
+import httpx
 from jinja2 import (
     Environment,
     FileSystemLoader,
@@ -24,6 +26,7 @@ from jinja2 import (
 from markupsafe import Markup
 
 from .characters import CharacterFilterScope
+from .client import DEFAULT_USER_AGENT
 from .events import BoardActivity, RecordEvent
 from .help import build_help_page
 from .history import AccountHistory
@@ -632,6 +635,12 @@ _THUMBNAIL_ENDPOINT = "/_next/image"
 _THUMBNAIL_WIDTH = 128
 _THUMBNAIL_QUALITY = 75
 _THUMBNAIL_PATH_PREFIX = "/images/"
+# The capture fetches an image inside the route handler, and those fetches
+# do not overlap. Pulling the page's images together beforehand is what
+# keeps a slow link from costing one page-load per picture.
+_IMAGE_SRC_RE = re.compile(r'<img\b[^>]*?\ssrc="([^"]+)"', re.IGNORECASE)
+_PREFETCH_CONCURRENCY = 8
+_PREFETCH_TIMEOUT_SECONDS = 10.0
 _ASSET_CACHE_TTL_SECONDS = 30 * 24 * 3600.0
 _ASSET_CACHE_MAX_TOTAL_BYTES = 32 * 1024 * 1024
 _ASSET_CACHE_MAX_ITEM_BYTES = 2 * 1024 * 1024
@@ -780,6 +789,7 @@ class LongImageRenderer:
         )
         self._playwright: Any = None
         self._browser: Any = None
+        self._image_client: Any = None
         self._launch_lock = asyncio.Lock()
         self._render_semaphore = asyncio.Semaphore(
             _positive_integer(
@@ -875,6 +885,11 @@ class LongImageRenderer:
         timeout already bounds every Playwright call inside it.
         """
 
+        # Before the queue, so a slow download never holds a render slot.
+        try:
+            await self._prefetch_images(html)
+        except Exception:  # pragma: no cover - the route handler still fetches
+            pass
         if self._queued_renders >= self.max_queued_renders:
             # Answering "try again" now beats a reply that arrives after the
             # reader has stopped waiting for it.
@@ -1073,6 +1088,84 @@ class LongImageRenderer:
                 self._browser = None
                 raise RenderError("Playwright Chromium is unavailable") from exc
 
+    async def _prefetch_images(self, html: str) -> None:
+        """Fill the asset cache with this page's images, all at once.
+
+        During capture each image is fetched inside the route handler, and
+        those fetches do not overlap: where one image takes a second, a
+        dozen avatars cannot all finish inside the settle budget and the
+        unfinished ones are dropped — which is why a page drawn on a slow
+        host came back with initials where portraits belong, while the
+        same page rendered here was fine. Fetched together they cost about
+        one image's time, and the capture then reads them from memory.
+
+        Best effort throughout: anything not prefetched is fetched by the
+        route handler exactly as before, and only that handler decides
+        what a capture is allowed to load.
+        """
+
+        targets: list[tuple[str, str, str]] = []
+        seen: set[str] = set()
+        for match in _IMAGE_SRC_RE.finditer(html):
+            url = unescape(match.group(1))
+            if url in seen:
+                continue
+            seen.add(url)
+            parsed = urlsplit(url)
+            origin = f"{parsed.scheme.casefold()}://{parsed.netloc.casefold()}"
+            if origin not in self.allowed_image_origins:
+                continue
+            if self._asset_cache.get(url) is not None:
+                continue
+            targets.append((url, origin, parsed.path))
+        if not targets:
+            return
+        semaphore = asyncio.Semaphore(_PREFETCH_CONCURRENCY)
+
+        async def one(url: str, origin: str, path: str) -> None:
+            async with semaphore:
+                for candidate in (_thumbnail_url(origin, path), url):
+                    if candidate is None:
+                        continue
+                    fetched = await self._fetch_image(candidate)
+                    if fetched is not None:
+                        content_type, body = fetched
+                        self._asset_cache.put(
+                            url,
+                            status=200,
+                            content_type=content_type,
+                            body=body,
+                        )
+                        return
+
+        await asyncio.gather(
+            *(one(*target) for target in targets), return_exceptions=True
+        )
+
+    async def _fetch_image(self, url: str) -> tuple[str, bytes] | None:
+        """One image over HTTP, or None when it could not be read.
+
+        Redirects are never followed: an allowed origin redirecting
+        elsewhere is the very thing the capture-time gate refuses.
+        """
+
+        if self._image_client is None:
+            self._image_client = httpx.AsyncClient(
+                follow_redirects=False,
+                timeout=_PREFETCH_TIMEOUT_SECONDS,
+                headers={"User-Agent": DEFAULT_USER_AGENT},
+            )
+        try:
+            response = await self._image_client.get(url)
+        except Exception:
+            return None
+        if response.status_code != 200:
+            return None
+        return (
+            response.headers.get("content-type", "application/octet-stream"),
+            response.content,
+        )
+
     async def _route_asset_request(self, route) -> None:
         request = route.request
         parsed = urlsplit(request.url)
@@ -1204,6 +1297,12 @@ class LongImageRenderer:
         return metrics
 
     async def close(self) -> None:
+        if self._image_client is not None:
+            client, self._image_client = self._image_client, None
+            try:
+                await client.aclose()
+            except Exception:
+                pass
         cleanup_task = self._cleanup_task
         self._cleanup_task = None
         if cleanup_task is not None:

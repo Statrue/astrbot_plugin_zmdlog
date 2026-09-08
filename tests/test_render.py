@@ -607,6 +607,102 @@ class AssetRoutingTests(unittest.TestCase):
             f"{self.ORIGIN}/_next/image?url={quote(self.PATH, safe='')}&w=128&q=75"
         )
 
+    def test_a_pages_images_are_fetched_before_the_capture(self) -> None:
+        # One image per route-handler fetch, and those do not overlap: on a
+        # link where an image takes a second, a dozen avatars cannot finish
+        # inside the settle budget and come out as initials. Prefetching
+        # them together is what keeps that off a slow host.
+        renderer = self._renderer()
+        other = "/images/character/charremoteicon/icon_chr_0028.png"
+        renderer._asset_cache.put(
+            self.ORIGIN + other,
+            status=200,
+            content_type="image/png",
+            body=b"already here",
+        )
+        asked: list[str] = []
+
+        async def fetch(url):
+            asked.append(url)
+            return "image/png", b"prefetched"
+
+        renderer._fetch_image = fetch
+        html = (
+            f'<img src="{self.ORIGIN}{self.PATH}" alt="">'
+            f'<img src="{self.ORIGIN}{self.PATH}" alt="">'
+            f'<img src="{self.ORIGIN}{other}" alt="">'
+            '<img src="https://evil.example/x.png" alt="">'
+        )
+
+        asyncio.run(renderer._prefetch_images(html))
+
+        # The resized copy, once for the repeated image; the cached one and
+        # the foreign origin are never asked for.
+        self.assertEqual(asked, [self._thumb()])
+        cached = renderer._asset_cache.get(self.ORIGIN + self.PATH)
+        self.assertEqual(cached.body, b"prefetched")
+        self.assertEqual(
+            renderer._asset_cache.get(self.ORIGIN + other).body, b"already here"
+        )
+
+    def test_a_prefetched_image_costs_the_capture_no_request(self) -> None:
+        renderer = self._renderer()
+
+        async def fetch(url):
+            return "image/png", b"prefetched"
+
+        renderer._fetch_image = fetch
+        asyncio.run(
+            renderer._prefetch_images(f'<img src="{self.ORIGIN}{self.PATH}">')
+        )
+        route = self.FakeRoute(self.FakeRequest(self.ORIGIN + self.PATH), {})
+
+        asyncio.run(renderer._route_asset_request(route))
+
+        self.assertEqual(route.fetched, [])
+        self.assertEqual(route.fulfilled, (200, "image/png", b"prefetched"))
+
+    def test_prefetch_keeps_the_original_when_there_is_no_resized_copy(self) -> None:
+        renderer = self._renderer()
+        asked: list[str] = []
+
+        async def fetch(url):
+            asked.append(url)
+            if url == self._thumb():
+                return None
+            return "image/png", b"full size"
+
+        renderer._fetch_image = fetch
+
+        asyncio.run(
+            renderer._prefetch_images(f'<img src="{self.ORIGIN}{self.PATH}">')
+        )
+
+        self.assertEqual(asked, [self._thumb(), self.ORIGIN + self.PATH])
+        self.assertEqual(
+            renderer._asset_cache.get(self.ORIGIN + self.PATH).body, b"full size"
+        )
+
+    def test_an_unreachable_image_is_left_to_the_route_handler(self) -> None:
+        renderer = self._renderer()
+
+        async def fetch(url):
+            return None
+
+        renderer._fetch_image = fetch
+
+        asyncio.run(
+            renderer._prefetch_images(f'<img src="{self.ORIGIN}{self.PATH}">')
+        )
+
+        self.assertIsNone(renderer._asset_cache.get(self.ORIGIN + self.PATH))
+        route = self.FakeRoute(
+            self.FakeRequest(self.ORIGIN + self.PATH),
+            {self._thumb(): self.FakeResponse(200, b"late")},
+        )
+        asyncio.run(renderer._route_asset_request(route))
+        self.assertEqual(route.fulfilled, (200, "image/png", b"late"))
+
     def test_a_site_image_is_fetched_resized(self) -> None:
         # Upstream portraits are about 1 MB each; a page of them cannot load
         # inside the capture's image budget.
