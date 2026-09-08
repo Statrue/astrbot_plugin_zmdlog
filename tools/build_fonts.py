@@ -8,8 +8,9 @@ Development tool only (not used at runtime). Requires ``fonttools`` and
 
 Source files expected in the input directory:
 
-    MiSans-Heavy.ttf, MiSans-Bold.ttf, MiSans-Regular.ttf
-        https://hyperos.mi.com/font  (MiSans, free for commercial use)
+    NotoSansSC-Black.otf, NotoSansSC-Bold.otf, NotoSansSC-Regular.otf
+        https://github.com/notofonts/noto-cjk  (Sans/SubsetOTF/SC,
+        SIL Open Font License 1.1 — subsetting and redistribution allowed)
     Barlow-Bold.ttf, Barlow-SemiBold.ttf, Barlow-Medium.ttf,
     BarlowSemiCondensed-ExtraBold.ttf
         https://github.com/jpt/barlow  (SIL Open Font License 1.1)
@@ -32,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "resources" / "common" / "fonts"
 
 LATIN_EXTRA = "×▸»«※—–·°‰•“”‘’…、，。：；！？（）【】《》〈〉「」［］"
-CJK_FONTS = ("MiSans-Heavy", "MiSans-Bold", "MiSans-Regular")
+CJK_FONTS = ("NotoSansSC-Black", "NotoSansSC-Bold", "NotoSansSC-Regular")
 LATIN_FONTS = (
     "Barlow-Bold",
     "Barlow-SemiBold",
@@ -69,7 +70,14 @@ def build(source_dir: Path) -> None:
     jobs = [(name, cjk) for name in CJK_FONTS]
     jobs += [(name, latin) for name in LATIN_FONTS]
     for name, chars in jobs:
-        source = source_dir / f"{name}.ttf"
+        source = next(
+            (
+                candidate
+                for suffix in (".otf", ".ttf")
+                if (candidate := source_dir / f"{name}{suffix}").is_file()
+            ),
+            source_dir / f"{name}.ttf",
+        )
         if not source.is_file():
             raise SystemExit(f"missing source font: {source}")
         text_file = OUTPUT_DIR / f".{name}.txt"

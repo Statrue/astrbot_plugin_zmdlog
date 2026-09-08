@@ -1280,9 +1280,9 @@ def _load_background_data_url(background_path: Path) -> str:
 # Subset web fonts built by tools/build_fonts.py; missing files simply fall
 # back to the system font stack declared in base.css.
 _FONT_FACES = (
-    ("MiSans-Heavy.woff2", "MiSans", 900),
-    ("MiSans-Bold.woff2", "MiSans", 700),
-    ("MiSans-Regular.woff2", "MiSans", 400),
+    ("NotoSansSC-Black.woff2", "Noto Sans SC", 900),
+    ("NotoSansSC-Bold.woff2", "Noto Sans SC", 700),
+    ("NotoSansSC-Regular.woff2", "Noto Sans SC", 400),
     ("Barlow-Bold.woff2", "Barlow", 700),
     ("Barlow-SemiBold.woff2", "Barlow", 600),
     ("Barlow-Medium.woff2", "Barlow", 500),

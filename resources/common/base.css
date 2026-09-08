@@ -52,7 +52,7 @@
   --el-natural: #74d66b;
   --el-pulse: #f5cf4e;
   --on-dark-muted: #9d9d96;
-  --font-cjk: "MiSans", "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC",
+  --font-cjk: "Noto Sans SC", "Source Han Sans SC", "PingFang SC",
     "Microsoft YaHei", sans-serif;
   --font-body: "Barlow", var(--font-cjk);
   --font-num: "Barlow Semi Condensed", "Barlow", var(--font-cjk);

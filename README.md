@@ -65,7 +65,7 @@ docker restart astrbot
 更新：`git pull --ff-only` 后重启 AstrBot；`requirements.txt` 有变化时先重新 `pip install`。
 
 > 没装 Chromium 时插件会退回 AstrBot 自带的文转图服务（`fallback_to_astrbot_renderer`），能用，但样式和清晰度以内置 Chromium 为准。
-> 渲染字体（MiSans / Barlow 子集）已内嵌；昵称里的生僻字会回退到系统字体，Docker 环境建议装一套中文字体（如 `fonts-noto-cjk`）。
+> 渲染字体（Noto Sans SC / Barlow 子集，均为 SIL OFL 1.1）已内嵌；昵称里的生僻字会回退到系统字体，Docker 环境建议装一套中文字体（如 `fonts-noto-cjk`）。
 
 ## 🚀 快速开始
 

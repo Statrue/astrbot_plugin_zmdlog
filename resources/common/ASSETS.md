@@ -11,16 +11,17 @@
 
 | 文件 | 来源 | 许可 | 许可原文 |
 | --- | --- | --- | --- |
-| `MiSans-Heavy.woff2` / `MiSans-Bold.woff2` / `MiSans-Regular.woff2` | 小米 MiSans（https://hyperos.mi.com/font） | MiSans 字体知识产权许可协议 | [MiSans-NOTICE.md](fonts/MiSans-NOTICE.md) |
+| `NotoSansSC-Black.woff2` / `NotoSansSC-Bold.woff2` / `NotoSansSC-Regular.woff2` | Noto Sans SC / 思源黑体（https://github.com/notofonts/noto-cjk 的 `Sans/SubsetOTF/SC`） | SIL Open Font License 1.1 | [NotoSansSC-OFL.txt](fonts/NotoSansSC-OFL.txt) |
 | `Barlow-*.woff2` / `BarlowSemiCondensed-ExtraBold.woff2` | Barlow by Jeremy Tribby（https://github.com/jpt/barlow） | SIL Open Font License 1.1 | [Barlow-OFL.txt](fonts/Barlow-OFL.txt) |
 
-OFL 要求许可原文随字体文件一起分发，因此 `Barlow-OFL.txt` 与字体放在同一目录。
+两份 OFL 原文与字体放在同一目录，这是 OFL 明文要求的分发方式。
 
-**MiSans 待办**：其协议写明「不得对字体或其任何单独组件进行改编或二次开发」
-「不得单独将字体或其组件对外……进一步分发字体软件或其任何副本」。仓库里的
-MiSans 是子集化后的副本，公开分发是否越界没有把握，计划换成 SIL OFL 授权、
-明确允许子集化与再分发的中文字体（如 Noto Sans SC / 思源黑体），换完这三个
-文件即可从仓库移除。渲染出的图片是「使用字体创作的作品」，协议明确不受限制。
+**为什么不是 MiSans**：0.12.0 之前中文用的是子集化的 MiSans。它的协议写明
+「不得对字体或其任何单独组件进行改编或二次开发」「不得单独将字体或其组件
+对外……进一步分发字体软件或其任何副本」，而仓库里放的正是子集化后的副本，
+公开仓库即构成再分发。换成 OFL 字体后这两条都不再适用：OFL 明确允许子集化
+与再分发，只要求随附许可原文。字形差别很小（Noto 略宽、笔画收尾更圆），
+版面、行高、换行都没有变化。
 
 不在子集内的字符（生僻字、日文假名等）由 `base.css` 中的系统字体栈回退，因此部署环境仍建议安装一套中文字体（如 Noto Sans CJK）。
 

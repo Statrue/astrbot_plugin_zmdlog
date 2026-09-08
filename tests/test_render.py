@@ -760,7 +760,7 @@ class FontDeliveryTests(unittest.IsolatedAsyncioTestCase):
         linked = self.templates.render_help(command_prefix="/", embed_fonts=False)
         embedded = self.templates.render_help(command_prefix="/")
 
-        self.assertIn(f"{FONT_ORIGIN}/MiSans-Regular.woff2", linked)
+        self.assertIn(f"{FONT_ORIGIN}/NotoSansSC-Regular.woff2", linked)
         self.assertNotIn("data:font", linked)
         self.assertIn("data:font/woff2;base64,", embedded)
         self.assertNotIn(FONT_ORIGIN, embedded)
@@ -789,12 +789,12 @@ class FontDeliveryTests(unittest.IsolatedAsyncioTestCase):
             self.root, allowed_image_origins=("https://zmdlogs.com",)
         )
 
-        known = FakeRoute(f"{FONT_ORIGIN}/MiSans-Regular.woff2")
+        known = FakeRoute(f"{FONT_ORIGIN}/NotoSansSC-Regular.woff2")
         await renderer._route_asset_request(known)
         self.assertIsNotNone(known.fulfilled)
         self.assertEqual(
             known.fulfilled["body"],
-            renderer.templates.font_files["MiSans-Regular.woff2"],
+            renderer.templates.font_files["NotoSansSC-Regular.woff2"],
         )
 
         unknown = FakeRoute(f"{FONT_ORIGIN}/other.woff2")
@@ -802,7 +802,7 @@ class FontDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(unknown.aborted)
 
         # Only the reserved origin serves fonts; the image origins stay images.
-        elsewhere = FakeRoute("https://zmdlogs.com/MiSans-Regular.woff2")
+        elsewhere = FakeRoute("https://zmdlogs.com/NotoSansSC-Regular.woff2")
         await renderer._route_asset_request(elsewhere)
         self.assertTrue(elsewhere.aborted)
         await renderer.close()
