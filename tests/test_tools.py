@@ -337,7 +337,7 @@ class ToolServiceTests(unittest.TestCase):
         self.assertIn("自然属性角色", champions.text)
         self.assertIn(lead, champions.text)
         self.assertIsNone(nobody.image_path)
-        self.assertIn("没有主C 为电磁属性", nobody.text)
+        self.assertIn("没有主 C 为电磁属性", nobody.text)
         self.assertIn("不是属性", nonsense.text)
 
     def test_a_profession_lists_the_whole_class_with_its_zeros(self) -> None:

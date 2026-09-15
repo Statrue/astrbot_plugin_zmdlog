@@ -25,11 +25,8 @@ from datetime import UTC, datetime
 from . import facts, messages
 from .candidates import MAX_CANDIDATES
 from .characters import (
-    CharacterFilterScope,
     CharacterResolutionStatus,
     account_roster_names,
-    pick_character_filter_scope,
-    ranking_character_names,
     resolve_character_name,
     resolve_standing_names,
     split_character_names,
@@ -59,14 +56,19 @@ from .matcher import (
     fold_text,
 )
 from .messages import shorten
-from .models import BossRanking, HotBossCard
+from .models import HotBossCard
 from .professions import PROFESSIONS, normalize_profession
 from .rank_watch import RankWatcher
 from .recipes import (
     IndexSnapshot,
     index_snapshot,
+    prepare_boards_overview,
     prepare_champions,
+    prepare_character_boss,
+    prepare_character_stats,
+    prepare_dungeon_overview,
     prepare_player_champions,
+    prepare_ranking,
     prepare_records,
     prepare_standings,
 )
@@ -160,36 +162,19 @@ class ToolService:
             choice, cards = target
             return await self._dungeon_overview(keyword, choice, cards)
         ranking = await self._data.get_boss_ranking(target)
-        elements = await self._data.character_elements(
-            names=ranking_character_names(ranking)
+        limit = max(1, min(limit, facts.MAX_ROW_LIMIT))
+        recipe = await prepare_ranking(
+            self._data,
+            ranking,
+            query=keyword,
+            web_base_url=self._web_base_url,
+            ranking_limit=max(limit, facts.DEFAULT_ROW_LIMIT),
+            character_filter=character or None,
+            element_filter=wanted or None,
+            profession_filter=role or None,
         )
-        name, scope = "", CharacterFilterScope.MAIN
-        if character.strip():
-            resolved = self._resolve_character(ranking, character)
-            if isinstance(resolved, ToolAnswer):
-                return resolved
-            name = resolved
-            # Main-C rows when there are any, the whole roster otherwise —
-            # the same choice the command makes, so page and text agree.
-            scope = pick_character_filter_scope(ranking, name)
-        if wanted:
-            if not elements:
-                return ToolAnswer(
-                    "角色属性目录暂时读不到，无法按属性筛选，请稍后再试。"
-                )
-            if not any(
-                elements.get(row.character_name) == wanted for row in ranking.rows
-            ):
-                return ToolAnswer(
-                    f"「{ranking.boss_name}」的公开记录里没有主C 为{wanted}属性的队伍。"
-                )
-        if role and not any(
-            normalize_profession(row.character_profession or "") == role
-            for row in ranking.rows
-        ):
-            return ToolAnswer(
-                f"「{ranking.boss_name}」的公开记录里没有主C 为{role}的队伍。"
-            )
+        if isinstance(recipe, str):
+            return ToolAnswer(recipe)
         since = window_start(span, now=datetime.now(UTC))
         events = ()
         if since is not None:
@@ -198,32 +183,19 @@ class ToolService:
                 for event in self._data.event_log.recent(since=since)
                 if event.boss_slug == ranking.boss_slug
             )
-        limit = max(1, min(limit, facts.MAX_ROW_LIMIT))
         text = facts.format_board_ranking(
             ranking,
             limit=limit,
-            character=name or None,
-            character_scope=scope,
+            character=recipe.character_filter,
+            character_scope=recipe.character_filter_scope,
             element=wanted or None,
-            elements=elements,
+            elements=recipe.elements,
             profession=role or None,
             since=since,
             window_label=window_label(span),
             events=events,
         )
-        image = await self._render(
-            lambda renderer: renderer.render_ranking(
-                ranking,
-                query=keyword,
-                ranking_limit=max(limit, facts.DEFAULT_ROW_LIMIT),
-                web_base_url=self._web_base_url,
-                character_filter=(name,) if name else None,
-                character_filter_scope=scope,
-                element_filter=wanted or None,
-                profession_filter=role or None,
-                elements=elements,
-            )
-        )
+        image = await self._render(recipe.draw)
         return ToolAnswer(text, image).noted(range_note)
 
     async def _records(self, time_range: str) -> ToolAnswer:
@@ -247,15 +219,13 @@ class ToolService:
     async def _boards_overview(self, keyword: str) -> ToolAnswer:
         """Every board's first place, from the board list itself."""
 
-        cards = await self._data.list_hot_bosses()
+        recipe = await prepare_boards_overview(
+            self._data, query=keyword, web_base_url=self._web_base_url
+        )
         text = facts.format_boards_overview(
-            cards, title="全部公开榜单", runs_per_board=1
+            recipe.cards, title="全部公开榜单", runs_per_board=1
         )
-        image = await self._render(
-            lambda renderer: renderer.render_all_top3(
-                cards, query=keyword, web_base_url=self._web_base_url
-            )
-        )
+        image = await self._render(recipe.draw)
         return ToolAnswer(text, image)
 
     async def _dungeon_overview(
@@ -266,14 +236,13 @@ class ToolService:
     ) -> ToolAnswer:
         """The top three of every board of one dungeon or phase."""
 
+        recipe = prepare_dungeon_overview(
+            choice, cards, query=keyword, web_base_url=self._web_base_url
+        )
         text = facts.format_boards_overview(
-            cards, title=choice.target.name, runs_per_board=3
+            recipe.cards, title=choice.target.name, runs_per_board=3
         )
-        image = await self._render(
-            lambda renderer: renderer.render_dungeon_top3(
-                choice, cards, query=keyword, web_base_url=self._web_base_url
-            )
-        )
+        image = await self._render(recipe.draw)
         return ToolAnswer(text, image)
 
     # --- battles ----------------------------------------------------------------
@@ -413,6 +382,8 @@ class ToolService:
             query=resolution.name,
             web_base_url=self._web_base_url,
         )
+        if isinstance(recipe, str):
+            return ToolAnswer(recipe)
         key = await self._catalog_key(resolution.name)
         # The distribution is an upstream read of several seconds and the
         # render about one; they need nothing from each other, so they overlap.
@@ -449,9 +420,8 @@ class ToolService:
             query=" ".join(names),
             web_base_url=self._web_base_url,
         )
-        refusal = recipe.refusal()
-        if refusal is not None:
-            return ToolAnswer(refusal)
+        if isinstance(recipe, str):
+            return ToolAnswer(recipe)
         image = await self._render(recipe.draw)
         text = facts.format_character_standings(
             recipe.standings, age_seconds=recipe.age_seconds
@@ -569,15 +539,16 @@ class ToolService:
                 choice, _cards = target
                 return _dungeon_statistics_refusal(board, choice)
             slug, query = target, board
-        stats = await self._data.get_character_statistics(
-            slug, time_range=span, potential=potential
+        recipe = await prepare_character_stats(
+            self._data,
+            slug,
+            time_range=span,
+            potential=potential,
+            query=query,
+            web_base_url=self._web_base_url,
         )
-        text = facts.format_character_statistics(stats)
-        image = await self._render(
-            lambda renderer: renderer.render_character_stats(
-                stats, query=query, web_base_url=self._web_base_url
-            )
-        )
+        text = facts.format_character_statistics(recipe.stats)
+        image = await self._render(recipe.draw)
         return ToolAnswer(text, image)
 
     async def _character_on_board(
@@ -596,15 +567,16 @@ class ToolService:
         if not isinstance(target, str):
             choice, _cards = target
             return _dungeon_statistics_refusal(board, choice)
-        stats = await self._data.get_character_statistics(
-            target, time_range=span, potential=potential
+        recipe = await prepare_character_stats(
+            self._data,
+            target,
+            time_range=span,
+            potential=potential,
+            query=board,
+            web_base_url=self._web_base_url,
         )
-        text = facts.format_character_statistics(stats, character=catalog_name)
-        image = await self._render(
-            lambda renderer: renderer.render_character_stats(
-                stats, query=board, web_base_url=self._web_base_url
-            )
-        )
+        text = facts.format_character_statistics(recipe.stats, character=catalog_name)
+        image = await self._render(recipe.draw)
         return ToolAnswer(text, image)
 
     async def _character_distribution_only(
@@ -618,15 +590,16 @@ class ToolService:
         if catalog_name is None:
             return await self._not_a_character(name)
         key = await self._catalog_key(catalog_name)
-        stats = await self._data.get_character_boss_statistics(
-            key, time_range=span, potential=potential
+        recipe = await prepare_character_boss(
+            self._data,
+            key,
+            time_range=span,
+            potential=potential,
+            query=catalog_name,
+            web_base_url=self._web_base_url,
         )
-        text = facts.format_character_boards(stats)
-        image = await self._render(
-            lambda renderer: renderer.render_character_boss(
-                stats, query=catalog_name, web_base_url=self._web_base_url
-            )
-        )
+        text = facts.format_character_boards(recipe.stats)
+        image = await self._render(recipe.draw)
         return ToolAnswer(text, image)
 
     async def _not_a_character(self, name: str) -> ToolAnswer:
@@ -858,23 +831,7 @@ class ToolService:
         boards = matcher.expand_to_boards((choice,))
         if len(boards) == 1:
             return boards[0].target.key
-        slugs = {entry.target.key for entry in boards}
-        selected = tuple(card for card in cards if card.boss_slug in slugs)
-        return choice, selected
-
-    @staticmethod
-    def _resolve_character(ranking: BossRanking, name: str) -> str | ToolAnswer:
-        """The board's spelling of a character the model typed, or why not."""
-
-        resolution = resolve_character_name(name, ranking_character_names(ranking))
-        if resolution.status is CharacterResolutionStatus.MATCHED:
-            return resolution.name
-        if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
-            return ToolAnswer(messages.ambiguous_character(name, resolution.candidates))
-        return ToolAnswer(
-            f"「{ranking.boss_name}」的公开记录里没有"
-            f"「{shorten(name)}」这个角色，可能是名字不对。"
-        )
+        return choice, cards
 
     def _battle_reference(self, value: str) -> str | None:
         try:

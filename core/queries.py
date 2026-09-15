@@ -31,15 +31,12 @@ from .candidates import (
     format_candidates,
 )
 from .characters import (
-    CharacterFilterScope,
     CharacterResolution,
     CharacterResolutionStatus,
     account_roster_names,
-    pick_character_filter_scope,
     ranking_character_names,
     resolve_character_name,
     resolve_standing_names,
-    row_fields,
 )
 from .client import (
     ZmdLogsAPIError,
@@ -74,8 +71,13 @@ from .rank_watch import RankWatcher
 from .recipes import (
     IndexSnapshot,
     index_snapshot,
+    prepare_boards_overview,
     prepare_champions,
+    prepare_character_boss,
+    prepare_character_stats,
+    prepare_dungeon_overview,
     prepare_player_champions,
+    prepare_ranking,
     prepare_records,
     prepare_standings,
 )
@@ -271,11 +273,10 @@ class QueryService:
             )
 
         if route.kind is RouteKind.ALL_RANKINGS:
-            cards = await self._data.list_hot_bosses()
-            image_path = await renderer.render_all_top3(
-                cards, query="榜单", web_base_url=self._web_base_url
+            recipe = await prepare_boards_overview(
+                self._data, web_base_url=self._web_base_url
             )
-            return Outcome(image_path=image_path)
+            return Outcome(image_path=await recipe.draw(renderer))
 
         if route.kind is RouteKind.ACCOUNT_QUERY:
             account_id = self._account_reference(route.query)
@@ -331,15 +332,15 @@ class QueryService:
             )
 
         if route.kind is RouteKind.CHARACTER_STATS and not route.query.strip():
-            stats = await self._data.get_character_statistics(
+            recipe = await prepare_character_stats(
+                self._data,
                 None,
                 time_range=route.stats_range,
                 potential=route.stats_potential,
+                query="角色统计",
+                web_base_url=self._web_base_url,
             )
-            image_path = await renderer.render_character_stats(
-                stats, query="角色统计", web_base_url=self._web_base_url
-            )
-            return Outcome(image_path=image_path)
+            return Outcome(image_path=await recipe.draw(renderer))
         return None
 
     async def _dispatch_trend(self, route: RouteRequest, *, origin: str) -> Outcome:
@@ -536,14 +537,10 @@ class QueryService:
             return Outcome(message=OPTION_USAGE["character"])
         if pending.element_filter is not None:
             return Outcome(message=OPTION_USAGE["element"])
-        selected_slugs = set(target.boss_slugs)
-        selected_cards = tuple(
-            card for card in cards if card.boss_slug in selected_slugs
+        recipe = prepare_dungeon_overview(
+            choice, cards, query=query, web_base_url=self._web_base_url
         )
-        image_path = await self._renderer().render_dungeon_top3(
-            choice, selected_cards, query=query, web_base_url=self._web_base_url
-        )
-        return Outcome(image_path=image_path)
+        return Outcome(image_path=await recipe.draw(self._renderer()))
 
     # --- accounts --------------------------------------------------------------------
 
@@ -865,9 +862,8 @@ class QueryService:
             query=query,
             web_base_url=self._web_base_url,
         )
-        refusal = recipe.refusal()
-        if refusal is not None:
-            return Outcome(message=refusal)
+        if isinstance(recipe, str):
+            return Outcome(message=recipe)
         return Outcome(image_path=await recipe.draw(self._renderer()))
 
     async def _resolve_catalog_character(
@@ -925,15 +921,15 @@ class QueryService:
         character_key = next(
             entry.key for entry in entries if entry.name == resolution.name
         )
-        stats = await self._data.get_character_boss_statistics(
+        recipe = await prepare_character_boss(
+            self._data,
             character_key,
             time_range=pending.stats_range,
             potential=pending.stats_potential,
+            query=query,
+            web_base_url=self._web_base_url,
         )
-        image_path = await self._renderer().render_character_boss(
-            stats, query=query, web_base_url=self._web_base_url
-        )
-        return Outcome(image_path=image_path)
+        return Outcome(image_path=await recipe.draw(self._renderer()))
 
     async def _character_name_hint(
         self,
@@ -979,15 +975,15 @@ class QueryService:
             else DEFAULT_RANKING_TOP
         )
         if pending.view is CandidateView.CHARACTER_STATS:
-            stats = await self._data.get_character_statistics(
+            recipe = await prepare_character_stats(
+                self._data,
                 boss_slug,
                 time_range=pending.stats_range,
                 potential=pending.stats_potential,
+                query=query,
+                web_base_url=self._web_base_url,
             )
-            image_path = await renderer.render_character_stats(
-                stats, query=query, web_base_url=self._web_base_url
-            )
-            return Outcome(image_path=image_path)
+            return Outcome(image_path=await recipe.draw(renderer))
 
         ranking = await self._data.get_boss_ranking(boss_slug)
         if pending.view is CandidateView.COMPARE:
@@ -1028,88 +1024,18 @@ class QueryService:
                 ranking, query=query, origin=pending.origin, limit=ranking_limit
             )
 
-        character_filter: tuple[str, ...] | None = None
-        character_filter_scope = CharacterFilterScope.MAIN
-        if pending.character_filter is not None:
-            resolved = _resolve_filter_names(ranking, pending.character_filter)
-            if isinstance(resolved, Outcome):
-                return resolved
-            character_filter = resolved
-            if len(resolved) == 1:
-                # No main-C records is the normal case for supports, so widen
-                # the filter to the whole roster instead of answering
-                # "nothing found".
-                character_filter_scope = pick_character_filter_scope(
-                    ranking, resolved[0]
-                )
-                if character_filter_scope is CharacterFilterScope.NONE:
-                    return Outcome(
-                        message=(
-                            f"「{ranking.boss_name}」的公开排名里没有带"
-                            f"「{resolved[0]}」的记录。"
-                        )
-                    )
-            else:
-                # Several names ask for teams fielding all of them; a team has
-                # one main C, so this is a roster question by definition.
-                character_filter_scope = CharacterFilterScope.ROSTER
-                if not any(
-                    all(
-                        any(
-                            entry.character_name == name
-                            for entry in row.roster_entries
-                        )
-                        for name in resolved
-                    )
-                    for row in ranking.rows
-                ):
-                    return Outcome(
-                        message=(
-                            f"「{ranking.boss_name}」的公开排名里没有同时带上"
-                            f"「{'、'.join(resolved)}」的记录。"
-                        )
-                    )
-        elements = await self._data.character_elements(
-            names=ranking_character_names(ranking)
-        )
-        element_filter = pending.element_filter
-        if element_filter is not None and not any(
-            elements.get(row.character_name) == element_filter for row in ranking.rows
-        ):
-            return Outcome(
-                message=(
-                    f"「{ranking.boss_name}」的公开排名里没有主 C 为"
-                    f"{element_filter}属性的记录。"
-                )
-            )
-        if (
-            element_filter is not None
-            and character_filter is not None
-            and not any(
-                elements.get(row.character_name) == element_filter
-                and row_fields(row, character_filter, character_filter_scope)
-                for row in ranking.rows
-            )
-        ):
-            # Each filter alone has rows; together they would draw an empty
-            # page, which reads as a broken render rather than an answer.
-            return Outcome(
-                message=(
-                    f"「{ranking.boss_name}」的公开排名里没有主 C 为"
-                    f"{element_filter}属性且带「{'、'.join(character_filter)}」的记录。"
-                )
-            )
-        image_path = await renderer.render_ranking(
+        recipe = await prepare_ranking(
+            self._data,
             ranking,
             query=query,
-            ranking_limit=ranking_limit,
             web_base_url=self._web_base_url,
-            character_filter=character_filter,
-            character_filter_scope=character_filter_scope,
-            element_filter=element_filter,
-            elements=elements,
+            ranking_limit=ranking_limit,
+            character_filter=pending.character_filter,
+            element_filter=pending.element_filter,
         )
-        return Outcome(image_path=image_path)
+        if isinstance(recipe, str):
+            return Outcome(message=recipe)
+        return Outcome(image_path=await recipe.draw(renderer))
 
     # --- battles ---------------------------------------------------------------------
 
@@ -1361,30 +1287,6 @@ def _no_such_rank(ranking, rank: int) -> str:
         f"「{ranking.boss_name}」公开排名共 {len(ranking.rows)} 条，"
         f"没有第 {rank} 名。"
     )
-
-
-def _resolve_filter_names(ranking, character_filter: str) -> tuple[str, ...] | Outcome:
-    """Resolve every ``--角色`` name against the board; an Outcome is a refusal."""
-
-    names: list[str] = []
-    for wanted in character_filter.split():
-        resolution = resolve_character_name(wanted, ranking_character_names(ranking))
-        if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
-            return Outcome(
-                message=messages.ambiguous_character(
-                    resolution.query, resolution.candidates
-                )
-            )
-        if resolution.status is CharacterResolutionStatus.NOT_FOUND:
-            return Outcome(
-                message=(
-                    f"「{ranking.boss_name}」的公开排名里没有"
-                    f"「{shorten(resolution.query)}」。"
-                )
-            )
-        if resolution.name not in names:
-            names.append(resolution.name)
-    return tuple(names)
 
 
 def _export_refusal(error: ZmdLogsAPIError) -> str | None:

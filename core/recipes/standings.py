@@ -37,19 +37,6 @@ class StandingsRecipe:
     missing_count: int
     elements: Mapping[str, str]
 
-    def refusal(self) -> str | None:
-        """Why the page must not be drawn: a team no record fields.
-
-        Each name is fielded somewhere, or resolving it would have refused;
-        an empty page reads as a broken render, not as an answer.
-        """
-
-        if self.standings.is_team and not self.standings.boards:
-            return messages.NO_TEAM_FIELDING.format(
-                names="」「".join(self.standings.characters)
-            )
-        return None
-
     async def draw(self, renderer: "LongImageRenderer") -> str:
         return await renderer.render_character_standings(
             self.standings,
@@ -67,11 +54,19 @@ async def prepare_standings(
     *,
     query: str,
     web_base_url: str | None,
-) -> StandingsRecipe:
-    """``names`` are already resolved against ``snapshot.fielded``."""
+) -> StandingsRecipe | str:
+    """``names`` are already resolved against ``snapshot.fielded``.
 
+    The refusal is a team no record fields: each name is fielded somewhere,
+    or resolving it would have refused, and an empty page reads as a broken
+    render, not as an answer.
+    """
+
+    standings = character_standings(snapshot.rankings, *names)
+    if standings.is_team and not standings.boards:
+        return messages.NO_TEAM_FIELDING.format(names="」「".join(names))
     return StandingsRecipe(
-        standings=character_standings(snapshot.rankings, *names),
+        standings=standings,
         query=query,
         web_base_url=web_base_url,
         age_seconds=snapshot.age_seconds,

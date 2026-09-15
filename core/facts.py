@@ -74,7 +74,7 @@ def format_board_ranking(
     ranking: BossRanking,
     *,
     limit: int = DEFAULT_ROW_LIMIT,
-    character: str | None = None,
+    character: str | tuple[str, ...] | None = None,
     character_scope: CharacterFilterScope = CharacterFilterScope.ROSTER,
     element: str | None = None,
     elements: Mapping[str, str] | None = None,
@@ -87,20 +87,24 @@ def format_board_ranking(
 
     ``character`` keeps only the rows fielding that name (as main C when
     ``character_scope`` says so), which is how "带 X 能排第几" is answered
-    without claiming X caused the rank. ``since`` keeps the records fought
-    inside a window and adds what the event log saw on this board in it.
+    without claiming X caused the rank; several names are the teams
+    fielding all of them. ``since`` keeps the records fought inside a
+    window and adds what the event log saw on this board in it.
     """
 
     rows = ranking.rows
     filters = []
-    if character:
-        rows = tuple(
-            row for row in rows if row_fields(row, (character,), character_scope)
-        )
+    if isinstance(character, str):
+        names: tuple[str, ...] = (character,) if character else ()
+    else:
+        names = tuple(character or ())
+    if names:
+        rows = tuple(row for row in rows if row_fields(row, names, character_scope))
+        label = "、".join(names)
         filters.append(
-            f"主C 为「{character}」"
+            f"主C 为「{label}」"
             if character_scope is CharacterFilterScope.MAIN
-            else f"阵容包含「{character}」"
+            else f"阵容包含「{label}」"
         )
     if element:
         known = elements or {}
@@ -161,11 +165,11 @@ def format_board_ranking(
             "很多队伍不带某些位）："
         )
         lines.extend(usage)
-    if character:
+    if len(names) == 1:
         # The filtered rows above are every team fielding the character; this
         # is the same information counted, so the model need not count.
         lines.append("")
-        lines.extend(_cooccurrence_lines(_cooccurrence((ranking,), character)))
+        lines.extend(_cooccurrence_lines(_cooccurrence((ranking,), names[0])))
     else:
         teams = _team_counts(ranking)
         lines.append("")

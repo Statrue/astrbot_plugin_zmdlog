@@ -12,18 +12,34 @@ import logging
 import unittest
 
 from core.candidates import CandidateStore
+from core.client import ZmdLogsClientError
 from core.matcher import AliasConfig, MatcherCache
-from core.models import parse_boss_ranking, parse_public_user_rankings
+from core.models import (
+    parse_boss_ranking,
+    parse_hot_bosses,
+    parse_public_user_rankings,
+)
 from core.queries import QueryService
 from core.routing import RouteKind, RouteRequest
 from core.settings import PluginSettings
 from core.toolbox import ToolService
-from tests.helpers import public_user_rankings_payload, ranking_payload_with_rows
+from tests.helpers import (
+    hot_bosses_payload,
+    public_user_rankings_payload,
+    ranking_payload_with_rows,
+)
 from tests.test_tools import WEB, FakeData, FakeRenderer
 
 
 def run(coro):
     return asyncio.run(coro)
+
+
+class OfflineClient:
+    """The smart route also searches nicknames; here that read is an outage."""
+
+    async def search_public_accounts(self, query, *, limit):
+        raise ZmdLogsClientError("offline")
 
 
 class SamePictureTests(unittest.TestCase):
@@ -43,7 +59,7 @@ class SamePictureTests(unittest.TestCase):
         self.command_renderer = FakeRenderer()
         self.tool_renderer = FakeRenderer()
         self.queries = QueryService(
-            client=None,
+            client=OfflineClient(),
             data=self.data,
             renderer=lambda: self.command_renderer,
             candidates=CandidateStore(),
@@ -142,3 +158,113 @@ class SamePictureTests(unittest.TestCase):
         self._assert_same_call("records")
         kwargs = self.tool_renderer.kwargs["records"]
         self.assertEqual(kwargs["window_label"], "近 14 天")
+
+    # --- boards -----------------------------------------------------------------
+
+    def test_a_board(self) -> None:
+        self._command(RouteKind.RANKING_QUERY, query="三位一体")
+        run(self.tools.board("三位一体"))
+
+        self._assert_same_call("ranking")
+
+    def test_a_board_cut_to_a_character(self) -> None:
+        self._command(
+            RouteKind.RANKING_QUERY, query="三位一体", character_filter="黎风"
+        )
+        run(self.tools.board("三位一体", character="黎风"))
+
+        self._assert_same_call("ranking")
+        kwargs = self.tool_renderer.kwargs["ranking"]
+        self.assertEqual(kwargs["character_filter"], ("黎风",))
+
+    def test_a_board_cut_to_a_team(self) -> None:
+        # The tool used to resolve one name only; "黎风 洁尔佩塔" now means
+        # the teams fielding both, as --角色 黎风 洁尔佩塔 does.
+        self._command(
+            RouteKind.RANKING_QUERY, query="三位一体", character_filter="黎风 洁尔佩塔"
+        )
+        answer = run(self.tools.board("三位一体", character="黎风 洁尔佩塔"))
+
+        self._assert_same_call("ranking")
+        kwargs = self.tool_renderer.kwargs["ranking"]
+        self.assertEqual(kwargs["character_filter"], ("黎风", "洁尔佩塔"))
+        self.assertIn("阵容包含「黎风、洁尔佩塔」", answer.text)
+
+    def test_a_board_cut_to_an_element(self) -> None:
+        self._command(RouteKind.RANKING_QUERY, query="三位一体", element_filter="自然")
+        run(self.tools.board("三位一体", element="自然"))
+
+        self._assert_same_call("ranking")
+
+    def test_a_board_refuses_a_filter_the_same_way(self) -> None:
+        outcome = self._command(
+            RouteKind.RANKING_QUERY, query="三位一体", element_filter="电磁"
+        )
+        answer = run(self.tools.board("三位一体", element="雷"))
+
+        self.assertIsNone(outcome.image_path)
+        self.assertIsNone(answer.image_path)
+        self.assertEqual(outcome.message, answer.text)
+        self.assertIn("没有主 C 为电磁属性的记录", answer.text)
+        self.assertEqual(self.command_renderer.calls, [])
+        self.assertEqual(self.tool_renderer.calls, [])
+
+    def test_filters_that_leave_nothing_together_are_refused_on_both(self) -> None:
+        # 洛茜 leads records and 自然 keeps rows, but no 自然 record has 洛茜
+        # as main C. The command refused this; the tool drew an empty page.
+        outcome = self._command(
+            RouteKind.RANKING_QUERY,
+            query="三位一体",
+            character_filter="洛茜",
+            element_filter="自然",
+        )
+        answer = run(self.tools.board("三位一体", character="洛茜", element="自然"))
+
+        self.assertIsNone(outcome.image_path)
+        self.assertIsNone(answer.image_path)
+        self.assertEqual(outcome.message, answer.text)
+        self.assertIn("主 C 为自然属性且带「洛茜」", answer.text)
+
+    def test_every_board(self) -> None:
+        self._command(RouteKind.ALL_RANKINGS)
+        run(self.tools.board("全部"))
+
+        self._assert_same_call("all_top3")
+
+    def test_a_dungeon(self) -> None:
+        first = hot_bosses_payload()[0]
+        second = dict(
+            first, bossSlug="dung01_group_bossrush03", bossName="危境再现·白垩界卫"
+        )
+        self.data.cards = parse_hot_bosses([first, second])
+
+        self._command(RouteKind.RANKING_QUERY, query="测试区")
+        run(self.tools.board("测试区"))
+
+        self._assert_same_call("dungeon_top3")
+        _choice, cards = self.tool_renderer.args["dungeon_top3"]
+        self.assertEqual(len(cards), 2)
+
+    # --- statistics -------------------------------------------------------------
+
+    def test_the_distribution_on_a_board(self) -> None:
+        self._command(RouteKind.CHARACTER_STATS, query="三位一体")
+        run(self.tools.character("", board="三位一体"))
+
+        self._assert_same_call("character_stats")
+        self.assertEqual(self.data.stats_calls[0], self.data.stats_calls[1])
+
+    def test_the_distribution_over_every_board(self) -> None:
+        self._command(RouteKind.CHARACTER_STATS)
+        run(self.tools.character("", board="全部"))
+
+        self._assert_same_call("character_stats")
+        self.assertEqual(self.data.stats_calls[0][0], None)
+        self.assertEqual(self.data.stats_calls[0], self.data.stats_calls[1])
+
+    def test_a_six_star_with_no_record(self) -> None:
+        # 提弗洛斯 is in the catalog and in no roster: the distribution alone.
+        self._command(RouteKind.CHARACTER_STATS, query="提弗洛斯")
+        run(self.tools.character("提弗洛斯"))
+
+        self._assert_same_call("character_boss")
