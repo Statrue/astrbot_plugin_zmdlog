@@ -139,8 +139,8 @@
 
 {% if page.unseen %}
 <div class="section-heading section-heading--minor">
-  <h2>从未上榜</h2>
-  <span class="section-note">{{ page.unseen|length }} 个{{ page.profession or "" }}角色没有出现在任何公开记录里</span>
+  <h2>{% if page.window_label %}{{ page.window_label }}未上榜{% else %}从未上榜{% endif %}</h2>
+  <span class="section-note">{{ page.unseen|length }} 个{{ page.profession or "" }}角色{% if page.window_label %}{{ page.window_label }}没有出现在公开记录里{% else %}没有出现在任何公开记录里{% endif %}</span>
 </div>
 <div class="stats-insufficient">
   {% for name in page.unseen %}

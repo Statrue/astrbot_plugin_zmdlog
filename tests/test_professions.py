@@ -152,6 +152,38 @@ class ClassBoardTests(unittest.TestCase):
         self.assertIn("从未上榜", html)
         self.assertIn("未上榜者", html)
 
+    def test_a_window_does_not_call_its_absentees_never_seen(self) -> None:
+        # Cut to 近 7 天, the absentees are whoever no record *of the week*
+        # fields; many of them were fielded before it, so neither the text
+        # nor the page may say 从未.
+        guards = by_profession(self.tallies, "近卫")
+
+        text = facts.format_character_tallies(
+            guards,
+            board_count=2,
+            profession="近卫",
+            window_label="近 7 天",
+            unseen=("未上榜者",),
+        )
+        html = TemplateRenderer.from_plugin_root(
+            Path(__file__).parents[1]
+        ).render_character_champions(
+            guards,
+            board_count=2,
+            query="角色排名",
+            web_base_url=WEB,
+            profession="近卫",
+            window_label="近 7 天",
+            unseen=("未上榜者",),
+        )
+
+        self.assertIn("近 7 天没有出现在公开记录里的近卫角色：未上榜者", text)
+        self.assertNotIn("从未出现", text)
+        self.assertIn("近 7 天未上榜", html)
+        self.assertIn("近 7 天没有出现在公开记录里", html)
+        self.assertNotIn("从未上榜", html)
+        self.assertNotIn("任何公开记录", html)
+
 
 class RoutingTests(unittest.TestCase):
     def test_the_bare_command_takes_a_profession(self) -> None:

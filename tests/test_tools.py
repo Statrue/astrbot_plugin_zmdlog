@@ -45,12 +45,14 @@ class FakeRenderer:
 
     def __init__(self, fail: bool = False) -> None:
         self.calls: list[str] = []
+        self.args: dict[str, tuple] = {}
         self.kwargs: dict[str, dict] = {}
         self.fail = fail
 
     def _page(self, kind):
         async def render(*args, **kwargs):
             self.calls.append(kind)
+            self.args[kind] = args
             self.kwargs[kind] = kwargs
             if self.fail:
                 raise RuntimeError("no chromium")
@@ -114,6 +116,9 @@ class FakeData:
 
     async def get_equip_suits(self, *, wanted=()):
         return {}
+
+    async def equip_suits_for(self, *battles):
+        return await self.get_equip_suits()
 
     async def get_public_user_rankings(self, account_id):
         return self.account

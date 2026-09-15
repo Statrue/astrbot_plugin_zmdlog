@@ -76,7 +76,8 @@ class CharacterChampionsPage:
     teams: tuple[TeamComboView, ...] = ()
     usage: tuple[ChampionUsageView, ...] = ()
     # Catalog characters (of the profession, when restricted) that no public
-    # record fields.
+    # record in the window fields; the template says 近 7 天未上榜 rather
+    # than 从未上榜 under a window, since they may well have before it.
     unseen: tuple[str, ...] = ()
 
 

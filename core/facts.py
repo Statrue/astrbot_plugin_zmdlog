@@ -679,7 +679,7 @@ def format_character_tallies(
         else:
             lines.append(f"公开记录里没有{who}出场。")
         if unseen:
-            lines.append(f"从未出现在公开记录里的{noun}：{'、'.join(unseen)}")
+            lines.append(f"{_unseen_label(window_label)}的{noun}：{'、'.join(unseen)}")
         return _joined(lines)
     top_team = max(tallies, key=lambda t: t.first_places)
     top_main = max(tallies, key=lambda t: t.first_places_as_main)
@@ -717,7 +717,7 @@ def format_character_tallies(
             least.extend(unseen)
         lines.append(f"冠军最少：{'、'.join(least)}（{fewest} 个）")
     if unseen:
-        lines.append(f"从未出现在公开记录里的{noun}：{'、'.join(unseen)}")
+        lines.append(f"{_unseen_label(window_label)}的{noun}：{'、'.join(unseen)}")
     if teams:
         lines.append("")
         lines.append("最常见的第一名阵容：")
@@ -1011,6 +1011,14 @@ def _champions_cut(tallies, limit: int, noun: str, *, name_zeros: bool = False):
             return shown, f"（其余 {len(rest)} 个{noun}冠军 0 个：{names}）"
         return shown, f"（其余 {len(rest)} 个{noun}冠军 0 个，未列出）"
     return shown, f"（另有 {len(rest)} 个{noun}未列出，其中仍有冠军的见图）"
+
+
+def _unseen_label(window_label: str) -> str:
+    """从未出现在公开记录里, or the window's version: they may well have before it."""
+
+    if window_label:
+        return f"{window_label}没有出现在公开记录里"
+    return "从未出现在公开记录里"
 
 
 def _who(element: str | None, profession: str | None) -> str:

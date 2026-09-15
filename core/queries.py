@@ -18,7 +18,6 @@ searches boards and accounts alike.
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from . import messages
 from .account_binding import AccountBinding
@@ -50,14 +49,11 @@ from .client import (
     searchable_nickname,
 )
 from .datasource import CharacterCatalogEntry, ZmdLogsDataSource
-from .events import board_activity
-from .history import window_label, window_start
 from .identifiers import (
     PublicReferenceError,
     parse_account_reference,
     parse_battle_reference,
 )
-from .loadout import battle_suit_ids
 from .logs import LogSink
 from .matcher import (
     BOARD_QUERY_TARGETS,
@@ -75,20 +71,18 @@ from .models import (
     HotBossCard,
 )
 from .rank_watch import RankWatcher
+from .recipes import (
+    IndexSnapshot,
+    index_snapshot,
+    prepare_champions,
+    prepare_player_champions,
+    prepare_records,
+    prepare_standings,
+)
 from .render import LongImageRenderer
 from .routing import DEFAULT_RANKING_TOP, OPTION_USAGE, RouteKind, RouteRequest
 from .settings import PluginSettings
-from .standings import (
-    account_tallies,
-    by_profession,
-    character_standings,
-    character_tallies,
-    first_place_teams,
-    group_standings,
-    profession_usage,
-    roster_character_names,
-    unseen_characters,
-)
+from .standings import group_standings
 
 # 战报 / 配装 / 技能 / 技能轴 share one argument shape and one lookup; only
 # the page drawn from the battle differs.
@@ -231,24 +225,17 @@ class QueryService:
             web_base_url=self._web_base_url,
             export=export,
             export_note=note,
-            suits=await self._equip_suits(battle),
+            suits=await self._data.equip_suits_for(battle),
         )
         return Outcome(image_path=image_path)
 
-    async def _equip_suits(self, *battles) -> dict[str, str]:
-        """The suit catalog, or nothing; a gear page must render without it.
+    async def _index(self) -> IndexSnapshot | Outcome:
+        """The ranking index, or the reply for one still filling."""
 
-        The battles about to be drawn name the suits the page needs, which
-        is what lets the catalog notice a suit it has never heard of.
-        """
-
-        try:
-            return await self._data.get_equip_suits(wanted=battle_suit_ids(*battles))
-        except ZmdLogsClientError as exc:
-            self._logger.warning(
-                "ZmdLogBot equip catalog unavailable: %s", type(exc).__name__
-            )
-            return {}
+        snapshot = await index_snapshot(self._data)
+        if snapshot is None:
+            return Outcome(message=messages.INDEX_FILLING)
+        return snapshot
 
     # --- routes that name their target -----------------------------------------------
 
@@ -824,39 +811,20 @@ class QueryService:
     async def _render_records(self, time_range: str) -> Outcome:
         """New records and first places changing hands, from the event log."""
 
-        index = self._data.ranking_index
-        if not await index.wait_filled():
-            return Outcome(message=messages.INDEX_FILLING)
-        rankings = tuple(entry.ranking for entry in index.entries())
-        span = time_range if time_range != "all" else "7d"
-        since = window_start(span, now=datetime.now(UTC))
-        log = self._data.event_log
-        image_path = await self._renderer().render_records(
-            log.recent(since=since),
-            board_activity(rankings, since=since),
-            query="新纪录",
-            window_label=window_label(span),
-            age_seconds=index.oldest_age_seconds(),
-            log_since=log.oldest_seen_at(),
-        )
-        return Outcome(image_path=image_path)
+        snapshot = await self._index()
+        if isinstance(snapshot, Outcome):
+            return snapshot
+        recipe = prepare_records(self._data, snapshot, time_range=time_range)
+        return Outcome(image_path=await recipe.draw(self._renderer()))
 
     async def _render_player_champions(self, time_range: str) -> Outcome:
         """Which public accounts uploaded the most first places, from the index."""
 
-        index = self._data.ranking_index
-        if not await index.wait_filled():
-            return Outcome(message=messages.INDEX_FILLING)
-        rankings = tuple(entry.ranking for entry in index.entries())
-        since = window_start(time_range, now=datetime.now(UTC))
-        image_path = await self._renderer().render_player_champions(
-            account_tallies(rankings, since=since),
-            board_count=len(rankings),
-            query="玩家排名",
-            age_seconds=index.oldest_age_seconds(),
-            window_label=window_label(time_range),
-        )
-        return Outcome(image_path=image_path)
+        snapshot = await self._index()
+        if isinstance(snapshot, Outcome):
+            return snapshot
+        recipe = prepare_player_champions(snapshot, time_range=time_range)
+        return Outcome(image_path=await recipe.draw(self._renderer()))
 
     async def _render_character_standings(
         self,
@@ -870,67 +838,37 @@ class QueryService:
 
         Drawn from the ranking index, never from upstream directly: the name
         is resolved against every roster the index holds (four-stars count),
-        and the page says how old the index is.
+        and the page says how old the index is. Without a name, the same
+        records counted per character: the champions board.
         """
 
-        index = self._data.ranking_index
-        if not await index.wait_filled():
-            return Outcome(message=messages.INDEX_FILLING)
-        rankings = tuple(entry.ranking for entry in index.entries())
-        fielded = roster_character_names(rankings)
-        elements = await self._data.character_elements(names=fielded)
+        snapshot = await self._index()
+        if isinstance(snapshot, Outcome):
+            return snapshot
         if not query.strip():
-            since = window_start(time_range, now=datetime.now(UTC))
-            tallies = character_tallies(rankings, since=since)
-            if element_filter is not None:
-                tallies = tuple(
-                    tally for tally in tallies
-                    if elements.get(tally.name) == element_filter
-                )
-            unseen: tuple[str, ...] = ()
-            if profession_filter is not None:
-                tallies = by_profession(tallies, profession_filter)
-                if element_filter is None:
-                    # Cut by element first, every member of another element
-                    # would read as "never fielded".
-                    unseen = unseen_characters(
-                        tallies,
-                        await self._data.character_professions(names=fielded),
-                        profession=profession_filter,
-                    )
-            image_path = await self._renderer().render_character_champions(
-                tallies,
-                board_count=len(rankings),
-                query="角色排名",
+            recipe = await prepare_champions(
+                self._data,
+                snapshot,
                 web_base_url=self._web_base_url,
-                age_seconds=index.oldest_age_seconds(),
                 element=element_filter,
-                elements=elements,
                 profession=profession_filter,
-                teams=first_place_teams(rankings, since=since),
-                usage=profession_usage(rankings, since=since),
-                window_label=window_label(time_range),
-                unseen=unseen,
+                time_range=time_range,
             )
-            return Outcome(image_path=image_path)
-        names = resolve_standing_names(query, fielded)
+            return Outcome(image_path=await recipe.draw(self._renderer()))
+        names = resolve_standing_names(query, snapshot.fielded)
         if isinstance(names, str):
             return Outcome(message=names)
-        standings = character_standings(rankings, *names)
-        if standings.is_team and not standings.boards:
-            # Each name is fielded somewhere; no team fields them all. An
-            # empty page would read as a broken render, not as an answer.
-            return Outcome(
-                message=messages.NO_TEAM_FIELDING.format(names="」「".join(names))
-            )
-        image_path = await self._renderer().render_character_standings(
-            standings,
+        recipe = await prepare_standings(
+            self._data,
+            snapshot,
+            names,
             query=query,
             web_base_url=self._web_base_url,
-            age_seconds=index.oldest_age_seconds(),
-            elements=elements,
         )
-        return Outcome(image_path=image_path)
+        refusal = recipe.refusal()
+        if refusal is not None:
+            return Outcome(message=refusal)
+        return Outcome(image_path=await recipe.draw(self._renderer()))
 
     async def _resolve_catalog_character(
         self,
@@ -1226,7 +1164,7 @@ class QueryService:
                     battle,
                     query=query,
                     web_base_url=self._web_base_url,
-                    suits=await self._equip_suits(battle),
+                    suits=await self._data.equip_suits_for(battle),
                 )
             else:
                 if not battle.skill_stats:
@@ -1242,7 +1180,7 @@ class QueryService:
             web_base_url=self._web_base_url,
             export=export,
             export_note=note,
-            suits=await self._equip_suits(battle),
+            suits=await self._data.equip_suits_for(battle),
         )
         return Outcome(image_path=image_path)
 
@@ -1328,7 +1266,7 @@ class QueryService:
             web_base_url=self._web_base_url,
             rank_a=rank_a,
             rank_b=rank_b,
-            suits=await self._equip_suits(first, second),
+            suits=await self._data.equip_suits_for(first, second),
         )
         return Outcome(image_path=image_path)
 

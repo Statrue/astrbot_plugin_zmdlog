@@ -16,6 +16,7 @@ from pathlib import Path
 from .cache import AsyncTTLCache, CacheState
 from .client import ZmdLogsClient, ZmdLogsClientError
 from .events import EventLog
+from .loadout import battle_suit_ids
 from .logs import LogSink
 from .models import (
     BattleDetailSummary,
@@ -254,6 +255,25 @@ class ZmdLogsDataSource:
                 held=suits,
             )
         return suits
+
+    async def equip_suits_for(
+        self, *battles: BattleDetailSummary
+    ) -> dict[str, str]:
+        """The suit catalog for the gear these battles wore, or nothing.
+
+        A gear page renders without it (the label falls back to what
+        upstream wrote), so an unreachable catalog is a warning, not a
+        failure. The battles name the suits the page is about to print,
+        which is what lets the catalog notice one it has never heard of.
+        """
+
+        try:
+            return await self.get_equip_suits(wanted=battle_suit_ids(*battles))
+        except ZmdLogsClientError as exc:
+            self._logger.warning(
+                "ZmdLogBot equip catalog unavailable: %s", type(exc).__name__
+            )
+            return {}
 
     async def _fetch_equip_suits(self) -> dict[str, str]:
         self._equip_suits_checked_at = self._clock()

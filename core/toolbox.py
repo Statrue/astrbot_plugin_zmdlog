@@ -42,14 +42,12 @@ from .client import (
 )
 from .datasource import ZmdLogsDataSource
 from .elements import ELEMENTS, normalize_element
-from .events import board_activity
 from .history import window_label, window_start
 from .identifiers import (
     PublicReferenceError,
     parse_account_reference,
     parse_battle_reference,
 )
-from .loadout import battle_suit_ids
 from .logs import LogSink
 from .matcher import (
     BOARD_QUERY_TARGETS,
@@ -64,20 +62,18 @@ from .messages import shorten
 from .models import BossRanking, HotBossCard
 from .professions import PROFESSIONS, normalize_profession
 from .rank_watch import RankWatcher
+from .recipes import (
+    IndexSnapshot,
+    index_snapshot,
+    prepare_champions,
+    prepare_player_champions,
+    prepare_records,
+    prepare_standings,
+)
 from .render import LongImageRenderer
 from .routing import parse_potential_text, parse_range_text
 from .settings import PluginSettings
-from .standings import (
-    account_tallies,
-    account_tally,
-    by_profession,
-    character_standings,
-    character_tallies,
-    first_place_teams,
-    profession_usage,
-    roster_character_names,
-    unseen_characters,
-)
+from .standings import account_tally
 
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
@@ -234,35 +230,18 @@ class ToolService:
         """New records, first places changing hands and board activity."""
 
         span, range_note = _time_range(time_range)
-        if span == "all":
-            span = "7d"
-        index = self._data.ranking_index
-        if not await index.wait_filled():
-            return ToolAnswer(messages.INDEX_FILLING)
-        rankings = tuple(entry.ranking for entry in index.entries())
-        since = window_start(span, now=datetime.now(UTC))
-        log = self._data.event_log
-        events = log.recent(since=since)
-        activity = board_activity(rankings, since=since)
-        label = window_label(span)
-        age = index.oldest_age_seconds()
+        snapshot = await self._index()
+        if isinstance(snapshot, ToolAnswer):
+            return snapshot
+        recipe = prepare_records(self._data, snapshot, time_range=span)
         text = facts.format_records(
-            events,
-            activity,
-            window_label=label,
-            age_seconds=age,
-            log_since=log.oldest_seen_at(),
+            recipe.events,
+            recipe.activity,
+            window_label=recipe.window_label,
+            age_seconds=recipe.age_seconds,
+            log_since=recipe.log_since,
         )
-        image = await self._render(
-            lambda renderer: renderer.render_records(
-                events,
-                activity,
-                query="新纪录",
-                window_label=label,
-                age_seconds=age,
-                log_since=log.oldest_seen_at(),
-            )
-        )
+        image = await self._render(recipe.draw)
         return ToolAnswer(text, image).noted(range_note)
 
     async def _boards_overview(self, keyword: str) -> ToolAnswer:
@@ -315,7 +294,7 @@ class ToolService:
         detail, export, suits = await asyncio.gather(
             self._data.get_battle_detail(battle_id),
             self._battle_export(battle_id),
-            self._equip_suits(),
+            self._data.equip_suits_for(),
             return_exceptions=True,
         )
         if isinstance(detail, BaseException):
@@ -324,7 +303,7 @@ class ToolService:
             raise detail
         # Now that the battle names its suits, a suit the catalog lacks can
         # ask for the bounded re-read; a cache hit otherwise.
-        suits = await self._equip_suits(detail)
+        suits = await self._data.equip_suits_for(detail)
         text = facts.format_battle(detail, export=export, suits=suits)
         image = await self._render(
             lambda renderer: renderer.render_battle(
@@ -350,7 +329,7 @@ class ToolService:
         detail_a, detail_b, suits = await asyncio.gather(
             self._data.get_battle_detail(left),
             self._data.get_battle_detail(right),
-            self._equip_suits(),
+            self._data.equip_suits_for(),
             return_exceptions=True,
         )
         for outcome in (detail_a, detail_b):
@@ -358,7 +337,7 @@ class ToolService:
                 return ToolAnswer("其中一场战报不存在、未公开或已删除。")
             if isinstance(outcome, BaseException):
                 raise outcome
-        suits = await self._equip_suits(detail_a, detail_b)
+        suits = await self._data.equip_suits_for(detail_a, detail_b)
         text = facts.format_battle_comparison(detail_a, detail_b, suits=suits)
         if detail_a.boss_name != detail_b.boss_name:
             return ToolAnswer(text)
@@ -409,17 +388,15 @@ class ToolService:
             return answer.noted(range_note)
         # Standings come from the ranking index and cover every rarity; the
         # DPS distribution needs a six-star key and is added when there is one.
-        index = self._data.ranking_index
-        if not await index.wait_filled():
-            return ToolAnswer(messages.INDEX_FILLING)
-        rankings = tuple(entry.ranking for entry in index.entries())
-        fielded = roster_character_names(rankings)
+        snapshot = await self._index()
+        if isinstance(snapshot, ToolAnswer):
+            return snapshot
         if len(split_character_names(name)) > 1:
             # Several names: the teams fielding all of them, standings only —
             # a team has no DPS distribution and no single set of partners.
-            answer = await self._team_standings(name, rankings, fielded, index)
+            answer = await self._team_standings(name, snapshot)
             return answer.noted(range_note)
-        resolution = resolve_character_name(name, fielded)
+        resolution = resolve_character_name(name, snapshot.fielded)
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
             return ToolAnswer(
                 messages.ambiguous_character(name, resolution.candidates)
@@ -429,62 +406,57 @@ class ToolService:
                 name, span, wanted_potential
             )
             return answer.noted(range_note)
-        standings = character_standings(rankings, resolution.name)
-        age = index.oldest_age_seconds()
+        recipe = await prepare_standings(
+            self._data,
+            snapshot,
+            (resolution.name,),
+            query=resolution.name,
+            web_base_url=self._web_base_url,
+        )
         key = await self._catalog_key(resolution.name)
         # The distribution is an upstream read of several seconds and the
         # render about one; they need nothing from each other, so they overlap.
-        elements = await self._data.character_elements(names=fielded)
         stats, image = await asyncio.gather(
             self._boss_statistics(key, span, wanted_potential),
-            self._render(
-                lambda renderer: renderer.render_character_standings(
-                    standings,
-                    query=resolution.name,
-                    web_base_url=self._web_base_url,
-                    age_seconds=age,
-                    elements=elements,
-                )
-            ),
+            self._render(recipe.draw),
         )
         parts = [
-            facts.format_character_standings(standings, age_seconds=age),
-            facts.format_character_partners(rankings, resolution.name),
+            facts.format_character_standings(
+                recipe.standings, age_seconds=recipe.age_seconds
+            ),
+            facts.format_character_partners(snapshot.rankings, resolution.name),
         ]
         if stats is not None:
             parts.append(facts.format_character_boards(stats))
         return (
             ToolAnswer(facts.join_sections(*parts), image)
-            .noted(_index_note(index))
+            .noted(_index_note(recipe.missing_count))
             .noted(range_note)
         )
 
     async def _team_standings(
-        self, text: str, rankings, fielded: tuple[str, ...], index
+        self, text: str, snapshot: IndexSnapshot
     ) -> ToolAnswer:
         """Where the teams fielding every named character stand, 角色排名 A B."""
 
-        names = resolve_standing_names(text, fielded)
+        names = resolve_standing_names(text, snapshot.fielded)
         if isinstance(names, str):
             return ToolAnswer(names)
-        standings = character_standings(rankings, *names)
-        if not standings.boards:
-            return ToolAnswer(
-                messages.NO_TEAM_FIELDING.format(names="」「".join(names))
-            )
-        age = index.oldest_age_seconds()
-        elements = await self._data.character_elements(names=fielded)
-        image = await self._render(
-            lambda renderer: renderer.render_character_standings(
-                standings,
-                query=" ".join(names),
-                web_base_url=self._web_base_url,
-                age_seconds=age,
-                elements=elements,
-            )
+        recipe = await prepare_standings(
+            self._data,
+            snapshot,
+            names,
+            query=" ".join(names),
+            web_base_url=self._web_base_url,
         )
-        text = facts.format_character_standings(standings, age_seconds=age)
-        return ToolAnswer(text, image).noted(_index_note(index))
+        refusal = recipe.refusal()
+        if refusal is not None:
+            return ToolAnswer(refusal)
+        image = await self._render(recipe.draw)
+        text = facts.format_character_standings(
+            recipe.standings, age_seconds=recipe.age_seconds
+        )
+        return ToolAnswer(text, image).noted(_index_note(recipe.missing_count))
 
     async def _champions(
         self,
@@ -502,59 +474,31 @@ class ToolService:
         ``span`` (7d / 14d / 30d) narrows every board to a window.
         """
 
-        index = self._data.ranking_index
-        if not await index.wait_filled():
-            return ToolAnswer(messages.INDEX_FILLING)
-        rankings = tuple(entry.ranking for entry in index.entries())
-        fielded = roster_character_names(rankings)
-        elements = await self._data.character_elements(names=fielded)
-        professions = await self._data.character_professions(names=fielded)
-        since = window_start(span, now=datetime.now(UTC))
-        tallies = character_tallies(rankings, since=since)
-        if element is not None:
-            tallies = tuple(t for t in tallies if elements.get(t.name) == element)
-        if profession is not None:
-            tallies = by_profession(tallies, profession)
-        # Who the catalog knows and no record fields; not worked out after an
-        # element cut, which would call every member of another element unseen.
-        unseen = (
-            unseen_characters(tallies, professions, profession=profession)
-            if element is None
-            else ()
-        )
-        teams = first_place_teams(rankings, since=since)
-        usage = profession_usage(rankings, since=since)
-        label = window_label(span)
-        age = index.oldest_age_seconds()
-        text = facts.format_character_tallies(
-            tallies,
-            board_count=len(rankings),
-            limit=15,
-            age_seconds=age,
+        snapshot = await self._index()
+        if isinstance(snapshot, ToolAnswer):
+            return snapshot
+        recipe = await prepare_champions(
+            self._data,
+            snapshot,
+            web_base_url=self._web_base_url,
             element=element,
             profession=profession,
-            teams=teams,
-            usage=usage,
-            window_label=label,
-            unseen=unseen,
+            time_range=span,
         )
-        image = await self._render(
-            lambda renderer: renderer.render_character_champions(
-                tallies,
-                board_count=len(rankings),
-                query="角色排名",
-                web_base_url=self._web_base_url,
-                age_seconds=age,
-                element=element,
-                elements=elements,
-                profession=profession,
-                teams=teams,
-                usage=usage,
-                window_label=label,
-                unseen=unseen,
-            )
+        text = facts.format_character_tallies(
+            recipe.tallies,
+            board_count=recipe.board_count,
+            limit=15,
+            age_seconds=recipe.age_seconds,
+            element=recipe.element,
+            profession=recipe.profession,
+            teams=recipe.teams,
+            usage=recipe.usage,
+            window_label=recipe.window_label,
+            unseen=recipe.unseen,
         )
-        return ToolAnswer(text, image).noted(_index_note(index))
+        image = await self._render(recipe.draw)
+        return ToolAnswer(text, image).noted(_index_note(recipe.missing_count))
 
     @staticmethod
     def _element(text: str) -> str | ToolAnswer:
@@ -832,31 +776,23 @@ class ToolService:
         """Which public accounts uploaded the most first places."""
 
         span, range_note = _time_range(time_range)
-        index = self._data.ranking_index
-        if not await index.wait_filled():
-            return ToolAnswer(messages.INDEX_FILLING)
-        rankings = tuple(entry.ranking for entry in index.entries())
-        since = window_start(span, now=datetime.now(UTC))
-        tallies = account_tallies(rankings, since=since)
-        label = window_label(span)
-        age = index.oldest_age_seconds()
+        snapshot = await self._index()
+        if isinstance(snapshot, ToolAnswer):
+            return snapshot
+        recipe = prepare_player_champions(snapshot, time_range=span)
         text = facts.format_account_tallies(
-            tallies,
-            board_count=len(rankings),
+            recipe.tallies,
+            board_count=recipe.board_count,
             limit=15,
-            age_seconds=age,
-            window_label=label,
+            age_seconds=recipe.age_seconds,
+            window_label=recipe.window_label,
         )
-        image = await self._render(
-            lambda renderer: renderer.render_player_champions(
-                tallies,
-                board_count=len(rankings),
-                query="玩家排名",
-                age_seconds=age,
-                window_label=label,
-            )
+        image = await self._render(recipe.draw)
+        return (
+            ToolAnswer(text, image)
+            .noted(_index_note(recipe.missing_count))
+            .noted(range_note)
         )
-        return ToolAnswer(text, image).noted(_index_note(index)).noted(range_note)
 
     # --- shared -------------------------------------------------------------------
 
@@ -868,17 +804,13 @@ class ToolService:
         except ZmdLogsClientError:
             return None
 
-    async def _equip_suits(self, *battles) -> dict[str, str]:
-        """The gear catalog, or nothing; a page renders without it.
+    async def _index(self) -> IndexSnapshot | ToolAnswer:
+        """The ranking index, or the answer for one still filling."""
 
-        The battles about to be drawn name the suits the page needs, which
-        is what lets the catalog notice one it has never heard of.
-        """
-
-        try:
-            return await self._data.get_equip_suits(wanted=battle_suit_ids(*battles))
-        except ZmdLogsClientError:
-            return {}
+        snapshot = await index_snapshot(self._data)
+        if snapshot is None:
+            return ToolAnswer(messages.INDEX_FILLING)
+        return snapshot
 
     async def _resolve_target(
         self, keyword: str
@@ -966,10 +898,9 @@ class ToolService:
             return None
 
 
-def _index_note(index) -> str:
+def _index_note(missing: int) -> str:
     """One line when the index is missing boards, so counts are not taken as whole."""
 
-    missing = index.missing_count
     if not missing:
         return ""
     return f"（榜单索引有 {missing} 个榜没读到，以下未计入它们。）"
