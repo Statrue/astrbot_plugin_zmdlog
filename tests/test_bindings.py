@@ -286,14 +286,23 @@ class ServiceTests(unittest.TestCase):
         again = self._service(self.client)
         self.assertEqual(again.bindings_for(USER).primary.account_id, "usr_a")
 
-    def test_a_private_chat_is_never_recorded_as_a_group(self) -> None:
-        reply = self._handle("绑定 ZMD-7K4M-QX2E", origin=PRIVATE)
+    def test_every_binding_command_answers_in_group_chats_only(self) -> None:
+        # The bot adds nobody as a friend, so a private chat is refused
+        # before the code is even looked at, bound or not.
+        for text in ("绑定 ZMD-7K4M-QX2E", "解绑", "主账号"):
+            for origin in (PRIVATE, ""):
+                with self.subTest(text=text, origin=origin):
+                    reply = self._handle(text, origin=origin)
+                    self.assertEqual(reply, messages.BINDING_GROUP_ONLY)
+        self.assertEqual(self.client.codes, [], "no lookup for a refused chat")
+        self.assertIsNone(self.service.bindings_for(USER))
 
-        self.assertIn("已绑定", reply)
-        self.assertEqual(self.service.bindings_for(USER).groups, ())
+        self.assertIn("已绑定", self._handle("绑定 ZMD-7K4M-QX2E"))
+        refused = self._handle("解绑", origin=PRIVATE)
+        self.assertEqual(refused, messages.BINDING_GROUP_ONLY)
+        self.assertIsNotNone(self.service.bindings_for(USER), "still bound")
+        # Membership is a group thing too, whoever calls.
         self.service.remember_member(USER, PRIVATE)
-        self.assertEqual(self.service.bindings_for(USER).groups, ())
-        self.service.remember_member(USER, GROUP)
         self.assertEqual(self.service.bindings_for(USER).groups, (GROUP,))
 
     def test_a_spent_code_is_refused_for_another_user(self) -> None:

@@ -53,7 +53,11 @@ ALIAS_ADMIN_ONLY = "只有机器人管理员可以修改别名。"
 
 # 绑定 / 我的 / 群榜. A binding is only ever made with a code the site
 # issued to whoever was logged into the account; there is no other way in.
+# Every one of these commands answers in group chats only: the bot adds
+# nobody as a friend (the user's rule, 2026-09-15), so a private chat is
+# not a place it is used from, and a group is where a 群榜 lives anyway.
 BINDINGS_DISABLED = "本机器人未开启账号绑定功能。"
+BINDING_GROUP_ONLY = "绑定相关指令（绑定 / 解绑 / 主账号 / 我的）只能在群聊里用。"
 NO_SENDER = "无法识别发送者，绑定功能在这里不可用。"
 HOW_TO_GET_A_CODE = (
     "登录 ZMDLogs，在 账号菜单 → 机器人绑定（/account/binding）生成绑定码，"

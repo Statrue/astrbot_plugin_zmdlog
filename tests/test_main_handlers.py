@@ -875,6 +875,12 @@ class HandlerTests(unittest.TestCase):
             "zmdlog 群榜 三位一体", origin="aiocqhttp:FriendMessage:1"
         )
         self.assertEqual((kind, reply), ("plain", "群榜只能在群聊里用。"))
+        # The bot adds nobody as a friend: every binding command is group-only.
+        for text in ("zmdlog 我的", "zmdlog 绑定 ZMD-AAAA-BBBB", "zmdlog 解绑 全部"):
+            with self.subTest(text=text):
+                (kind, reply), = self._zmdlog(text, origin="aiocqhttp:FriendMessage:1")
+                self.assertEqual(kind, "plain")
+                self.assertIn("只能在群聊里用", reply)
         (kind, reply), = self._zmdlog("zmdlog 解绑 全部")
         self.assertIn("已解除全部 2 个绑定", reply)
 

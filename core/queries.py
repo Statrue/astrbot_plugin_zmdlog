@@ -685,8 +685,8 @@ class QueryService:
 
         ``我的`` is the primary account, ``我的 2`` / ``我的 <昵称>`` another
         one of the sender's own; the selector is resolved inside that list,
-        never against the whole site. Using the command in a group also
-        puts the sender on that group's 群榜.
+        never against the whole site. Group chats only, like every binding
+        command, and asking puts the sender on that group's 群榜.
         """
 
         bindings = self._bindings
@@ -694,13 +694,14 @@ class QueryService:
             not bindings.enabled and bindings.book.total_users == 0
         ):
             return Outcome(message=messages.BINDINGS_DISABLED)
+        if not is_group_origin(origin):
+            return Outcome(message=messages.BINDING_GROUP_ONLY)
         if not requester_key:
             return Outcome(message=messages.NO_SENDER)
         mine = bindings.bindings_for(requester_key)
         if mine is None:
             return Outcome(message=messages.NOT_BOUND.format(command=command))
-        if is_group_origin(origin):
-            bindings.remember_member(requester_key, origin)
+        bindings.remember_member(requester_key, origin)
         if not selector.strip():
             account = mine.primary
         else:

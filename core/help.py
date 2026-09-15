@@ -166,7 +166,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
             ),
             HelpSection(
                 title="绑定",
-                summary="把自己和 ZMDLogs 账号对上号",
+                summary="把自己和 ZMDLogs 账号对上号，仅群聊",
                 commands=(
                     HelpCommand(
                         command=f"{command} 绑定 <绑定码>",

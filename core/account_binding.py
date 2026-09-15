@@ -86,7 +86,8 @@ class AccountBinding:
     def remember_member(self, requester_key: str, origin: str) -> None:
         """A bound user used 我的 or 群榜 here: they are on this chat's board now.
 
-        Group chats only; a private chat has no board to be on.
+        The callers already refuse a private chat; checked again here so a
+        new caller cannot record one as a group by mistake.
         """
 
         if not requester_key or not is_group_origin(origin):
@@ -105,8 +106,14 @@ class AccountBinding:
         requester_key: str,
         command: str,
     ) -> str:
-        """Maintain one user's bindings, in text; nothing is rendered."""
+        """Maintain one user's bindings, in text; nothing is rendered.
 
+        Group chats only, like every binding command: the bot adds nobody
+        as a friend, so a private chat is not a place it is used from.
+        """
+
+        if not is_group_origin(origin):
+            return messages.BINDING_GROUP_ONLY
         if not requester_key:
             return messages.NO_SENDER
         if route.kind is RouteKind.BIND:
@@ -155,9 +162,8 @@ class AccountBinding:
                     display_name=hit.account_display_name,
                     bound_at=now,
                 ),
-                # Binding in a group joins that group's board; a private
-                # chat is not a group and is not recorded as one.
-                origin=origin if is_group_origin(origin) else "",
+                # Binding here joins this group's board.
+                origin=origin,
                 now=now,
             )
             if status == "full":
