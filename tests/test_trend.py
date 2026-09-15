@@ -295,7 +295,14 @@ class TrendPageTests(unittest.TestCase):
 class TrendTemplateTests(unittest.TestCase):
     def test_trend_page_renders(self) -> None:
         renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
-        points = (RankPoint(stamp(5), 3), RankPoint(stamp(1), 1))
+        # The renderer windows against the wall clock, so the points are
+        # placed relative to it rather than to the fixture's fixed NOW —
+        # which slid out of the seven-day window six days after it was written.
+        recent = datetime.now(UTC)
+        points = (
+            RankPoint((recent - timedelta(days=5)).isoformat(), 3),
+            RankPoint((recent - timedelta(days=1)).isoformat(), 1),
+        )
         history = AccountHistory(
             "usr_watched",
             "CPU<b>0",

@@ -139,6 +139,12 @@ class FakeData:
         types = await self.get_character_types()
         return {name: entry.profession for name, entry in types.items()}
 
+    async def character_icons(self):
+        types = await self.get_character_types()
+        return {
+            name: entry.icon_path for name, entry in types.items() if entry.icon_path
+        }
+
     catalog_refreshes = 0
 
     async def get_character_catalog(self, *, refresh=False):
