@@ -33,7 +33,6 @@ from .candidates import (
 from .characters import (
     CharacterResolution,
     CharacterResolutionStatus,
-    account_roster_names,
     ranking_character_names,
     resolve_character_name,
     resolve_standing_names,
@@ -64,17 +63,20 @@ from .matcher import (
 from .messages import shorten
 from .models import (
     BattleDetailSummary,
-    BattleExport,
     HotBossCard,
 )
 from .rank_watch import RankWatcher
 from .recipes import (
     IndexSnapshot,
+    export_refusal,
     index_snapshot,
+    prepare_account,
+    prepare_battle,
     prepare_boards_overview,
     prepare_champions,
     prepare_character_boss,
     prepare_character_stats,
+    prepare_compare,
     prepare_dungeon_overview,
     prepare_player_champions,
     prepare_ranking,
@@ -138,7 +140,6 @@ _BOARD_ROUTES = frozenset(
 )
 _ACCOUNT_ROUTES = frozenset({RouteKind.ACCOUNT_QUERY, RouteKind.TREND_QUERY})
 CHARACTER_STATS_UNAVAILABLE = "character_statistics_not_available"
-EXPORT_UNSUPPORTED = "battle_export_unsupported"
 
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
@@ -220,16 +221,10 @@ class QueryService:
     async def render_battle_card(self, battle_id: str) -> Outcome:
         """The battle card for an auto-expanded link."""
 
-        battle, export, note = await self._battle_with_export(battle_id)
-        image_path = await self._renderer().render_battle(
-            battle,
-            query=battle_id,
-            web_base_url=self._web_base_url,
-            export=export,
-            export_note=note,
-            suits=await self._data.equip_suits_for(battle),
+        recipe = await prepare_battle(
+            self._data, battle_id, query=battle_id, web_base_url=self._web_base_url
         )
-        return Outcome(image_path=image_path)
+        return Outcome(image_path=await recipe.draw(self._renderer()))
 
     async def _index(self) -> IndexSnapshot | Outcome:
         """The ranking index, or the reply for one still filling."""
@@ -634,28 +629,15 @@ class QueryService:
 
         renderer = self._renderer()
         try:
-            account = await self._data.get_public_user_rankings(account_id)
+            recipe = await prepare_account(
+                self._data, account_id, query=query, web_base_url=self._web_base_url
+            )
         except ZmdLogsAPIError as exc:
             if exc.status_code != 404:
                 raise
             self._logger.warning("ZmdLogBot API request failed: %s", exc.code)
             return Outcome(message=messages.ACCOUNT_NOT_FOUND)
-        # Avatars, professions and the main C of each record come off the
-        # ranking index; the user endpoint only names the roster.
-        rows, listed = await self._data.index_rows_for(
-            row.battle_id for row in account.rankings
-        )
-        names = account_roster_names(account)
-        image_path = await renderer.render_account(
-            account,
-            query=query,
-            web_base_url=self._web_base_url,
-            rows_by_battle=rows,
-            listed_boards=listed,
-            elements=await self._data.character_elements(names=names),
-            icons=await self._data.character_icons(names=names),
-        )
-        return Outcome(image_path=image_path)
+        return Outcome(image_path=await recipe.draw(renderer))
 
     async def _render_my_account(
         self,
@@ -1064,7 +1046,7 @@ class QueryService:
                 return_exceptions=True,
             )
             if isinstance(export, ZmdLogsAPIError):
-                refusal = _export_refusal(export)
+                refusal = export_refusal(export)
                 if refusal is None:
                     raise export
                 self._logger.warning(
@@ -1099,67 +1081,10 @@ class QueryService:
                     battle, query=query, web_base_url=self._web_base_url
                 )
             return Outcome(image_path=image_path)
-        battle, export, note = await self._battle_with_export(battle_id)
-        image_path = await renderer.render_battle(
-            battle,
-            query=query,
-            web_base_url=self._web_base_url,
-            export=export,
-            export_note=note,
-            suits=await self._data.equip_suits_for(battle),
+        recipe = await prepare_battle(
+            self._data, battle_id, query=query, web_base_url=self._web_base_url
         )
-        return Outcome(image_path=image_path)
-
-    async def _battle_with_export(
-        self,
-        battle_id: str,
-    ) -> tuple[BattleDetailSummary, BattleExport | None, str | None]:
-        """The battle card's two reads, fetched together.
-
-        Serially, a slow or rate-limited export endpoint spent its whole
-        15-second client budget in front of the detail, so the card the
-        reader asked for waited on the section it can do without.
-        """
-
-        detail, extra = await asyncio.gather(
-            self._data.get_battle_detail(battle_id),
-            self._battle_export_for_card(battle_id),
-            return_exceptions=True,
-        )
-        if isinstance(detail, BaseException):
-            raise detail
-        if isinstance(extra, BaseException):
-            # _battle_export_for_card answers its own failures, so reaching
-            # here is a bug rather than an outage; the card stands without.
-            self._logger.warning(
-                "ZmdLogBot battle export raised unexpectedly: %s",
-                type(extra).__name__,
-            )
-            return detail, None, None
-        export, note = extra
-        return detail, export, note
-
-    async def _battle_export_for_card(
-        self,
-        battle_id: str,
-    ) -> tuple[BattleExport | None, str | None]:
-        """The cast sequence for the battle card, or a one-line reason without.
-
-        Best effort: the card must never fail because the export did. An old
-        upload and a rate limit get a note the card can print; anything else
-        is logged and the section is simply left out.
-        """
-
-        try:
-            return await self._data.get_battle_export(battle_id), None
-        except ZmdLogsAPIError as exc:
-            self._logger.warning("ZmdLogBot battle export unavailable: %s", exc.code)
-            return None, _export_refusal(exc)
-        except ZmdLogsClientError as exc:
-            self._logger.warning(
-                "ZmdLogBot battle export unavailable: %s", type(exc).__name__
-            )
-            return None, None
+        return Outcome(image_path=await recipe.draw(renderer))
 
     async def _render_compare(
         self,
@@ -1175,26 +1100,18 @@ class QueryService:
         if battle_id_a == battle_id_b:
             return Outcome(message=messages.COMPARE_SAME_BATTLE)
         renderer = self._renderer()
-        first, second = await asyncio.gather(
-            self._data.get_battle_detail(battle_id_a),
-            self._data.get_battle_detail(battle_id_b),
-        )
-        if first.boss_name != second.boss_name:
-            return Outcome(
-                message=messages.COMPARE_CROSS_BOSS.format(
-                    first=shorten(first.boss_name), second=shorten(second.boss_name)
-                )
-            )
-        image_path = await renderer.render_compare(
-            first,
-            second,
+        recipe = await prepare_compare(
+            self._data,
+            battle_id_a,
+            battle_id_b,
             query=query,
             web_base_url=self._web_base_url,
             rank_a=rank_a,
             rank_b=rank_b,
-            suits=await self._data.equip_suits_for(first, second),
         )
-        return Outcome(image_path=image_path)
+        if recipe.refusal is not None:
+            return Outcome(message=recipe.refusal)
+        return Outcome(image_path=await recipe.draw(renderer))
 
     async def _battle_detail_if_available(
         self,
@@ -1287,16 +1204,6 @@ def _no_such_rank(ranking, rank: int) -> str:
         f"「{ranking.boss_name}」公开排名共 {len(ranking.rows)} 条，"
         f"没有第 {rank} 名。"
     )
-
-
-def _export_refusal(error: ZmdLogsAPIError) -> str | None:
-    """The one-line reason the export endpoint gave, for the two known refusals."""
-
-    if error.status_code == 422 and error.code == EXPORT_UNSUPPORTED:
-        return messages.NO_TIMELINE
-    if error.status_code == 429:
-        return messages.TIMELINE_RATE_LIMITED
-    return None
 
 
 # --- error wording ------------------------------------------------------------------

@@ -114,6 +114,16 @@ class FakeData:
 
         raise ZmdLogsClientError("offline")
 
+    async def battle_export_for_card(self, battle_id):
+        from core.client import ZmdLogsAPIError, ZmdLogsClientError
+
+        try:
+            return await self.get_battle_export(battle_id), None
+        except ZmdLogsAPIError as exc:
+            return None, exc
+        except ZmdLogsClientError:
+            return None, None
+
     async def get_equip_suits(self, *, wanted=()):
         return {}
 

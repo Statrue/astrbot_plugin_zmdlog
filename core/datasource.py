@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .cache import AsyncTTLCache, CacheState
-from .client import ZmdLogsClient, ZmdLogsClientError
+from .client import ZmdLogsAPIError, ZmdLogsClient, ZmdLogsClientError
 from .events import EventLog
 from .loadout import battle_suit_ids
 from .logs import LogSink
@@ -544,6 +544,28 @@ class ZmdLogsDataSource:
             lambda: self.client.get_battle_detail(battle_id),
         )
         return result.value
+
+    async def battle_export_for_card(
+        self, battle_id: str
+    ) -> tuple[BattleExport | None, ZmdLogsAPIError | None]:
+        """The cast sequence for the battle card, or the API's reason without.
+
+        Best effort: the card must never fail because the export did. An
+        upstream refusal (an old upload, a rate limit) comes back for the
+        card to explain; an outage is logged and the section is simply left
+        out.
+        """
+
+        try:
+            return await self.get_battle_export(battle_id), None
+        except ZmdLogsAPIError as exc:
+            self._logger.warning("ZmdLogBot battle export unavailable: %s", exc.code)
+            return None, exc
+        except ZmdLogsClientError as exc:
+            self._logger.warning(
+                "ZmdLogBot battle export unavailable: %s", type(exc).__name__
+            )
+            return None, None
 
     async def get_battle_export(self, battle_id: str) -> BattleExport:
         result = await self.battle_export_cache.get_or_load(

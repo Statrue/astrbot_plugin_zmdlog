@@ -11,10 +11,12 @@ import asyncio
 import logging
 import unittest
 
+from core import messages
 from core.candidates import CandidateStore
-from core.client import ZmdLogsClientError
+from core.client import ZmdLogsAPIError, ZmdLogsClientError
 from core.matcher import AliasConfig, MatcherCache
 from core.models import (
+    parse_battle_detail,
     parse_boss_ranking,
     parse_hot_bosses,
     parse_public_user_rankings,
@@ -24,10 +26,12 @@ from core.routing import RouteKind, RouteRequest
 from core.settings import PluginSettings
 from core.toolbox import ToolService
 from tests.helpers import (
+    battle_detail_payload,
     hot_bosses_payload,
     public_user_rankings_payload,
     ranking_payload_with_rows,
 )
+from tests.test_compare import second_battle_payload
 from tests.test_tools import WEB, FakeData, FakeRenderer
 
 
@@ -47,6 +51,14 @@ class SamePictureTests(unittest.TestCase):
         self.ranking = parse_boss_ranking(ranking_payload_with_rows())
         self.data = FakeData(
             ranking=self.ranking,
+            battles={
+                "btl_upload_abcdef123456": parse_battle_detail(
+                    battle_detail_payload()
+                ),
+                "btl_upload_bbbbbbbbbbbb": parse_battle_detail(
+                    second_battle_payload()
+                ),
+            },
             account=parse_public_user_rankings(public_user_rankings_payload()),
         )
         matchers = MatcherCache()
@@ -268,3 +280,40 @@ class SamePictureTests(unittest.TestCase):
         run(self.tools.character("提弗洛斯"))
 
         self._assert_same_call("character_boss")
+
+    # --- battles and accounts ---------------------------------------------------
+
+    def test_a_battle(self) -> None:
+        self._command(RouteKind.BATTLE_QUERY, query="btl_upload_abcdef123456")
+        run(self.tools.battle("btl_upload_abcdef123456"))
+
+        self._assert_same_call("battle")
+
+    def test_a_battle_whose_export_the_endpoint_refused(self) -> None:
+        # The command's card said why its 施法节奏 section was missing; the
+        # tool's picture said nothing. Both now carry the note.
+        async def old_upload(battle_id):
+            raise ZmdLogsAPIError(422, "battle_export_unsupported", "old")
+
+        self.data.get_battle_export = old_upload
+
+        self._command(RouteKind.BATTLE_QUERY, query="btl_upload_abcdef123456")
+        run(self.tools.battle("btl_upload_abcdef123456"))
+
+        self._assert_same_call("battle")
+        kwargs = self.tool_renderer.kwargs["battle"]
+        self.assertIsNone(kwargs["export"])
+        self.assertEqual(kwargs["export_note"], messages.NO_TIMELINE)
+
+    def test_a_comparison(self) -> None:
+        first, second = "btl_upload_abcdef123456", "btl_upload_bbbbbbbbbbbb"
+        self._command(RouteKind.COMPARE_QUERY, query=first, compare_target=second)
+        run(self.tools.battle(first, compare_with=second))
+
+        self._assert_same_call("compare")
+
+    def test_an_account(self) -> None:
+        self._command(RouteKind.ACCOUNT_QUERY, query="usr_1234567890abcdef")
+        run(self.tools.account("usr_1234567890abcdef"))
+
+        self._assert_same_call("account")

@@ -26,7 +26,6 @@ from . import facts, messages
 from .candidates import MAX_CANDIDATES
 from .characters import (
     CharacterResolutionStatus,
-    account_roster_names,
     resolve_character_name,
     resolve_standing_names,
     split_character_names,
@@ -62,10 +61,13 @@ from .rank_watch import RankWatcher
 from .recipes import (
     IndexSnapshot,
     index_snapshot,
+    prepare_account,
+    prepare_battle,
     prepare_boards_overview,
     prepare_champions,
     prepare_character_boss,
     prepare_character_stats,
+    prepare_compare,
     prepare_dungeon_overview,
     prepare_player_champions,
     prepare_ranking,
@@ -258,32 +260,18 @@ class ToolService:
                 "需要一个 battleId 或战报链接。想按名次找，"
                 "先用榜单工具拿到那一名的 battleId。"
             )
-        # Three upstream reads, each with its own latency, go out together;
-        # awaiting them in turn put the optional two in front of the payload.
-        detail, export, suits = await asyncio.gather(
-            self._data.get_battle_detail(battle_id),
-            self._battle_export(battle_id),
-            self._data.equip_suits_for(),
-            return_exceptions=True,
-        )
-        if isinstance(detail, BaseException):
-            if isinstance(detail, ZmdLogsAPIError) and detail.status_code == 404:
-                return ToolAnswer(messages.BATTLE_NOT_FOUND)
-            raise detail
-        # Now that the battle names its suits, a suit the catalog lacks can
-        # ask for the bounded re-read; a cache hit otherwise.
-        suits = await self._data.equip_suits_for(detail)
-        text = facts.format_battle(detail, export=export, suits=suits)
-        image = await self._render(
-            lambda renderer: renderer.render_battle(
-                detail,
-                query=battle_id,
-                web_base_url=self._web_base_url,
-                export=export,
-                export_note=None,
-                suits=suits,
+        try:
+            recipe = await prepare_battle(
+                self._data, battle_id, query=battle_id, web_base_url=self._web_base_url
             )
+        except ZmdLogsAPIError as exc:
+            if exc.status_code == 404:
+                return ToolAnswer(messages.BATTLE_NOT_FOUND)
+            raise
+        text = facts.format_battle(
+            recipe.battle, export=recipe.export, suits=recipe.suits
         )
+        image = await self._render(recipe.draw)
         return ToolAnswer(text, image)
 
     async def compare(self, first: str, second: str) -> ToolAnswer:
@@ -295,30 +283,26 @@ class ToolService:
             )
         if left == right:
             return ToolAnswer(messages.COMPARE_SAME_BATTLE)
-        detail_a, detail_b, suits = await asyncio.gather(
-            self._data.get_battle_detail(left),
-            self._data.get_battle_detail(right),
-            self._data.equip_suits_for(),
-            return_exceptions=True,
-        )
-        for outcome in (detail_a, detail_b):
-            if isinstance(outcome, ZmdLogsAPIError) and outcome.status_code == 404:
-                return ToolAnswer("其中一场战报不存在、未公开或已删除。")
-            if isinstance(outcome, BaseException):
-                raise outcome
-        suits = await self._data.equip_suits_for(detail_a, detail_b)
-        text = facts.format_battle_comparison(detail_a, detail_b, suits=suits)
-        if detail_a.boss_name != detail_b.boss_name:
-            return ToolAnswer(text)
-        image = await self._render(
-            lambda renderer: renderer.render_compare(
-                detail_a,
-                detail_b,
+        try:
+            recipe = await prepare_compare(
+                self._data,
+                left,
+                right,
                 query=f"{left} vs {right}",
                 web_base_url=self._web_base_url,
-                suits=suits,
             )
+        except ZmdLogsAPIError as exc:
+            if exc.status_code == 404:
+                return ToolAnswer("其中一场战报不存在、未公开或已删除。")
+            raise
+        text = facts.format_battle_comparison(
+            recipe.first, recipe.second, suits=recipe.suits
         )
+        if recipe.refusal is not None:
+            # Two bosses have two rotations: the differences are still named,
+            # the page that would compare nothing is not drawn.
+            return ToolAnswer(text)
+        image = await self._render(recipe.draw)
         return ToolAnswer(text, image)
 
     # --- characters and accounts --------------------------------------------------
@@ -668,11 +652,14 @@ class ToolService:
                 return resolved
             account_id = resolved
         try:
-            rankings = await self._data.get_public_user_rankings(account_id)
+            recipe = await prepare_account(
+                self._data, account_id, query=query, web_base_url=self._web_base_url
+            )
         except ZmdLogsAPIError as exc:
             if exc.status_code == 404:
                 return ToolAnswer(messages.ACCOUNT_NOT_FOUND)
             raise
+        rankings = recipe.account
         # Habits come from whatever the index already holds; never wait for it.
         held = tuple(entry.ranking for entry in self._data.ranking_index.entries())
         habits = account_tally(held, account_id) if held else None
@@ -696,23 +683,7 @@ class ToolService:
                 )
             else:
                 parts.append(facts.NO_RANK_HISTORY)
-        rows, listed = await self._data.index_rows_for(
-            row.battle_id for row in rankings.rankings
-        )
-        names = account_roster_names(rankings)
-        elements = await self._data.character_elements(names=names)
-        icons = await self._data.character_icons(names=names)
-        image = await self._render(
-            lambda renderer: renderer.render_account(
-                rankings,
-                query=query,
-                web_base_url=self._web_base_url,
-                rows_by_battle=rows,
-                listed_boards=listed,
-                elements=elements,
-                icons=icons,
-            )
-        )
+        image = await self._render(recipe.draw)
         return ToolAnswer(facts.join_sections(*parts), image).noted(range_note)
 
     async def _search_account(self, query: str) -> str | ToolAnswer:
@@ -768,14 +739,6 @@ class ToolService:
         )
 
     # --- shared -------------------------------------------------------------------
-
-    async def _battle_export(self, battle_id: str):
-        """The cast list, or nothing; the card renders without it."""
-
-        try:
-            return await self._data.get_battle_export(battle_id)
-        except ZmdLogsClientError:
-            return None
 
     async def _index(self) -> IndexSnapshot | ToolAnswer:
         """The ranking index, or the answer for one still filling."""
