@@ -5,7 +5,10 @@ import logging
 import unittest
 
 from core.client import ZmdLogsClientError
-from core.datasource import ZmdLogsDataSource
+from core.datasource import (
+    CATALOG_REFRESH_MIN_INTERVAL_SECONDS,
+    ZmdLogsDataSource,
+)
 from core.elements import ELEMENTS, element_key, normalize_element
 from core.models import parse_boss_ranking, parse_character_types
 from core.presentation import build_character_champions_page, build_ranking_page
@@ -94,14 +97,17 @@ class FakeClient:
 
 
 class DataSourceTests(unittest.TestCase):
-    def test_the_catalog_is_read_once_and_kept_on_failure(self) -> None:
-        client = FakeClient()
-        source = ZmdLogsDataSource(
+    def _source(self, client) -> ZmdLogsDataSource:
+        return ZmdLogsDataSource(
             client,
             settings=PluginSettings(),
             data_dir=None,
             logger=logging.getLogger("t"),
         )
+
+    def test_the_catalog_is_read_once_and_kept_on_failure(self) -> None:
+        client = FakeClient()
+        source = self._source(client)
 
         first = run(source.get_character_types())
         client.fail = True
@@ -110,6 +116,31 @@ class DataSourceTests(unittest.TestCase):
         self.assertEqual(first["提弗洛斯"].element, "自然")
         self.assertEqual(second, first)
         self.assertEqual(client.calls, 1)
+
+    def test_a_name_the_catalog_lacks_re_reads_it_once_per_interval(self) -> None:
+        # A character released after start-up is a roster name without an
+        # element; the page asking for it re-reads the catalog, but a typo
+        # asked ten times a minute must not.
+        client = FakeClient()
+        source = self._source(client)
+        clock = [1_000.0]
+        source._clock = lambda: clock[0]
+
+        run(source.get_character_types(names=("提弗洛斯",)))
+        self.assertEqual(client.calls, 1)
+        run(source.character_elements(names=("新干员",)))
+        self.assertEqual(client.calls, 1, "the load just happened; no re-read yet")
+        clock[0] += CATALOG_REFRESH_MIN_INTERVAL_SECONDS
+        run(source.character_elements(names=("新干员",)))
+        self.assertEqual(client.calls, 2, "past the interval the miss re-reads")
+        run(source.character_icons(names=("新干员",)))
+        run(source.character_professions(names=("新干员",)))
+        self.assertEqual(client.calls, 2, "and only once per interval")
+        client.fail = True
+        clock[0] += CATALOG_REFRESH_MIN_INTERVAL_SECONDS
+        kept = run(source.character_elements(names=("新干员",)))
+        self.assertEqual(kept["提弗洛斯"], "自然", "a failed re-read keeps the copy")
+        self.assertEqual(client.calls, 3)
 
 
 class RoutingTests(unittest.TestCase):

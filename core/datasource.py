@@ -42,15 +42,18 @@ _HOT_BOSSES_KEY = "all_board_top3"
 # 50-130 KB, an order of magnitude more than any other cached value, so the
 # two battle caches get a tighter cap than the shared default.
 BATTLE_CACHE_MAX_ENTRIES = 64
-# Static game data: suits and six-star characters change when the game adds
-# content, which is months apart, never when someone uploads a run. Both
-# catalogs are therefore kept for as long as the process runs in practice,
-# and the character catalog is re-read when a name is not in it, because a
-# missing name is what a new character looks like.
+# Static game data: suits and characters change when the game adds content,
+# which is months apart, never when someone uploads a run. The three catalogs
+# are therefore kept for as long as the process runs in practice, and each is
+# re-read when something it should name is not in it — a roster name without
+# an element, a suit id without a name — because a missing entry is what new
+# content looks like. Without that, a character released after start-up wore
+# no ring and matched no --属性 for up to a month.
 STATIC_CATALOG_TTL_SECONDS = 30 * 24 * 3600.0
 EQUIP_CATALOG_TTL_SECONDS = STATIC_CATALOG_TTL_SECONDS
-# A wrong name must not re-read the five-second global statistics response
-# every time someone mistypes; one refresh per this interval is enough.
+# A wrong name must not re-read a catalog every time someone mistypes (the
+# global statistics response takes five seconds upstream); one refresh per
+# this interval is enough.
 CATALOG_REFRESH_MIN_INTERVAL_SECONDS = 10 * 60.0
 _EQUIP_CATALOG_KEY = "equip_suits"
 _CHARACTER_TYPES_KEY = "character_types"
@@ -120,6 +123,10 @@ class ZmdLogsDataSource:
         self._character_catalog: tuple[CharacterCatalogEntry, ...] | None = None
         self._character_catalog_loaded_at = 0.0
         self._character_catalog_lock = asyncio.Lock()
+        # When each game-data catalog was last asked for, refresh included,
+        # so a miss re-reads it at most once per interval.
+        self._character_types_checked_at = float("-inf")
+        self._equip_suits_checked_at = float("-inf")
         self._clock = time.monotonic
         # What every re-read of a board changed, kept in one bounded file.
         self.event_log = EventLog(
@@ -218,37 +225,100 @@ class ZmdLogsDataSource:
             )
             return cards
 
-    async def get_equip_suits(self) -> dict[str, str]:
+    async def get_equip_suits(
+        self, *, wanted: Iterable[str] = ()
+    ) -> dict[str, str]:
         """Suit id to display name, from the game data catalog.
 
         The one read whose answer is the same for every battle, so it is
         kept for a month and may be served stale: a gear label going missing
-        for a whole page is worse than a label a while out of date.
+        for a whole page is worse than a label a while out of date. ``wanted``
+        are the suit ids a page is about to print; one the catalog lacks asks
+        for a bounded re-read, because a new suit looks exactly like that.
         """
 
-        return await self._stale_tolerant(
+        suits = await self._stale_tolerant(
             self.equip_catalog_cache,
             _EQUIP_CATALOG_KEY,
             self._fetch_equip_suits,
             "equip catalog",
         )
+        if self._lacks(suits, wanted) and self._may_refresh(
+            self._equip_suits_checked_at
+        ):
+            suits = await self._refresh_catalog(
+                self.equip_catalog_cache,
+                _EQUIP_CATALOG_KEY,
+                self._fetch_equip_suits,
+                "equip catalog",
+                held=suits,
+            )
+        return suits
 
     async def _fetch_equip_suits(self) -> dict[str, str]:
+        self._equip_suits_checked_at = self._clock()
         suits = await self.client.get_equip_catalog()
         return {suit.suit_id: suit.name for suit in suits}
 
-    async def get_character_types(self) -> dict[str, CharacterType]:
-        """Name to element and weapon type; kept for a month like the suits."""
+    async def get_character_types(
+        self, *, names: Iterable[str] = ()
+    ) -> dict[str, CharacterType]:
+        """Name to element and weapon type; kept for a month like the suits.
 
-        return await self._stale_tolerant(
+        ``names`` are the characters the caller is about to draw. One the
+        catalog lacks is what a character released since the last read looks
+        like, so it asks for one re-read, at most once per
+        ``CATALOG_REFRESH_MIN_INTERVAL_SECONDS``; a typo costs nothing more.
+        """
+
+        types = await self._stale_tolerant(
             self.character_type_cache,
             _CHARACTER_TYPES_KEY,
             self._fetch_character_types,
             "character catalog",
         )
+        if self._lacks(types, names) and self._may_refresh(
+            self._character_types_checked_at
+        ):
+            types = await self._refresh_catalog(
+                self.character_type_cache,
+                _CHARACTER_TYPES_KEY,
+                self._fetch_character_types,
+                "character catalog",
+                held=types,
+            )
+        return types
 
     async def _fetch_character_types(self) -> dict[str, CharacterType]:
+        self._character_types_checked_at = self._clock()
         return {entry.name: entry for entry in await self.client.get_character_types()}
+
+    @staticmethod
+    def _lacks(catalog, keys: Iterable[str]) -> bool:
+        return any(key and key not in catalog for key in keys)
+
+    def _may_refresh(self, checked_at: float) -> bool:
+        return self._clock() - checked_at >= CATALOG_REFRESH_MIN_INTERVAL_SECONDS
+
+    async def _refresh_catalog(self, cache, key, loader, what: str, *, held):
+        """Re-read one catalog for a missing entry; keep ``held`` on failure.
+
+        The held copy is still the best answer there is, and the failure is
+        logged rather than raised because the page asking is drawn without
+        the catalog anyway.
+        """
+
+        try:
+            value = await loader()
+        except ZmdLogsClientError as exc:
+            self._logger.warning(
+                "ZmdLogBot could not refresh the %s for a missing entry: %s",
+                what,
+                type(exc).__name__,
+            )
+            return held
+        await cache.put(key, value)
+        return value
 
     async def get_character_catalog(
         self, *, refresh: bool = False
@@ -371,17 +441,24 @@ class ZmdLogsDataSource:
         )
         return result.value
 
-    async def character_elements(self) -> dict[str, str]:
-        """Name to element label; empty when the catalog is unreachable."""
+    async def character_elements(
+        self, *, names: Iterable[str] = ()
+    ) -> dict[str, str]:
+        """Name to element label; empty when the catalog is unreachable.
+
+        ``names`` (the characters about to be drawn) let a newcomer trigger
+        the catalog's bounded re-read; see :meth:`get_character_types`.
+        """
 
         try:
-            types = await self.get_character_types()
+            types = await self.get_character_types(names=names)
         except ZmdLogsClientError:
             return {}
         return {name: entry.element for name, entry in types.items()}
 
-
-    async def character_icons(self) -> dict[str, str]:
+    async def character_icons(
+        self, *, names: Iterable[str] = ()
+    ) -> dict[str, str]:
         """Name to portrait path; empty when the catalog is unreachable.
 
         Ranking rows carry a portrait per roster entry, but a record on a
@@ -391,7 +468,7 @@ class ZmdLogsDataSource:
         """
 
         try:
-            types = await self.get_character_types()
+            types = await self.get_character_types(names=names)
         except ZmdLogsClientError:
             return {}
         return {
@@ -400,11 +477,13 @@ class ZmdLogsDataSource:
             if entry.icon_path
         }
 
-    async def character_professions(self) -> dict[str, str]:
+    async def character_professions(
+        self, *, names: Iterable[str] = ()
+    ) -> dict[str, str]:
         """Name to profession as the catalog spells it; empty when unreachable."""
 
         try:
-            types = await self.get_character_types()
+            types = await self.get_character_types(names=names)
         except ZmdLogsClientError:
             return {}
         return {

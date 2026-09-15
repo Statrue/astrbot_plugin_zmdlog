@@ -327,7 +327,7 @@ class HandlerTests(unittest.TestCase):
         index._slugs = (ranking.boss_slug,)
         index._entries[ranking.boss_slug] = IndexEntry(ranking, 0.0)
 
-        async def types():
+        async def types(*, names=()):
             return {
                 "黎风": CharacterType("黎风", "物理", "长枪", "近卫"),
                 "洛茜": CharacterType("洛茜", "自然", "手铳", "近卫"),
@@ -944,7 +944,10 @@ class HandlerTests(unittest.TestCase):
             seen.append(kwargs.get("suits"))
             return "/tmp/loadout.png"
 
-        async def suits():
+        wanted_suits: list[tuple] = []
+
+        async def suits(*, wanted=()):
+            wanted_suits.append(tuple(wanted))
             return {"suit_phy01": "点剑"}
 
         self.plugin.data.get_battle_detail = detail
@@ -954,8 +957,11 @@ class HandlerTests(unittest.TestCase):
         (kind, result), = self._zmdlog("zmdlog 配装 btl_upload_abcdef123456")
         self.assertEqual((kind, result), ("image", "/tmp/loadout.png"))
         self.assertEqual(seen, [{"suit_phy01": "点剑"}])
+        # The page names the suits it is about to print, so a suit the
+        # catalog has never heard of can ask for a re-read.
+        self.assertIn("suit_phy01", wanted_suits[0])
 
-        async def broken():
+        async def broken(*, wanted=()):
             raise ZmdLogsClientError("offline")
 
         self.plugin.data.get_equip_suits = broken

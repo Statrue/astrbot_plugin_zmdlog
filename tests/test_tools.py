@@ -112,7 +112,7 @@ class FakeData:
 
         raise ZmdLogsClientError("offline")
 
-    async def get_equip_suits(self):
+    async def get_equip_suits(self, *, wanted=()):
         return {}
 
     async def get_public_user_rankings(self, account_id):
@@ -131,15 +131,15 @@ class FakeData:
     async def index_rows_for(self, battle_ids):
         return {}, None
 
-    async def character_elements(self):
+    async def character_elements(self, *, names=()):
         types = await self.get_character_types()
         return {name: entry.element for name, entry in types.items()}
 
-    async def character_professions(self):
+    async def character_professions(self, *, names=()):
         types = await self.get_character_types()
         return {name: entry.profession for name, entry in types.items()}
 
-    async def character_icons(self):
+    async def character_icons(self, *, names=()):
         types = await self.get_character_types()
         return {
             name: entry.icon_path for name, entry in types.items() if entry.icon_path

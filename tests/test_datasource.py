@@ -13,6 +13,7 @@ from core.datasource import (
 from core.models import (
     parse_boss_ranking,
     parse_character_statistics,
+    parse_equip_catalog,
     parse_hot_bosses,
 )
 from core.persistence import JsonStore, load_json
@@ -49,6 +50,15 @@ class FakeClient:
     async def get_public_user_rankings(self, account_id):
         self.account_reads += 1
         raise ZmdLogsClientError("endpoint answered instead of the index")
+
+    suit_reads = 0
+    suits = ({"suitID": "suit_phy01", "name": "点剑"},)
+
+    async def get_equip_catalog(self):
+        self.suit_reads += 1
+        if self.fail:
+            raise ZmdLogsClientError("offline")
+        return parse_equip_catalog({"kind": "equip", "entries": list(self.suits)})
 
 
 def run(coro):
@@ -89,6 +99,28 @@ class DataSourceTests(unittest.TestCase):
             load_json(self.root / HOT_BOSSES_SNAPSHOT), hot_bosses_payload()
         )
         self.assertEqual(self.logger.messages, [])
+
+    def test_a_suit_the_catalog_lacks_re_reads_it_once_per_interval(self) -> None:
+        # A new suit reaches the plugin as an item id the catalog cannot name;
+        # the page printing it asks for one re-read, bounded like the
+        # character catalog's, and the newly named suit is served from then on.
+        client = FakeClient(hot_bosses_payload())
+        source = self._source(client)
+        clock = [5_000.0]
+        source._clock = lambda: clock[0]
+
+        first = run(source.get_equip_suits(wanted=("suit_phy01",)))
+        self.assertEqual(first, {"suit_phy01": "点剑"})
+        run(source.get_equip_suits(wanted=("suit_new01",)))
+        self.assertEqual(client.suit_reads, 1, "just loaded: no re-read yet")
+        client.suits = (*client.suits, {"suitID": "suit_new01", "name": "新套"})
+        clock[0] += CATALOG_REFRESH_MIN_INTERVAL_SECONDS
+        refreshed = run(source.get_equip_suits(wanted=("suit_new01",)))
+        self.assertEqual(client.suit_reads, 2)
+        self.assertEqual(refreshed["suit_new01"], "新套")
+        run(source.get_equip_suits(wanted=("suit_new01",)))
+        self.assertEqual(client.suit_reads, 2, "named now: a plain cache hit")
+        run(source.close())
 
     def test_the_snapshot_serves_the_index_when_upstream_is_down(self) -> None:
         (self.root / HOT_BOSSES_SNAPSHOT).write_text(

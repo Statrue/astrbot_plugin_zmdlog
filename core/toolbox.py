@@ -27,6 +27,7 @@ from .candidates import MAX_CANDIDATES
 from .characters import (
     CharacterFilterScope,
     CharacterResolutionStatus,
+    account_roster_names,
     pick_character_filter_scope,
     ranking_character_names,
     resolve_character_name,
@@ -46,6 +47,7 @@ from .identifiers import (
     parse_account_reference,
     parse_battle_reference,
 )
+from .loadout import battle_suit_ids
 from .logs import LogSink
 from .matcher import (
     BOARD_QUERY_TARGETS,
@@ -160,7 +162,9 @@ class ToolService:
             choice, cards = target
             return await self._dungeon_overview(keyword, choice, cards)
         ranking = await self._data.get_boss_ranking(target)
-        elements = await self._data.character_elements()
+        elements = await self._data.character_elements(
+            names=ranking_character_names(ranking)
+        )
         name, scope = "", CharacterFilterScope.MAIN
         if character.strip():
             resolved = self._resolve_character(ranking, character)
@@ -316,6 +320,9 @@ class ToolService:
             if isinstance(detail, ZmdLogsAPIError) and detail.status_code == 404:
                 return ToolAnswer(messages.BATTLE_NOT_FOUND)
             raise detail
+        # Now that the battle names its suits, a suit the catalog lacks can
+        # ask for the bounded re-read; a cache hit otherwise.
+        suits = await self._equip_suits(detail)
         text = facts.format_battle(detail, export=export, suits=suits)
         image = await self._render(
             lambda renderer: renderer.render_battle(
@@ -349,8 +356,7 @@ class ToolService:
                 return ToolAnswer("其中一场战报不存在、未公开或已删除。")
             if isinstance(outcome, BaseException):
                 raise outcome
-        if isinstance(suits, BaseException):
-            suits = {}
+        suits = await self._equip_suits(detail_a, detail_b)
         text = facts.format_battle_comparison(detail_a, detail_b, suits=suits)
         if detail_a.boss_name != detail_b.boss_name:
             return ToolAnswer(text)
@@ -405,7 +411,8 @@ class ToolService:
         if not await index.wait_filled():
             return ToolAnswer(messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
-        resolution = resolve_character_name(name, roster_character_names(rankings))
+        fielded = roster_character_names(rankings)
+        resolution = resolve_character_name(name, fielded)
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
             return ToolAnswer(
                 messages.ambiguous_character(name, resolution.candidates)
@@ -420,7 +427,7 @@ class ToolService:
         key = await self._catalog_key(resolution.name)
         # The distribution is an upstream read of several seconds and the
         # render about one; they need nothing from each other, so they overlap.
-        elements = await self._data.character_elements()
+        elements = await self._data.character_elements(names=fielded)
         stats, image = await asyncio.gather(
             self._boss_statistics(key, span, wanted_potential),
             self._render(
@@ -465,8 +472,9 @@ class ToolService:
         if not await index.wait_filled():
             return ToolAnswer(messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
-        elements = await self._data.character_elements()
-        professions = await self._data.character_professions()
+        fielded = roster_character_names(rankings)
+        elements = await self._data.character_elements(names=fielded)
+        professions = await self._data.character_professions(names=fielded)
         since = window_start(span, now=datetime.now(UTC))
         tallies = character_tallies(rankings, since=since)
         if element is not None:
@@ -740,8 +748,9 @@ class ToolService:
         rows, listed = await self._data.index_rows_for(
             row.battle_id for row in rankings.rankings
         )
-        elements = await self._data.character_elements()
-        icons = await self._data.character_icons()
+        names = account_roster_names(rankings)
+        elements = await self._data.character_elements(names=names)
+        icons = await self._data.character_icons(names=names)
         image = await self._render(
             lambda renderer: renderer.render_account(
                 rankings,
@@ -825,11 +834,15 @@ class ToolService:
         except ZmdLogsClientError:
             return None
 
-    async def _equip_suits(self) -> dict[str, str]:
-        """The gear catalog, or nothing; a page renders without it."""
+    async def _equip_suits(self, *battles) -> dict[str, str]:
+        """The gear catalog, or nothing; a page renders without it.
+
+        The battles about to be drawn name the suits the page needs, which
+        is what lets the catalog notice one it has never heard of.
+        """
 
         try:
-            return await self._data.get_equip_suits()
+            return await self._data.get_equip_suits(wanted=battle_suit_ids(*battles))
         except ZmdLogsClientError:
             return {}
 

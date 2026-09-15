@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .matcher import fold_text, normalize_search_text, pinyin_keys
-from .models import BossRanking, BossRankingRow
+from .models import BossRanking, BossRankingRow, PublicUserRankings
 
 
 class CharacterResolutionStatus(str, Enum):
@@ -39,6 +39,16 @@ def ranking_character_names(ranking: BossRanking) -> tuple[str, ...]:
     for group in ranking.profession_groups:
         for entry in group.entries:
             add(entry.character_name)
+    return tuple(names)
+
+
+def account_roster_names(account: PublicUserRankings) -> tuple[str, ...]:
+    """Every character named in an account's records, for the catalog reads."""
+
+    names: dict[str, None] = {}
+    for row in account.rankings:
+        for name in row.roster_summary:
+            names.setdefault(name, None)
     return tuple(names)
 
 

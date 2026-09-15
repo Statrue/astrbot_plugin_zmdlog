@@ -591,6 +591,23 @@ def suit_catalog_id(item_id: str | None) -> str | None:
     return f"suit_{match.group('token').lower()}"
 
 
+def battle_suit_ids(*battles) -> tuple[str, ...]:
+    """Every suit the pieces of these battles belong to, for the catalog read.
+
+    A suit the catalog does not name yet is what a new suit looks like; the
+    data source re-reads the catalog for it, once in a while.
+    """
+
+    ids: dict[str, None] = {}
+    for battle in battles:
+        for entry in battle.roster:
+            for equip in entry.equips:
+                suit_id = suit_catalog_id(equip.item_id)
+                if suit_id:
+                    ids.setdefault(suit_id, None)
+    return tuple(ids)
+
+
 def is_raw_item_name(piece_name: str, item_id: str | None) -> bool:
     """Whether upstream fell back to the item id instead of a real name."""
 

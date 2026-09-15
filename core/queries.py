@@ -33,6 +33,7 @@ from .characters import (
     CharacterFilterScope,
     CharacterResolution,
     CharacterResolutionStatus,
+    account_roster_names,
     pick_character_filter_scope,
     ranking_character_names,
     resolve_character_name,
@@ -53,6 +54,7 @@ from .identifiers import (
     parse_account_reference,
     parse_battle_reference,
 )
+from .loadout import battle_suit_ids
 from .logs import LogSink
 from .matcher import (
     BOARD_QUERY_TARGETS,
@@ -211,15 +213,19 @@ class QueryService:
             web_base_url=self._web_base_url,
             export=export,
             export_note=note,
-            suits=await self._equip_suits(),
+            suits=await self._equip_suits(battle),
         )
         return Outcome(image_path=image_path)
 
-    async def _equip_suits(self) -> dict[str, str]:
-        """The suit catalog, or nothing; a gear page must render without it."""
+    async def _equip_suits(self, *battles) -> dict[str, str]:
+        """The suit catalog, or nothing; a gear page must render without it.
+
+        The battles about to be drawn name the suits the page needs, which
+        is what lets the catalog notice a suit it has never heard of.
+        """
 
         try:
-            return await self._data.get_equip_suits()
+            return await self._data.get_equip_suits(wanted=battle_suit_ids(*battles))
         except ZmdLogsClientError as exc:
             self._logger.warning(
                 "ZmdLogBot equip catalog unavailable: %s", type(exc).__name__
@@ -620,14 +626,15 @@ class QueryService:
         rows, listed = await self._data.index_rows_for(
             row.battle_id for row in account.rankings
         )
+        names = account_roster_names(account)
         image_path = await renderer.render_account(
             account,
             query=query,
             web_base_url=self._web_base_url,
             rows_by_battle=rows,
             listed_boards=listed,
-            elements=await self._data.character_elements(),
-            icons=await self._data.character_icons(),
+            elements=await self._data.character_elements(names=names),
+            icons=await self._data.character_icons(names=names),
         )
         return Outcome(image_path=image_path)
 
@@ -714,7 +721,8 @@ class QueryService:
         if not await index.wait_filled():
             return Outcome(message=messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
-        elements = await self._data.character_elements()
+        fielded = roster_character_names(rankings)
+        elements = await self._data.character_elements(names=fielded)
         if not query.strip():
             since = window_start(time_range, now=datetime.now(UTC))
             tallies = character_tallies(rankings, since=since)
@@ -731,7 +739,7 @@ class QueryService:
                     # would read as "never fielded".
                     unseen = unseen_characters(
                         tallies,
-                        await self._data.character_professions(),
+                        await self._data.character_professions(names=fielded),
                         profession=profession_filter,
                     )
             image_path = await self._renderer().render_character_champions(
@@ -961,7 +969,9 @@ class QueryService:
                             f"「{'、'.join(resolved)}」的记录。"
                         )
                     )
-        elements = await self._data.character_elements()
+        elements = await self._data.character_elements(
+            names=ranking_character_names(ranking)
+        )
         element_filter = pending.element_filter
         if element_filter is not None and not any(
             elements.get(row.character_name) == element_filter for row in ranking.rows
@@ -1054,7 +1064,7 @@ class QueryService:
                     battle,
                     query=query,
                     web_base_url=self._web_base_url,
-                    suits=await self._equip_suits(),
+                    suits=await self._equip_suits(battle),
                 )
             else:
                 if not battle.skill_stats:
@@ -1070,7 +1080,7 @@ class QueryService:
             web_base_url=self._web_base_url,
             export=export,
             export_note=note,
-            suits=await self._equip_suits(),
+            suits=await self._equip_suits(battle),
         )
         return Outcome(image_path=image_path)
 
@@ -1156,7 +1166,7 @@ class QueryService:
             web_base_url=self._web_base_url,
             rank_a=rank_a,
             rank_b=rank_b,
-            suits=await self._equip_suits(),
+            suits=await self._equip_suits(first, second),
         )
         return Outcome(image_path=image_path)
 

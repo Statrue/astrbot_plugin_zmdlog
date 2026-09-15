@@ -6,6 +6,7 @@ from pathlib import Path
 from core.candidates import CandidateStore, CandidateView, format_candidates
 from core.loadout import (
     SkillCategory,
+    battle_suit_ids,
     group_skill_damage,
     is_raw_item_name,
     skill_category,
@@ -363,6 +364,25 @@ class GearHelperTests(unittest.TestCase):
         self.assertTrue(is_raw_item_name("", None))
         self.assertFalse(
             is_raw_item_name("点剑护手", "item_equip_t4_suit_phy01_hand_01")
+        )
+
+    def test_a_battle_names_the_suits_its_pieces_belong_to(self) -> None:
+        # What the catalog read is asked to cover: every suit id once, in the
+        # order the pieces appear, standalone parts left out.
+        battle = parse_battle_detail(battle_detail_payload())
+
+        ids = battle_suit_ids(battle, battle)
+
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(suit.startswith("suit_") for suit in ids))
+        self.assertEqual(
+            set(ids),
+            {
+                suit_catalog_id(equip.item_id)
+                for entry in battle.roster
+                for equip in entry.equips
+                if suit_catalog_id(equip.item_id)
+            },
         )
 
     def test_skill_and_weapon_levels(self) -> None:
