@@ -32,6 +32,7 @@ class CandidateView(str, Enum):
     WATCH = "watch"
     WATCH_BOARD = "watch_board"
     TREND = "trend"
+    GROUP_BOARD = "group_board"
 
 
 _VIEW_TITLES = {
@@ -46,6 +47,7 @@ _VIEW_TITLES = {
     CandidateView.WATCH: "匹配到 {count} 个公开账号，选一个关注",
     CandidateView.WATCH_BOARD: "匹配到 {count} 个榜单，选一个关注",
     CandidateView.TREND: "匹配到 {count} 个公开账号，选一个看名次趋势",
+    CandidateView.GROUP_BOARD: "的群榜查询匹配到 {count} 个榜单",
 }
 
 

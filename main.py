@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover - depends on host AstrBot version
         Image = Plain = None
 
 from .core import facts, messages
+from .core.account_binding import AccountBinding
 from .core.alias_admin import AliasAdmin
 from .core.candidates import (
     CandidateStore,
@@ -82,6 +83,10 @@ _WATCH_ROUTES = frozenset(
         RouteKind.WATCH_BOARD_ADD,
         RouteKind.WATCH_BOARD_REMOVE,
     }
+)
+# Text-only like 关注: a binding is a configuration action, not a query.
+_BINDING_ROUTES = frozenset(
+    {RouteKind.BIND, RouteKind.UNBIND, RouteKind.PRIMARY_ACCOUNT}
 )
 _NOTICE_SEND_TIMEOUT_SECONDS = 30.0
 # The pictures the tools of one turn drew, kept on the event until the model
@@ -179,6 +184,12 @@ class ZmdLogBotPlugin(Star):
             notify=self._send_notice,
             logger=logger,
         )
+        self.bindings = AccountBinding(
+            client=self.client,
+            settings=settings,
+            data_dir=self.data_dir,
+            logger=logger,
+        )
         self.queries = QueryService(
             client=self.client,
             data=self.data,
@@ -188,6 +199,7 @@ class ZmdLogBotPlugin(Star):
             watcher=self.watcher,
             settings=settings,
             logger=logger,
+            bindings=self.bindings,
         )
         self.tools = ToolService(
             client=self.client,
@@ -277,13 +289,24 @@ class ZmdLogBotPlugin(Star):
             # RouteParseError must still answer briefly, never as a traceback.
             yield event.plain_result("指令参数无法解析，请检查后重试。")
             return
-        if route.kind in _ALIAS_ROUTES or route.kind in _WATCH_ROUTES:
+        if (
+            route.kind in _ALIAS_ROUTES
+            or route.kind in _WATCH_ROUTES
+            or route.kind in _BINDING_ROUTES
+        ):
             # These reply in text and never reach _dispatch, so they need their
             # own guard: an unexpected error must not surface as a traceback.
             try:
                 if route.kind in _ALIAS_ROUTES:
                     message = await self.alias_admin.handle(
                         route, is_admin=self._event_is_admin(event)
+                    )
+                elif route.kind in _BINDING_ROUTES:
+                    message = await self.bindings.handle_route(
+                        route,
+                        origin=self._event_origin(event),
+                        requester_key=self._event_user_key(event),
+                        command=self._command_prefix(event) + "zmdlog",
                     )
                 else:
                     message = await self.watcher.handle_route(
@@ -308,6 +331,7 @@ class ZmdLogBotPlugin(Star):
                 route,
                 command_prefix=self._command_prefix(event),
                 origin=self._event_origin(event),
+                requester_key=self._event_user_key(event),
             ),
             api_error_message=lambda exc: api_error_message(route, exc),
             failure_label="command",

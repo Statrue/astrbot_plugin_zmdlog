@@ -165,6 +165,32 @@ def build_help_page(command_prefix: str) -> HelpPage:
                 ),
             ),
             HelpSection(
+                title="绑定",
+                summary="把自己和 ZMDLogs 账号对上号",
+                commands=(
+                    HelpCommand(
+                        command=f"{command} 绑定 <绑定码>",
+                        answers="怎么让机器人知道我是谁？",
+                        description=(
+                            "在 ZMDLogs 登录后从 账号菜单 → 机器人绑定 生成绑定码，"
+                            "10 分钟内有效；解绑 / 主账号 管理列表。"
+                        ),
+                    ),
+                    HelpCommand(
+                        command=f"{command} 我的 [序号或昵称]",
+                        answers="我自己各首领的最好成绩是多少？",
+                        description="默认看主账号，绑了几个号就写序号。",
+                    ),
+                    HelpCommand(
+                        command=f"{command} 群榜 <榜单关键词> [--top 数量]",
+                        answers="本群谁打这个榜最快？",
+                        description=(
+                            "本群用过绑定指令的成员在该榜的最好记录，按全榜名次排。"
+                        ),
+                    ),
+                ),
+            ),
+            HelpSection(
                 title="管理",
                 summary="仅机器人管理员",
                 commands=(

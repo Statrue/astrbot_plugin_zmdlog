@@ -1,0 +1,81 @@
+{% extends "common/base.html" %}
+
+{% block extra_styles %}
+{% include "common/standings-rows.css" %}
+{% endblock %}
+
+{% block hero_facts %}
+<div class="hero-facts">
+  <div class="hero-fact hero-fact--key"><span>群内上榜</span><strong>{{ page.listed_count }}</strong><em>绑定账号 {{ page.account_count }}</em></div>
+  <div class="hero-fact"><span>本群成员</span><strong>{{ page.member_count }}</strong><em>用过绑定指令的人</em></div>
+  <div class="hero-fact"><span>全榜记录</span><strong>{{ page.total_rows }}</strong><em>{{ page.dungeon_name }}</em></div>
+  {% if page.as_of_label %}
+  <div class="hero-fact"><span>时效</span><strong class="standings-asof">{{ page.as_of_label }}</strong></div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="section-heading">
+  <h2>群内排行</h2>
+  <span class="section-note">本群绑定过账号的成员在「{{ page.boss_name }}」的最好一条公开记录，按全榜名次排 · 名次是该记录在该榜全部记录中的位置{% if page.truncated %} · 绑定账号超过统计上限，只取最近用过绑定指令的成员{% endif %}</span>
+</div>
+
+{% if page.rows %}
+<section class="standings">
+  <div class="standings-head" aria-hidden="true">
+    <span class="standings-head-rank">群内 · 全榜名次</span>
+    <span class="standings-head-board">玩家 · 阵容</span>
+    <span class="standings-head-record">记录</span>
+    <span class="standings-head-time">用时</span>
+    <span class="standings-head-dps">DPS</span>
+  </div>
+  <ol class="standings-rows">
+    {% for row in page.rows %}
+    <li class="standings-row rank-row{% if row.position <= 3 %} is-{{ row.position }}{% endif %}">
+      <div class="standings-rank">
+        <b>{{ row.position }}</b>
+        <i>#{{ row.rank }} / {{ row.total_rows }}</i>
+      </div>
+      <div class="standings-board">
+        <strong>{{ row.account_display_name }}</strong>
+        <span>主 C {{ row.character_name }}</span>
+      </div>
+      <div class="standings-record">
+        <strong>全榜第 {{ row.rank }} 名</strong>
+        <span>百分位 <b>{{ row.percentile }}</b> · 战斗日期 <b>{{ row.battle_date }}</b></span>
+      </div>
+      <div class="standings-time">
+        <span>用时</span>
+        <b>{{ row.duration }}</b>
+      </div>
+      <div class="standings-dps">
+        <span>DPS</span>
+        <b>{{ row.dps }}</b>
+      </div>
+      <div class="standings-team">
+        {% for member in row.roster %}
+        <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}">
+          <span class="avatar{% if member.element_key %} el-{{ member.element_key }}{% endif %}">
+            {{ member.character_initial }}
+            {% if member.avatar_url %}
+            <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
+            {% endif %}
+          </span>
+          {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
+        </span>
+        {% endfor %}
+      </div>
+      <div class="standings-battle">{{ row.battle_id }}</div>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="board-legend">
+    只显示前 {{ page.shown_count }} 名（本群共 {{ page.listed_count }} 个账号在该榜有记录）；阵容里加粗的是该场主 C；用时为通关时间，DPS 为整队合计；只有设为公开的记录才会上榜。
+    <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
+  </p>
+</section>
+{% else %}
+<div class="empty-ranking">本群绑定的 {{ page.account_count }} 个账号在该榜都没有公开记录</div>
+{% endif %}
+{% endblock %}

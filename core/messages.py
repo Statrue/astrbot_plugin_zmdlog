@@ -51,6 +51,27 @@ TREND_NO_DATA = (
 ALIAS_WRITE_FAILED = "别名文件写入失败，请检查数据目录权限。"
 ALIAS_ADMIN_ONLY = "只有机器人管理员可以修改别名。"
 
+# 绑定 / 我的 / 群榜. A binding is only ever made with a code the site
+# issued to whoever was logged into the account; there is no other way in.
+BINDINGS_DISABLED = "本机器人未开启账号绑定功能。"
+NO_SENDER = "无法识别发送者，绑定功能在这里不可用。"
+HOW_TO_GET_A_CODE = (
+    "登录 ZMDLogs，在 账号菜单 → 机器人绑定（/account/binding）生成绑定码，"
+    "10 分钟内发送 {command} 绑定 ZMD-XXXX-XXXX。"
+)
+NOT_BOUND = "你还没有绑定账号。" + HOW_TO_GET_A_CODE
+BIND_CODE_NEEDED = "绑定只认绑定码，不认昵称或 accountId。" + HOW_TO_GET_A_CODE
+BIND_CODE_INVALID = "绑定码无效或已过期，请到 ZMDLogs 重新生成。"
+BIND_CODE_USED = "这个绑定码已经用过了，请重新生成一个。"
+BIND_UNSUPPORTED = "当前配置的 ZMDLogs 地址没有绑定码接口，暂时无法绑定。"
+BIND_LIMIT_REACHED = "每人最多绑定 {limit} 个账号，请先解绑一个。"
+BINDINGS_WRITE_FAILED = "绑定信息写入失败，请检查数据目录权限。"
+GROUP_BOARD_PRIVATE = "群榜只能在群聊里用。"
+GROUP_BOARD_EMPTY = (
+    "本群还没有人绑定账号。绑定过账号的成员在本群用过 绑定、我的 或 群榜 后才会上群榜；"
+    + HOW_TO_GET_A_CODE
+)
+
 # Appended to a tool result when the same turn already drew another picture:
 # the model must not send the reader to an image that will not come.
 TOOL_PICTURE_WITHHELD = "（这次回答查了多个对象，不附图，不要让用户看图。）"

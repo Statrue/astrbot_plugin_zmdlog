@@ -98,7 +98,7 @@ _OPTION_LABEL = {
 # Rejection text names where the option DOES work, not the current route —
 # "--潜能 不适用于榜单查询" reads like the option belongs somewhere unknown.
 OPTION_USAGE = {
-    "top": "--top 仅适用于具体榜单和阵容查询。",
+    "top": "--top 仅适用于具体榜单、阵容和群榜查询。",
     "character": (
         "--角色 仅适用于具体榜单查询，例如：罗丹 --角色 黎风，"
         "或 罗丹 --角色 黎风 洛茜（同时带上两人的队伍）。"
@@ -156,6 +156,14 @@ class RouteKind(str, Enum):
     WATCH_BOARD_ADD = "watch_board_add"
     WATCH_BOARD_REMOVE = "watch_board_remove"
     TREND_QUERY = "trend_query"
+    # 绑定 <绑定码> / 解绑 / 主账号: one user's verified site accounts.
+    BIND = "bind"
+    UNBIND = "unbind"
+    PRIMARY_ACCOUNT = "primary_account"
+    # 我的: the sender's bound account, drawn as the account page.
+    MY_ACCOUNT = "my_account"
+    # 群榜 <榜单>: the chat's bound accounts on one board.
+    GROUP_BOARD = "group_board"
 
 
 _BATTLE_STYLE_COMMANDS.update(
@@ -400,6 +408,31 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
                 raise RouteParseError("用法：取关 榜单 <序号或榜单关键词>")
             return RouteRequest(RouteKind.WATCH_BOARD_REMOVE, board_query)
         return RouteRequest(RouteKind.WATCH_REMOVE, remainder)
+
+    if command in {"绑定", "绑定账号"}:
+        # The argument is a binding code or nothing; the service says which.
+        options.reject_except()
+        return RouteRequest(RouteKind.BIND, remainder)
+
+    if command in {"解绑", "解除绑定", "取消绑定"}:
+        options.reject_except()
+        return RouteRequest(RouteKind.UNBIND, remainder)
+
+    if command == "主账号":
+        options.reject_except()
+        return RouteRequest(RouteKind.PRIMARY_ACCOUNT, remainder)
+
+    if command == "我的":
+        options.reject_except()
+        return RouteRequest(RouteKind.MY_ACCOUNT, remainder)
+
+    if command in {"群榜", "群排名"}:
+        options.reject_except("top")
+        if not remainder:
+            raise RouteParseError("请提供榜单关键词，例如：群榜 罗丹。")
+        return RouteRequest(
+            RouteKind.GROUP_BOARD, remainder, ranking_top=options.ranking_top
+        )
 
     options.reject_except("top", "character", "element")
     return RouteRequest(

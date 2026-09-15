@@ -717,6 +717,23 @@ def parse_account_search(payload: Any) -> AccountSearch:
     )
 
 
+def parse_binding_code_account(payload: Any) -> AccountSearchHit:
+    """Adapt ``GET /api/battles/users/binding-code``: the account a code names.
+
+    The response is deliberately two fields — the stable account id and the
+    current public nickname — and is read into the same shape the account
+    search returns, because that is all a binding needs to know.
+    """
+
+    item = _mapping(payload, "binding-code")
+    return AccountSearchHit(
+        account_id=_string(item.get("accountId"), "binding-code.accountId"),
+        account_display_name=_string(
+            item.get("accountDisplayName"), "binding-code.accountDisplayName"
+        ),
+    )
+
+
 def parse_public_user_rankings(payload: Any) -> PublicUserRankings:
     """Adapt ``GET /api/battles/users/{account_id}/rankings``."""
 

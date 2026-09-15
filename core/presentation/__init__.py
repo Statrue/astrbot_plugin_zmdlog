@@ -79,6 +79,11 @@ from .compare import (
     CompareSideView,
     build_compare_page,
 )
+from .group_board import (
+    GroupBoardPage,
+    GroupRowView,
+    build_group_board_page,
+)
 from .players import (
     PlayerChampionsPage,
     PlayerRowView,
@@ -173,6 +178,8 @@ __all__ = [
     "TopRunView",
     "TrendPage",
     "CharacterStandingsPage",
+    "GroupBoardPage",
+    "GroupRowView",
     "PlayerChampionsPage",
     "RecordsPage",
     "ChampionChangeView",
@@ -206,6 +213,7 @@ __all__ = [
     "build_timeline_view",
     "build_trend_page",
     "build_character_standings_page",
+    "build_group_board_page",
     "build_player_champions_page",
     "build_records_page",
     "build_character_champions_page",

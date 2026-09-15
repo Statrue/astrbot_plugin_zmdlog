@@ -71,8 +71,16 @@ class Reply:
 
 
 class FakeEvent:
-    def __init__(self, text: str, *, origin: str = GROUP, quoted: str | None = None):
+    def __init__(
+        self,
+        text: str,
+        *,
+        origin: str = GROUP,
+        quoted: str | None = None,
+        sender: str = "111",
+    ):
         self._text = text
+        self._sender = sender
         self.unified_msg_origin = origin
         chain = [Reply(quoted)] if quoted is not None else []
         self.message_obj = SimpleNamespace(message_str=text, message=chain)
@@ -97,7 +105,7 @@ class FakeEvent:
         return "aiocqhttp"
 
     def get_sender_id(self) -> str:
-        return "111"
+        return self._sender
 
 
 class FakeContext:
@@ -768,6 +776,120 @@ class HandlerTests(unittest.TestCase):
         (_, removed), = self._zmdlog("zmdlog 取关 1")
         self.assertIn("已取消关注", removed)
         self.assertNotIn(account_id, self.plugin.watcher.rank_history)
+
+    # --- 绑定 / 我的 / 群榜 -------------------------------------------------------
+
+    def _enable_binding_storage(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.plugin.bindings.store.path = Path(directory.name) / "bindings.json"
+
+    def test_a_bound_user_sees_their_own_account_and_the_group_board(self) -> None:
+        from astrbot_plugin_zmdlog.core.models import (
+            AccountSearchHit,
+            parse_boss_ranking,
+        )
+        from astrbot_plugin_zmdlog.core.ranking_index import IndexEntry
+        from tests.helpers import ranking_payload_with_rows
+
+        self._enable_binding_storage()
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        index = self.plugin.data.ranking_index
+        index._slugs = (ranking.boss_slug,)
+        index._entries[ranking.boss_slug] = IndexEntry(ranking, 0.0)
+        uploader = ranking.rows[2]
+        codes = {
+            "ZMD-7K4M-QX2E": AccountSearchHit("usr_1234567890abcdef", "测试账号"),
+            "ZMD-AAAA-BBBB": AccountSearchHit(
+                uploader.account_id, uploader.account_display_name
+            ),
+        }
+
+        async def lookup(code):
+            hit = codes.get(code)
+            if hit is None:
+                raise ZmdLogsAPIError(404, "binding_code_invalid", "无效")
+            return hit
+
+        async def account(requested_id):
+            return parse_public_user_rankings(public_user_rankings_payload())
+
+        drawn: list = []
+
+        async def render_group_board(ranking, rows, **kwargs):
+            drawn.append((rows, kwargs))
+            return "/tmp/group-board.png"
+
+        async def ranking_read(boss_slug):
+            return ranking
+
+        self.plugin.client.get_binding_code_account = lookup
+        self.plugin.data.get_public_user_rankings = account
+        self.plugin.data.get_boss_ranking = ranking_read
+        self.plugin.renderer.render_group_board = render_group_board
+
+        (kind, reply), = self._zmdlog("zmdlog 我的")
+        self.assertEqual(kind, "plain")
+        self.assertIn("还没有绑定账号", reply)
+        # The hint carries the resolved prefix (none in these fake events).
+        self.assertIn("zmdlog 绑定 ZMD-XXXX-XXXX", reply)
+        (kind, reply), = self._zmdlog("zmdlog 绑定 zmd-7k4m-qx2e")
+        self.assertEqual(kind, "plain")
+        self.assertIn("已绑定 测试账号（usr_1234567890abcdef）", reply)
+        (kind, reply), = self._zmdlog("zmdlog 绑定 ZMD-7K4M-QX2E")
+        self.assertIn("已经用过了", reply)
+        (kind, result), = self._zmdlog("zmdlog 我的")
+        self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+        (kind, reply), = self._zmdlog("zmdlog 我的 2")
+        self.assertEqual(kind, "plain")
+        self.assertIn("绑定列表里没有「2」", reply)
+
+        # No bound account has a record on the board yet: a sentence.
+        (kind, reply), = self._zmdlog("zmdlog 群榜 三位一体")
+        self.assertEqual(kind, "plain")
+        self.assertIn("都没有公开记录", reply)
+        (_, reply), = self._zmdlog("zmdlog 绑定 ZMD-AAAA-BBBB")
+        self.assertIn("2. 公开账号3", reply)
+        (kind, result), = self._zmdlog("zmdlog 群榜 三位一体 --top 5")
+        self.assertEqual((kind, result), ("image", "/tmp/group-board.png"))
+        rows, kwargs = drawn[0]
+        self.assertEqual([row.account_id for row in rows], [uploader.account_id])
+        self.assertEqual(kwargs["display_limit"], 5)
+        self.assertEqual((kwargs["member_count"], kwargs["account_count"]), (1, 2))
+        # The chat is the membership: in another group an unbound member
+        # asking finds nobody, and is told how, before any board lookup.
+        (kind, reply), = self._zmdlog(
+            "zmdlog 群榜 三位一体", origin=OTHER_GROUP, sender="222"
+        )
+        self.assertEqual(kind, "plain")
+        self.assertIn("本群还没有人绑定账号", reply)
+        self.assertIn("zmdlog 绑定 ZMD-XXXX-XXXX", reply)
+        # A bound member asking there joins that group's board by asking.
+        (kind, result), = self._zmdlog("zmdlog 群榜 三位一体", origin=OTHER_GROUP)
+        self.assertEqual((kind, result), ("image", "/tmp/group-board.png"))
+        self.assertEqual(
+            self.plugin.bindings.bindings_for("aiocqhttp:111").groups,
+            (GROUP, OTHER_GROUP),
+        )
+        (kind, reply), = self._zmdlog(
+            "zmdlog 群榜 三位一体", origin="aiocqhttp:FriendMessage:1"
+        )
+        self.assertEqual((kind, reply), ("plain", "群榜只能在群聊里用。"))
+        (kind, reply), = self._zmdlog("zmdlog 解绑 全部")
+        self.assertIn("已解除全部 2 个绑定", reply)
+
+    def test_binding_needs_a_sender_and_survives_an_outage(self) -> None:
+        self._enable_binding_storage()
+
+        async def down(code):
+            raise ZmdLogsClientError("offline")
+
+        self.plugin.client.get_binding_code_account = down
+
+        (kind, reply), = self._zmdlog("zmdlog 绑定 ZMD-7K4M-QX2E")
+        self.assertEqual((kind, reply), ("plain", "ZMDLogs 暂时不可用，请稍后重试。"))
+        (kind, reply), = self._zmdlog("zmdlog 绑定 测试账号")
+        self.assertIn("绑定只认绑定码", reply)
 
     # --- 技能轴 reads the export, not the detail --------------------------------
 

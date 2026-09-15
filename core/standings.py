@@ -7,7 +7,7 @@ every record on that board. Everything here is counting over rankings the
 index already holds; nothing is fetched.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -479,6 +479,30 @@ def account_tally(
         if tally.account_id == account_id:
             return tally
     return None
+
+
+# --- one chat's bound accounts on one board -------------------------------------
+
+
+def group_standings(
+    ranking: BossRanking, account_ids: Collection[str]
+) -> tuple[BossRankingRow, ...]:
+    """The best record of each of ``account_ids`` on one board, rank order.
+
+    A board ranking carries every public record with its uploader's id, so
+    a chat's board is a filter over one read the index already holds — no
+    per-account request, and an account without a record simply has no
+    row. Ties in rank are broken by DPS, the board's own second key.
+    """
+
+    best: dict[str, BossRankingRow] = {}
+    for row in ranking.rows:
+        if row.account_id not in account_ids:
+            continue
+        held = best.get(row.account_id)
+        if held is None or row.rank < held.rank:
+            best[row.account_id] = row
+    return tuple(sorted(best.values(), key=lambda row: (row.rank, -row.dps)))
 
 
 # --- one profession --------------------------------------------------------------

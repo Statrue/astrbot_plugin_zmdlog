@@ -103,5 +103,17 @@
     "type": "int",
     "default": 30,
     "hint": "每隔这么多秒重读一个榜，49 个榜一圈约 16 分钟；前三名有变化的榜不等轮到就重读。最低 5 秒。"
+  },
+  "bindings_enabled": {
+    "description": "开启账号绑定（绑定 / 我的 / 群榜）",
+    "type": "bool",
+    "default": true,
+    "hint": "用户在 ZMDLogs 网站的 账号菜单 → 机器人绑定 生成绑定码，发 /zmdlog 绑定 ZMD-XXXX-XXXX 即可把自己和公开账号对上号；只保存公开 accountId、公开昵称和平台用户 ID，不保存任何凭据。关闭后已有绑定仍可查看和解除，只是不能再绑。"
+  },
+  "group_board_max_accounts": {
+    "description": "群榜最多统计多少个绑定账号",
+    "type": "int",
+    "default": 30,
+    "hint": "群榜从索引里的一份榜单读取本群绑定账号的最好记录，不逐账号请求上游；超出时只取最近用过绑定指令的成员，页面会注明。1–200。"
   }
 }

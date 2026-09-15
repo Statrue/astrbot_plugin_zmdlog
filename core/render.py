@@ -51,6 +51,7 @@ from .presentation import (
     build_character_stats_page,
     build_compare_page,
     build_dungeon_top3_page,
+    build_group_board_page,
     build_loadout_page,
     build_player_champions_page,
     build_ranking_page,
@@ -91,6 +92,7 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
         "character-standings",
         "character-champions",
         "player-champions",
+        "group-board",
         "records",
         "roster",
         "loadout",
@@ -378,6 +380,40 @@ class TemplateRenderer:
             "player-champions/player-champions.html",
             page,
             "player-champions",
+            embed_fonts=embed_fonts,
+        )
+
+    def render_group_board(
+        self,
+        ranking: BossRanking,
+        rows: tuple[BossRankingRow, ...],
+        *,
+        query: str,
+        member_count: int,
+        account_count: int,
+        display_limit: int = DEFAULT_RANKING_TOP,
+        truncated: bool = False,
+        web_base_url: str | None = None,
+        elements: Mapping[str, str] | None = None,
+        age_seconds: float | None = None,
+        embed_fonts: bool = True,
+    ) -> str:
+        page = build_group_board_page(
+            ranking,
+            rows,
+            query=query,
+            web_base_url=web_base_url,
+            member_count=member_count,
+            account_count=account_count,
+            display_limit=display_limit,
+            truncated=truncated,
+            elements=elements,
+            age_seconds=age_seconds,
+        )
+        return self._render(
+            "group-board/group-board.html",
+            page,
+            "group-board",
             embed_fonts=embed_fonts,
         )
 
@@ -835,6 +871,7 @@ class LongImageRenderer:
         "player-champions", TemplateRenderer.render_player_champions
     )
     render_records = _captured("records", TemplateRenderer.render_records)
+    render_group_board = _captured("group-board", TemplateRenderer.render_group_board)
     render_roster = _captured("roster", TemplateRenderer.render_roster)
     render_account = _captured("account", TemplateRenderer.render_account)
     render_battle = _captured("battle", TemplateRenderer.render_battle)

@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from . import messages
+from .account_binding import AccountBinding
+from .bindings import is_group_origin
 from .candidates import (
     MAX_CANDIDATES,
     CandidateStore,
@@ -82,6 +84,7 @@ from .standings import (
     character_standings,
     character_tallies,
     first_place_teams,
+    group_standings,
     profession_usage,
     roster_character_names,
     unseen_characters,
@@ -115,6 +118,7 @@ _BOARD_ONLY_VIEWS = (
     CandidateView.SKILLS,
     CandidateView.TIMELINE,
     CandidateView.COMPARE,
+    CandidateView.GROUP_BOARD,
 )
 _ROUTE_VIEWS = {
     RouteKind.CHARACTER_STATS: CandidateView.CHARACTER_STATS,
@@ -125,6 +129,7 @@ _ROUTE_VIEWS = {
     RouteKind.TIMELINE_QUERY: CandidateView.TIMELINE,
     RouteKind.COMPARE_QUERY: CandidateView.COMPARE,
     RouteKind.TREND_QUERY: CandidateView.TREND,
+    RouteKind.GROUP_BOARD: CandidateView.GROUP_BOARD,
 }
 _BOARD_ROUTES = frozenset(
     {
@@ -132,6 +137,7 @@ _BOARD_ROUTES = frozenset(
         RouteKind.SMART_QUERY,
         RouteKind.CHARACTER_STATS,
         RouteKind.ROSTER_QUERY,
+        RouteKind.GROUP_BOARD,
     }
 )
 _ACCOUNT_ROUTES = frozenset({RouteKind.ACCOUNT_QUERY, RouteKind.TREND_QUERY})
@@ -163,6 +169,7 @@ class QueryService:
         watcher: RankWatcher,
         settings: PluginSettings,
         logger: LogSink,
+        bindings: AccountBinding | None = None,
     ) -> None:
         self._client = client
         self._data = data
@@ -171,6 +178,8 @@ class QueryService:
         self._candidates = candidates
         self._board_matcher = board_matcher
         self._watcher = watcher
+        # The binding book behind 我的 and 群榜; None where the host has none.
+        self._bindings = bindings
         self._web_base_url = settings.web_base_url
         self._logger = logger
 
@@ -182,11 +191,19 @@ class QueryService:
         *,
         command_prefix: str,
         origin: str = "",
+        requester_key: str = "",
     ) -> Outcome:
-        """Answer one parsed command; ``origin`` keys any pick list it posts."""
+        """Answer one parsed command.
+
+        ``origin`` keys any pick list it posts and names the chat a 群榜
+        is drawn for; ``requester_key`` is the sender, which only 我的 reads.
+        """
 
         direct = await self._dispatch_direct(
-            route, command_prefix=command_prefix, origin=origin
+            route,
+            command_prefix=command_prefix,
+            origin=origin,
+            requester_key=requester_key,
         )
         if direct is not None:
             return direct
@@ -241,6 +258,7 @@ class QueryService:
         *,
         command_prefix: str,
         origin: str,
+        requester_key: str = "",
     ) -> Outcome | None:
         """Routes that need no board keyword; None hands over to the matcher."""
 
@@ -248,6 +266,22 @@ class QueryService:
         if route.kind is RouteKind.HELP:
             image_path = await renderer.render_help(command_prefix=command_prefix)
             return Outcome(image_path=image_path)
+
+        if route.kind is RouteKind.MY_ACCOUNT:
+            return await self._render_my_account(
+                route.query,
+                origin=origin,
+                requester_key=requester_key,
+                command=f"{command_prefix}zmdlog",
+            )
+
+        if route.kind is RouteKind.GROUP_BOARD:
+            # None hands the keyword over to the matcher, like any board view.
+            return self._group_board_gate(
+                origin=origin,
+                requester_key=requester_key,
+                command=f"{command_prefix}zmdlog",
+            )
 
         if route.kind is RouteKind.ALL_RANKINGS:
             cards = await self._data.list_hot_bosses()
@@ -370,7 +404,7 @@ class QueryService:
         """Resolve the keyword against the board index, then draw the view."""
 
         view = route_view(route)
-        pending = pending_from_route(route)
+        pending = pending_from_route(route, origin=origin)
         try:
             cards = await self._data.list_hot_bosses()
         except ZmdLogsClientError:
@@ -636,6 +670,126 @@ class QueryService:
             listed_boards=listed,
             elements=await self._data.character_elements(names=names),
             icons=await self._data.character_icons(names=names),
+        )
+        return Outcome(image_path=image_path)
+
+    async def _render_my_account(
+        self,
+        selector: str,
+        *,
+        origin: str,
+        requester_key: str,
+        command: str,
+    ) -> Outcome:
+        """The sender's bound account, drawn as the account page.
+
+        ``我的`` is the primary account, ``我的 2`` / ``我的 <昵称>`` another
+        one of the sender's own; the selector is resolved inside that list,
+        never against the whole site. Using the command in a group also
+        puts the sender on that group's 群榜.
+        """
+
+        bindings = self._bindings
+        if bindings is None or (
+            not bindings.enabled and bindings.book.total_users == 0
+        ):
+            return Outcome(message=messages.BINDINGS_DISABLED)
+        if not requester_key:
+            return Outcome(message=messages.NO_SENDER)
+        mine = bindings.bindings_for(requester_key)
+        if mine is None:
+            return Outcome(message=messages.NOT_BOUND.format(command=command))
+        if is_group_origin(origin):
+            bindings.remember_member(requester_key, origin)
+        if not selector.strip():
+            account = mine.primary
+        else:
+            matches = mine.resolve_matches(selector)
+            if len(matches) > 1:
+                names = "、".join(entry.display_name for entry in matches)
+                return Outcome(
+                    message=(
+                        f"「{shorten(selector)}」匹配到多个绑定：{names}，请改用序号。"
+                    )
+                )
+            if not matches:
+                return Outcome(
+                    message=(
+                        f"绑定列表里没有「{shorten(selector)}」；"
+                        f"发送 {command} 主账号 查看序号。"
+                    )
+                )
+            account = matches[0]
+        assert account is not None
+        query = "我的" if not selector.strip() else f"我的 {selector.strip()}"
+        return await self._render_account(account.account_id, query=query)
+
+    def _group_board_gate(
+        self, *, origin: str, requester_key: str, command: str
+    ) -> Outcome | None:
+        """Refuse a 群榜 that cannot be drawn, before any board lookup.
+
+        A private chat has no members. Asking in a group enrolls the asker
+        (nothing happens for someone unbound), which is the membership rule
+        the help page states; and a group nobody bound in gets the how-to
+        rather than a board lookup that could only end empty.
+        """
+
+        bindings = self._bindings
+        if bindings is None:
+            return Outcome(message=messages.BINDINGS_DISABLED)
+        if not is_group_origin(origin):
+            return Outcome(message=messages.GROUP_BOARD_PRIVATE)
+        bindings.remember_member(requester_key, origin)
+        accounts, _, _ = bindings.accounts_in(origin)
+        if not accounts:
+            return Outcome(message=messages.GROUP_BOARD_EMPTY.format(command=command))
+        return None
+
+    async def _render_group_board(
+        self,
+        ranking,
+        *,
+        query: str,
+        origin: str,
+        limit: int,
+    ) -> Outcome:
+        """The chat's bound accounts on one board, from the ranking already read.
+
+        One board read covers the whole chat: every public record carries
+        its uploader's id, so the members' best rows are a filter over it.
+        """
+
+        bindings = self._bindings
+        if bindings is None:
+            return Outcome(message=messages.BINDINGS_DISABLED)
+        if not is_group_origin(origin):
+            return Outcome(message=messages.GROUP_BOARD_PRIVATE)
+        accounts, account_count, member_count = bindings.accounts_in(origin)
+        if not accounts:
+            return Outcome(message=messages.GROUP_BOARD_EMPTY.format(command="/zmdlog"))
+        rows = group_standings(ranking, {account.account_id for account in accounts})
+        if not rows:
+            return Outcome(
+                message=(
+                    f"本群绑定的 {account_count} 个账号在「{ranking.boss_name}」"
+                    "上都没有公开记录。"
+                )
+            )
+        index = self._data.ranking_index
+        image_path = await self._renderer().render_group_board(
+            ranking,
+            rows,
+            query=query,
+            member_count=member_count,
+            account_count=account_count,
+            display_limit=limit,
+            truncated=len(accounts) < account_count,
+            web_base_url=self._web_base_url,
+            elements=await self._data.character_elements(
+                names=ranking_character_names(ranking)
+            ),
+            age_seconds=index.oldest_age_seconds() if index.complete else None,
         )
         return Outcome(image_path=image_path)
 
@@ -930,6 +1084,10 @@ class QueryService:
                 web_base_url=self._web_base_url,
             )
             return Outcome(image_path=image_path)
+        if pending.view is CandidateView.GROUP_BOARD:
+            return await self._render_group_board(
+                ranking, query=query, origin=pending.origin, limit=ranking_limit
+            )
 
         character_filter: tuple[str, ...] | None = None
         character_filter_scope = CharacterFilterScope.MAIN
@@ -1208,8 +1366,12 @@ def route_view(route: RouteRequest) -> CandidateView:
     return _ROUTE_VIEWS.get(route.kind, CandidateView.RANKING)
 
 
-def pending_from_route(route: RouteRequest) -> PendingCandidates:
-    """Carry the route's view and options in the same shape candidates use."""
+def pending_from_route(route: RouteRequest, *, origin: str = "") -> PendingCandidates:
+    """Carry the route's view and options in the same shape candidates use.
+
+    ``origin`` rides along because a 群榜 is drawn for the chat that asked,
+    whether the board came straight from the keyword or from a pick reply.
+    """
 
     return PendingCandidates(
         code="",
@@ -1218,6 +1380,7 @@ def pending_from_route(route: RouteRequest) -> PendingCandidates:
         ranking_top=route.ranking_top,
         created_at=0.0,
         view=route_view(route),
+        origin=origin,
         character_filter=route.character_filter,
         element_filter=route.element_filter,
         stats_range=route.stats_range,

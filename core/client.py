@@ -1,6 +1,7 @@
 """Asynchronous client for the public ZMDLogs ranking API."""
 
 import asyncio
+import logging
 import re
 import time
 import unicodedata
@@ -8,9 +9,11 @@ from typing import Any
 
 import httpx
 
+from .bindings import BINDING_CODE_RE
 from .identifiers import is_valid_account_id, is_valid_battle_id
 from .models import (
     AccountSearch,
+    AccountSearchHit,
     BattleDetailSummary,
     BattleExport,
     BossRanking,
@@ -24,6 +27,7 @@ from .models import (
     parse_account_search,
     parse_battle_detail,
     parse_battle_export,
+    parse_binding_code_account,
     parse_boss_ranking,
     parse_character_boss_statistics,
     parse_character_statistics,
@@ -74,6 +78,38 @@ class ZmdLogsProtocolError(ZmdLogsClientError):
     """Raised when a successful response violates the public API contract."""
 
 
+# httpx logs every request URL at INFO, and AstrBot shows that level. A
+# binding code travels as a query parameter and is a bearer credential for
+# ten minutes, so the one line that would print it is redacted instead.
+_BINDING_CODE_IN_URL = re.compile(r"(code=)ZMD-[0-9A-Z]{4}-[0-9A-Z]{4}", re.IGNORECASE)
+
+
+class _RedactBindingCode(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:  # pragma: no cover - a malformed record is not ours
+            return True
+        if "binding-code" in message:
+            record.msg = _BINDING_CODE_IN_URL.sub(r"\1ZMD-****-****", message)
+            record.args = ()
+        return True
+
+
+def install_log_redaction() -> None:
+    """Keep binding codes out of httpx's request log; idempotent.
+
+    Matched by class name, not identity: a plugin reload imports this module
+    again, and the filter a previous load installed on the process-wide
+    logger is an instance of the previous class object.
+    """
+
+    logger = logging.getLogger("httpx")
+    name = _RedactBindingCode.__name__
+    if not any(type(entry).__name__ == name for entry in logger.filters):
+        logger.addFilter(_RedactBindingCode())
+
+
 def searchable_nickname(query: str) -> str | None:
     """The form of ``query`` the account search accepts, or None if it would refuse.
 
@@ -108,6 +144,7 @@ class ZmdLogsClient:
         base_url = _validate_base_url(api_base_url)
         timeout_seconds = _validate_timeout(request_timeout_ms) / 1000
         self._request_timeout_seconds = timeout_seconds
+        install_log_redaction()
         self._client = httpx.AsyncClient(
             base_url=base_url,
             timeout=timeout_seconds,
@@ -242,6 +279,28 @@ class ZmdLogsClient:
             raise ZmdLogsProtocolError(
                 "account search response is invalid"
             ) from exc
+
+    async def get_binding_code_account(self, code: str) -> AccountSearchHit:
+        """The public account a binding code was issued to.
+
+        ``GET /api/battles/users/binding-code?code=`` is anonymous and
+        read-only: it neither consumes nor extends the code, so the caller
+        must remember redeemed codes itself. Never cached and never logged
+        with the code (see :func:`install_log_redaction`). A 404
+        ``binding_code_invalid`` means unknown, expired, replaced or a
+        disabled account; a 404 with any other code means the deployment
+        behind ``api_base_url`` (a mirror, an old build) has no such endpoint.
+        """
+
+        if not BINDING_CODE_RE.match(code):
+            raise InvalidPublicIdentifierError("invalid binding code")
+        payload = await self._get_json(
+            "api/battles/users/binding-code", params={"code": code}
+        )
+        try:
+            return parse_binding_code_account(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError("binding code response is invalid") from exc
 
     async def get_character_boss_statistics(
         self,

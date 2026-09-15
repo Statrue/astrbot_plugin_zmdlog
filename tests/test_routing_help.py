@@ -124,12 +124,15 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog 对比 <榜单关键词 [名次 名次] 或 两个battleId>",
                 "!zmdlog 关注 [<账号> | 榜单 <关键词>]",
                 "!zmdlog 趋势 <账号> [--范围 7d|14d|30d|all]",
+                "!zmdlog 绑定 <绑定码>",
+                "!zmdlog 我的 [序号或昵称]",
+                "!zmdlog 群榜 <榜单关键词> [--top 数量]",
                 "!zmdlog 别名 [添加 <榜单或副本> <别名…> | 删除 <别名>]",
             ),
         )
         self.assertEqual(
             [section.title for section in page.sections],
-            ["榜单", "战报", "关注", "管理"],
+            ["榜单", "战报", "关注", "绑定", "管理"],
         )
         # Every description stays a single line of what the syntax cannot say.
         for section in page.sections:
@@ -227,6 +230,40 @@ class AliasRouteTests(unittest.TestCase):
         self.assertEqual(remove.kind, RouteKind.ALIAS_REMOVE)
         self.assertEqual(remove.query, "小罗")
         for payload in ("别名 添加 罗丹", "别名 删除", "别名 看看", "别名 --top 3"):
+            with self.subTest(payload=payload):
+                with self.assertRaises(RouteParseError):
+                    parse_zmdlog_payload(payload)
+
+
+class BindingRouteTests(unittest.TestCase):
+    def test_binding_subcommands(self) -> None:
+        bind = parse_zmdlog_payload("绑定 ZMD-7K4M-QX2E")
+        self.assertEqual(bind.kind, RouteKind.BIND)
+        self.assertEqual(bind.query, "ZMD-7K4M-QX2E")
+        # Bare 绑定 is a route too: the service answers with how to get a code.
+        self.assertEqual(parse_zmdlog_payload("绑定").kind, RouteKind.BIND)
+        self.assertEqual(parse_zmdlog_payload("绑定账号 x").kind, RouteKind.BIND)
+        unbind = parse_zmdlog_payload("解绑 2")
+        self.assertEqual(unbind.kind, RouteKind.UNBIND)
+        self.assertEqual(unbind.query, "2")
+        self.assertEqual(parse_zmdlog_payload("解绑").kind, RouteKind.UNBIND)
+        self.assertEqual(parse_zmdlog_payload("取消绑定 全部").kind, RouteKind.UNBIND)
+        self.assertEqual(parse_zmdlog_payload("主账号").kind, RouteKind.PRIMARY_ACCOUNT)
+        self.assertEqual(
+            parse_zmdlog_payload("主账号 2").kind, RouteKind.PRIMARY_ACCOUNT
+        )
+        mine = parse_zmdlog_payload("我的")
+        self.assertEqual(mine.kind, RouteKind.MY_ACCOUNT)
+        self.assertEqual(mine.query, "")
+        self.assertEqual(parse_zmdlog_payload("我的 2").query, "2")
+        group = parse_zmdlog_payload("群榜 罗丹 --top 5")
+        self.assertEqual(group.kind, RouteKind.GROUP_BOARD)
+        self.assertEqual(group.query, "罗丹")
+        self.assertEqual(group.ranking_top, 5)
+        alias = parse_zmdlog_payload("群排名 罗丹")
+        self.assertEqual(alias.kind, RouteKind.GROUP_BOARD)
+        refused = ("群榜", "群榜 罗丹 --角色 黎风", "我的 --top 3", "绑定 x --top 3")
+        for payload in refused:
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)

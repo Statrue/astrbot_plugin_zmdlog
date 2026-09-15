@@ -41,7 +41,7 @@ class OptionUsageMessageTests(unittest.TestCase):
         cases = {
             "榜单 斧柄纪年 --潜能 0": "仅适用于角色统计",
             "榜单 斧柄纪年 --范围 7d": "仅适用于角色统计",
-            "角色统计 罗丹 --top 5": "仅适用于具体榜单和阵容查询",
+            "角色统计 罗丹 --top 5": "仅适用于具体榜单、阵容和群榜查询",
             "账号 usr_x --角色 黎风": "仅适用于具体榜单查询",
         }
         for payload, fragment in cases.items():
