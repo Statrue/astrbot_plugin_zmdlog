@@ -350,6 +350,41 @@ class HandlerTests(unittest.TestCase):
         # 洛茜 is fielded; she is merely not 物理, so she is not "unseen".
         self.assertEqual(captured["unseen"], ())
 
+    def test_several_names_draw_the_teams_fielding_all_of_them(self) -> None:
+        from astrbot_plugin_zmdlog.core.models import parse_boss_ranking
+        from astrbot_plugin_zmdlog.core.ranking_index import IndexEntry
+        from tests.helpers import ranking_payload_with_rows
+
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        index = self.plugin.data.ranking_index
+        index._slugs = (ranking.boss_slug,)
+        index._entries[ranking.boss_slug] = IndexEntry(ranking, 0.0)
+        drawn: list = []
+
+        async def render(standings, **kwargs):
+            drawn.append(standings)
+            return "/tmp/standings.png"
+
+        self.plugin.renderer.render_character_standings = render
+
+        (kind, result), = self._zmdlog("zmdlog 角色排名 黎风 卡缪")
+        self.assertEqual((kind, result), ("image", "/tmp/standings.png"))
+        self.assertEqual(drawn[0].characters, ("黎风", "卡缪"))
+        # 、 separates too, and a pinyin initial resolves like anywhere else.
+        (kind, _), = self._zmdlog("zmdlog 角色排名 lf、卡缪")
+        self.assertEqual(kind, "image")
+        self.assertEqual(drawn[1].characters, ("黎风", "卡缪"))
+        # Two main Cs never share a team: a sentence, not an empty page.
+        (kind, result), = self._zmdlog("zmdlog 角色排名 黎风 洛茜")
+        self.assertEqual(kind, "plain")
+        self.assertIn("没有同时带「黎风」「洛茜」的队伍", result)
+        # A name in no roster is named, the rest are not blamed.
+        (kind, result), = self._zmdlog("zmdlog 角色排名 黎风 没有这个人")
+        self.assertEqual(kind, "plain")
+        self.assertIn("「没有这个人」", result)
+        (kind, result), = self._zmdlog("zmdlog 角色排名 a b c d e")
+        self.assertEqual((kind, result), ("plain", "角色排名 最多写 4 个角色。"))
+
     def test_row_options_are_refused_on_a_dungeon_target(self) -> None:
         first = hot_bosses_payload()[0]
         second = dict(

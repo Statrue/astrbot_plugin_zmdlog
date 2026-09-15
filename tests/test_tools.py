@@ -307,6 +307,18 @@ class ToolServiceTests(unittest.TestCase):
         # Not a six-star in the catalog: no distribution lines are appended.
         self.assertNotIn("各榜单表现", answer.text)
 
+    def test_several_names_answer_the_teams_fielding_all_of_them(self) -> None:
+        # The model passes "黎风 卡缪": the standings of teams with both,
+        # no distribution and no partners, which belong to one character.
+        answer = run(self.service.character("黎风 卡缪"))
+
+        self.assertEqual(answer.image_path, "/tmp/character_standings.png")
+        self.assertIn("同时带「黎风」「卡缪」的队伍", answer.text)
+        self.assertNotIn("各榜单表现", answer.text)
+        never = run(self.service.character("黎风、洛茜"))
+        self.assertIsNone(never.image_path)
+        self.assertIn("没有同时带「黎风」「洛茜」的队伍", never.text)
+
     def test_an_element_narrows_the_board_and_the_champions(self) -> None:
         lead = self.ranking.rows[0].character_name
 

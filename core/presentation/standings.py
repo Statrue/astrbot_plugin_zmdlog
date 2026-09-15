@@ -1,4 +1,4 @@
-"""Where the teams fielding one character stand on every board."""
+"""Where the teams fielding one character (or several) stand on every board."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -23,7 +23,7 @@ class StandingRowView:
     duration: str
     dps: str
     account_display_name: str
-    # The record's main C, and whether that is the character asked about.
+    # The record's main C, and whether that is a character asked about.
     character_name: str
     is_main: bool
     roster: tuple[RosterEntryView, ...]
@@ -34,7 +34,12 @@ class StandingRowView:
 @dataclass(frozen=True, slots=True)
 class CharacterStandingsPage:
     header: PageHeader
+    # ``A`` or ``A · B``: the label every sentence on the page uses.
     character_name: str
+    # The names themselves, for highlighting each one in a roster.
+    character_names: tuple[str, ...]
+    # 带 A / 同时带 A · B — the phrase the notes complete.
+    team_label: str
     character_initial: str
     character_avatar_url: str | None
     appearances: int
@@ -61,9 +66,12 @@ def build_character_standings_page(
     The rank is the record's rank among every record on that board, which
     is what the board page shows; the page says so, and says how old the
     index behind it is, because it is drawn from memory, not from upstream.
+    Several characters draw the same page for the teams fielding all of them.
     """
 
-    name = standings.character
+    label = standings.character
+    names = standings.characters
+    team_label = f"同时带 {label}" if standings.is_team else f"带 {label}"
     rows: list[StandingRowView] = []
     avatar_url: str | None = None
     for board in standings.boards:
@@ -79,7 +87,7 @@ def build_character_standings_page(
                 (
                     member.avatar_url
                     for member in roster
-                    if member.character_name == name and member.avatar_url
+                    if member.character_name == names[0] and member.avatar_url
                 ),
                 None,
             )
@@ -101,15 +109,21 @@ def build_character_standings_page(
         )
     return CharacterStandingsPage(
         header=PageHeader(
-            title=name,
-            subtitle="带该角色的队伍在各榜单的最好记录",
+            title=label,
+            subtitle=(
+                "同时带这些角色的队伍在各榜单的最好记录"
+                if standings.is_team
+                else "带该角色的队伍在各榜单的最好记录"
+            ),
             query=query,
-            matched_name=f"{name} · 各榜单最好名次",
+            matched_name=f"{label} · 各榜单最好名次",
             target_type="角色排名",
             footer_note="公开榜单 · 队伍成绩 · 名次为该记录在全榜的名次",
         ),
-        character_name=name,
-        character_initial=_initial(name),
+        character_name=label,
+        character_names=names,
+        team_label=team_label,
+        character_initial=_initial(names[0]),
         character_avatar_url=avatar_url,
         appearances=standings.appearances,
         main_appearances=sum(board.main_appearances for board in standings.boards),

@@ -55,11 +55,25 @@ class BoardStanding:
 
 @dataclass(frozen=True, slots=True)
 class CharacterStandings:
-    """A character's standing on every board, best rank first."""
+    """A character's standing on every board, best rank first.
 
-    character: str
+    With several ``characters`` it is the standing of the teams fielding
+    all of them — 角色排名 A B — and "main" means any of them is the main C.
+    """
+
+    characters: tuple[str, ...]
     boards: tuple[BoardStanding, ...]
     absent: tuple[BoardStanding, ...]
+
+    @property
+    def character(self) -> str:
+        """The names as one label: ``A`` or ``A · B``."""
+
+        return " · ".join(self.characters)
+
+    @property
+    def is_team(self) -> bool:
+        return len(self.characters) > 1
 
     @property
     def appearances(self) -> int:
@@ -81,22 +95,30 @@ class CharacterStandings:
 
 def character_standings(
     rankings: Iterable[BossRanking],
-    character: str,
+    *characters: str,
 ) -> CharacterStandings:
-    """Count one character's teams over ``rankings``, best rank first.
+    """Count the teams fielding every one of ``characters``, best rank first.
 
-    A board where the character never appears goes to ``absent`` in board
-    order, so the page can fold them into one line instead of forty rows
-    saying nothing.
+    One name is the usual question; several ask for the teams fielding all
+    of them, which is what 角色排名 A B means (the teams fielding either
+    are the two single answers). A board where no such team appears goes to
+    ``absent`` in board order, so the page can fold them into one line
+    instead of forty rows saying nothing.
     """
 
+    wanted = tuple(dict.fromkeys(name for name in characters if name))
+    if not wanted:
+        raise ValueError("at least one character name is required")
     present: list[BoardStanding] = []
     absent: list[BoardStanding] = []
     for ranking in rankings:
         fielding = [
             row
             for row in ranking.rows
-            if any(entry.character_name == character for entry in row.roster_entries)
+            if all(
+                any(entry.character_name == name for entry in row.roster_entries)
+                for name in wanted
+            )
         ]
         best = min(fielding, key=lambda row: row.rank) if fielding else None
         standing = BoardStanding(
@@ -106,15 +128,15 @@ def character_standings(
             total_rows=len(ranking.rows),
             appearances=len(fielding),
             main_appearances=sum(
-                1 for row in fielding if row.character_name == character
+                1 for row in fielding if row.character_name in wanted
             ),
             best=best,
-            best_as_main=best is not None and best.character_name == character,
+            best_as_main=best is not None and best.character_name in wanted,
         )
         (present if best is not None else absent).append(standing)
     present.sort(key=lambda item: (item.best.rank, item.boss_name))
     return CharacterStandings(
-        character=character,
+        characters=wanted,
         boards=tuple(present),
         absent=tuple(absent),
     )

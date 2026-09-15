@@ -35,7 +35,7 @@
 {% block content %}
 <div class="section-heading">
   <h2>各榜单最好名次</h2>
-  <span class="section-note">每个榜带 {{ page.character_name }} 的最好一条公开记录，按名次排 · 名次是该记录在该榜全部记录中的位置 · 这是队伍的成绩，不是角色的强度</span>
+  <span class="section-note">每个榜{{ page.team_label }}的最好一条公开记录，按名次排 · 名次是该记录在该榜全部记录中的位置 · 这是队伍的成绩，不是角色的强度</span>
 </div>
 
 {% if page.rows %}
@@ -61,8 +61,8 @@
       <div class="standings-record">
         <strong>{{ row.account_display_name }}</strong>
         <span>
-          {% if row.is_main %}<b class="standings-main">{{ page.character_name }} 主 C</b>{% else %}主 C <b>{{ row.character_name }}</b>{% endif %}
-          · 该榜带 {{ page.character_name }} 的记录 {{ row.appearances }} 条
+          {% if row.is_main %}<b class="standings-main">{{ row.character_name }} 主 C</b>{% else %}主 C <b>{{ row.character_name }}</b>{% endif %}
+          · 该榜{{ page.team_label }}的记录 {{ row.appearances }} 条
         </span>
       </div>
       <div class="standings-time">
@@ -75,7 +75,7 @@
       </div>
       <div class="standings-team">
         {% for member in row.roster %}
-        <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}{% if member.character_name == page.character_name %} is-match{% endif %}">
+        <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}{% if member.character_name in page.character_names %} is-match{% endif %}">
           <span class="avatar{% if member.element_key %} el-{{ member.element_key }}{% endif %}">
             {{ member.character_initial }}
             {% if member.avatar_url %}
@@ -96,13 +96,13 @@
   </p>
 </section>
 {% else %}
-<div class="empty-ranking">读过的榜单里没有带 {{ page.character_name }} 的公开记录</div>
+<div class="empty-ranking">读过的榜单里没有{{ page.team_label }}的公开记录</div>
 {% endif %}
 
 {% if page.absent %}
 <div class="section-heading section-heading--minor">
   <h2>没有出场</h2>
-  <span class="section-note">{{ page.absent_count }} 个榜单的公开记录里没有带 {{ page.character_name }} 的队伍</span>
+  <span class="section-note">{{ page.absent_count }} 个榜单的公开记录里没有{{ page.team_label }}的队伍</span>
 </div>
 <div class="stats-insufficient">
   {% for boss_name in page.absent %}

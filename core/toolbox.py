@@ -31,6 +31,8 @@ from .characters import (
     pick_character_filter_scope,
     ranking_character_names,
     resolve_character_name,
+    resolve_standing_names,
+    split_character_names,
 )
 from .client import (
     ZmdLogsAPIError,
@@ -412,6 +414,11 @@ class ToolService:
             return ToolAnswer(messages.INDEX_FILLING)
         rankings = tuple(entry.ranking for entry in index.entries())
         fielded = roster_character_names(rankings)
+        if len(split_character_names(name)) > 1:
+            # Several names: the teams fielding all of them, standings only —
+            # a team has no DPS distribution and no single set of partners.
+            answer = await self._team_standings(name, rankings, fielded, index)
+            return answer.noted(range_note)
         resolution = resolve_character_name(name, fielded)
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
             return ToolAnswer(
@@ -451,6 +458,33 @@ class ToolService:
             .noted(_index_note(index))
             .noted(range_note)
         )
+
+    async def _team_standings(
+        self, text: str, rankings, fielded: tuple[str, ...], index
+    ) -> ToolAnswer:
+        """Where the teams fielding every named character stand, 角色排名 A B."""
+
+        names = resolve_standing_names(text, fielded)
+        if isinstance(names, str):
+            return ToolAnswer(names)
+        standings = character_standings(rankings, *names)
+        if not standings.boards:
+            return ToolAnswer(
+                messages.NO_TEAM_FIELDING.format(names="」「".join(names))
+            )
+        age = index.oldest_age_seconds()
+        elements = await self._data.character_elements(names=fielded)
+        image = await self._render(
+            lambda renderer: renderer.render_character_standings(
+                standings,
+                query=" ".join(names),
+                web_base_url=self._web_base_url,
+                age_seconds=age,
+                elements=elements,
+            )
+        )
+        text = facts.format_character_standings(standings, age_seconds=age)
+        return ToolAnswer(text, image).noted(_index_note(index))
 
     async def _champions(
         self,

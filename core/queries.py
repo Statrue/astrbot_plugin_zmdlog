@@ -37,6 +37,7 @@ from .characters import (
     pick_character_filter_scope,
     ranking_character_names,
     resolve_character_name,
+    resolve_standing_names,
     row_fields,
 )
 from .client import (
@@ -757,14 +758,16 @@ class QueryService:
                 unseen=unseen,
             )
             return Outcome(image_path=image_path)
-        resolution = resolve_character_name(query, roster_character_names(rankings))
-        if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
+        names = resolve_standing_names(query, fielded)
+        if isinstance(names, str):
+            return Outcome(message=names)
+        standings = character_standings(rankings, *names)
+        if standings.is_team and not standings.boards:
+            # Each name is fielded somewhere; no team fields them all. An
+            # empty page would read as a broken render, not as an answer.
             return Outcome(
-                message=messages.ambiguous_character(query, resolution.candidates)
+                message=messages.NO_TEAM_FIELDING.format(names="」「".join(names))
             )
-        if resolution.status is CharacterResolutionStatus.NOT_FOUND:
-            return Outcome(message=messages.CHARACTER_NOT_IN_RECORDS)
-        standings = character_standings(rankings, resolution.name)
         image_path = await self._renderer().render_character_standings(
             standings,
             query=query,

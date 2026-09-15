@@ -549,17 +549,23 @@ def format_character_standings(
     """The best record fielding one character on each board, best rank first.
 
     These are a team's results, not the character's: the rank is the
-    record's rank among every record on that board.
+    record's rank among every record on that board. Several characters are
+    the teams fielding all of them.
     """
 
-    name = standings.character
+    name = "」「".join(standings.characters)
+    team = f"同时带「{name}」" if standings.is_team else f"带「{name}」"
     as_of = ""
     if age_seconds is not None:
         minutes = int(age_seconds // 60)
         as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
-    lines = [f"带「{name}」的队伍在各榜单的最好名次{as_of}"]
+    lines = [f"{team}的队伍在各榜单的最好名次{as_of}"]
     if not standings.boards:
-        lines.append(f"读过的 {len(standings.absent)} 个榜里没有「{name}」出场。")
+        lines.append(
+            f"读过的 {len(standings.absent)} 个榜里没有{team}的队伍。"
+            if standings.is_team
+            else f"读过的 {len(standings.absent)} 个榜里没有「{name}」出场。"
+        )
         return _joined(lines)
     lines.append(
         f"出场 {standings.appearances} 次，分布在 {len(standings.boards)} 个榜；"
@@ -578,7 +584,8 @@ def format_character_standings(
     # stop at ``limit``.
     lines.append(
         f"冠军（第一名）{standings.first_places} 个榜"
-        f"（其中 {name} 当主C {standings.first_places_as_main} 个）"
+        f"（其中 {'其中一人' if standings.is_team else name} 当主C"
+        f" {standings.first_places_as_main} 个）"
         f" · 前三 {len(standings.boards_within(3))} 个榜"
         f" · 前十 {len(standings.boards_within(10))} 个榜。"
     )
@@ -606,25 +613,26 @@ def format_character_standings(
     lines.append("")
     for board in standings.boards[: _bounded(limit)]:
         row = board.best
-        team = "、".join(entry.character_name for entry in row.roster_entries)
-        lead = (
-            f"主C {name}"
-            if board.best_as_main
-            else f"主C {row.character_name}（{name} 为队员）"
-        )
+        roster = "、".join(entry.character_name for entry in row.roster_entries)
+        lead = f"主C {row.character_name}"
+        if not board.best_as_main:
+            lead += f"（{'、'.join(standings.characters)} 为队员）"
         lines.append(
             f"#{row.rank}/{board.total_rows} {board.boss_name}"
             f" · {_duration(row.duration_ms)} · DPS {row.dps:,.0f}"
             f" · {lead} · {row.account_display_name}"
         )
         lines.append(
-            f"    阵容 {team} · battleId {row.battle_id}"
-            f" · 该榜带它的记录 {board.appearances} 条"
+            f"    阵容 {roster} · battleId {row.battle_id}"
+            f" · 该榜{team}的记录 {board.appearances} 条"
         )
     if len(standings.boards) > _bounded(limit):
         lines.append(f"（另有 {len(standings.boards) - _bounded(limit)} 个榜未列出）")
     lines.append("")
-    lines.append("以上是带该角色的队伍的成绩，不是角色本身的强度；名次受玩家水平和配装影响。")
+    subject = "同时带这些角色" if standings.is_team else "带该角色"
+    lines.append(
+        f"以上是{subject}的队伍的成绩，不是角色本身的强度；名次受玩家水平和配装影响。"
+    )
     return _joined(lines)
 
 

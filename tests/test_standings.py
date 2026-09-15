@@ -56,6 +56,45 @@ class StandingsTests(unittest.TestCase):
         self.assertTrue(board.best_as_main)
         self.assertGreaterEqual(board.main_appearances, 1)
 
+    def test_several_names_mean_the_teams_fielding_all_of_them(self) -> None:
+        # 角色排名 黎风 卡缪: the best record per board with both in the team,
+        # main C meaning either of them.
+        both = character_standings(self.rankings, "黎风", "卡缪")
+
+        self.assertEqual(both.characters, ("黎风", "卡缪"))
+        self.assertEqual(both.character, "黎风 · 卡缪")
+        self.assertTrue(both.is_team)
+        self.assertEqual([board.best.rank for board in both.boards], [1, 1])
+        self.assertTrue(both.boards[0].best_as_main)
+        # 卡缪 and 洛茜 share a team only on rows 3 and 5 (洛茜 / 卡缪 as main).
+        support = character_standings(self.rankings[:1], "卡缪", "洛茜")
+        self.assertEqual(support.boards[0].best.rank, 3)
+        self.assertTrue(support.boards[0].best_as_main)
+        self.assertEqual(support.boards[0].appearances, 2)
+        self.assertEqual(support.boards[0].main_appearances, 2)
+        # Two main Cs never share a team: every board is absent.
+        never = character_standings(self.rankings, "黎风", "洛茜")
+        self.assertEqual(never.boards, ())
+        self.assertEqual(len(never.absent), 2)
+        # A name repeated is one name, and none at all is a programming error.
+        repeated = character_standings(self.rankings, "黎风", "黎风")
+        self.assertEqual(repeated.characters, ("黎风",))
+        with self.assertRaises(ValueError):
+            character_standings(self.rankings)
+
+    def test_the_text_for_a_team_says_so(self) -> None:
+        both = character_standings(self.rankings, "卡缪", "洛茜")
+
+        text = facts.format_character_standings(both)
+
+        self.assertIn("同时带「卡缪」「洛茜」的队伍", text)
+        self.assertIn("其中一人 当主C", text)
+        self.assertIn("同时带这些角色的队伍的成绩", text)
+        never = facts.format_character_standings(
+            character_standings(self.rankings, "黎风", "洛茜")
+        )
+        self.assertIn("没有同时带「黎风」「洛茜」的队伍", never)
+
     def test_every_roster_name_is_offered_for_resolution(self) -> None:
         names = roster_character_names(self.rankings)
 
@@ -149,6 +188,27 @@ class StandingsPageTests(unittest.TestCase):
         self.assertIn("数据刚刚更新", html)
         self.assertIn("没有出场", empty)
         self.assertIn("罗丹", empty)
+
+    def test_a_team_page_names_every_member_and_highlights_each(self) -> None:
+        both = character_standings(self.rankings, "卡缪", "洛茜")
+        renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
+
+        page = build_character_standings_page(
+            both, query="卡缪 洛茜", web_base_url=WEB
+        )
+        html = renderer.render_character_standings(
+            both, query="卡缪 洛茜", web_base_url=WEB
+        )
+
+        self.assertEqual(page.character_name, "卡缪 · 洛茜")
+        self.assertEqual(page.character_names, ("卡缪", "洛茜"))
+        self.assertEqual(page.team_label, "同时带 卡缪 · 洛茜")
+        self.assertEqual(page.character_initial, "卡")
+        self.assertIn("同时带这些角色的队伍", html)
+        self.assertIn("每个榜同时带 卡缪 · 洛茜的最好一条公开记录", html)
+        # Both names are highlighted in the roster, whichever one is main C
+        # (the class ends the attribute, which keeps the stylesheet out).
+        self.assertEqual(html.count('is-match">'), 2 * len(page.rows))
 
 
 if __name__ == "__main__":

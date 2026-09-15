@@ -3,8 +3,13 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from . import messages
 from .matcher import fold_text, normalize_search_text, pinyin_keys
+from .messages import shorten
 from .models import BossRanking, BossRankingRow, PublicUserRankings
+
+# A team has four slots, so 角色排名 takes at most four names (--角色 too).
+MAX_TEAM_NAMES = 4
 
 
 class CharacterResolutionStatus(str, Enum):
@@ -39,6 +44,40 @@ def ranking_character_names(ranking: BossRanking) -> tuple[str, ...]:
     for group in ranking.profession_groups:
         for entry in group.entries:
             add(entry.character_name)
+    return tuple(names)
+
+
+def split_character_names(text: str) -> tuple[str, ...]:
+    """The names in ``角色排名 A B`` / ``A、B`` / ``A,B``, each once, in order."""
+
+    parts = text.replace("、", " ").replace("，", " ").replace(",", " ").split()
+    return tuple(dict.fromkeys(parts))
+
+
+def resolve_standing_names(
+    query: str, fielded: tuple[str, ...]
+) -> tuple[str, ...] | str:
+    """The characters 角色排名 asks about, or the reply saying why not.
+
+    One token resolves as before; several resolve one by one, the way
+    ``--角色 A B`` does, and mean the teams fielding all of them. A team
+    has four slots, so more names than that are refused outright.
+    """
+
+    tokens = split_character_names(query)
+    if len(tokens) > MAX_TEAM_NAMES:
+        return f"角色排名 最多写 {MAX_TEAM_NAMES} 个角色。"
+    names: list[str] = []
+    for token in tokens or (query,):
+        resolution = resolve_character_name(token, fielded)
+        if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
+            return messages.ambiguous_character(token, resolution.candidates)
+        if resolution.status is CharacterResolutionStatus.NOT_FOUND:
+            if len(tokens) > 1:
+                return f"公开记录里没有「{shorten(token)}」出场，可能是名字不对。"
+            return messages.CHARACTER_NOT_IN_RECORDS
+        if resolution.name not in names:
+            names.append(resolution.name)
     return tuple(names)
 
 
