@@ -32,7 +32,7 @@ from tests.helpers import (
     ranking_payload_with_rows,
 )
 from tests.test_compare import second_battle_payload
-from tests.test_tools import WEB, FakeData, FakeRenderer
+from tests.test_tools import WEB, FakeData, FakeIndex, FakeRenderer
 
 
 def run(coro):
@@ -317,3 +317,61 @@ class SamePictureTests(unittest.TestCase):
         run(self.tools.account("usr_1234567890abcdef"))
 
         self._assert_same_call("account")
+
+    # --- rDPS ---------------------------------------------------------------------
+
+    def _with_rdps_board(self) -> None:
+        from tests.test_metrics import rdps_payload
+
+        self.data.rdps_ranking = parse_boss_ranking(rdps_payload(), metric="rdps")
+        self.data.ranking_index = FakeIndex(self.ranking, self.data.rdps_ranking)
+
+    def test_the_rdps_board(self) -> None:
+        self._with_rdps_board()
+
+        self._command(RouteKind.RANKING_QUERY, query="三位一体", metric="rdps")
+        answer = run(self.tools.board("三位一体", metric="rdps"))
+
+        self._assert_same_call("ranking")
+        (ranking,) = self.command_renderer.args["ranking"]
+        kwargs = self.tool_renderer.kwargs["ranking"]
+        self.assertEqual(ranking.metric, "rdps")
+        # Both cross-reference the DPS board the index holds.
+        self.assertEqual(kwargs["dps_row_count"], len(self.ranking.rows))
+        self.assertIn("btl_upload_000000000001", kwargs["dps_rows"])
+        self.assertIn("rDPS 口径", answer.text)
+
+    def test_a_board_with_no_eligible_record_is_refused_on_both(self) -> None:
+        outcome = self._command(
+            RouteKind.RANKING_QUERY, query="三位一体", metric="rdps"
+        )
+        answer = run(self.tools.board("三位一体", metric="rdps"))
+
+        self.assertIsNone(outcome.image_path)
+        self.assertIsNone(answer.image_path)
+        self.assertEqual(outcome.message, answer.text)
+        self.assertIn("没有可计算 rDPS 的公开记录", answer.text)
+
+    def test_the_rdps_champions_board(self) -> None:
+        self._with_rdps_board()
+
+        self._command(RouteKind.CHARACTER_STANDINGS, metric="rdps")
+        answer = run(self.tools.character("", metric="rdps"))
+
+        self._assert_same_call("character_champions")
+        kwargs = self.tool_renderer.kwargs["character_champions"]
+        self.assertEqual(kwargs["metric"], "rdps")
+        # Counted from the rDPS board: two records, and 卡缪 is the main C of
+        # its first place, which the DPS board credits to 黎风.
+        (tallies,) = self.tool_renderer.args["character_champions"]
+        by_name = {tally.name: tally for tally in tallies}
+        self.assertEqual(by_name["卡缪"].first_places_as_main, 1)
+        self.assertEqual(by_name["黎风"].first_places_as_main, 0)
+        self.assertIn("rDPS 口径", answer.text)
+
+    def test_a_metric_the_model_misspells_is_refused(self) -> None:
+        answer = run(self.tools.board("三位一体", metric="xdps"))
+
+        self.assertIsNone(answer.image_path)
+        self.assertIn("不是可用的口径", answer.text)
+        self.assertEqual(self.tool_renderer.calls, [])

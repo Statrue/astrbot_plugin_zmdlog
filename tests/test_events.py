@@ -170,7 +170,7 @@ class EventLogTests(unittest.TestCase):
         seen: list[tuple[str, str]] = []
         rankings = {"a": board(), "b": board()}
 
-        async def fetch_ranking(slug):
+        async def fetch_ranking(slug, metric):
             return rankings[slug]
 
         async def fetch_boards():

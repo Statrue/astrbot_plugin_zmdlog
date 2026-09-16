@@ -32,6 +32,7 @@ from .loadout import (
     skill_level_summary,
     suit_catalog_id,
 )
+from .metrics import is_rdps, metric_label
 from .models import (
     BattleDetailSummary,
     BattleEquip,
@@ -125,7 +126,11 @@ def format_board_ranking(
             and when >= since
         )
         filters.append(f"{window_label}打出的记录（名次仍是全榜名次）")
-    lines = [f"榜单：{ranking.dungeon_name} · {ranking.boss_name}（DPS 口径）"]
+    lines = [
+        f"榜单：{ranking.dungeon_name} · {ranking.boss_name}"
+        f"（{metric_label(ranking.metric)} 口径）",
+        *_metric_note(ranking.metric),
+    ]
     if filters:
         lines.append(
             f"筛选：{'，'.join(filters)}，{len(rows)} / {len(ranking.rows)} 条公开记录"
@@ -486,7 +491,9 @@ def format_character_statistics(
             )
     scope = stats.boss_name or "全部榜单"
     lines = [
-        f"角色 DPS 分布（{scope}，范围 {stats.range} · 潜能 {stats.potential}）",
+        f"角色 {metric_label(stats.metric)} 分布"
+        f"（{scope}，范围 {stats.range} · 潜能 {stats.potential}）",
+        *_metric_note(stats.metric),
         "名次只看去极值后的正常样本，正常样本不足的角色没有名次"
         "（记录多但分布很散时也会这样）。",
         "",
@@ -514,9 +521,11 @@ def format_character_boards(
     """One character's standing on every board that has statistics."""
 
     rows = [row for row in stats.rows if row.sample_count]
+    label = metric_label(stats.metric)
     lines = [
         f"「{stats.character_name}」各榜单表现"
-        f"（范围 {stats.range} · 潜能 {stats.potential}）",
+        f"（{label} · 范围 {stats.range} · 潜能 {stats.potential}）",
+        *_metric_note(stats.metric),
     ]
     if not rows:
         lines.append("这个角色在任何榜单上都还没有足够的公开样本。")
@@ -549,6 +558,7 @@ def format_character_standings(
     *,
     limit: int = DEFAULT_ROW_LIMIT,
     age_seconds: float | None = None,
+    metric: str = "dps",
 ) -> str:
     """The best record fielding one character on each board, best rank first.
 
@@ -563,7 +573,7 @@ def format_character_standings(
     if age_seconds is not None:
         minutes = int(age_seconds // 60)
         as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
-    lines = [f"{team}的队伍在各榜单的最好名次{as_of}"]
+    lines = [f"{team}的队伍在各榜单的最好名次{as_of}", *_metric_note(metric)]
     if not standings.boards:
         lines.append(
             f"读过的 {len(standings.absent)} 个榜里没有{team}的队伍。"
@@ -652,6 +662,7 @@ def format_character_tallies(
     usage: tuple[ProfessionUsage, ...] = (),
     window_label: str = "",
     unseen: tuple[str, ...] = (),
+    metric: str = "dps",
 ) -> str:
     """Every character's first places, podiums and top tens over all boards.
 
@@ -673,6 +684,7 @@ def format_character_tallies(
     )
     lines = [
         f"{scope}里{who}各占几个{as_of}",
+        *_metric_note(metric),
         "「冠军」= 该榜第一名记录的队伍里带这个角色，四名角色各算一个；"
         "「当主C」= 其中该角色是主C的。",
         "",
@@ -751,6 +763,7 @@ def format_records(
     age_seconds: float | None = None,
     log_since: str | None = None,
     limit: int = DEFAULT_ROW_LIMIT,
+    metric: str = "dps",
 ) -> str:
     """Champion changes, new records and per-board activity in a window."""
 
@@ -760,7 +773,7 @@ def format_records(
         as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
     changes = [event for event in events if event.kind == CHAMPION_CHANGE]
     records = [event for event in events if event.kind == NEW_RECORD]
-    lines = [f"{window_label}的新纪录{as_of}"]
+    lines = [f"{window_label}的新纪录{as_of}", *_metric_note(metric)]
     if log_since:
         lines.append(f"新纪录流从 {_when(log_since)} 起记录，之前的变化没有。")
     else:
@@ -802,6 +815,7 @@ def format_account_tallies(
     limit: int = DEFAULT_ROW_LIMIT,
     age_seconds: float | None = None,
     window_label: str = "",
+    metric: str = "dps",
 ) -> str:
     """Every uploading account's first places, podiums and top tens."""
 
@@ -816,6 +830,7 @@ def format_account_tallies(
     )
     lines = [
         f"{scope}里各玩家各占几个{as_of}",
+        *_metric_note(metric),
         "「冠军」= 该榜第一名记录的上传者；前三、前十按该账号在该榜的最好名次算；"
         "只统计设为公开的账号。",
         "",
@@ -1015,6 +1030,18 @@ def _champions_cut(tallies, limit: int, noun: str, *, name_zeros: bool = False):
             return shown, f"（其余 {len(rest)} 个{noun}冠军 0 个：{names}）"
         return shown, f"（其余 {len(rest)} 个{noun}冠军 0 个，未列出）"
     return shown, f"（另有 {len(rest)} 个{noun}未列出，其中仍有冠军的见图）"
+
+
+_RDPS_NOTE = (
+    "rDPS 口径：只收录能算出团队贡献的记录（新版上传器的上传，目前很少），"
+    "名次仍按通关时间排，主C 按 rDPS 最高的角色算；不写口径就是 DPS。"
+)
+
+
+def _metric_note(metric: str) -> list[str]:
+    """One line saying what the rDPS boards hold; nothing for DPS."""
+
+    return [_RDPS_NOTE] if is_rdps(metric) else []
 
 
 def _unseen_label(window_label: str) -> str:

@@ -10,6 +10,7 @@ from .common import (
     _format_datetime,
     format_duration,
     format_number,
+    metric_footer,
 )
 
 MAX_CHANGES = 20
@@ -77,6 +78,7 @@ def build_records_page(
     window_label: str,
     age_seconds: float | None = None,
     log_since: str | None = None,
+    metric: str = "dps",
 ) -> RecordsPage:
     """Champion changes first, then new records, then per-board activity.
 
@@ -94,8 +96,10 @@ def build_records_page(
             matched_name=f"{window_label} · 新纪录与榜单活跃度",
             target_type="新纪录",
             footer_note=(
-                "公开榜单 · 新纪录由索引每次重读发现 · 活跃度按记录的战斗时间数"
+                metric_footer(metric)
+                + " · 新纪录由索引每次重读发现 · 活跃度按记录的战斗时间数"
             ),
+            metric=metric,
         ),
         window_label=window_label,
         as_of_label=_as_of_label(age_seconds),

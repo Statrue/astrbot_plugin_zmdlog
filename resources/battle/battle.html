@@ -7,7 +7,7 @@
 {% block hero_facts %}
 <div class="hero-facts">
   <div class="hero-fact hero-fact--key"><span>通关时间</span><strong>{{ page.duration }}</strong><em>{{ page.timer_label }}</em></div>
-  <div class="hero-fact"><span>总 DPS</span><strong>{{ page.total_dps }}</strong></div>
+  <div class="hero-fact"><span>总 DPS</span><strong>{{ page.total_dps }}</strong>{% if page.rdps_ranking_label %}<em>{{ page.rdps_ranking_label }}</em>{% endif %}</div>
   <div class="hero-fact"><span>总伤害</span><strong>{{ page.total_damage }}</strong><em>{{ page.integrity_label }}</em></div>
 </div>
 {% endblock %}

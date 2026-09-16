@@ -55,12 +55,13 @@ def build_help_page(command_prefix: str) -> HelpPage:
                     HelpCommand(
                         command=(
                             f"{command} <榜单关键词> [--top 数量] "
-                            "[--角色 角色名…] [--属性 属性]"
+                            "[--角色 角色名…] [--属性 属性] [--口径 rdps]"
                         ),
                         answers="这个榜的前几名是谁？带上某些角色的队伍能排第几？",
                         description=(
                             "关键词认别名和拼音首字母，默认前 10 名；"
-                            "--角色 写多个名字时只看同时带上他们的队伍。"
+                            "--角色 写几个名字只看同时带上的队伍；"
+                            "--口径 rdps 看团队贡献榜。"
                         ),
                     ),
                     HelpCommand(
@@ -68,14 +69,16 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         answers="现在有哪些榜单，各自前三名是谁？",
                     ),
                     HelpCommand(
-                        command=f"{command} 阵容 <榜单关键词> [--top 数量]",
+                        command=(
+                            f"{command} 阵容 <榜单关键词> [--top 数量] [--口径 rdps]"
+                        ),
                         answers="这个榜大家都在用什么阵容？",
                         description="职业位出场率按全榜统计，常见组合按前 N 名统计。",
                     ),
                     HelpCommand(
                         command=(
                             f"{command} 角色统计 [榜单关键词或角色名] "
-                            "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
+                            "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all] [--口径 rdps]"
                         ),
                         answers="这个榜谁强？这个角色在哪个榜强？",
                         description=(
@@ -85,7 +88,8 @@ def build_help_page(command_prefix: str) -> HelpPage:
                     ),
                     HelpCommand(
                         command=(
-                            f"{command} 角色排名 [角色名… | --属性 属性 | --职业 职业]"
+                            f"{command} 角色排名 [角色名… | --属性 属性 | --职业 职业] "
+                            "[--口径 rdps]"
                         ),
                         answers=(
                             "带这个角色的队伍在各个榜排第几？同时带这几个的呢？"
@@ -97,7 +101,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
-                        command=f"{command} 新纪录 [--范围 7d|14d|30d]",
+                        command=f"{command} 新纪录 [--范围 7d|14d|30d] [--口径 rdps]",
                         answers="最近谁刷新了第一名？新上传了哪些记录？哪个榜最活跃？",
                         description=(
                             "索引每次重读发现的第一名易主和新记录，"
@@ -105,7 +109,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
-                        command=f"{command} 玩家排名 [--范围 7d|14d|30d]",
+                        command=f"{command} 玩家排名 [--范围 7d|14d|30d] [--口径 rdps]",
                         answers="哪个玩家的冠军最多？",
                         description=(
                             "各公开账号上传的第一名、前三、前十各几个，"
@@ -182,7 +186,9 @@ def build_help_page(command_prefix: str) -> HelpPage:
                         description="默认看主账号，绑了几个号就写序号。",
                     ),
                     HelpCommand(
-                        command=f"{command} 群榜 <榜单关键词> [--top 数量]",
+                        command=(
+                            f"{command} 群榜 <榜单关键词> [--top 数量] [--口径 rdps]"
+                        ),
                         answers="本群谁打这个榜最快？",
                         description=(
                             "本群用过绑定指令的成员在该榜的最好记录，按全榜名次排。"

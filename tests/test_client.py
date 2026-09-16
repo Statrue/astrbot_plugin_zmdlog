@@ -103,22 +103,30 @@ class ZmdLogsClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.code, "http_404")
         self.assertNotIn("internal upstream details", str(raised.exception))
 
-    async def test_ranking_request_has_no_metric_parameter(self) -> None:
+    async def test_ranking_requests_always_name_their_metric(self) -> None:
         seen_urls: list[httpx.URL] = []
 
         async def handler(request: httpx.Request) -> httpx.Response:
             seen_urls.append(request.url)
-            return httpx.Response(200, json=ranking_payload())
+            metric = request.url.params.get("metric")
+            return httpx.Response(200, json=ranking_payload(metric=metric))
 
         client = ZmdLogsClient(transport=httpx.MockTransport(handler))
         self.addAsyncCleanup(client.close)
         ranking = await client.get_boss_rankings("dung01_group_bossrush02")
+        team = await client.get_boss_rankings(
+            "dung01_group_bossrush02", metric="rdps"
+        )
 
-        self.assertEqual(ranking.metric, "dps")
-        self.assertEqual(len(seen_urls), 1)
-        self.assertEqual(seen_urls[0].params, httpx.QueryParams())
+        # DPS is sent too: the answer is checked against what was asked for,
+        # never against an upstream default that may change.
+        self.assertEqual((ranking.metric, team.metric), ("dps", "rdps"))
+        self.assertEqual(dict(seen_urls[0].params), {"metric": "dps"})
+        self.assertEqual(dict(seen_urls[1].params), {"metric": "rdps"})
+        with self.assertRaises(ValueError):
+            await client.get_boss_rankings("dung01_group_bossrush02", metric="xdps")
 
-    async def test_non_dps_response_is_a_protocol_error(self) -> None:
+    async def test_a_response_of_another_metric_is_a_protocol_error(self) -> None:
         transport = httpx.MockTransport(
             lambda request: httpx.Response(200, json=ranking_payload(metric="rdps"))
         )

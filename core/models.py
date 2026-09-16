@@ -81,6 +81,9 @@ class BossRankingRow:
     character_avatar_url: str | None = None
     contract_tag_score: int | None = None
     contract_tags: tuple[ContractTag, ...] = ()
+    # The team-contribution reading, when the row carries one; the rDPS
+    # board's number. Lenient: an older row without it still renders.
+    rdps: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +93,10 @@ class BossRanking:
     dungeon_name: str
     profession_groups: tuple[BossProfessionGroup, ...]
     rows: tuple[BossRankingRow, ...]
-    metric: Literal["dps"] = "dps"
+    # ``dps`` or ``rdps``: which of the board's two rankings this is. The
+    # parser checks it against what was asked for, so a changed upstream
+    # default can never hand a DPS page rDPS rows.
+    metric: str = "dps"
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,6 +284,9 @@ class BattleDetailSummary:
     contract_tags: tuple[ContractTag, ...] = ()
     roster: tuple[BattleRosterEntry, ...] = ()
     skill_stats: tuple[BattleSkillStat, ...] = ()
+    # Whether this record is on the board's rDPS ranking; None when the
+    # payload does not say (an older API). Read leniently, like the telemetry.
+    rdps_ranking_eligible: bool | None = None
     # Optional telemetry read from ``timelineEvents`` / ``characterStates``.
     # Both are parsed leniently: they only add sections to a card that must
     # keep rendering when upstream changes their shape.
@@ -405,7 +414,7 @@ class CharacterBossStatistics:
     total_outlier_count: int
     rows: tuple[CharacterBossStatisticsRow, ...]
     character_avatar_url: str | None = None
-    metric: Literal["dps"] = "dps"
+    metric: str = "dps"
 
 
 @dataclass(frozen=True, slots=True)
@@ -422,7 +431,7 @@ class CharacterStatistics:
     total_sample_count: int
     total_outlier_count: int
     rows: tuple[CharacterStatisticsRow, ...]
-    metric: Literal["dps"] = "dps"
+    metric: str = "dps"
 
 
 def parse_equip_catalog(payload: Any) -> tuple[EquipSuit, ...]:
@@ -494,13 +503,18 @@ def parse_hot_bosses(payload: Any) -> tuple[HotBossCard, ...]:
     return tuple(_parse_hot_boss_card(item, index) for index, item in enumerate(items))
 
 
-def parse_boss_ranking(payload: Any) -> BossRanking:
-    """Adapt a ranking response and enforce the ZmdLogBot DPS-only contract."""
+def parse_boss_ranking(payload: Any, *, metric: str = "dps") -> BossRanking:
+    """Adapt a ranking response; its metric must be the one that was asked for.
+
+    The client always sends ``metric``, and the response echoes it, so the
+    check is against what upstream *did*, not against a default it may
+    change: a DPS page can never quietly draw rDPS rows, nor the reverse.
+    """
 
     item = _mapping(payload, "ranking")
-    metric = _string(item.get("metric"), "ranking.metric")
-    if metric != "dps":
-        raise ModelValidationError("ranking.metric must be 'dps'")
+    answered = _string(item.get("metric"), "ranking.metric")
+    if answered != metric:
+        raise ModelValidationError(f"ranking.metric must be '{metric}'")
 
     groups = _list(item.get("professionGroups"), "ranking.professionGroups")
     rows = _list(item.get("rows"), "ranking.rows")
@@ -513,11 +527,14 @@ def parse_boss_ranking(payload: Any) -> BossRanking:
             for index, group in enumerate(groups)
         ),
         rows=tuple(_parse_ranking_row(row, index) for index, row in enumerate(rows)),
+        metric=answered,
     )
 
 
-def parse_character_boss_statistics(payload: Any) -> CharacterBossStatistics:
-    """Adapt ``GET /api/characters/{key}/boss-statistics`` (DPS only)."""
+def parse_character_boss_statistics(
+    payload: Any, *, metric: str = "dps"
+) -> CharacterBossStatistics:
+    """Adapt ``GET /api/characters/{key}/boss-statistics`` for one metric."""
 
     path = "character-boss-statistics"
     item = _mapping(payload, path)
@@ -531,7 +548,7 @@ def parse_character_boss_statistics(payload: Any) -> CharacterBossStatistics:
         character_avatar_url=_optional_string(
             item.get("characterAvatarUrl"), f"{path}.characterAvatarUrl"
         ),
-        **_parse_statistics_envelope(item, path),
+        **_parse_statistics_envelope(item, path, metric=metric),
         rows=tuple(
             _parse_character_boss_row(row, f"{path}.rows[{index}]")
             for index, row in enumerate(rows)
@@ -539,12 +556,14 @@ def parse_character_boss_statistics(payload: Any) -> CharacterBossStatistics:
     )
 
 
-def _parse_statistics_envelope(item: Mapping[str, Any], path: str) -> dict[str, Any]:
+def _parse_statistics_envelope(
+    item: Mapping[str, Any], path: str, *, metric: str
+) -> dict[str, Any]:
     """The fields both statistics responses carry: metric, window, counts."""
 
-    metric = _string(item.get("metric"), f"{path}.metric")
-    if metric != "dps":
-        raise ModelValidationError(f"{path}.metric must be 'dps'")
+    answered = _string(item.get("metric"), f"{path}.metric")
+    if answered != metric:
+        raise ModelValidationError(f"{path}.metric must be '{metric}'")
     time_range = _string(item.get("range"), f"{path}.range")
     if time_range not in ("7d", "14d", "30d", "all"):
         raise ModelValidationError(f"{path}.range is not a known range")
@@ -552,6 +571,7 @@ def _parse_statistics_envelope(item: Mapping[str, Any], path: str) -> dict[str, 
     if potential not in ("0", "1-5", "all"):
         raise ModelValidationError(f"{path}.potential is not a known filter")
     return {
+        "metric": answered,
         "range": time_range,
         "potential": potential,
         "included_boss_count": _non_negative(
@@ -632,8 +652,10 @@ def _parse_character_boss_row(value: Any, path: str) -> CharacterBossStatisticsR
     )
 
 
-def parse_character_statistics(payload: Any) -> CharacterStatistics:
-    """Adapt ``GET /api/bosses[/{slug}]/character-statistics`` (DPS only)."""
+def parse_character_statistics(
+    payload: Any, *, metric: str = "dps"
+) -> CharacterStatistics:
+    """Adapt ``GET /api/bosses[/{slug}]/character-statistics`` for one metric."""
 
     item = _mapping(payload, "character-statistics")
     path = "character-statistics"
@@ -649,7 +671,7 @@ def parse_character_statistics(payload: Any) -> CharacterStatistics:
         eligible_battle_count=_non_negative(
             item.get("eligibleBattleCount"), f"{path}.eligibleBattleCount"
         ),
-        **_parse_statistics_envelope(item, path),
+        **_parse_statistics_envelope(item, path, metric=metric),
         rows=tuple(
             _parse_character_statistics_row(row, f"{path}.rows[{index}]")
             for index, row in enumerate(rows)
@@ -795,6 +817,7 @@ def parse_battle_detail(payload: Any) -> BattleDetailSummary:
         "battle-detail.roleSkillStats",
     )
     return BattleDetailSummary(
+        rdps_ranking_eligible=_lenient_boolean(battle.get("rdpsRankingEligible")),
         battle_id=_string(battle.get("id"), "battle-detail.battle.id"),
         uploader_user_id=uploader_user_id,
         uploader_display_name=uploader_display_name or uploader_user_id,
@@ -1444,6 +1467,7 @@ def _parse_ranking_row(value: Any, index: int) -> BossRankingRow:
             f"{path}.accountDisplayName",
         ),
         dps=_number(item.get("dps"), f"{path}.dps"),
+        rdps=_lenient_number(item.get("rdps")),
         duration_ms=_integer(item.get("durationMs"), f"{path}.durationMs"),
         roster_summary=tuple(
             _string(entry, f"{path}.rosterSummary[{entry_index}]")
@@ -1534,6 +1558,20 @@ def _optional_boolean(value: Any, path: str) -> bool | None:
     if value is None:
         return None
     return _boolean(value, path)
+
+
+def _lenient_number(value: Any) -> float | None:
+    """A number when the payload carries one, None otherwise, never an error."""
+
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+def _lenient_boolean(value: Any) -> bool | None:
+    """A boolean when the payload carries one, None otherwise, never an error."""
+
+    return value if isinstance(value, bool) else None
 
 
 def _number(value: Any, path: str) -> float:

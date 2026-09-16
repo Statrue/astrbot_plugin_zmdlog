@@ -52,7 +52,7 @@
       <li class="combo-item">
         <div class="combo-head">
           <span class="combo-count"><strong>{{ combo.count }}</strong>次 · {{ combo.percent }}</span>
-          <span class="combo-best">最佳 #{{ combo.best_rank }} · DPS {{ combo.best_dps }}</span>
+          <span class="combo-best">最佳 #{{ combo.best_rank }} · {{ page.metric_label }} {{ combo.best_dps }}</span>
         </div>
         <div class="combo-members">
           {% for member in combo.members %}

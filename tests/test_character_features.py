@@ -121,14 +121,17 @@ class CharacterStatisticsModelTests(unittest.TestCase):
 
 
 class CharacterStatisticsClientTests(unittest.IsolatedAsyncioTestCase):
-    async def test_requests_carry_range_and_potential_but_no_metric(self) -> None:
+    async def test_requests_carry_range_potential_and_metric(self) -> None:
         seen: list[httpx.URL] = []
 
         async def handler(request: httpx.Request) -> httpx.Response:
             seen.append(request.url)
             is_global = request.url.path.endswith("/bosses/character-statistics")
             scope = "all" if is_global else "boss"
-            return httpx.Response(200, json=character_statistics_payload(scope=scope))
+            metric = request.url.params.get("metric")
+            return httpx.Response(
+                200, json=character_statistics_payload(scope=scope, metric=metric)
+            )
 
         client = ZmdLogsClient(transport=httpx.MockTransport(handler))
         self.addAsyncCleanup(client.close)
@@ -137,15 +140,20 @@ class CharacterStatisticsClientTests(unittest.IsolatedAsyncioTestCase):
         await client.get_character_statistics(
             "dung01_group_bossrush02", time_range="7d", potential="0"
         )
+        team = await client.get_character_statistics(None, metric="rdps")
 
         self.assertEqual(seen[0].path, "/api/bosses/character-statistics")
         self.assertEqual(
             seen[1].path, "/api/bosses/dung01_group_bossrush02/character-statistics"
         )
-        for url in seen:
-            self.assertNotIn("metric", str(url))
-        self.assertEqual(dict(seen[0].params), {"range": "all", "potential": "all"})
-        self.assertEqual(dict(seen[1].params), {"range": "7d", "potential": "0"})
+        self.assertEqual(
+            dict(seen[0].params), {"range": "all", "potential": "all", "metric": "dps"}
+        )
+        self.assertEqual(
+            dict(seen[1].params), {"range": "7d", "potential": "0", "metric": "dps"}
+        )
+        self.assertEqual(dict(seen[2].params)["metric"], "rdps")
+        self.assertEqual(team.metric, "rdps")
 
     async def test_rdps_response_is_protocol_error(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -536,8 +544,9 @@ class CharacterBossClientTests(unittest.IsolatedAsyncioTestCase):
             "chr_0028_wulfa", time_range="30d", potential="all"
         )
         self.assertEqual(seen[0].path, "/api/characters/chr_0028_wulfa/boss-statistics")
-        self.assertEqual(dict(seen[0].params), {"range": "30d", "potential": "all"})
-        self.assertNotIn("metric", str(seen[0]))
+        self.assertEqual(
+            dict(seen[0].params), {"range": "30d", "potential": "all", "metric": "dps"}
+        )
 
 
 class BattleByRankRoutingTests(unittest.TestCase):

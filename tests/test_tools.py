@@ -67,43 +67,71 @@ class FakeRenderer:
 
 
 class FakeIndex:
-    """The ranking index as the tools see it: already filled, one board."""
+    """The ranking index as the tools see it: already filled, one board.
 
-    def __init__(self, ranking) -> None:
-        self._entries = () if ranking is None else (IndexEntry(ranking, 0.0),)
+    ``rdps_ranking`` is the same board's rDPS ranking when a test gives one;
+    without it the rDPS index holds nothing, as most boards do upstream.
+    """
 
-    async def ensure_filled(self) -> None:
+    def __init__(self, ranking, rdps_ranking=None) -> None:
+        self._held = {
+            "dps": () if ranking is None else (IndexEntry(ranking, 0.0),),
+            "rdps": () if rdps_ranking is None else (IndexEntry(rdps_ranking, 0.0),),
+        }
+
+    async def ensure_filled(self, metric="dps") -> None:
         return None
 
-    async def wait_filled(self, timeout=None) -> bool:
+    async def wait_filled(self, timeout=None, metric="dps") -> bool:
         return True
 
     missing_count = 0
 
-    def entries(self):
-        return self._entries
+    def missing(self, metric="dps"):
+        return 0
 
-    def oldest_age_seconds(self):
-        return 42.0 if self._entries else None
+    def is_complete(self, metric="dps"):
+        return True
+
+    complete = True
+
+    def entries(self, metric="dps"):
+        return self._held[metric]
+
+    def oldest_age_seconds(self, metric="dps"):
+        return 42.0 if self._held[metric] else None
 
 
 class FakeData:
-    def __init__(self, ranking=None, battles=None, account=None) -> None:
+    def __init__(
+        self, ranking=None, battles=None, account=None, rdps_ranking=None
+    ) -> None:
         self.cards = parse_hot_bosses(hot_bosses_payload())
         self.ranking = ranking
+        self.rdps_ranking = rdps_ranking
         self.battles = battles or {}
         self.account = account
-        self.ranking_index = FakeIndex(ranking)
+        self.ranking_index = FakeIndex(ranking, rdps_ranking)
         self.stats_calls: list[tuple] = []
 
-    async def get_character_statistics(self, slug, *, time_range, potential):
-        self.stats_calls.append((slug, time_range, potential))
-        return parse_character_statistics(character_statistics_payload())
+    async def get_character_statistics(
+        self, slug, *, time_range, potential, metric="dps"
+    ):
+        self.stats_calls.append((slug, time_range, potential, metric))
+        return parse_character_statistics(
+            character_statistics_payload(metric=metric), metric=metric
+        )
 
     async def list_hot_bosses(self):
         return self.cards
 
-    async def get_boss_ranking(self, slug):
+    async def get_boss_ranking(self, slug, *, max_age=None, metric="dps"):
+        if metric == "rdps":
+            if self.rdps_ranking is not None:
+                return self.rdps_ranking
+            # Most boards upstream: an rDPS ranking with nothing on it yet.
+            payload = dict(ranking_payload_with_rows(), rows=[], metric="rdps")
+            return parse_boss_ranking(payload, metric="rdps")
         return self.ranking
 
     async def get_battle_detail(self, battle_id):
@@ -170,11 +198,15 @@ class FakeData:
             CharacterCatalogEntry("提弗洛斯", "chr_0002_tifu"),
         )
 
-    async def get_character_boss_statistics(self, key, *, time_range, potential):
-        return parse_character_boss_statistics(character_boss_statistics_payload())
+    async def get_character_boss_statistics(
+        self, key, *, time_range, potential, metric="dps"
+    ):
+        return parse_character_boss_statistics(
+            character_boss_statistics_payload(metric=metric), metric=metric
+        )
 
     class _EmptyLog:
-        def recent(self, *, kind=None, since=None):
+        def recent(self, *, kind=None, since=None, metric=None):
             return ()
 
         def oldest_seen_at(self):
@@ -664,7 +696,7 @@ class ToolSurfaceTests(unittest.TestCase):
         self.assertEqual(answer.image_path, "/tmp/character_stats.png")
         self.assertIn("角色 DPS 分布", answer.text)
         self.assertEqual(
-            self.data.stats_calls[-1], ("dung01_group_bossrush02", "all", "all")
+            self.data.stats_calls[-1], ("dung01_group_bossrush02", "all", "all", "dps")
         )
 
     def test_range_and_potential_reach_the_distribution_read(self) -> None:
@@ -674,11 +706,13 @@ class ToolSurfaceTests(unittest.TestCase):
             )
         )
         self.assertEqual(
-            self.data.stats_calls[-1], ("dung01_group_bossrush02", "7d", "0")
+            self.data.stats_calls[-1], ("dung01_group_bossrush02", "7d", "0", "dps")
         )
 
         run(self.service.character("", board="全部", time_range="30d"))
-        self.assertEqual(self.data.stats_calls[-1], (None, "30d", "all"))
+        self.assertEqual(self.data.stats_calls[-1], (None, "30d", "all", "dps"))
+        run(self.service.character("", board="全部", metric="rdps"))
+        self.assertEqual(self.data.stats_calls[-1], (None, "all", "all", "rdps"))
 
     def test_an_impossible_potential_is_refused_with_the_available_tiers(self) -> None:
         answer = run(self.service.character("洛茜", potential="满潜"))

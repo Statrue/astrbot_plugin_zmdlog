@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ..metrics import METRIC_DPS
 from ..models import CharacterBossStatistics, CharacterStatistics
 
 if TYPE_CHECKING:
@@ -32,11 +33,12 @@ async def prepare_character_stats(
     potential: str,
     query: str,
     web_base_url: str | None,
+    metric: str = METRIC_DPS,
 ) -> CharacterStatsRecipe:
     """``boss_slug`` None means the global statistics, over every board."""
 
     stats = await data.get_character_statistics(
-        boss_slug, time_range=time_range, potential=potential
+        boss_slug, time_range=time_range, potential=potential, metric=metric
     )
     return CharacterStatsRecipe(stats=stats, query=query, web_base_url=web_base_url)
 
@@ -63,10 +65,11 @@ async def prepare_character_boss(
     potential: str,
     query: str,
     web_base_url: str | None,
+    metric: str = METRIC_DPS,
 ) -> CharacterBossRecipe:
     """``character_key`` is the catalog's key; the caller resolved the name."""
 
     stats = await data.get_character_boss_statistics(
-        character_key, time_range=time_range, potential=potential
+        character_key, time_range=time_range, potential=potential, metric=metric
     )
     return CharacterBossRecipe(stats=stats, query=query, web_base_url=web_base_url)

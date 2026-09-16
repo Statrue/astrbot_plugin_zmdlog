@@ -55,6 +55,7 @@ from .matcher import (
     fold_text,
 )
 from .messages import shorten
+from .metrics import METRIC_DPS, is_rdps, parse_metric_text
 from .models import HotBossCard
 from .professions import PROFESSIONS, normalize_profession
 from .rank_watch import RankWatcher
@@ -145,9 +146,13 @@ class ToolService:
         element: str = "",
         time_range: str = "",
         profession: str = "",
+        metric: str = "",
     ) -> ToolAnswer:
+        wanted_metric = self._metric(metric)
+        if isinstance(wanted_metric, ToolAnswer):
+            return wanted_metric
         if not keyword.strip():
-            return await self._records(time_range)
+            return await self._records(time_range, wanted_metric)
         span, range_note = _time_range(time_range)
         wanted = self._element(element)
         if isinstance(wanted, ToolAnswer):
@@ -156,14 +161,16 @@ class ToolService:
         if isinstance(role, ToolAnswer):
             return role
         if _means_every_board(keyword):
-            return await self._boards_overview(keyword)
+            answer = await self._boards_overview(keyword)
+            return answer.noted(_overview_metric_note(wanted_metric))
         target = await self._resolve_target(keyword)
         if isinstance(target, ToolAnswer):
             return target
         if not isinstance(target, str):
             choice, cards = target
-            return await self._dungeon_overview(keyword, choice, cards)
-        ranking = await self._data.get_boss_ranking(target)
+            answer = await self._dungeon_overview(keyword, choice, cards)
+            return answer.noted(_overview_metric_note(wanted_metric))
+        ranking = await self._data.get_boss_ranking(target, metric=wanted_metric)
         limit = max(1, min(limit, facts.MAX_ROW_LIMIT))
         recipe = await prepare_ranking(
             self._data,
@@ -200,11 +207,13 @@ class ToolService:
         image = await self._render(recipe.draw)
         return ToolAnswer(text, image).noted(range_note)
 
-    async def _records(self, time_range: str) -> ToolAnswer:
+    async def _records(
+        self, time_range: str, metric: str = METRIC_DPS
+    ) -> ToolAnswer:
         """New records, first places changing hands and board activity."""
 
         span, range_note = _time_range(time_range)
-        snapshot = await self._index()
+        snapshot = await self._index(metric)
         if isinstance(snapshot, ToolAnswer):
             return snapshot
         recipe = prepare_records(self._data, snapshot, time_range=span)
@@ -214,6 +223,7 @@ class ToolService:
             window_label=recipe.window_label,
             age_seconds=recipe.age_seconds,
             log_since=recipe.log_since,
+            metric=recipe.metric,
         )
         image = await self._render(recipe.draw)
         return ToolAnswer(text, image).noted(range_note)
@@ -315,17 +325,23 @@ class ToolService:
         time_range: str = "",
         profession: str = "",
         potential: str = "",
+        metric: str = "",
     ) -> ToolAnswer:
         span, range_note = _time_range(time_range)
         wanted_potential = self._potential(potential)
         if isinstance(wanted_potential, ToolAnswer):
             return wanted_potential
+        wanted_metric = self._metric(metric)
+        if isinstance(wanted_metric, ToolAnswer):
+            return wanted_metric
         if board.strip():
             if not name.strip():
-                answer = await self._board_statistics(board, span, wanted_potential)
+                answer = await self._board_statistics(
+                    board, span, wanted_potential, wanted_metric
+                )
             else:
                 answer = await self._character_on_board(
-                    name, board, span, wanted_potential
+                    name, board, span, wanted_potential, wanted_metric
                 )
             return answer.noted(range_note)
         if not name.strip():
@@ -336,12 +352,15 @@ class ToolService:
             if isinstance(role, ToolAnswer):
                 return role
             answer = await self._champions(
-                wanted or None, profession=role or None, span=span
+                wanted or None,
+                profession=role or None,
+                span=span,
+                metric=wanted_metric,
             )
             return answer.noted(range_note)
         # Standings come from the ranking index and cover every rarity; the
         # DPS distribution needs a six-star key and is added when there is one.
-        snapshot = await self._index()
+        snapshot = await self._index(wanted_metric)
         if isinstance(snapshot, ToolAnswer):
             return snapshot
         if len(split_character_names(name)) > 1:
@@ -356,7 +375,7 @@ class ToolService:
             )
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
             answer = await self._character_distribution_only(
-                name, span, wanted_potential
+                name, span, wanted_potential, wanted_metric
             )
             return answer.noted(range_note)
         recipe = await prepare_standings(
@@ -372,12 +391,12 @@ class ToolService:
         # The distribution is an upstream read of several seconds and the
         # render about one; they need nothing from each other, so they overlap.
         stats, image = await asyncio.gather(
-            self._boss_statistics(key, span, wanted_potential),
+            self._boss_statistics(key, span, wanted_potential, wanted_metric),
             self._render(recipe.draw),
         )
         parts = [
             facts.format_character_standings(
-                recipe.standings, age_seconds=recipe.age_seconds
+                recipe.standings, age_seconds=recipe.age_seconds, metric=recipe.metric
             ),
             facts.format_character_partners(snapshot.rankings, resolution.name),
         ]
@@ -408,7 +427,7 @@ class ToolService:
             return ToolAnswer(recipe)
         image = await self._render(recipe.draw)
         text = facts.format_character_standings(
-            recipe.standings, age_seconds=recipe.age_seconds
+            recipe.standings, age_seconds=recipe.age_seconds, metric=recipe.metric
         )
         return ToolAnswer(text, image).noted(_index_note(recipe.missing_count))
 
@@ -418,6 +437,7 @@ class ToolService:
         *,
         profession: str | None = None,
         span: str = "all",
+        metric: str = METRIC_DPS,
     ) -> ToolAnswer:
         """Every character's first places over all boards, most first.
 
@@ -425,10 +445,11 @@ class ToolService:
         "物理队有什么冠军" is answered: the board, restricted to them.
         ``profession`` restricts it to one class and lists every member,
         zeros included, which is how "谁是冠军最少的突击" is answered.
-        ``span`` (7d / 14d / 30d) narrows every board to a window.
+        ``span`` (7d / 14d / 30d) narrows every board to a window; ``metric``
+        counts the rDPS boards instead of the DPS ones.
         """
 
-        snapshot = await self._index()
+        snapshot = await self._index(metric)
         if isinstance(snapshot, ToolAnswer):
             return snapshot
         recipe = await prepare_champions(
@@ -450,6 +471,7 @@ class ToolService:
             usage=recipe.usage,
             window_label=recipe.window_label,
             unseen=recipe.unseen,
+            metric=recipe.metric,
         )
         image = await self._render(recipe.draw)
         return ToolAnswer(text, image).noted(_index_note(recipe.missing_count))
@@ -482,6 +504,20 @@ class ToolService:
         return label
 
     @staticmethod
+    def _metric(text: str) -> str | ToolAnswer:
+        """``dps`` / ``rdps`` for what the model typed; "" means DPS."""
+
+        if not text.strip():
+            return METRIC_DPS
+        value = parse_metric_text(text)
+        if value is None:
+            return ToolAnswer(
+                f"「{shorten(text)}」不是可用的口径：只有 dps（直伤，默认）和 "
+                "rdps（团队贡献）两种。"
+            )
+        return value
+
+    @staticmethod
     def _potential(text: str) -> str | ToolAnswer:
         """``0`` / ``1-5`` / ``all`` for what the model typed; "" means all."""
 
@@ -495,20 +531,22 @@ class ToolService:
             )
         return value
 
-    async def _boss_statistics(self, key: str | None, span: str, potential: str):
+    async def _boss_statistics(
+        self, key: str | None, span: str, potential: str, metric: str = METRIC_DPS
+    ):
         """The six-star distribution, or nothing; the standings stand without it."""
 
         if key is None:
             return None
         try:
             return await self._data.get_character_boss_statistics(
-                key, time_range=span, potential=potential
+                key, time_range=span, potential=potential, metric=metric
             )
         except ZmdLogsClientError:
             return None
 
     async def _board_statistics(
-        self, board: str, span: str, potential: str
+        self, board: str, span: str, potential: str, metric: str = METRIC_DPS
     ) -> ToolAnswer:
         """Every six-star's distribution on one board, or over all of them."""
 
@@ -530,13 +568,19 @@ class ToolService:
             potential=potential,
             query=query,
             web_base_url=self._web_base_url,
+            metric=metric,
         )
         text = facts.format_character_statistics(recipe.stats)
         image = await self._render(recipe.draw)
         return ToolAnswer(text, image)
 
     async def _character_on_board(
-        self, name: str, board: str, span: str, potential: str
+        self,
+        name: str,
+        board: str,
+        span: str,
+        potential: str,
+        metric: str = METRIC_DPS,
     ) -> ToolAnswer:
         catalog_name = await self._resolve_six_star(name)
         if isinstance(catalog_name, ToolAnswer):
@@ -544,7 +588,7 @@ class ToolService:
         if catalog_name is None:
             # Not a six-star, so there is no distribution; the records
             # fielding it on that board are what the question is about.
-            return await self.board(board, character=name)
+            return await self.board(board, character=name, metric=metric)
         target = await self._resolve_target(board)
         if isinstance(target, ToolAnswer):
             return target
@@ -558,13 +602,14 @@ class ToolService:
             potential=potential,
             query=board,
             web_base_url=self._web_base_url,
+            metric=metric,
         )
         text = facts.format_character_statistics(recipe.stats, character=catalog_name)
         image = await self._render(recipe.draw)
         return ToolAnswer(text, image)
 
     async def _character_distribution_only(
-        self, name: str, span: str, potential: str
+        self, name: str, span: str, potential: str, metric: str = METRIC_DPS
     ) -> ToolAnswer:
         """A six-star with no public record yet: the distribution page alone."""
 
@@ -581,6 +626,7 @@ class ToolService:
             potential=potential,
             query=catalog_name,
             web_base_url=self._web_base_url,
+            metric=metric,
         )
         text = facts.format_character_boards(recipe.stats)
         image = await self._render(recipe.draw)
@@ -740,10 +786,10 @@ class ToolService:
 
     # --- shared -------------------------------------------------------------------
 
-    async def _index(self) -> IndexSnapshot | ToolAnswer:
-        """The ranking index, or the answer for one still filling."""
+    async def _index(self, metric: str = METRIC_DPS) -> IndexSnapshot | ToolAnswer:
+        """The ranking index for ``metric``, or the answer for one still filling."""
 
-        snapshot = await index_snapshot(self._data)
+        snapshot = await index_snapshot(self._data, metric=metric)
         if snapshot is None:
             return ToolAnswer(messages.INDEX_FILLING)
         return snapshot
@@ -837,6 +883,14 @@ def _dungeon_statistics_refusal(board: str, choice: MatchChoice) -> ToolAnswer:
 
 def _means_every_board(keyword: str) -> bool:
     return "".join(keyword.split()).casefold() in _EVERY_BOARD
+
+
+def _overview_metric_note(metric: str) -> str:
+    """The board list has no rDPS reading; an overview asked for one says so."""
+
+    if not is_rdps(metric):
+        return ""
+    return "（榜单总览来自榜单列表，只有 DPS 口径；rDPS 请查具体榜单。）"
 
 
 def _time_range(text: str) -> tuple[str, str]:

@@ -727,6 +727,7 @@ class ZmdLogBotPlugin(Star):
         element: str = "",
         range: str = "",
         profession: str = "",
+        metric: str = "",
     ):
         """查询终末地某个首领榜单的公开速通记录：前几名的用时、DPS、主C、阵容、
         战斗日期、落后第一几秒和 battleId，最快/中位/平均用时，各职业位的角色出场率，
@@ -753,6 +754,8 @@ class ZmdLogBotPlugin(Star):
                 第一名变化，榜单留空则看这段时间的新纪录（默认 7d）
             profession(string): 只看主C 为该职业的记录，填 先锋、近卫、重装、术士、
                 突击 或 辅助，不筛选就留空
+            metric(string): 口径，默认 dps（直伤）；问“rDPS 榜”“团队贡献榜”时填
+                rdps——只收录能算出 rDPS 的记录，目前很少，主C 按 rDPS 最高者算
         """
 
         return await self._run_tool(
@@ -764,6 +767,7 @@ class ZmdLogBotPlugin(Star):
                 element=element,
                 time_range=range,
                 profession=profession,
+                metric=metric,
             ),
         )
 
@@ -805,6 +809,7 @@ class ZmdLogBotPlugin(Star):
         range: str = "",
         profession: str = "",
         potential: str = "",
+        metric: str = "",
     ):
         """凡是问某个角色（干员）的“第一、冠军、第一名、排第几、成绩、上了哪些榜、
         最常和谁同队”，例如“别礼的第一呢”“洛茜有几个冠军”，都用这个工具，把名字原样
@@ -839,6 +844,8 @@ class ZmdLogBotPlugin(Star):
                 术士（术师）、突击 或 辅助
             potential(string): DPS 分布的潜能档，填 0（零潜）、1-5（有潜能，合并）
                 或留空（全部）；ZMDLogs 不按具体层数拆分
+            metric(string): 口径，默认 dps（直伤）；问“rDPS”“团队贡献”时填 rdps——
+                名次和分布都改看 rDPS 榜，那里只收录能算出 rDPS 的记录，目前很少
         """
 
         return await self._run_tool(
@@ -850,6 +857,7 @@ class ZmdLogBotPlugin(Star):
                 range,
                 profession=profession,
                 potential=potential,
+                metric=metric,
             ),
         )
 

@@ -45,27 +45,31 @@ def cards_payload(top_ids: dict[str, list[str]] | None = None) -> list[dict]:
     return cards
 
 
-def ranking_for(slug: str, *, first_id: str | None = None):
+def ranking_for(slug: str, *, first_id: str | None = None, metric: str = "dps"):
     payload = ranking_payload_with_rows()
     payload["bossSlug"] = slug
+    payload["metric"] = metric
     if first_id is not None:
         payload["rows"][0]["battleId"] = first_id
-    return parse_boss_ranking(payload)
+    return parse_boss_ranking(payload, metric=metric)
 
 
 class FakeUpstream:
     def __init__(self) -> None:
         self.cards = parse_hot_bosses(cards_payload())
+        # DPS board reads by slug; the rDPS board's reads are kept apart,
+        # because most of what is asserted here is about the DPS index.
         self.ranking_calls: list[str] = []
+        self.rdps_calls: list[str] = []
         self.board_calls = 0
         self.fail = False
         self.first_ids: dict[str, str] = {}
 
-    async def fetch_ranking(self, slug: str):
-        self.ranking_calls.append(slug)
+    async def fetch_ranking(self, slug: str, metric: str):
+        (self.ranking_calls if metric == "dps" else self.rdps_calls).append(slug)
         if self.fail:
             raise ZmdLogsClientError("offline")
-        return ranking_for(slug, first_id=self.first_ids.get(slug))
+        return ranking_for(slug, first_id=self.first_ids.get(slug), metric=metric)
 
     async def fetch_boards(self):
         self.board_calls += 1
@@ -199,8 +203,45 @@ class RankingIndexTests(unittest.TestCase):
         run(self.index.refresh_oldest())
         run(self.index.refresh_oldest())
 
+        # Each pace re-reads one DPS board and one rDPS board: two streaks,
+        # each logged once, the rDPS one named as such.
         failures = [m for m in self.logger.messages if "could not read" in m]
-        self.assertEqual(len(failures), 1)
+        self.assertEqual(len(failures), 2)
+        self.assertEqual(sum("(rdps)" in m for m in failures), 1)
+
+    def test_the_rdps_boards_fill_after_the_dps_ones_and_share_the_list(self) -> None:
+        run(self.index.ensure_filled())
+        self.assertFalse(self.index.is_complete("rdps"))
+        self.assertEqual(self.index.missing("rdps"), len(SLUGS))
+
+        run(self.index.ensure_filled("rdps"))
+
+        self.assertTrue(self.index.is_complete("rdps"))
+        self.assertEqual(sorted(self.upstream.rdps_calls), sorted(SLUGS))
+        # The board list was read once, by the DPS fill.
+        self.assertEqual(self.upstream.board_calls, 1)
+        self.assertEqual(self.index.entry(SLUGS[0], "rdps").ranking.metric, "rdps")
+        self.assertEqual(len(self.index.entries("rdps")), 2)
+        # The DPS index is untouched by the rDPS fill.
+        self.assertEqual(sorted(self.upstream.ranking_calls), sorted(SLUGS))
+
+    def test_a_changed_top_three_re_reads_the_rdps_board_too(self) -> None:
+        run(self.index.ensure_filled())
+        run(self.index.ensure_filled("rdps"))
+        self.upstream.first_ids[SLUGS[1]] = "btl_upload_new000000001"
+        cards = parse_hot_bosses(
+            cards_payload(
+                {
+                    SLUGS[0]: TOP3,
+                    SLUGS[1]: ["btl_upload_new000000001", *TOP3[1:]],
+                }
+            )
+        )
+        before = len(self.upstream.rdps_calls)
+
+        run(self.index.apply_signal(cards))
+
+        self.assertEqual(self.upstream.rdps_calls[before:], [SLUGS[1]])
 
     def test_concurrent_reads_of_one_board_share_a_fetch(self) -> None:
         async def scenario():
@@ -251,7 +292,7 @@ class RankingIndexTests(unittest.TestCase):
         )
 
     def test_a_fill_that_keeps_failing_backs_off(self) -> None:
-        async def failing(slug):
+        async def failing(slug, metric):
             raise ZmdLogsClientError("offline")
 
         index = RankingIndex(

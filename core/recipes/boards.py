@@ -13,9 +13,11 @@ from ..characters import (
     resolve_character_name,
     row_fields,
 )
+from ..client import ZmdLogsClientError
 from ..matcher import MatchChoice
 from ..messages import shorten
-from ..models import BossRanking, HotBossCard
+from ..metrics import is_rdps
+from ..models import BossRanking, BossRankingRow, HotBossCard
 from ..professions import normalize_profession
 from ..routing import DEFAULT_RANKING_TOP
 
@@ -41,6 +43,10 @@ class RankingRecipe:
     element_filter: str | None
     profession_filter: str | None
     elements: Mapping[str, str]
+    # On the rDPS board: the DPS board's rows by battle id and its size,
+    # so every row can say where it stands on the board everyone reads.
+    dps_rows: Mapping[str, BossRankingRow] | None = None
+    dps_row_count: int | None = None
 
     async def draw(self, renderer: "LongImageRenderer") -> str:
         return await renderer.render_ranking(
@@ -53,6 +59,8 @@ class RankingRecipe:
             element_filter=self.element_filter,
             elements=self.elements,
             profession_filter=self.profession_filter,
+            dps_rows=self.dps_rows,
+            dps_row_count=self.dps_row_count,
         )
 
 
@@ -76,6 +84,10 @@ async def prepare_ranking(
     """
 
     board = ranking.boss_name
+    if is_rdps(ranking.metric) and not ranking.rows:
+        # Most boards have no record whose upload could compute rDPS yet;
+        # an empty page would read as a broken render.
+        return f"「{board}」目前没有可计算 rDPS 的公开记录。"
     names: tuple[str, ...] | None = None
     scope = CharacterFilterScope.MAIN
     if character_filter is not None and character_filter.strip():
@@ -129,6 +141,19 @@ async def prepare_ranking(
         for row in ranking.rows
     ):
         return f"「{board}」的公开排名里没有{'且'.join(labels)}的记录。"
+    dps_rows: dict[str, BossRankingRow] | None = None
+    dps_row_count: int | None = None
+    if is_rdps(ranking.metric):
+        # The DPS board is what everyone reads: each rDPS row says where it
+        # sits there and who counts as its main C there. The copy the index
+        # holds is enough; an unreadable one only costs the cross-reference.
+        try:
+            dps = await data.get_boss_ranking(ranking.boss_slug, max_age=None)
+        except ZmdLogsClientError:
+            dps = None
+        if dps is not None:
+            dps_rows = {row.battle_id: row for row in dps.rows}
+            dps_row_count = len(dps.rows)
     return RankingRecipe(
         ranking=ranking,
         query=query,
@@ -139,6 +164,8 @@ async def prepare_ranking(
         element_filter=element_filter,
         profession_filter=profession_filter,
         elements=elements,
+        dps_rows=dps_rows,
+        dps_row_count=dps_row_count,
     )
 
 

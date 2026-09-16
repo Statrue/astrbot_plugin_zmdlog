@@ -61,6 +61,7 @@ from .matcher import (
     fold_text,
 )
 from .messages import shorten
+from .metrics import METRIC_DPS
 from .models import (
     BattleDetailSummary,
     HotBossCard,
@@ -226,10 +227,10 @@ class QueryService:
         )
         return Outcome(image_path=await recipe.draw(self._renderer()))
 
-    async def _index(self) -> IndexSnapshot | Outcome:
-        """The ranking index, or the reply for one still filling."""
+    async def _index(self, metric: str = METRIC_DPS) -> IndexSnapshot | Outcome:
+        """The ranking index for ``metric``, or the reply for one still filling."""
 
-        snapshot = await index_snapshot(self._data)
+        snapshot = await index_snapshot(self._data, metric=metric)
         if snapshot is None:
             return Outcome(message=messages.INDEX_FILLING)
         return snapshot
@@ -313,10 +314,12 @@ class QueryService:
             return await self._dispatch_trend(route, origin=origin)
 
         if route.kind is RouteKind.PLAYER_CHAMPIONS:
-            return await self._render_player_champions(route.stats_range)
+            return await self._render_player_champions(
+                route.stats_range, metric=route.metric
+            )
 
         if route.kind is RouteKind.RECORDS_QUERY:
-            return await self._render_records(route.stats_range)
+            return await self._render_records(route.stats_range, metric=route.metric)
 
         if route.kind is RouteKind.CHARACTER_STANDINGS:
             return await self._render_character_standings(
@@ -324,6 +327,7 @@ class QueryService:
                 element_filter=route.element_filter,
                 profession_filter=route.profession_filter,
                 time_range=route.stats_range,
+                metric=route.metric,
             )
 
         if route.kind is RouteKind.CHARACTER_STATS and not route.query.strip():
@@ -334,6 +338,7 @@ class QueryService:
                 potential=route.stats_potential,
                 query="角色统计",
                 web_base_url=self._web_base_url,
+                metric=route.metric,
             )
             return Outcome(image_path=await recipe.draw(renderer))
         return None
@@ -465,6 +470,7 @@ class QueryService:
                 stats_potential=pending.stats_potential,
                 battle_rank=pending.battle_rank,
                 compare_rank=pending.compare_rank,
+                metric=pending.metric,
             )
             return Outcome(message=self._format_candidates(entry))
         if choice is None:
@@ -756,7 +762,11 @@ class QueryService:
             elements=await self._data.character_elements(
                 names=ranking_character_names(ranking)
             ),
-            age_seconds=index.oldest_age_seconds() if index.complete else None,
+            age_seconds=(
+                index.oldest_age_seconds(ranking.metric)
+                if index.is_complete(ranking.metric)
+                else None
+            ),
         )
         return Outcome(image_path=image_path)
 
@@ -787,19 +797,23 @@ class QueryService:
 
     # --- characters ------------------------------------------------------------------
 
-    async def _render_records(self, time_range: str) -> Outcome:
+    async def _render_records(
+        self, time_range: str, *, metric: str = METRIC_DPS
+    ) -> Outcome:
         """New records and first places changing hands, from the event log."""
 
-        snapshot = await self._index()
+        snapshot = await self._index(metric)
         if isinstance(snapshot, Outcome):
             return snapshot
         recipe = prepare_records(self._data, snapshot, time_range=time_range)
         return Outcome(image_path=await recipe.draw(self._renderer()))
 
-    async def _render_player_champions(self, time_range: str) -> Outcome:
+    async def _render_player_champions(
+        self, time_range: str, *, metric: str = METRIC_DPS
+    ) -> Outcome:
         """Which public accounts uploaded the most first places, from the index."""
 
-        snapshot = await self._index()
+        snapshot = await self._index(metric)
         if isinstance(snapshot, Outcome):
             return snapshot
         recipe = prepare_player_champions(snapshot, time_range=time_range)
@@ -812,6 +826,7 @@ class QueryService:
         element_filter: str | None = None,
         profession_filter: str | None = None,
         time_range: str = "all",
+        metric: str = METRIC_DPS,
     ) -> Outcome:
         """Where the teams fielding one character stand on every board.
 
@@ -821,7 +836,7 @@ class QueryService:
         records counted per character: the champions board.
         """
 
-        snapshot = await self._index()
+        snapshot = await self._index(metric)
         if isinstance(snapshot, Outcome):
             return snapshot
         if not query.strip():
@@ -910,6 +925,7 @@ class QueryService:
             potential=pending.stats_potential,
             query=query,
             web_base_url=self._web_base_url,
+            metric=pending.metric,
         )
         return Outcome(image_path=await recipe.draw(self._renderer()))
 
@@ -964,10 +980,11 @@ class QueryService:
                 potential=pending.stats_potential,
                 query=query,
                 web_base_url=self._web_base_url,
+                metric=pending.metric,
             )
             return Outcome(image_path=await recipe.draw(renderer))
 
-        ranking = await self._data.get_boss_ranking(boss_slug)
+        ranking = await self._data.get_boss_ranking(boss_slug, metric=pending.metric)
         if pending.view is CandidateView.COMPARE:
             wanted = (pending.battle_rank, pending.compare_rank)
             rows = {
@@ -1169,6 +1186,7 @@ def pending_from_route(route: RouteRequest, *, origin: str = "") -> PendingCandi
         stats_potential=route.stats_potential,
         battle_rank=route.battle_rank,
         compare_rank=route.compare_rank if route.compare_rank is not None else 2,
+        metric=route.metric,
     )
 
 

@@ -11,6 +11,7 @@ import httpx
 
 from .bindings import BINDING_CODE_RE
 from .identifiers import is_valid_account_id, is_valid_battle_id
+from .metrics import METRIC_DPS, METRICS
 from .models import (
     AccountSearch,
     AccountSearchHit,
@@ -208,15 +209,25 @@ class ZmdLogsClient:
                 "character catalog response is invalid"
             ) from exc
 
-    async def get_boss_rankings(self, boss_slug: str) -> BossRanking:
-        """Return one complete DPS ranking without sending a metric parameter."""
+    async def get_boss_rankings(
+        self, boss_slug: str, *, metric: str = METRIC_DPS
+    ) -> BossRanking:
+        """Return one board's complete ranking for ``metric`` (DPS or rDPS).
+
+        The metric is always sent, DPS included: a response is checked
+        against what was asked for, never against upstream's default.
+        """
 
         if not is_valid_boss_slug(boss_slug):
             raise InvalidBossSlugError("invalid boss slug")
+        if metric not in METRICS:
+            raise ValueError("invalid ranking metric")
 
-        payload = await self._get_json(f"api/bosses/{boss_slug}/rankings")
+        payload = await self._get_json(
+            f"api/bosses/{boss_slug}/rankings", params={"metric": metric}
+        )
         try:
-            return parse_boss_ranking(payload)
+            return parse_boss_ranking(payload, metric=metric)
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError("boss ranking response is invalid") from exc
 
@@ -226,17 +237,20 @@ class ZmdLogsClient:
         *,
         time_range: str = "all",
         potential: str = "all",
+        metric: str = METRIC_DPS,
     ) -> CharacterStatistics:
-        """Return DPS character statistics for one board or for all boards.
+        """Return character statistics for one board or for all boards.
 
-        ``boss_slug=None`` targets the global endpoint. The ``metric`` query
-        parameter is deliberately never sent so the upstream DPS default applies.
+        ``boss_slug=None`` targets the global endpoint. ``metric`` is always
+        sent and the response checked against it.
         """
 
         if time_range not in _STATS_RANGES:
             raise ValueError("invalid statistics range")
         if potential not in _STATS_POTENTIALS:
             raise ValueError("invalid statistics potential filter")
+        if metric not in METRICS:
+            raise ValueError("invalid statistics metric")
         if boss_slug is None:
             path = "api/bosses/character-statistics"
         else:
@@ -246,10 +260,10 @@ class ZmdLogsClient:
 
         payload = await self._get_json(
             path,
-            params={"range": time_range, "potential": potential},
+            params={"range": time_range, "potential": potential, "metric": metric},
         )
         try:
-            return parse_character_statistics(payload)
+            return parse_character_statistics(payload, metric=metric)
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError(
                 "character statistics response is invalid"
@@ -308,26 +322,28 @@ class ZmdLogsClient:
         *,
         time_range: str = "all",
         potential: str = "all",
+        metric: str = METRIC_DPS,
     ) -> CharacterBossStatistics:
-        """Return one character's DPS distribution on every statistics board.
+        """Return one character's distribution on every statistics board.
 
-        The ``metric`` query parameter is deliberately never sent so the
-        upstream DPS default applies.
+        ``metric`` is always sent and the response checked against it.
         """
 
         if time_range not in _STATS_RANGES:
             raise ValueError("invalid statistics range")
         if potential not in _STATS_POTENTIALS:
             raise ValueError("invalid statistics potential filter")
+        if metric not in METRICS:
+            raise ValueError("invalid statistics metric")
         if not _CHARACTER_KEY_PATTERN.match(character_key):
             raise InvalidBossSlugError("invalid character key")
 
         payload = await self._get_json(
             f"api/characters/{character_key}/boss-statistics",
-            params={"range": time_range, "potential": potential},
+            params={"range": time_range, "potential": potential, "metric": metric},
         )
         try:
-            return parse_character_boss_statistics(payload)
+            return parse_character_boss_statistics(payload, metric=metric)
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError(
                 "character boss statistics response is invalid"

@@ -20,6 +20,7 @@ class PlayerChampionsRecipe:
     missing_count: int
     window_label: str
     query: str = "玩家排名"
+    metric: str = "dps"
 
     async def draw(self, renderer: "LongImageRenderer") -> str:
         return await renderer.render_player_champions(
@@ -28,6 +29,7 @@ class PlayerChampionsRecipe:
             query=self.query,
             age_seconds=self.age_seconds,
             window_label=self.window_label,
+            metric=self.metric,
         )
 
 
@@ -41,4 +43,5 @@ def prepare_player_champions(
         age_seconds=snapshot.age_seconds,
         missing_count=snapshot.missing_count,
         window_label=window_label(time_range),
+        metric=snapshot.metric,
     )

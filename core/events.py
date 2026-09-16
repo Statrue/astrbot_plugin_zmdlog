@@ -49,6 +49,9 @@ class RecordEvent:
     previous_account_display_name: str = ""
     previous_character_name: str = ""
     previous_duration_ms: int = 0
+    # Which of the board's two rankings the event was seen on; a record
+    # entering both boards is one event on each.
+    metric: str = "dps"
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +126,7 @@ def _event(
         battle_end_at=row.battle_end_at,
         roster=tuple(entry.character_name for entry in row.roster_entries)
         or tuple(row.roster_summary),
+        metric=ranking.metric,
         **previous,
     )
 
@@ -202,6 +206,7 @@ def _parse_event(item: Any) -> RecordEvent | None:
             ),
             previous_character_name=str(item.get("previous_character_name", "")),
             previous_duration_ms=int(item.get("previous_duration_ms", 0)),
+            metric=str(item.get("metric", "dps")),
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -257,14 +262,19 @@ class EventLog:
         fresh = diff_rankings(previous, current, seen_at=self._stamp())
         # Upstream drops a record below 60% of the board's median damage, so
         # a borderline one leaves and re-enters as the median moves; it is
-        # new once.
+        # new once — per ranking, since the rDPS board lists it separately.
         announced = {
-            event.battle_id for event in self.events if event.kind == NEW_RECORD
+            (event.metric, event.battle_id)
+            for event in self.events
+            if event.kind == NEW_RECORD
         }
         fresh = tuple(
             event
             for event in fresh
-            if not (event.kind == NEW_RECORD and event.battle_id in announced)
+            if not (
+                event.kind == NEW_RECORD
+                and (event.metric, event.battle_id) in announced
+            )
         )
         if not fresh:
             return
@@ -276,12 +286,15 @@ class EventLog:
         *,
         kind: str | None = None,
         since: datetime | None = None,
+        metric: str | None = None,
     ) -> tuple[RecordEvent, ...]:
-        """Events of ``kind`` seen since ``since``, newest first."""
+        """Events of ``kind`` on ``metric``'s boards since ``since``, newest first."""
 
         picked = []
         for event in reversed(self.events):
             if kind is not None and event.kind != kind:
+                continue
+            if metric is not None and event.metric != metric:
                 continue
             if since is not None:
                 seen = parse_timestamp(event.seen_at)

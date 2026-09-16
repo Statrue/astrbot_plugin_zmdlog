@@ -11,6 +11,7 @@ from .common import (
     _format_date,
     format_duration,
     format_number,
+    metric_footer,
 )
 
 
@@ -98,7 +99,11 @@ def build_group_board_page(
             query=query,
             matched_name=f"{ranking.dungeon_name} · {ranking.boss_name}",
             target_type="群榜",
-            footer_note="公开榜单 · 本群绑定账号 · 名次为该记录在全榜的名次",
+            footer_note=(
+                metric_footer(ranking.metric)
+                + " · 本群绑定账号 · 名次为该记录在全榜的名次"
+            ),
+            metric=ranking.metric,
         ),
         boss_name=ranking.boss_name,
         dungeon_name=ranking.dungeon_name,

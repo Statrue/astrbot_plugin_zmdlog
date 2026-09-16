@@ -23,6 +23,7 @@ class RecordsRecipe:
     # When the event log started; None while it has seen nothing yet.
     log_since: str | None
     query: str = "新纪录"
+    metric: str = "dps"
 
     async def draw(self, renderer: "LongImageRenderer") -> str:
         return await renderer.render_records(
@@ -32,6 +33,7 @@ class RecordsRecipe:
             window_label=self.window_label,
             age_seconds=self.age_seconds,
             log_since=self.log_since,
+            metric=self.metric,
         )
 
 
@@ -43,10 +45,11 @@ def prepare_records(
     since = window_start(span, now=datetime.now(UTC))
     log = data.event_log
     return RecordsRecipe(
-        events=log.recent(since=since),
+        events=log.recent(since=since, metric=snapshot.metric),
         activity=board_activity(snapshot.rankings, since=since),
         window_label=window_label(span),
         age_seconds=snapshot.age_seconds,
         missing_count=snapshot.missing_count,
         log_since=log.oldest_seen_at(),
+        metric=snapshot.metric,
     )

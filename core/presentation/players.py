@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from ..standings import AccountTally
-from .common import PageHeader, _as_of_label, _bar_width
+from .common import PageHeader, _as_of_label, _bar_width, metric_footer
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +42,7 @@ def build_player_champions_page(
     age_seconds: float | None = None,
     window_label: str = "",
     limit: int = 40,
+    metric: str = "dps",
 ) -> PlayerChampionsPage:
     """One row per account with a podium, most first places first."""
 
@@ -78,7 +79,8 @@ def build_player_champions_page(
             query=query,
             matched_name=f"全部 {board_count} 个榜单 · 玩家冠军榜",
             target_type="玩家排名",
-            footer_note="公开榜单 · 第一名记录的上传者算一个冠军",
+            footer_note=metric_footer(metric) + " · 第一名记录的上传者算一个冠军",
+            metric=metric,
         ),
         board_count=board_count,
         as_of_label=_as_of_label(age_seconds),

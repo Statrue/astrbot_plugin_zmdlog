@@ -18,6 +18,7 @@ from .client import ZmdLogsAPIError, ZmdLogsClient, ZmdLogsClientError
 from .events import EventLog
 from .loadout import battle_suit_ids
 from .logs import LogSink
+from .metrics import METRIC_DPS
 from .models import (
     BattleDetailSummary,
     BattleExport,
@@ -391,16 +392,18 @@ class ZmdLogsDataSource:
         boss_slug: str,
         *,
         max_age: float | None | object = _CONFIGURED_AGE,
+        metric: str = METRIC_DPS,
     ) -> BossRanking:
         """One board's ranking, no older than ``max_age`` seconds.
 
         The default is the configured ranking cache TTL, which is what a
         board page expects; ``None`` takes whatever the index holds, with no
         request — the rank watch reads the copy its ranks came from.
+        ``metric`` picks the DPS or the rDPS board; the index holds both.
         """
 
         age = self._ranking_max_age if max_age is _CONFIGURED_AGE else max_age
-        return await self.ranking_index.get(boss_slug, max_age=age)
+        return await self.ranking_index.get(boss_slug, max_age=age, metric=metric)
 
     async def get_account_rankings(self, account_id: str) -> PublicUserRankings:
         """The account's rank on every board, from the index when it is complete.
@@ -416,8 +419,8 @@ class ZmdLogsDataSource:
                 return derived
         return await self.get_public_user_rankings(account_id)
 
-    async def _fetch_boss_ranking(self, boss_slug: str) -> BossRanking:
-        return await self.client.get_boss_rankings(boss_slug)
+    async def _fetch_boss_ranking(self, boss_slug: str, metric: str) -> BossRanking:
+        return await self.client.get_boss_rankings(boss_slug, metric=metric)
 
     def start(self) -> None:
         """Start the background ranking index when it is enabled."""
@@ -431,14 +434,16 @@ class ZmdLogsDataSource:
         *,
         time_range: str,
         potential: str,
+        metric: str = METRIC_DPS,
     ) -> CharacterStatistics:
-        key = (boss_slug or "all", time_range, potential)
+        key = (boss_slug or "all", time_range, potential, metric)
         result = await self.character_stats_cache.get_or_load(
             key,
             lambda: self.client.get_character_statistics(
                 boss_slug,
                 time_range=time_range,
                 potential=potential,
+                metric=metric,
             ),
         )
         return result.value
@@ -449,14 +454,16 @@ class ZmdLogsDataSource:
         *,
         time_range: str,
         potential: str,
+        metric: str = METRIC_DPS,
     ) -> CharacterBossStatistics:
-        key = (character_key, time_range, potential)
+        key = (character_key, time_range, potential, metric)
         result = await self.character_boss_cache.get_or_load(
             key,
             lambda: self.client.get_character_boss_statistics(
                 character_key,
                 time_range=time_range,
                 potential=potential,
+                metric=metric,
             ),
         )
         return result.value

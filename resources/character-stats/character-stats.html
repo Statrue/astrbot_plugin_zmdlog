@@ -12,7 +12,7 @@
 
 {% block content %}
 <div class="section-heading">
-  <h2>六星角色 DPS 分布</h2>
+  <h2>六星角色 {{ page.metric_label }} 分布</h2>
   <span class="section-note">{% if page.scope_label == "全部榜单" %}覆盖 {{ page.included_boss_count }} 个榜单{% else %}单个榜单{% endif %} · 有效战斗 {{ page.eligible_battle_count }} 场 · 盒=P25–P75 · 竖线=中位 · 须=正常样本极值 · 至少 {{ page.minimum_sample_count }} 个样本参与排名</span>
 </div>
 
@@ -25,7 +25,7 @@
     <span class="stats-head-axis">
       {% for label in page.axis_labels %}<i>{{ label }}</i>{% endfor %}
     </span>
-    <span class="stats-head-median">中位 DPS</span>
+    <span class="stats-head-median">中位 {{ page.metric_label }}</span>
     <span class="stats-head-max">最高</span>
   </div>
   {% for row in page.rows %}

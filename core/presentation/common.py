@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urljoin, urlsplit
 
+from ..metrics import metric_label
+
 # Temporary presentation compatibility: upstream currently exposes the
 # contract board as bossName="破潮之像", while the public site labels the
 # activity and ranking page as "危机合约". Remove this override after the
@@ -25,6 +27,15 @@ class PageHeader:
     matched_name: str
     target_type: str
     footer_note: str = "公开榜单 · DPS 口径"
+    # ``rdps`` puts the rDPS badge next to the title; every page that can be
+    # drawn from either ranking sets it, the rest stay DPS.
+    metric: str = "dps"
+
+
+def metric_footer(metric: str, what: str = "公开榜单") -> str:
+    """The footer note naming the metric a page was drawn from."""
+
+    return f"{what} · {metric_label(metric)} 口径"
 
 
 def _dps_share(dps: float, top_dps: float) -> float:

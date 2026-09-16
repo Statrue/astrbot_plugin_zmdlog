@@ -237,6 +237,8 @@ class TemplateRenderer:
         element_filter: str | None = None,
         elements: Mapping[str, str] | None = None,
         profession_filter: str | None = None,
+        dps_rows: Mapping[str, BossRankingRow] | None = None,
+        dps_row_count: int | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_ranking_page(
@@ -249,6 +251,8 @@ class TemplateRenderer:
             element_filter=element_filter,
             elements=elements,
             profession_filter=profession_filter,
+            dps_rows=dps_rows,
+            dps_row_count=dps_row_count,
         )
         return self._render(
             "ranking/ranking.html",
@@ -305,6 +309,7 @@ class TemplateRenderer:
         web_base_url: str | None = None,
         age_seconds: float | None = None,
         elements: Mapping[str, str] | None = None,
+        metric: str = "dps",
         embed_fonts: bool = True,
     ) -> str:
         page = build_character_standings_page(
@@ -313,6 +318,7 @@ class TemplateRenderer:
             web_base_url=web_base_url,
             age_seconds=age_seconds,
             elements=elements,
+            metric=metric,
         )
         return self._render(
             "character-standings/character-standings.html",
@@ -336,6 +342,7 @@ class TemplateRenderer:
         usage: tuple[ProfessionUsage, ...] = (),
         window_label: str = "",
         unseen: tuple[str, ...] = (),
+        metric: str = "dps",
         embed_fonts: bool = True,
     ) -> str:
         page = build_character_champions_page(
@@ -351,6 +358,7 @@ class TemplateRenderer:
             window_label=window_label,
             profession=profession,
             unseen=unseen,
+            metric=metric,
         )
         return self._render(
             "character-champions/character-champions.html",
@@ -367,6 +375,7 @@ class TemplateRenderer:
         query: str,
         age_seconds: float | None = None,
         window_label: str = "",
+        metric: str = "dps",
         embed_fonts: bool = True,
     ) -> str:
         page = build_player_champions_page(
@@ -375,6 +384,7 @@ class TemplateRenderer:
             query=query,
             age_seconds=age_seconds,
             window_label=window_label,
+            metric=metric,
         )
         return self._render(
             "player-champions/player-champions.html",
@@ -426,6 +436,7 @@ class TemplateRenderer:
         window_label: str,
         age_seconds: float | None = None,
         log_since: str | None = None,
+        metric: str = "dps",
         embed_fonts: bool = True,
     ) -> str:
         page = build_records_page(
@@ -435,6 +446,7 @@ class TemplateRenderer:
             window_label=window_label,
             age_seconds=age_seconds,
             log_since=log_since,
+            metric=metric,
         )
         return self._render(
             "records/records.html", page, "records", embed_fonts=embed_fonts

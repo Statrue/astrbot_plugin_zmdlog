@@ -68,6 +68,8 @@ class PendingCandidates:
     stats_potential: str = "all"
     battle_rank: int = 1
     compare_rank: int = 2
+    # Which of the board's two rankings a pick draws; ``rdps`` only on request.
+    metric: str = "dps"
 
 
 class CandidateStore:
@@ -97,6 +99,7 @@ class CandidateStore:
         battle_rank: int = 1,
         compare_rank: int = 2,
         origin: str = "",
+        metric: str = "dps",
         now: float | None = None,
     ) -> PendingCandidates:
         timestamp = time.monotonic() if now is None else now
@@ -116,6 +119,7 @@ class CandidateStore:
             battle_rank=battle_rank,
             compare_rank=compare_rank,
             origin=origin,
+            metric=metric,
         )
         self._entries[code] = entry
         return entry

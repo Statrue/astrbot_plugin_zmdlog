@@ -106,16 +106,19 @@ class HelpTests(unittest.TestCase):
         self.assertEqual(
             commands,
             (
-                "!zmdlog <榜单关键词> [--top 数量] [--角色 角色名…] [--属性 属性]",
+                (
+                    "!zmdlog <榜单关键词> [--top 数量] [--角色 角色名…] "
+                    "[--属性 属性] [--口径 rdps]"
+                ),
                 "!zmdlog 榜单",
-                "!zmdlog 阵容 <榜单关键词> [--top 数量]",
+                "!zmdlog 阵容 <榜单关键词> [--top 数量] [--口径 rdps]",
                 (
                     "!zmdlog 角色统计 [榜单关键词或角色名] "
-                    "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all]"
+                    "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all] [--口径 rdps]"
                 ),
-                "!zmdlog 角色排名 [角色名… | --属性 属性 | --职业 职业]",
-                "!zmdlog 新纪录 [--范围 7d|14d|30d]",
-                "!zmdlog 玩家排名 [--范围 7d|14d|30d]",
+                "!zmdlog 角色排名 [角色名… | --属性 属性 | --职业 职业] [--口径 rdps]",
+                "!zmdlog 新纪录 [--范围 7d|14d|30d] [--口径 rdps]",
+                "!zmdlog 玩家排名 [--范围 7d|14d|30d] [--口径 rdps]",
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 (
                     "!zmdlog 战报 | 配装 | 技能 | 技能轴 "
@@ -126,7 +129,7 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog 趋势 <账号> [--范围 7d|14d|30d|all]",
                 "!zmdlog 绑定 <绑定码>",
                 "!zmdlog 我的 [序号或昵称]",
-                "!zmdlog 群榜 <榜单关键词> [--top 数量]",
+                "!zmdlog 群榜 <榜单关键词> [--top 数量] [--口径 rdps]",
                 "!zmdlog 别名 [添加 <榜单或副本> <别名…> | 删除 <别名>]",
             ),
         )
@@ -164,10 +167,61 @@ class HelpTests(unittest.TestCase):
 
         self.assertNotIn("超", repr(section))
 
-    def test_help_has_no_alternate_metric_option(self) -> None:
+    def test_help_names_the_rdps_option_where_it_works(self) -> None:
+        # rDPS is a request, never a default: the option shows on the rows
+        # that take it and nowhere is rDPS presented as the reading.
         page = build_help_page("/")
-        visible_text = repr(page)
-        self.assertNotIn("RDPS", visible_text)
+        commands = [
+            command.command
+            for section in page.sections
+            for command in section.commands
+        ]
+        with_option = [c for c in commands if "--口径 rdps" in c]
+        self.assertEqual(len(with_option), 7)
+        self.assertTrue(all("--口径 rdps" not in c for c in commands if "账号" in c))
+
+
+class MetricOptionTests(unittest.TestCase):
+    def test_the_option_reads_every_spelling_and_defaults_to_dps(self) -> None:
+        self.assertEqual(parse_zmdlog_payload("罗丹").metric, "dps")
+        for text in ("rdps", "RDPS", "rDPS", "团队贡献"):
+            with self.subTest(text=text):
+                route = parse_zmdlog_payload(f"罗丹 --口径 {text}")
+                self.assertEqual(route.kind, RouteKind.SMART_QUERY)
+                self.assertEqual((route.query, route.metric), ("罗丹", "rdps"))
+        self.assertEqual(parse_zmdlog_payload("罗丹 --metric dps").metric, "dps")
+        self.assertEqual(parse_zmdlog_payload("罗丹 --口径 直伤").metric, "dps")
+        with self.assertRaisesRegex(RouteParseError, "--口径"):
+            parse_zmdlog_payload("罗丹 --口径 xdps")
+
+    def test_every_index_page_takes_the_option(self) -> None:
+        for payload, kind in (
+            ("榜单 罗丹 --口径 rdps", RouteKind.RANKING_QUERY),
+            ("阵容 罗丹 --口径 rdps", RouteKind.ROSTER_QUERY),
+            ("群榜 罗丹 --口径 rdps", RouteKind.GROUP_BOARD),
+            ("角色统计 --口径 rdps", RouteKind.CHARACTER_STATS),
+            ("角色统计 罗丹 --口径 rdps", RouteKind.CHARACTER_STATS),
+            ("角色排名 --口径 rdps", RouteKind.CHARACTER_STANDINGS),
+            ("角色排名 诀 --口径 rdps", RouteKind.CHARACTER_STANDINGS),
+            ("玩家排名 --口径 rdps", RouteKind.PLAYER_CHAMPIONS),
+            ("新纪录 --口径 rdps", RouteKind.RECORDS_QUERY),
+        ):
+            with self.subTest(payload=payload):
+                route = parse_zmdlog_payload(payload)
+                self.assertEqual((route.kind, route.metric), (kind, "rdps"))
+
+    def test_pages_without_a_second_ranking_refuse_the_option(self) -> None:
+        for payload in (
+            "榜单 --口径 rdps",
+            "账号 usr_1234567890abcdef --口径 rdps",
+            "战报 btl_upload_abcdef123456 --口径 rdps",
+            "趋势 CPU --口径 rdps",
+            "玩家排名 CPU --口径 rdps",
+            "关注 CPU --口径 rdps",
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(RouteParseError, "--口径"):
+                    parse_zmdlog_payload(payload)
 
 
 if __name__ == "__main__":

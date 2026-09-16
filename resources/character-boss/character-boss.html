@@ -33,8 +33,8 @@
 
 {% block content %}
 <div class="section-heading">
-  <h2>各榜单 DPS 分布</h2>
-  <span class="section-note">#N / M = 该角色中位 DPS 在该榜单 M 个达标角色中排第 N（同「角色统计 榜单名」的排名）· 不同首领 DPS 上限差异大，名次比数值更可比 · 盒=P25–P75 · 竖线=中位 · 须=极值</span>
+  <h2>各榜单 {{ page.metric_label }} 分布</h2>
+  <span class="section-note">#N / M = 该角色中位 {{ page.metric_label }} 在该榜单 M 个达标角色中排第 N（同「角色统计 榜单名」的排名）· 不同首领 {{ page.metric_label }} 上限差异大，名次比数值更可比 · 盒=P25–P75 · 竖线=中位 · 须=极值</span>
 </div>
 
 {% if page.rows %}

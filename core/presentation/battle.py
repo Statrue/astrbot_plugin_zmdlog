@@ -192,6 +192,9 @@ class BattlePage:
     integrity_label: str
     contract_score: str | None
     participants: tuple[BattleParticipantView, ...]
+    # "rDPS 榜记录" when this upload made the board's rDPS ranking; empty
+    # otherwise, including when the payload does not say.
+    rdps_ranking_label: str = ""
     loadouts: tuple[LoadoutView, ...] = ()
     skill_stats_available: bool = False
     # The cast rail, when the public export was available; otherwise a short
@@ -253,6 +256,7 @@ def build_battle_page(
         integrity_label=(
             "结构校验通过" if battle.integrity_verified else "结构校验未通过"
         ),
+        rdps_ranking_label="rDPS 榜记录" if battle.rdps_ranking_eligible else "",
         contract_score=(
             format_number(battle.contract_tag_score)
             if battle.contract_tag_score is not None

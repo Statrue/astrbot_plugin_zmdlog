@@ -173,7 +173,7 @@ class HandlerTests(unittest.TestCase):
             # network, so without these the suite would measure upstream.
             raise ZmdLogsClientError("offline")
 
-        async def unfilled():
+        async def unfilled(metric="dps"):
             # The ranking index stays empty in handler tests: the pages that
             # read it fall back to names and initials, and nothing reaches
             # the network through its fill.
@@ -296,7 +296,7 @@ class HandlerTests(unittest.TestCase):
     def test_a_slug_shaped_nickname_still_reaches_the_account_search(self) -> None:
         searched: list[str] = []
 
-        async def board_missing(boss_slug):
+        async def board_missing(boss_slug, **kwargs):
             raise ZmdLogsAPIError(404, "boss_not_found", "missing")
 
         async def search(query, *, limit):
@@ -472,7 +472,7 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(plugin.settings.ambiguity_score_gap, 0.08)
 
     def test_ranking_fixture_still_renders_through_the_guarded_ladder(self) -> None:
-        async def ranking(boss_slug):
+        async def ranking(boss_slug, **kwargs):
             return parse_boss_ranking(ranking_payload_with_rows())
 
         self.plugin.data.get_boss_ranking = ranking
@@ -486,7 +486,7 @@ class HandlerTests(unittest.TestCase):
     def test_loadout_and_skill_commands_pick_the_ranked_battle(self) -> None:
         fetched: list[str] = []
 
-        async def ranking(boss_slug):
+        async def ranking(boss_slug, **kwargs):
             return parse_boss_ranking(ranking_payload_with_rows())
 
         async def detail(battle_id):
@@ -820,7 +820,7 @@ class HandlerTests(unittest.TestCase):
             drawn.append((rows, kwargs))
             return "/tmp/group-board.png"
 
-        async def ranking_read(boss_slug):
+        async def ranking_read(boss_slug, **kwargs):
             return ranking
 
         self.plugin.client.get_binding_code_account = lookup
@@ -902,7 +902,7 @@ class HandlerTests(unittest.TestCase):
     def test_timeline_uses_the_export_of_the_ranked_battle(self) -> None:
         exported: list[str] = []
 
-        async def ranking(boss_slug):
+        async def ranking(boss_slug, **kwargs):
             return parse_boss_ranking(ranking_payload_with_rows())
 
         async def export(battle_id):
@@ -982,7 +982,7 @@ class HandlerTests(unittest.TestCase):
     def test_several_character_names_filter_the_whole_team(self) -> None:
         received: list[dict] = []
 
-        async def ranking(boss_slug):
+        async def ranking(boss_slug, **kwargs):
             return parse_boss_ranking(ranking_payload_with_rows())
 
         async def render_ranking(ranking, **kwargs):
@@ -1013,7 +1013,7 @@ class HandlerTests(unittest.TestCase):
         fetched: list[str] = []
         received: list[dict] = []
 
-        async def ranking(boss_slug):
+        async def ranking(boss_slug, **kwargs):
             return parse_boss_ranking(ranking_payload_with_rows())
 
         async def detail(battle_id):

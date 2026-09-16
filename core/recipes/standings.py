@@ -36,6 +36,7 @@ class StandingsRecipe:
     age_seconds: float | None
     missing_count: int
     elements: Mapping[str, str]
+    metric: str = "dps"
 
     async def draw(self, renderer: "LongImageRenderer") -> str:
         return await renderer.render_character_standings(
@@ -44,6 +45,7 @@ class StandingsRecipe:
             web_base_url=self.web_base_url,
             age_seconds=self.age_seconds,
             elements=self.elements,
+            metric=self.metric,
         )
 
 
@@ -72,6 +74,7 @@ async def prepare_standings(
         age_seconds=snapshot.age_seconds,
         missing_count=snapshot.missing_count,
         elements=await data.character_elements(names=snapshot.fielded),
+        metric=snapshot.metric,
     )
 
 
@@ -96,6 +99,7 @@ class ChampionsRecipe:
     # Catalog characters (of the profession, when restricted) no record in
     # the window fields.
     unseen: tuple[str, ...]
+    metric: str = "dps"
 
     async def draw(self, renderer: "LongImageRenderer") -> str:
         return await renderer.render_character_champions(
@@ -111,6 +115,7 @@ class ChampionsRecipe:
             usage=self.usage,
             window_label=self.window_label,
             unseen=self.unseen,
+            metric=self.metric,
         )
 
 
@@ -158,4 +163,5 @@ async def prepare_champions(
         usage=profession_usage(snapshot.rankings, since=since),
         window_label=window_label(time_range),
         unseen=unseen,
+        metric=snapshot.metric,
     )

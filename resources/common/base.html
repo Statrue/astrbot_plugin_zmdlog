@@ -42,6 +42,9 @@
           </h1>
           <div class="title-side">
             <span class="title-tag">{{ page.header.target_type }}</span>
+            {% if page.header.metric == "rdps" %}
+            <span class="title-tag title-tag--metric">rDPS 口径</span>
+            {% endif %}
             <p class="page-subtitle">{{ page.header.subtitle }}</p>
           </div>
           {% block hero_facts %}{% endblock %}

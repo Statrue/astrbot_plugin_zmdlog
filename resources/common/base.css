@@ -303,6 +303,14 @@ body {
   clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
 }
 
+/* The rDPS board is the same page with another ranking behind it: the
+   badge is what tells the two apart, so it is ink on paper, not yellow. */
+.title-tag--metric {
+  color: var(--on-dark);
+  background: var(--ink);
+  letter-spacing: 0.06em;
+}
+
 .page-subtitle {
   overflow: hidden;
   margin: 0;

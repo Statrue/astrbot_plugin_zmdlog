@@ -6,7 +6,7 @@
 {% if page.top_dps %}
 <div class="hero-facts">
   <div class="hero-fact"><span>公开排名</span><strong>{{ page.row_count }}</strong></div>
-  <div class="hero-fact hero-fact--key"><span>榜首 DPS ＝ 刻度 100%</span><strong>{{ page.top_dps }}</strong></div>
+  <div class="hero-fact hero-fact--key"><span>榜首 {{ page.metric_label }} ＝ 刻度 100%</span><strong>{{ page.top_dps }}</strong></div>
 </div>
 {% endif %}
 {% endblock %}
@@ -24,6 +24,9 @@
     {% endif %}
     {% if page.profession_filter %}
     <span class="bm-filter">主 C {{ page.profession_filter }}</span>
+    {% endif %}
+    {% if page.rdps_note %}
+    <span class="bm-filter">{{ page.rdps_note }}</span>
     {% endif %}
     <span class="bm-count">
       {% if page.character_filter or page.element_filter or page.profession_filter %}
@@ -52,10 +55,10 @@
     <span>名次</span>
     <span>公开账号 · 主 C</span>
     <span class="head-axis">
-      <span class="axis-caption">相对榜首 DPS<i>100%</i></span>
+      <span class="axis-caption">相对榜首 {{ page.metric_label }}<i>100%</i></span>
       <span class="axis-ruler"></span>
     </span>
-    <span class="head-right">DPS</span>
+    <span class="head-right">{{ page.metric_label }}</span>
     {% if page.show_contract_score %}
     <span class="head-right">合约分数</span>
     {% endif %}
@@ -72,6 +75,9 @@
       <div class="cell-id">
         <strong>{{ row.account_display_name }}</strong>
         <em>主 C <b>{{ row.character_name }}</b></em>
+        {% if row.dps_rank is not none %}
+        <em class="dps-ref">DPS 榜 #{{ row.dps_rank }}{% if row.dps_character_name %} · DPS 口径主 C {{ row.dps_character_name }}{% endif %}</em>
+        {% endif %}
       </div>
       <div class="cell-chart" aria-hidden="true"><i style="width: {{ row.score_bar_width }}%;"></i></div>
       <div class="cell-dps">{{ row.dps }}</div>

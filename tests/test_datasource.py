@@ -39,7 +39,9 @@ class FakeClient:
             raise ZmdLogsClientError("offline")
         return parse_hot_bosses(self.payload), self.payload
 
-    async def get_character_statistics(self, boss_slug, *, time_range, potential):
+    async def get_character_statistics(
+        self, boss_slug, *, time_range, potential, metric="dps"
+    ):
         self.calls += 1
         if self.fail:
             raise ZmdLogsClientError("offline")

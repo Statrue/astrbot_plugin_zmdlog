@@ -12,6 +12,7 @@ from .common import (
     _bar_width,
     _initial,
     _safe_asset_url,
+    metric_footer,
 )
 
 
@@ -95,6 +96,7 @@ def build_character_champions_page(
     usage: tuple[ProfessionUsage, ...] = (),
     window_label: str = "",
     unseen: tuple[str, ...] = (),
+    metric: str = "dps",
 ) -> CharacterChampionsPage:
     """One row per character with a podium, most first places first.
 
@@ -172,9 +174,12 @@ def build_character_champions_page(
             ),
             subtitle=f"{who}的队伍在{scope}拿下的第一名、前三与前十",
             query=query,
+            metric=metric,
             matched_name=f"全部 {board_count} 个榜单 · 角色冠军榜",
             target_type="角色排名",
-            footer_note="公开榜单 · 队伍成绩 · 第一名队伍的四名角色各算一个冠军",
+            footer_note=(
+                metric_footer(metric) + " · 队伍成绩 · 第一名队伍的四名角色各算一个冠军"
+            ),
         ),
         board_count=board_count,
         as_of_label=_as_of_label(age_seconds),

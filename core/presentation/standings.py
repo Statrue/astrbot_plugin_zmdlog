@@ -11,6 +11,7 @@ from .common import (
     _initial,
     format_duration,
     format_number,
+    metric_footer,
 )
 
 
@@ -60,6 +61,7 @@ def build_character_standings_page(
     web_base_url: str | None = None,
     age_seconds: float | None = None,
     elements: Mapping[str, str] | None = None,
+    metric: str = "dps",
 ) -> CharacterStandingsPage:
     """One row per board the character appeared on, best rank first.
 
@@ -118,7 +120,10 @@ def build_character_standings_page(
             query=query,
             matched_name=f"{label} · 各榜单最好名次",
             target_type="角色排名",
-            footer_note="公开榜单 · 队伍成绩 · 名次为该记录在全榜的名次",
+            footer_note=(
+                metric_footer(metric) + " · 队伍成绩 · 名次为该记录在全榜的名次"
+            ),
+            metric=metric,
         ),
         character_name=label,
         character_names=names,

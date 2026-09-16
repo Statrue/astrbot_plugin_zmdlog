@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .elements import normalize_element
+from .metrics import DEFAULT_METRIC, parse_metric_text
 from .professions import normalize_profession
 
 DEFAULT_RANKING_TOP = 10
@@ -81,6 +82,7 @@ _OPTION_SPELLINGS: dict[str, tuple[str, ...]] = {
     "potential": ("--潜能", "--potential"),
     "element": ("--属性", "--element"),
     "profession": ("--职业", "--profession"),
+    "metric": ("--口径", "--metric"),
 }
 _OPTION_BY_SPELLING = {
     spelling.casefold(): name
@@ -94,6 +96,7 @@ _OPTION_LABEL = {
     "potential": "--潜能",
     "element": "--属性",
     "profession": "--职业",
+    "metric": "--口径",
 }
 # Rejection text names where the option DOES work, not the current route —
 # "--潜能 不适用于榜单查询" reads like the option belongs somewhere unknown.
@@ -113,6 +116,10 @@ OPTION_USAGE = {
         "例如：罗丹 --属性 物理，或 角色排名 --属性 物理。"
     ),
     "profession": "--职业 仅适用于不带角色名的角色排名，例如：角色排名 --职业 突击。",
+    "metric": (
+        "--口径 仅适用于具体榜单、阵容、群榜、角色统计、角色排名、玩家排名和新纪录，"
+        "例如：罗丹 --口径 rdps。"
+    ),
 }
 
 
@@ -190,13 +197,15 @@ class RouteOptions:
     profession_filter: str | None = None
     stats_range: str = DEFAULT_STATS_RANGE
     stats_potential: str = DEFAULT_STATS_POTENTIAL
+    metric: str = DEFAULT_METRIC
     present: frozenset[str] = frozenset()
 
     def reject_except(self, *allowed: str) -> None:
         """Raise when an option outside ``allowed`` was given."""
 
         for name in (
-            "top", "character", "range", "potential", "element", "profession"
+            "top", "character", "range", "potential", "element", "profession",
+            "metric",
         ):
             if name in self.present and name not in allowed:
                 raise RouteParseError(OPTION_USAGE[name])
@@ -216,6 +225,8 @@ class RouteRequest:
     profession_filter: str | None = None
     stats_range: str = DEFAULT_STATS_RANGE
     stats_potential: str = DEFAULT_STATS_POTENTIAL
+    # ``dps`` unless ``--口径 rdps`` asked for the team-contribution board.
+    metric: str = DEFAULT_METRIC
     battle_rank: int = 1
     # 对比 only: the second battle reference, or the second rank on the same
     # board when the query is a board keyword.
@@ -251,13 +262,14 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         if not separator:
             options.reject_except()
             return RouteRequest(RouteKind.ALL_RANKINGS)
-        options.reject_except("top", "character", "element")
+        options.reject_except("top", "character", "element", "metric")
         return RouteRequest(
             RouteKind.RANKING_QUERY,
             remainder,
             ranking_top=options.ranking_top,
             character_filter=options.character_filter,
             element_filter=options.element_filter,
+            metric=options.metric,
         )
 
     if command in {"账号", "账户"}:
@@ -298,7 +310,7 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         )
 
     if command in {"新纪录", "新记录", "最近纪录"}:
-        options.reject_except("range")
+        options.reject_except("range", "metric")
         if remainder:
             raise RouteParseError(
                 "新纪录不接参数，只能加 --范围，例如：新纪录 --范围 30d。"
@@ -312,24 +324,30 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
             stats_range=(
                 options.stats_range if "range" in options.present else "7d"
             ),
+            metric=options.metric,
         )
 
     if command in {"玩家排名", "玩家榜", "玩家冠军榜"}:
         # The same shape as 角色排名: bare is the board of everyone, a name
         # is that one player, which is what 账号 draws.
-        options.reject_except("range")
+        options.reject_except("range", "metric")
         if remainder:
-            if "range" in options.present:
+            if "range" in options.present or "metric" in options.present:
                 raise RouteParseError(
-                    "--范围 只在不带昵称的玩家排名里用，例如：玩家排名 --范围 7d。"
+                    "--范围 和 --口径 只在不带昵称的玩家排名里用，"
+                    "例如：玩家排名 --范围 7d。"
                 )
             return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder)
-        return RouteRequest(RouteKind.PLAYER_CHAMPIONS, stats_range=options.stats_range)
+        return RouteRequest(
+            RouteKind.PLAYER_CHAMPIONS,
+            stats_range=options.stats_range,
+            metric=options.metric,
+        )
 
     if command in {"角色排名", "角色榜"}:
         # Without a name: every character's first places over all boards,
         # optionally only the characters of one element.
-        options.reject_except("element", "range", "profession")
+        options.reject_except("element", "range", "profession", "metric")
         if remainder and (
             options.element_filter is not None
             or options.profession_filter is not None
@@ -346,25 +364,28 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
             element_filter=options.element_filter,
             profession_filter=options.profession_filter,
             stats_range=options.stats_range,
+            metric=options.metric,
         )
 
     if command in {"角色统计", "角色"}:
-        options.reject_except("range", "potential")
+        options.reject_except("range", "potential", "metric")
         return RouteRequest(
             RouteKind.CHARACTER_STATS,
             remainder,
             stats_range=options.stats_range,
             stats_potential=options.stats_potential,
+            metric=options.metric,
         )
 
     if command == "阵容":
-        options.reject_except("top")
+        options.reject_except("top", "metric")
         if not separator or not remainder:
             raise RouteParseError("请提供榜单关键词。")
         return RouteRequest(
             RouteKind.ROSTER_QUERY,
             remainder,
             ranking_top=options.ranking_top,
+            metric=options.metric,
         )
 
     if command == "别名":
@@ -427,20 +448,24 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         return RouteRequest(RouteKind.MY_ACCOUNT, remainder)
 
     if command in {"群榜", "群排名"}:
-        options.reject_except("top")
+        options.reject_except("top", "metric")
         if not remainder:
             raise RouteParseError("请提供榜单关键词，例如：群榜 罗丹。")
         return RouteRequest(
-            RouteKind.GROUP_BOARD, remainder, ranking_top=options.ranking_top
+            RouteKind.GROUP_BOARD,
+            remainder,
+            ranking_top=options.ranking_top,
+            metric=options.metric,
         )
 
-    options.reject_except("top", "character", "element")
+    options.reject_except("top", "character", "element", "metric")
     return RouteRequest(
         RouteKind.SMART_QUERY,
         normalized,
         ranking_top=options.ranking_top,
         character_filter=options.character_filter,
         element_filter=options.element_filter,
+        metric=options.metric,
     )
 
 
@@ -502,11 +527,18 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
             raise RouteParseError(
                 "--职业 只能填 先锋、近卫、重装、术士、突击、辅助（术师也认）。"
             )
+    metric = DEFAULT_METRIC
+    if "metric" in values:
+        parsed_metric = parse_metric_text(values["metric"])
+        if parsed_metric is None:
+            raise RouteParseError("--口径 只能填 dps 或 rdps。")
+        metric = parsed_metric
     return query, RouteOptions(
         ranking_top=_parse_top(values["top"]) if "top" in values else None,
         character_filter=values.get("character"),
         element_filter=element_filter,
         profession_filter=profession_filter,
+        metric=metric,
         stats_range=(
             _parse_range(values["range"])
             if "range" in values

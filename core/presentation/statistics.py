@@ -3,6 +3,7 @@
 import math
 from dataclasses import dataclass
 
+from ..metrics import metric_label
 from ..models import (
     CharacterBossStatistics,
     CharacterStatistics,
@@ -60,6 +61,7 @@ class CharacterStatsPage:
     axis_labels: tuple[str, ...]
     rows: tuple[CharacterStatRowView, ...]
     insufficient: tuple[CharacterStatChipView, ...]
+    metric_label: str = "DPS"
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +106,7 @@ class CharacterBossPage:
     axis_labels: tuple[str, ...]
     rows: tuple[CharacterBossRowView, ...]
     insufficient: tuple[CharacterBossChipView, ...]
+    metric_label: str = "DPS"
 
 
 _POTENTIAL_LABELS = {"0": "0 潜能", "1-5": "1–5 潜能", "all": "全部潜能"}
@@ -192,6 +195,7 @@ def build_character_stats_page(
         for row in stats.rows
         if row.insufficient_samples and row.sample_count > 0
     )
+    label = metric_label(stats.metric)
     return CharacterStatsPage(
         header=PageHeader(
             title=title,
@@ -199,8 +203,10 @@ def build_character_stats_page(
             query=query,
             matched_name=matched_name,
             target_type="角色统计",
-            footer_note="公开战斗 · 六星角色 DPS 分布",
+            footer_note=f"公开战斗 · 六星角色 {label} 分布",
+            metric=stats.metric,
         ),
+        metric_label=label,
         scope_label="全部榜单" if is_global else "单个榜单",
         range_label=_RANGE_LABELS.get(stats.range, stats.range),
         potential_label=_POTENTIAL_LABELS.get(stats.potential, stats.potential),
@@ -267,8 +273,10 @@ def build_character_boss_page(
             query=query,
             matched_name=f"{stats.character_name} · 全榜单角色统计",
             target_type="角色统计",
-            footer_note="公开战斗 · 单角色全榜单 DPS 分布",
+            footer_note=f"公开战斗 · 单角色全榜单 {metric_label(stats.metric)} 分布",
+            metric=stats.metric,
         ),
+        metric_label=metric_label(stats.metric),
         character_name=stats.character_name,
         character_profession=stats.character_profession,
         character_initial=_initial(stats.character_name),
