@@ -33,6 +33,7 @@ from core.render import (
 )
 from tests.helpers import (
     battle_detail_payload,
+    crisis_contract_tags,
     make_card,
     public_user_rankings_payload,
 )
@@ -154,6 +155,66 @@ class TemplateRendererTests(unittest.TestCase):
             html,
         )
         self.assertNotIn("ignored", html)
+        # Not a contract record: no 合约分数, and no contract section at all
+        # (the stylesheet's comments are inlined, so test the heading).
+        self.assertNotIn("合约分数", html)
+        self.assertNotIn("<h2>危机合约</h2>", html)
+
+    def test_battle_page_lists_contract_tags_by_family_without_descriptions(
+        self,
+    ) -> None:
+        payload = battle_detail_payload()
+        tags = crisis_contract_tags()
+        # Upstream has no sprite for some tags (101603 改写：热量汲取 is null).
+        tags[-1]["iconUrl"] = None
+        payload["battle"]["contractTags"] = tags
+        payload["battle"]["contractTagScore"] = sum(tag["score"] for tag in tags)
+        battle = parse_battle_detail(payload)
+
+        html = self.renderer.render_battle(
+            battle,
+            query="btl_upload_526563531445",
+            web_base_url="https://zmdlogs.com",
+        )
+
+        self.assertIn("<h2>危机合约</h2>", html)
+        # A sprite covers the initial; without one the initial is the tile.
+        self.assertIn(
+            '<span class="contract-icon">折<img src="https://zmdlogs.com/images/'
+            'contract-tag/icon_activity_contract_tag_208.png"',
+            html,
+        )
+        self.assertIn('<span class="contract-icon">禁</span>', html)
+        self.assertNotIn("icon_activity_contract_tag_104", html)
+        self.assertIn("合约分数</span><strong>14 分</strong>", html)
+        # The section is the record's preconditions, so it precedes the data.
+        self.assertLess(
+            html.index("<h2>危机合约</h2>"), html.index("<h2>战斗贡献</h2>")
+        )
+        # One block per family in canonical order, each with count and score.
+        self.assertLess(
+            html.index("<strong>队列</strong>"), html.index("<strong>改写</strong>")
+        )
+        self.assertLess(
+            html.index("<strong>改写</strong>"), html.index("<strong>环境</strong>")
+        )
+        self.assertIn("<strong>队列</strong><span>2 条 · 5 分</span>", html)
+        self.assertIn("<strong>改写</strong><span>2 条 · 3 分</span>", html)
+        self.assertIn("<strong>环境</strong><span>2 条 · 6 分</span>", html)
+        self.assertIn(
+            '<span class="contract-name">环境：禁锢</span>'
+            '<b class="contract-points">3</b>',
+            html,
+        )
+        self.assertIn(
+            "https://zmdlogs.com/images/contract-tag/icon_activity_contract_tag_208.png",
+            html,
+        )
+        # The description is a raw game template and never reaches the page:
+        # not its text, not a placeholder, not the colour markup.
+        self.assertNotIn("禁止闪避", html)
+        self.assertNotIn("dmg_scale", html)
+        self.assertNotIn("color=#cc9900", html)
 
     def test_every_font_size_is_a_scale_token(self) -> None:
         # Colours were tokens from the first commit; sizes drifted into

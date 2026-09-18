@@ -21,6 +21,26 @@
   <div class="battle-link"><span>完整战报</span><code>{{ page.report_url }}</code></div>
 </section>
 
+{% if page.contract_groups %}
+<div class="section-heading">
+  <h2>危机合约</h2>
+  <span class="section-note">本场选定的词条，按 队列 / 改写 / 环境 分组 · 每条 1–3 分，合计即合约分数</span>
+</div>
+
+<section class="contract-groups" aria-label="危机合约词条">
+  {% for group in page.contract_groups %}
+  <div class="contract-group">
+    <header class="contract-group-head"><strong>{{ group.family }}</strong><span>{{ group.count }} 条 · {{ group.score }} 分</span></header>
+    <ul class="contract-tags">
+      {% for tag in group.tags %}
+      <li class="contract-tag"><span class="contract-icon">{{ tag.initial }}{% if tag.icon_url %}<img src="{{ tag.icon_url }}" alt="" onerror="this.remove()">{% endif %}</span><span class="contract-name">{{ tag.name }}</span><b class="contract-points">{{ tag.score }}</b></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
 <div class="section-heading">
   <h2>战斗贡献</h2>
   <span class="section-note">DPS 为直伤口径，rDPS 为团队贡献口径</span>

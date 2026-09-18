@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from .characters import CharacterFilterScope, row_fields
+from .contract import group_contract_tags
 from .events import CHAMPION_CHANGE, NEW_RECORD, BoardActivity, RecordEvent
 from .history import AccountHistory, trend_points
 from .loadout import (
@@ -357,6 +358,17 @@ def format_battle(
         f"上传者 {battle.uploader_display_name}"
         f" · 战斗时间 {_when(battle.battle_end_at)}",
     ]
+    if battle.contract_tag_score is not None:
+        # The families and their counts, never the tag list: the model asks
+        # about difficulty, and 25 names answer nothing it can reason over.
+        line = f"危机合约 {battle.contract_tag_score} 分"
+        if battle.contract_tags:
+            families = " · ".join(
+                f"{group.family} {len(group.tags)}"
+                for group in group_contract_tags(battle.contract_tags)
+            )
+            line += f" · {len(battle.contract_tags)} 条词条（{families}）"
+        lines.append(line)
     if battle.participants:
         lines.append("")
         lines.append("参战角色（按伤害排序）：")

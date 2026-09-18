@@ -1,3 +1,118 @@
+/* ---------- 危机合约: the record's own tags, by family ---------- */
+
+.contract-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.contract-group {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+
+.contract-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--card-soft);
+}
+
+.contract-group-head strong {
+  color: var(--ink);
+  font-size: var(--fs-13);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.contract-group-head span {
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: var(--fs-11);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.contract-tags {
+  margin: 0;
+  padding: 6px 12px 8px;
+  list-style: none;
+}
+
+.contract-tag {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.contract-tag + .contract-tag {
+  border-top: 1px solid var(--line-soft);
+}
+
+/* The sprites are white on transparent (one is yellow), drawn for the
+   game's dark UI: on paper they vanish, so each sits on a charcoal tile.
+   The initial underneath shows when there is no sprite. */
+.contract-icon {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--on-dark);
+  background: var(--charcoal);
+  font-size: var(--fs-11);
+  font-weight: 800;
+}
+
+/* The sprite's own fill hides the initial: unlike a portrait it is
+   transparent, and the letter would show through the glyph. */
+.contract-icon img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 3px;
+  background: var(--charcoal);
+  object-fit: contain;
+}
+
+.contract-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-13);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 合约是数据，不是行动：分数保持中性，黄色只留给榜首与筛选 */
+.contract-points {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 1px 6px;
+  color: var(--ink);
+  background: var(--line-soft);
+  font-family: var(--font-num);
+  font-size: var(--fs-11);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: center;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+}
+
 /* ---------- participants as comparable rows ---------- */
 
 .participant-list {

@@ -134,6 +134,118 @@ def buff(
     }
 
 
+def crisis_contract_tags() -> list[dict]:
+    """Six tags off the contract board's #1 record, as upstream sends them.
+
+    Read from ``btl_upload_526563531445`` on 2026-09-19: two per family,
+    tiers 1–3 in the last digit of ``tagId`` — 队列：衰竭 is tier 2 at score
+    3, the reminder that the score is its own field — descriptions the raw
+    game template with its placeholders unexpanded and ``values`` empty.
+    Scores sum to 14.
+    """
+
+    return [
+        {
+            "tagId": 100502,
+            "score": 2,
+            "name": "队列：折刃",
+            "description": (
+                "干员每施放一次终结技，该干员之后的终结技伤害"
+                "-{@100501@-dmg_scale_per_layer:0%}/"
+                "<color=#cc9900>-{-dmg_scale_per_layer:0%}</color>"
+            ),
+            "iconId": "icon_activity_contract_tag_208",
+            "iconUrl": "/images/contract-tag/icon_activity_contract_tag_208.png",
+            "buffId": None,
+            "groupId": None,
+            "conflictId": None,
+            "terms": [],
+            "values": {},
+        },
+        {
+            "tagId": 101402,
+            "score": 3,
+            "name": "队列：衰竭",
+            "description": (
+                "近战干员受到伤害的<color=#cc9900>{hp_down_ratio_melee:0%}</color>"
+                "会转为减少生命值上限，远程干员转化率为"
+                "<color=#cc9900>{hp_down_ratio:0%}</color>"
+            ),
+            "iconId": "icon_activity_contract_tag_127",
+            "iconUrl": "/images/contract-tag/icon_activity_contract_tag_127.png",
+            "buffId": None,
+            "groupId": None,
+            "conflictId": None,
+            "terms": [],
+            "values": {},
+        },
+        {
+            "tagId": 102302,
+            "score": 2,
+            "name": "改写：奔腾",
+            "description": (
+                "敌人移动速度<color=#cc9900>+{speedup_scale-1:0%}</color>，"
+                "0.1秒内受到的伤害不会超过最大生命值的"
+                "<color=#cc9900>{dmg_scale:0%}</color>"
+            ),
+            "iconId": "icon_activity_contract_tag_136",
+            "iconUrl": "/images/contract-tag/icon_activity_contract_tag_136.png",
+            "buffId": None,
+            "groupId": None,
+            "conflictId": None,
+            "terms": [],
+            "values": {},
+        },
+        {
+            "tagId": 101001,
+            "score": 1,
+            "name": "改写：屏障",
+            "description": (
+                "每个敌人每<color=#cc9900>{duration:0}</color>秒只能被施加一次"
+                "<color=#a68360>破防</color>或同类型的"
+                "<color=#1da6e0>法术附着</color>"
+            ),
+            "iconId": "icon_activity_contract_tag_124",
+            "iconUrl": "/images/contract-tag/icon_activity_contract_tag_124.png",
+            "buffId": None,
+            "groupId": None,
+            "conflictId": None,
+            "terms": [],
+            "values": {},
+        },
+        {
+            "tagId": 103203,
+            "score": 3,
+            "name": "环境：震荡",
+            "description": (
+                "干员除普通攻击、战技、连携技和终结技以外的伤害"
+                "<color=#cc9900>+{dmg_up:0%}</color>，战技伤害"
+                "<color=#cc9900>-{-dmg_scale:0%}</color>"
+            ),
+            "iconId": "icon_activity_contract_tag_306",
+            "iconUrl": "/images/contract-tag/icon_activity_contract_tag_306.png",
+            "buffId": None,
+            "groupId": None,
+            "conflictId": None,
+            "terms": [],
+            "values": {},
+        },
+        {
+            "tagId": 101303,
+            "score": 3,
+            "name": "环境：禁锢",
+            "description": "禁止闪避",
+            "iconId": "icon_activity_contract_tag_104",
+            "iconUrl": "/images/contract-tag/icon_activity_contract_tag_104.png",
+            "buffId": None,
+            "groupId": None,
+            "conflictId": None,
+            "terms": [],
+            "values": {},
+        },
+    ]
+
+
 def battle_detail_payload() -> dict:
     def skill(key: str, level: int) -> dict:
         return {"skillKey": key, "level": level}

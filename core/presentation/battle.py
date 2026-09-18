@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from ..contract import group_contract_tags, tag_display_name
 from ..loadout import (
     CharacterSkillDamage,
     element_label,
@@ -178,6 +179,24 @@ class SkillPage:
 
 
 @dataclass(frozen=True, slots=True)
+class ContractTagView:
+    name: str
+    score: int
+    icon_url: str | None
+    # Shown on the tile when there is no sprite (upstream's iconUrl is null
+    # for some tags) or it fails to load — the avatar's initial, for a tag.
+    initial: str
+
+
+@dataclass(frozen=True, slots=True)
+class ContractGroupView:
+    family: str
+    tags: tuple[ContractTagView, ...]
+    count: int
+    score: int
+
+
+@dataclass(frozen=True, slots=True)
 class BattlePage:
     header: PageHeader
     battle_id: str
@@ -205,6 +224,11 @@ class BattlePage:
     # carried none (older parsers) or nothing survived parsing.
     dps_curve: DpsCurveView | None = None
     buff_band: BuffBandView | None = None
+    # 危机合约 only: the record's own tags by family. Name and score, nothing
+    # more — no tier (the id's last digit is not reliably the score) and no
+    # description (an unexpandable template, UPSTREAM.md). Empty off the
+    # contract board.
+    contract_groups: tuple[ContractGroupView, ...] = ()
 
 
 def build_battle_page(
@@ -283,6 +307,7 @@ def build_battle_page(
         timeline_note=export_note if export is None else None,
         dps_curve=build_dps_curve_view(battle, tuple(participants)),
         buff_band=build_buff_band_view(battle),
+        contract_groups=_build_contract_groups(battle, web_base_url=web_base_url),
         participants=tuple(
             BattleParticipantView(
                 character_name=participant.character_name,
@@ -413,6 +438,31 @@ def build_skill_page(
         has_merged_rows=any(
             row.merged_count > 1 for group in groups for row in group.rows
         ),
+    )
+
+
+def _build_contract_groups(
+    battle: BattleDetailSummary,
+    *,
+    web_base_url: str,
+) -> tuple[ContractGroupView, ...]:
+    return tuple(
+        ContractGroupView(
+            family=group.family,
+            tags=tuple(
+                ContractTagView(
+                    name=(name := tag_display_name(tag)),
+                    score=tag.score,
+                    icon_url=_safe_asset_url(tag.icon_url, base_url=web_base_url),
+                    # The character after the family prefix: 热 for 改写：热量汲取.
+                    initial=_initial(name.partition("：")[2] or name),
+                )
+                for tag in group.tags
+            ),
+            count=len(group.tags),
+            score=group.score,
+        )
+        for group in group_contract_tags(battle.contract_tags)
     )
 
 
