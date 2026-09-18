@@ -223,7 +223,7 @@ python -m unittest discover -s tests -v      # 全部测试，离线，约 4 秒
 python -m ruff check main.py core tests tools
 ```
 
-`main.py` 是唯一接触 AstrBot 的文件；`core/` 里是全部逻辑，不引用 AstrBot，可以单独测。模块地图、上游接口事实与设计决策见 [CLAUDE.md](CLAUDE.md)；视觉资源说明见 [resources/common/ASSETS.md](resources/common/ASSETS.md)。
+`main.py` 是唯一接触 AstrBot 的文件；`core/` 里是全部逻辑，不引用 AstrBot，可以单独测。每个模块的设计与取舍写在它自己的 docstring 里；不变量与设计决策见 [CLAUDE.md](CLAUDE.md)，上游接口事实见 [UPSTREAM.md](UPSTREAM.md)，视觉资源说明见 [resources/common/ASSETS.md](resources/common/ASSETS.md)。
 
 ## 📄 数据、许可与鸣谢
 
