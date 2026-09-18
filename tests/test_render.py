@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -153,6 +154,30 @@ class TemplateRendererTests(unittest.TestCase):
             html,
         )
         self.assertNotIn("ignored", html)
+
+    def test_every_font_size_is_a_scale_token(self) -> None:
+        # Colours were tokens from the first commit; sizes drifted into
+        # nineteen values with half-pixels between them. The --fs-* scale in
+        # base.css is now the only place a size may come from, and every
+        # token a page uses must exist there.
+        base_css = (self.root / "resources" / "common" / "base.css").read_text(
+            encoding="utf-8"
+        )
+        root_start = base_css.index(":root {")
+        root_block = base_css[root_start : base_css.index("}", root_start)]
+        defined = set(re.findall(r"--fs-[a-z0-9-]+(?=:)", root_block))
+        self.assertTrue(defined)
+
+        raw_size = re.compile(r"font-size:\s*[0-9.]+(?:px|em|rem|%)")
+        used: set[str] = set()
+        for path in sorted((self.root / "resources").rglob("*.css")):
+            css = path.read_text(encoding="utf-8")
+            self.assertEqual(
+                raw_size.findall(css), [], f"{path.name} sets a raw font-size"
+            )
+            used.update(re.findall(r"font-size:\s*var\((--fs-[a-z0-9-]+)\)", css))
+        self.assertTrue(used)
+        self.assertEqual(used - defined, set())
 
     def test_specific_ranking_defaults_to_ten_and_supports_top_thirty(self) -> None:
         ranking = BossRanking(

@@ -15,7 +15,7 @@
 .hchart-side-note {
   overflow: hidden;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -31,7 +31,7 @@
   top: 0;
   color: var(--muted);
   font-family: var(--font-num);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   line-height: 1;
@@ -93,7 +93,7 @@
   padding: 0;
   list-style: none;
   color: var(--steel);
-  font-size: 11.5px;
+  font-size: var(--fs-11);
   font-weight: 700;
 }
 
@@ -141,7 +141,7 @@
   margin-left: auto;
   color: var(--ink);
   font-family: var(--font-num);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
 }
@@ -150,7 +150,7 @@
   flex: 0 0 34px;
   color: var(--muted);
   font-family: var(--font-num);
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-style: normal;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -172,7 +172,7 @@
   justify-content: space-between;
   color: var(--muted);
   font-family: var(--font-num);
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   text-align: right;
@@ -268,7 +268,7 @@
   color: var(--on-dark);
   background: var(--steel);
   font-family: var(--font-num);
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
 }
@@ -291,7 +291,7 @@
   overflow: hidden;
   min-width: 0;
   color: var(--ink);
-  font-size: 11.5px;
+  font-size: var(--fs-11);
   font-weight: 800;
   text-overflow: ellipsis;
 }
@@ -299,7 +299,7 @@
 .buff-label em {
   flex: 0 0 auto;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-style: normal;
   font-weight: 600;
 }
@@ -342,7 +342,7 @@
 
 .buff-split-label {
   color: var(--danger);
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-weight: 800;
   letter-spacing: 0.06em;
   text-align: right;
@@ -362,7 +362,7 @@
 .buff-coverage {
   color: var(--steel);
   font-family: var(--font-num);
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   text-align: right;
@@ -371,7 +371,7 @@
 .buff-coverage--head {
   color: var(--muted);
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-align: right;
 }
@@ -379,6 +379,6 @@
 .buff-more {
   margin: 8px 0 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
 }

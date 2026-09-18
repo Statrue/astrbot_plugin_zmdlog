@@ -22,7 +22,7 @@
   display: block;
   overflow: hidden;
   color: var(--ink);
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 900;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -34,7 +34,7 @@
   overflow: hidden;
   margin-top: 2px;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: var(--fs-11);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -49,7 +49,7 @@
 
 .trend-rank .ranking-position {
   min-width: 52px;
-  font-size: 20px;
+  font-size: var(--fs-20);
 }
 
 .trend-rank .ranking-position.is-1::before {
@@ -73,7 +73,7 @@
   padding: 1px 6px;
   color: var(--steel);
   background: var(--line-soft);
-  font-size: 11.5px;
+  font-size: var(--fs-11);
   font-style: normal;
   font-weight: 800;
   clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
@@ -142,7 +142,7 @@
   justify-content: space-between;
   color: var(--muted);
   font-family: var(--font-num);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   line-height: 1;
@@ -157,7 +157,7 @@
 .trend-facts span {
   display: block;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-weight: 700;
   letter-spacing: 0.06em;
   white-space: nowrap;
@@ -169,7 +169,7 @@
   margin-top: 3px;
   color: var(--ink);
   font-family: var(--font-num);
-  font-size: 15px;
+  font-size: var(--fs-15);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   text-overflow: ellipsis;

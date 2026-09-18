@@ -22,7 +22,7 @@
   position: relative;
   padding-left: 18px;
   color: var(--steel);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 800;
   letter-spacing: 0.12em;
   white-space: nowrap;
@@ -63,7 +63,7 @@
   padding-left: 23px;
   color: var(--muted);
   font-family: var(--font-num);
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   line-height: 44px;
@@ -86,7 +86,7 @@
   width: 44px;
   height: 44px;
   flex: 0 0 auto;
-  font-size: 18px;
+  font-size: var(--fs-18);
 }
 
 .champ-char-text {
@@ -99,7 +99,7 @@
 .champ-char-text strong {
   overflow: hidden;
   color: var(--ink);
-  font-size: 17px;
+  font-size: var(--fs-17);
   font-weight: 800;
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -108,7 +108,7 @@
 
 .champ-char-text em {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-style: normal;
 }
 
@@ -123,7 +123,7 @@
 .champ-first b {
   color: var(--ink);
   font-family: var(--font-num);
-  font-size: 30px;
+  font-size: var(--fs-30);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   line-height: 1;
@@ -131,7 +131,7 @@
 
 .champ-first i {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-style: normal;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -154,7 +154,7 @@
 .champ-num {
   color: var(--ink);
   font-family: var(--font-num);
-  font-size: 20px;
+  font-size: var(--fs-20);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   text-align: right;
@@ -162,7 +162,7 @@
 
 .champ-num--muted {
   color: var(--steel);
-  font-size: 17px;
+  font-size: var(--fs-17);
 }
 
 .champ-legend {
@@ -170,7 +170,7 @@
 }
 
 .champ-asof {
-  font-size: 14px;
+  font-size: var(--fs-14);
 }
 
 /* ---------- 最常见的第一名阵容 ---------- */
@@ -203,7 +203,7 @@
 .champ-team-count b {
   color: var(--ink);
   font-family: var(--font-num);
-  font-size: 26px;
+  font-size: var(--fs-26);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   line-height: 1;
@@ -211,7 +211,7 @@
 
 .champ-team-count i {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-style: normal;
   font-weight: 800;
 }
@@ -227,7 +227,7 @@
 .champ-team-boards {
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.4;
   text-align: right;
 }
@@ -253,7 +253,7 @@
   padding-left: 18px;
   border-left: 5px solid var(--ink);
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 800;
 }
 
@@ -264,7 +264,7 @@
   padding: 3px 10px 3px 4px;
   background: var(--card-soft);
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
 }
@@ -272,13 +272,13 @@
 .champ-usage-chip .avatar {
   width: 22px;
   height: 22px;
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 
 .champ-usage-chip b {
   color: var(--steel);
   font-family: var(--font-num);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
 }

@@ -18,7 +18,7 @@
   padding: 2px 8px;
   color: var(--ink);
   font-family: var(--font-num);
-  font-size: 17px;
+  font-size: var(--fs-17);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
 }
@@ -52,7 +52,7 @@
 .charboss-rank i {
   color: var(--muted);
   font-family: var(--font-num);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-style: normal;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -67,7 +67,7 @@
 .charboss-board strong {
   overflow: hidden;
   color: var(--ink);
-  font-size: 15px;
+  font-size: var(--fs-15);
   font-weight: 700;
   line-height: 1.25;
   text-overflow: ellipsis;

@@ -5,11 +5,11 @@
 }
 
 .champ.players .champ-char-text strong {
-  font-size: 16px;
+  font-size: var(--fs-16);
 }
 
 .champ.players .champ-char-text em {
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.35;
   white-space: normal;
 }

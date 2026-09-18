@@ -23,7 +23,7 @@
   padding: 10px 12px;
   color: var(--ink);
   font-family: var(--font-num);
-  font-size: 18px;
+  font-size: var(--fs-18);
   font-weight: 800;
   line-height: 1;
   clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
@@ -40,7 +40,7 @@
   display: block;
   overflow: hidden;
   color: var(--ink);
-  font-size: 15px;
+  font-size: var(--fs-15);
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -50,7 +50,7 @@
   display: block;
   margin-top: 2px;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: var(--fs-11);
   font-weight: 600;
 }
 
@@ -60,7 +60,7 @@
   margin-top: 4px;
   color: var(--steel);
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -90,7 +90,7 @@
   padding: 7px 16px;
   background: var(--card-soft);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -100,7 +100,7 @@
 
 .cmp-fact-label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 700;
 }
 
@@ -111,7 +111,7 @@
   margin-left: -6px;
   color: var(--ink);
   font-family: var(--font-num);
-  font-size: 17px;
+  font-size: var(--fs-17);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   text-overflow: ellipsis;
@@ -124,7 +124,7 @@
 
 .cmp-fact em {
   color: var(--steel);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-style: normal;
   font-weight: 700;
   text-align: right;
@@ -154,7 +154,7 @@
   padding: 6px 16px;
   background: var(--card-soft);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -172,13 +172,13 @@
 .cmp-roster-id .avatar {
   width: 34px;
   height: 34px;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 
 .cmp-roster-id strong {
   overflow: hidden;
   color: var(--ink);
-  font-size: 15px;
+  font-size: var(--fs-15);
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -194,7 +194,7 @@
   display: block;
   color: var(--ink);
   font-family: var(--font-num);
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   line-height: 1.1;
@@ -204,7 +204,7 @@
   display: block;
   margin-top: 2px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
 }
 
@@ -273,12 +273,12 @@
 .cmp-loadout-head .avatar {
   width: 34px;
   height: 34px;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 
 .cmp-loadout-head strong {
   color: var(--ink);
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 800;
 }
 
@@ -287,7 +287,7 @@
   padding: 2px 8px;
   color: var(--ink);
   background: var(--action);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-style: normal;
   font-weight: 700;
   clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
@@ -312,7 +312,7 @@
 
 .cmp-gear-line--head {
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -322,14 +322,14 @@
 
 .cmp-gear-line > span {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: var(--fs-11);
   font-weight: 700;
 }
 
 .cmp-gear-line b {
   overflow: hidden;
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--fs-12);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -356,7 +356,7 @@
   display: block;
   margin-bottom: 4px;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-weight: 700;
   letter-spacing: 0.06em;
 }
@@ -376,7 +376,7 @@
   padding: 1px 5px;
   color: var(--ink);
   background: var(--line-soft);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-style: normal;
   font-weight: 700;
 }
@@ -385,7 +385,7 @@
   overflow: hidden;
   min-width: 0;
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--fs-12);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -396,7 +396,7 @@
   margin-left: auto;
   color: var(--steel);
   font-family: var(--font-num);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-style: normal;
   font-variant-numeric: tabular-nums;
   font-weight: 800;

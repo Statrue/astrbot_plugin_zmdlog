@@ -17,7 +17,7 @@
   padding: 7px 12px;
   color: var(--on-dark);
   background: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 800;
   letter-spacing: 0.14em;
 }
@@ -42,7 +42,7 @@
 .avatar--small {
   width: 30px;
   height: 30px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 .usage-text,
@@ -66,7 +66,7 @@
 .usage-name-row strong {
   overflow: hidden;
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -76,7 +76,7 @@
   flex: 0 0 auto;
   color: var(--steel);
   font-family: var(--font-num);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-style: normal;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -107,14 +107,14 @@
 .usage-empty {
   margin: 8px 12px 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
 }
 
 .usage-empty {
   padding: 10px 0;
   text-align: center;
-  font-size: 16px;
+  font-size: var(--fs-16);
 }
 
 /* ---------- bottom columns ---------- */
@@ -151,14 +151,14 @@
 
 .combo-count {
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 700;
 }
 
 .combo-count strong {
   margin-right: 2px;
   font-family: var(--font-num);
-  font-size: 18px;
+  font-size: var(--fs-18);
   font-weight: 800;
 }
 
@@ -170,7 +170,7 @@
 .combo-best {
   color: var(--steel);
   font-family: var(--font-num);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
@@ -196,7 +196,7 @@
 .combo-member-text strong {
   overflow: hidden;
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -204,7 +204,7 @@
 
 .combo-member-text em {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-style: normal;
   font-weight: 600;
 }
@@ -223,7 +223,7 @@
 .usage-title em {
   color: var(--muted);
   font-family: var(--font-num);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-style: normal;
   font-variant-numeric: tabular-nums;
   font-weight: 700;

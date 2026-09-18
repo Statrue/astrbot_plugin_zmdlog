@@ -112,7 +112,9 @@ group chats — plus the four LLM tools. All of them run through one error guard
   own stylesheet plus the shared ones under `resources/common/`. Anything two
   pages need lives in `base.css`. CSS files render under autoescape like the
   templates.
-- **Visual language is Endfield-style**, every colour a token in `base.css`, and
+- **Visual language is Endfield-style**, every colour and every font size a
+  token in `base.css` (the `--fs-*` scale; a size off it is a design change,
+  and `test_render.test_every_font_size_is_a_scale_token` pins the rule), and
   one term per concept on every page: 主 C, 名次, 通关时间 (hero) / 用时
   (column), DPS (column) / 总 DPS (hero), 公开账号, 全部榜单, 总伤害, 阵容,
   武器未记录. A single-series bar is always yellow.
