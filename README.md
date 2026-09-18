@@ -43,9 +43,7 @@
 
 ## 📦 安装
 
-**插件市场**：在 AstrBot 插件管理器里搜索 `astrbot_plugin_zmdlog` 安装。
-
-**手动安装**：克隆到 AstrBot 的插件目录，然后在 AstrBot 使用的同一个 Python 环境里装依赖和 Chromium：
+克隆到 AstrBot 的插件目录，然后在 AstrBot 使用的同一个 Python 环境里装依赖和 Chromium：
 
 ```bash
 cd AstrBot/data/plugins
