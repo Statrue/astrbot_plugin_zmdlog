@@ -20,8 +20,8 @@ Python 3.11+ (`asyncio.timeout`, `datetime.UTC`), dependencies in
 **Read the module docstring first.** Every `core/` module opens with one, and
 the modules that carry a design worth understanding — `ranking_index`,
 `recipes/__init__`, `rank_watch`, `watch`, `queries`, `toolbox`, `facts`,
-`timeline`, `telemetry`, `bindings`, `metrics`, `cache` — explain their
-economics and their reasons there. That is the module map; this file does not
+`contract`, `timeline`, `telemetry`, `bindings`, `metrics`, `cache` — explain
+their economics and their reasons there. That is the module map; this file does not
 repeat it, and a behaviour question is answered by the docstring beside the
 code, not here.
 
@@ -239,13 +239,14 @@ when the user settled the question.
   week later with the battle lookup and were parsed but never drawn, which is
   why this read as a deferred feature for six weeks. The card draws the
   record's own tags as one section after `battle-identity` — icon, name and
-  score, grouped 队列 / 改写 / 环境 — and nothing else: no `description` (an
-  unexpandable template, see UPSTREAM.md), no tier badge (the id's last digit
-  usually matches the score but five tags disagree, and the score is what
-  counts), no merging by tag base (names change between tiers), no "N of the
-  catalog" denominator and no board-best reference (the catalog has no
-  upstream endpoint, and a second upstream for a decorative figure was
-  rejected). Neutral colour: 合约 is data, not action.
+  score, grouped 队列 / 改写 / 环境, each family's header carrying that
+  family's tag count and subtotal — and nothing beyond that: no
+  `description` (an unexpandable template, see UPSTREAM.md), no tier badge
+  (the id's last digit usually matches the score but five tags disagree, and
+  the score is what counts), no merging by tag base (names change between
+  tiers), no "N of the catalog" denominator and no board-best reference (the
+  catalog has no upstream endpoint, and a second upstream for a decorative
+  figure was rejected). Neutral colour: 合约 is data, not action.
 
 ## References
 
