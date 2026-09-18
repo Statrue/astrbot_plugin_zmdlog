@@ -187,6 +187,7 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn('<span class="contract-icon">禁</span>', html)
         self.assertNotIn("icon_activity_contract_tag_104", html)
         self.assertIn("合约分数</span><strong>14 分</strong>", html)
+        self.assertIn("每条 1–3 分，合计即合约分数", html)
         # The section is the record's preconditions, so it precedes the data.
         self.assertLess(
             html.index("<h2>危机合约</h2>"), html.index("<h2>战斗贡献</h2>")
@@ -215,6 +216,25 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertNotIn("禁止闪避", html)
         self.assertNotIn("dmg_scale", html)
         self.assertNotIn("color=#cc9900", html)
+
+    def test_the_note_claims_the_total_only_when_the_total_is_drawn(self) -> None:
+        # 合计即合约分数 points at the 合约分数 row, which is drawn on its own
+        # condition. Tags without a score would leave the claim pointing at
+        # nothing, so the clause goes when the row does.
+        payload = battle_detail_payload()
+        payload["battle"]["contractTags"] = crisis_contract_tags()
+        payload["battle"]["contractTagScore"] = None
+
+        html = self.renderer.render_battle(
+            parse_battle_detail(payload),
+            query="btl_upload_526563531445",
+            web_base_url="https://zmdlogs.com",
+        )
+
+        self.assertIn("<h2>危机合约</h2>", html)
+        self.assertIn("每条 1–3 分", html)
+        self.assertNotIn("合计即合约分数", html)
+        self.assertNotIn("合约分数</span>", html)
 
     def test_every_font_size_is_a_scale_token(self) -> None:
         # Colours were tokens from the first commit; sizes drifted into

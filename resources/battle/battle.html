@@ -24,7 +24,7 @@
 {% if page.contract_groups %}
 <div class="section-heading">
   <h2>危机合约</h2>
-  <span class="section-note">本场选定的词条，按 队列 / 改写 / 环境 分组 · 每条 1–3 分，合计即合约分数</span>
+  <span class="section-note">本场选定的词条，按 队列 / 改写 / 环境 分组 · 每条 1–3 分{% if page.contract_score is not none %}，合计即合约分数{% endif %}</span>
 </div>
 
 <section class="contract-groups" aria-label="危机合约词条">
