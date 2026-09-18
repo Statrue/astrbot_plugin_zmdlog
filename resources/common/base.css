@@ -59,7 +59,10 @@
   /* Type scale — the only font sizes a page may use. The half-pixel sizes
      that used to sit between these steps were page-by-page tuning, not
      design; a size off the scale is a design change, and test_render pins
-     the rule. Three display sizes belong to the hero alone. */
+     the rule. Three display sizes belong to the hero alone.
+     The scale has no 19, 21 or 27 step, so adopting it moved four sizes down
+     one pixel — .page-subtitle 21→20, .top3-card-title and .duration 19→18,
+     .rank-num 27→26. Those four are real visual changes, not snaps. */
   --fs-10: 10px;
   --fs-11: 11px;
   --fs-12: 12px;

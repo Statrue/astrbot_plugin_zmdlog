@@ -257,6 +257,22 @@ class TemplateRendererTests(unittest.TestCase):
                 raw_size.findall(css), [], f"{path.name} sets a raw font-size"
             )
             used.update(re.findall(r"font-size:\s*var\((--fs-[a-z0-9-]+)\)", css))
+
+        # The rule is about sizes, not about stylesheets. An inline
+        # style="font-size: 13px" or an SVG font-size="13" would put an
+        # untokenised size on the page and never be seen by a .css scan.
+        # A token spelled inline is still a token, so only digits are refused.
+        raw_inline = re.compile(r"font-size\s*[:=]\s*[\"']?\s*[0-9.]")
+        for path in sorted((self.root / "resources").rglob("*.html")):
+            markup = path.read_text(encoding="utf-8")
+            self.assertEqual(
+                raw_inline.findall(markup), [], f"{path.name} sets a raw font-size"
+            )
+            used.update(
+                re.findall(r"font-size\s*[:=]\s*[\"']?\s*var\((--fs-[a-z0-9-]+)\)",
+                           markup)
+            )
+
         self.assertTrue(used)
         self.assertEqual(used - defined, set())
 
