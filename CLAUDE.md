@@ -216,7 +216,10 @@ when the user settled the question.
   unacceptable impersonation surface and that judgement stands.
 - **Every binding command is group-only** (2026-09-15): the bot adds nobody as a
   friend, so a private chat is not a place any of this is used from. A
-  关注-list-based 群榜 was judged not worth building, and was not.
+  关注-list-based 群榜 was judged not worth building, and was not; the 群榜 that
+  shipped the same day (`d5736c5`) is drawn from the chat's *bindings* —
+  `queries._group_board_gate` enrols whoever asks, and the page is one board
+  read filtered to the members' account ids.
 - **Cross-boss battle comparison is meaningless** and answers in text: every
   boss has its own rotation.
 - **In a comparison, A keeps the order its own 配装 page shows and B is matched
@@ -226,6 +229,21 @@ when the user settled the question.
   on 2026-09-08 so it reads as the sibling of 角色排名.
 - **rDPS got the full scope** on 2026-09-16, chosen knowing the rDPS boards hold
   1.5% of the records.
+- **危机合约 词条 stay off the ranking rows and go on the battle card**
+  (2026-09-19). `eb907ff` (2026-08-09) cut the tag chips from the ranking page
+  — five columns plus chips read as noise — and kept only 合约分数; that ruling
+  is about the *rows* and stands (`test_contract_ranking_only_shows_score`
+  pins it). The battle card never had a ruling: its contract fields arrived a
+  week later with the battle lookup and were parsed but never drawn, which is
+  why this read as a deferred feature for six weeks. The card draws the
+  record's own tags as one section after `battle-identity` — icon, name and
+  score, grouped 队列 / 改写 / 环境 — and nothing else: no `description` (an
+  unexpandable template, see UPSTREAM.md), no tier badge (the id's last digit
+  usually matches the score but five tags disagree, and the score is what
+  counts), no merging by tag base (names change between tiers), no "N of the
+  catalog" denominator and no board-best reference (the catalog has no
+  upstream endpoint, and a second upstream for a decorative figure was
+  rejected). Neutral colour: 合约 is data, not action.
 
 ## References
 

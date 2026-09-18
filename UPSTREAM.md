@@ -115,6 +115,33 @@ sample it a handful of times and never break it, and there is no cap field
 (upstream's 上限 is the max observed), so the lane would be a flat line on
 exactly the fights people look at.
 
+### `contractTagScore` and `contractTags[]` — 危机合约
+
+Both ride on `battle`, on ranking rows, on `hot-bosses` runs and on user
+rankings; off the contract board (`indie_group_ccdg`) they are `null` / `[]`.
+Surveyed over the whole board, 15 records, 2026-09-19:
+
+- Each tag: `tagId`, `score` (1 | 2 | 3), `name`, `description`, `iconId`,
+  `iconUrl` (site-relative, `/images/contract-tag/icon_activity_contract_tag_NNN.png`,
+  one sprite per tier, white on transparent bar one yellow; **`null` on
+  101603 改写：热量汲取**), `buffId`, `groupId`, `conflictId`, `terms`,
+  `values` — **the last five are `null` / empty on every tag of every record.**
+- `contractTagScore` equals the sum of the tags' `score` on every record;
+  14–25 tags per record, totals 46–52 at the top of the board.
+- `tagId // 10` is the tag and `tagId % 10` its tier (1–3). The tier
+  usually equals the score (33 of 38: `环境：时限` 102101 / 102102 / 102103
+  score 1 / 2 / 3) **but not always** — 101402 队列：衰竭 is tier 2 at score
+  3, 103102 改写：裹附 tier 2 at score 1, three more — so the score is read
+  from `score` and never derived from the id. Names carry a family prefix,
+  队列 / 改写 / 环境 (12 / 11 / 15 of the 38 distinct ids seen). A name may
+  change between tiers — base 10130 is 环境：厌氧 at tier 1 and 环境：禁锢 at
+  tier 3 — so tags are keyed by `tagId`, never merged by base.
+- `description` is the raw game template: on the #1 record 19 of 25 carry
+  unexpanded `{key:0%}` placeholders and 20 carry `<color=#…>` markup, and
+  `values` (the substitution table) is empty. It cannot be printed.
+- There is no catalog endpoint: the 38 ids above are what the board's
+  records happen to use, a lower bound, not the pool.
+
 ## `GET /api/battles/users/{id}/rankings`
 
 Lists the account's best record on **every** board it ever uploaded to,
