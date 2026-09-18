@@ -8,7 +8,7 @@
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-4A90E2?style=flat-square)](https://github.com/AstrBotDevs/AstrBot)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.12.0-f8d34d?style=flat-square)](metadata.yaml)
+[![Version](https://img.shields.io/badge/version-1.0.0-f8d34d?style=flat-square)](metadata.yaml)
 [![License](https://img.shields.io/badge/license-MIT-2f9e5b?style=flat-square)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/Statrue/astrbot_plugin_zmdlog?style=flat-square)](https://github.com/Statrue/astrbot_plugin_zmdlog/stargazers)
 
