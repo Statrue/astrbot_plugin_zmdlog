@@ -53,6 +53,13 @@ def tag_display_name(tag: ContractTag) -> str:
     return name or UNNAMED_TAG
 
 
+def tag_short_name(tag: ContractTag) -> str:
+    """The name without its family prefix: 热量汲取 for 改写：热量汲取."""
+
+    name = tag_display_name(tag)
+    return name.partition(_FAMILY_SEPARATOR)[2] or name
+
+
 def group_contract_tags(tags: tuple[ContractTag, ...]) -> tuple[ContractGroup, ...]:
     """Non-empty families in canonical order, 其他 last, upstream order inside."""
 
@@ -66,7 +73,3 @@ def group_contract_tags(tags: tuple[ContractTag, ...]) -> tuple[ContractGroup, .
         for family, members in buckets.items()
         if members
     )
-
-
-def contract_score_total(tags: tuple[ContractTag, ...]) -> int:
-    return sum(tag.score for tag in tags)

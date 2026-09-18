@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from ..contract import group_contract_tags, tag_display_name
+from ..contract import group_contract_tags, tag_display_name, tag_short_name
 from ..loadout import (
     CharacterSkillDamage,
     element_label,
@@ -451,11 +451,11 @@ def _build_contract_groups(
             family=group.family,
             tags=tuple(
                 ContractTagView(
-                    name=(name := tag_display_name(tag)),
+                    name=tag_display_name(tag),
                     score=tag.score,
                     icon_url=_safe_asset_url(tag.icon_url, base_url=web_base_url),
                     # The character after the family prefix: 热 for 改写：热量汲取.
-                    initial=_initial(name.partition("：")[2] or name),
+                    initial=_initial(tag_short_name(tag)),
                 )
                 for tag in group.tags
             ),

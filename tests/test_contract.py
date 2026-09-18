@@ -7,9 +7,9 @@ from core.contract import (
     OTHER_FAMILY,
     UNNAMED_TAG,
     contract_family,
-    contract_score_total,
     group_contract_tags,
     tag_display_name,
+    tag_short_name,
 )
 from core.models import ContractTag, parse_battle_detail
 from tests.helpers import battle_detail_payload, crisis_contract_tags
@@ -42,7 +42,7 @@ class ContractGroupingTests(unittest.TestCase):
             [tag.name for tag in groups[0].tags], ["队列：折刃", "队列：衰竭"]
         )
         self.assertEqual([group.score for group in groups], [5, 1, 3])
-        self.assertEqual(contract_score_total(tags), 9)
+        self.assertEqual(sum(group.score for group in groups), 9)
 
     def test_only_families_with_tags_appear(self) -> None:
         only = (ContractTag(tag_id=1, score=1, name="环境：切削"),)
@@ -81,6 +81,28 @@ class ContractGroupingTests(unittest.TestCase):
             "队列：折刃",
         )
 
+    def test_the_short_name_drops_the_family_prefix(self) -> None:
+        # What the icon tile's initial comes from: 折, never 队.
+        self.assertEqual(
+            tag_short_name(ContractTag(tag_id=100502, score=2, name="队列：折刃")),
+            "折刃",
+        )
+        # A separator is enough; the family need not be one we know, or the
+        # tile of an 其他 tag would read 特 for every one of them.
+        self.assertEqual(
+            tag_short_name(ContractTag(tag_id=2, score=2, name="特殊：无前缀家族")),
+            "无前缀家族",
+        )
+        # No separator: the name is already short.
+        self.assertEqual(
+            tag_short_name(ContractTag(tag_id=4, score=1, name="没有分隔符")),
+            "没有分隔符",
+        )
+        self.assertEqual(
+            tag_short_name(ContractTag(tag_id=100502, score=2, name=None)),
+            UNNAMED_TAG,
+        )
+
 
 class ContractParsingTests(unittest.TestCase):
     def test_real_shaped_tags_parse_and_sum_to_the_score(self) -> None:
@@ -88,7 +110,9 @@ class ContractParsingTests(unittest.TestCase):
 
         self.assertEqual(battle.contract_tag_score, 14)
         self.assertEqual(len(battle.contract_tags), 6)
-        self.assertEqual(contract_score_total(battle.contract_tags), 14)
+        # The identity UPSTREAM.md verified on all 15 board records: the
+        # score upstream sends is exactly the sum of the tags it sends.
+        self.assertEqual(sum(tag.score for tag in battle.contract_tags), 14)
         first = battle.contract_tags[0]
         self.assertEqual(first.tag_id, 100502)
         self.assertEqual(first.name, "队列：折刃")
