@@ -8,7 +8,7 @@
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-4A90E2?style=flat-square)](https://github.com/AstrBotDevs/AstrBot)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-1.0.0-f8d34d?style=flat-square)](metadata.yaml)
+[![Version](https://img.shields.io/badge/version-1.0.1-f8d34d?style=flat-square)](metadata.yaml)
 [![License](https://img.shields.io/badge/license-MIT-2f9e5b?style=flat-square)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/Statrue/astrbot_plugin_zmdlog?style=flat-square)](https://github.com/Statrue/astrbot_plugin_zmdlog/stargazers)
 
@@ -43,7 +43,13 @@
 
 ## 📦 安装
 
-克隆到 AstrBot 的插件目录，然后在 AstrBot 使用的同一个 Python 环境里装依赖和 Chromium：
+AstrBot 面板 → 插件市场，搜「终末地·藕粉铺子」或 `zmdlog`，点安装。Python 依赖会自动装，Chromium 要自己补一次：
+
+```bash
+python -m playwright install chromium
+```
+
+也可以克隆到 AstrBot 的插件目录，在 AstrBot 使用的同一个 Python 环境里装依赖和 Chromium：
 
 ```bash
 cd AstrBot/data/plugins
@@ -61,7 +67,7 @@ docker exec -it astrbot python -m playwright install chromium
 docker restart astrbot
 ```
 
-更新：`git pull --ff-only` 后重启 AstrBot；`requirements.txt` 有变化时先重新 `pip install`。
+更新：市场装的在面板里点更新，克隆装的 `git pull --ff-only` 后重启 AstrBot；`requirements.txt` 有变化时先重新 `pip install`。
 
 > 没装 Chromium 时插件会退回 AstrBot 自带的文转图服务（`fallback_to_astrbot_renderer`），能用，但样式和清晰度以内置 Chromium 为准。
 > 渲染字体（Noto Sans SC / Barlow 子集，均为 SIL OFL 1.1）已内嵌；昵称里的生僻字会回退到系统字体，Docker 环境建议装一套中文字体（如 `fonts-noto-cjk`）。

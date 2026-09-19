@@ -2,7 +2,7 @@ name: astrbot_plugin_zmdlog
 display_name: 终末地·藕粉铺子
 desc: 椰果人的藕粉铺子：在聊天里查 ZMDLogs 的终末地 DPS 榜单、账号成绩与战报，回一张终末地风格长图。
 short_desc: 查 ZMDLogs（终末地 DPS 榜）的榜单、账号与战报，回一张长图。
-version: "1.0.0"
+version: "1.0.1"
 author: Statrue
 repo: https://github.com/Statrue/astrbot_plugin_zmdlog
 category: entertainment
