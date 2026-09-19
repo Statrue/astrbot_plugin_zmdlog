@@ -94,7 +94,7 @@ class TemplateRendererTests(unittest.TestCase):
 
         self.assertIn("!zmdlog 榜单", html)
         self.assertIn("!zmdlog 战报 | 配装 | 技能 | 技能轴", html)
-        self.assertIn("ZmdLogBot", html)
+        self.assertIn("终末地·藕粉铺子", html)
         # Read from the manifest rather than repeating it: the version is
         # bumped every release, and the point of the test is that the page
         # shows whatever metadata.yaml says.
@@ -111,7 +111,7 @@ class TemplateRendererTests(unittest.TestCase):
         metadata = (self.root / "metadata.yaml").read_text(encoding="utf-8")
 
         self.assertIn("name: astrbot_plugin_zmdlog", metadata)
-        self.assertIn("display_name: ZmdLogBot", metadata)
+        self.assertIn("display_name: 终末地·藕粉铺子", metadata)
         self.assertIn(
             "repo: https://github.com/Statrue/astrbot_plugin_zmdlog",
             metadata,

@@ -41,7 +41,7 @@ def build_help_page(command_prefix: str) -> HelpPage:
     battle_argument = "<battleId、链接或榜单关键词 [名次]>"
     return HelpPage(
         header=PageHeader(
-            title="ZmdLogBot 指令帮助",
+            title="终末地·藕粉铺子 指令帮助",
             subtitle="查询 ZMDLogs 公开榜单、账号与战报",
             query=command,
             matched_name="指令一览",

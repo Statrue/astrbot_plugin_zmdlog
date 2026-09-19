@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="logo.png" width="96" alt="ZmdLogBot">
+<img src="logo.png" width="96" alt="终末地·藕粉铺子">
 
 # astrbot_plugin_zmdlog
 
-### ZmdLogBot · 在聊天里查 ZMDLogs 榜单、账号与战报
+### 终末地·藕粉铺子 — 在聊天里查 ZMDLogs 榜单、账号与战报
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-4A90E2?style=flat-square)](https://github.com/AstrBotDevs/AstrBot)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)

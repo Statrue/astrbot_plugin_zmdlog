@@ -247,6 +247,27 @@ when the user settled the question.
   tiers), no "N of the catalog" denominator and no board-best reference (the
   catalog has no upstream endpoint, and a second upstream for a decorative
   figure was rejected). Neutral colour: 合约 is data, not action.
+- **The Chinese name is the market name; the code identity stays ZmdLogBot**
+  (2026-09-19). `display_name` is 终末地·藕粉铺子 (藕粉 puns on 凹分) and the help
+  page title follows it; the repository name, the `zmdlog` command, the
+  `ZmdLogBotPlugin` class and every log prefix do not move. Neither does the
+  brand on the page: the `ZMD LOG` wordmark in `base.html` is hard-coded, and
+  `footer-brand` is set in `--font-num` (Barlow, no CJK glyphs), so a Chinese
+  name there would fall through to the system stack and show tofu wherever no
+  CJK font is installed. `render.py`'s `plugin.name` is therefore the Latin
+  `ZmdLog`.
+- **Market metadata lives in `metadata.yaml`, and AstrBot itself ignores most of
+  it** (2026-09-19). The cloud market reads `category`, `tags`, `social_link`
+  and `support_platforms`; `StarMetadata` only knows the last two. Omitting
+  `category` gets you `其他`, as it did for 1032 of the market's 2189 entries.
+  It is set to the English key `entertainment`, not `娱乐`, because the
+  dashboard's i18n table is keyed
+  `ai_tools/entertainment/productivity/integrations/utilities/other` and the
+  plugin detail page prints `[MISSING: …]` verbatim on a miss (the market list
+  has the fallback the detail page lacks). The cost is a filter bucket of our
+  own instead of joining the 394 plugins under `娱乐` — the category never
+  appears on a market card, only in that dropdown, which is not worth the red
+  text.
 
 ## References
 

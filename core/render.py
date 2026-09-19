@@ -664,7 +664,7 @@ class TemplateRenderer:
         return template.render(
             page=page,
             page_kind=page_kind,
-            plugin={"name": "ZmdLogBot", "version": self.version},
+            plugin={"name": "ZmdLog", "version": self.version},
             background_data_url=self.background_data_url,
             font_face_css=(
                 self.font_face_css if embed_fonts else self.linked_font_face_css
