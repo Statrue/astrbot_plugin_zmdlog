@@ -419,3 +419,51 @@ async def run_probes_three(event, command: str) -> str:
     lines = ["按钮原型 · 探测结果 3（原型分支，勿合并）", *results]
     lines.append("看 7、8 两条消息里的图片能不能显示。")
     return "\n".join(lines)
+
+
+async def run_probes_four(event, command: str, log) -> str:
+    """Is the octet-stream content type what breaks the raw_url image?
+
+    Probe 9 asks COS to answer as image/png (``response-content-type``);
+    probe 10 only dresses the URL as a .png with a fragment, which the server
+    never sees. The raw_url goes to the log so it can be re-tested by hand
+    for its 24-hour lifetime.
+    """
+
+    from urllib.parse import urlsplit
+
+    button = [_button("1", "1 查看榜单列表", f"{command} 榜单")]
+    results: list[str] = []
+    try:
+        url = await _upload_for_raw_url(event, _tall_png())
+    except Exception as exc:
+        return f"按钮原型 · 探测结果 4：上传失败 {_describe(exc)}"
+    log(f"ZmdLogBot PROTOTYPE raw_url: {url}")
+    typed = f"{url}&response-content-type=image%2Fpng"
+    path = urlsplit(url).path
+    results.append(f"  raw_url 路径结尾：…{path[-24:]}")
+    results.append(f"  服务器取原链接：{await _fetch_summary(url)}")
+    results.append(f"  服务器取 9 的链接：{await _fetch_summary(typed)}")
+
+    for label, image_url in (
+        ("9 要求 COS 按 image/png 返回", typed),
+        ("10 链接末尾加 #.png", f"{url}#.png"),
+    ):
+        try:
+            await _post(
+                event,
+                msg_type=2,
+                markdown={
+                    "content": (
+                        f"探测 {label}\n\n![img #640px #1600px]({image_url})"
+                    )
+                },
+                keyboard=_keyboard(button),
+            )
+        except Exception as exc:
+            results.append(f"{label}：❌ {_describe(exc)}")
+        else:
+            results.append(f"{label}：✅ 已发出")
+    lines = ["按钮原型 · 探测结果 4（原型分支，勿合并）", *results]
+    lines.append("看 9、10 两条消息里的图片能不能显示。")
+    return "\n".join(lines)
