@@ -232,3 +232,109 @@ async def run_probes(event, web_base_url: str, command: str) -> str:
     lines = ["按钮原型 · 探测结果（原型分支，勿合并）", *results]
     lines.append("❌ 的错误码见 AstrBot 日志里「[botpy] 接口请求异常」那一行。")
     return "\n".join(lines)
+
+
+def _tall_png(width: int = 640, height: int = 1600) -> bytes:
+    """A long yellow-to-grey strip, shaped like a rendered result page."""
+
+    rows = []
+    for y in range(height):
+        shade = 250 - (y * 150 // height)
+        rows.append(b"\x00" + bytes((shade, shade, 40)) * width)
+    raw = b"".join(rows)
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
+async def _upload_for_raw_url(event, png: bytes) -> str:
+    """Chunked-upload ``png`` and return the merge response's ``raw_url``.
+
+    AstrBot's uploader reads that response but keeps only file_info; wrap its
+    one HTTP call to keep the COS link it drops.
+    """
+
+    import tempfile
+    from pathlib import Path
+
+    from astrbot.core.platform.sources.qqofficial.qqofficial_chunked_upload import (
+        QQOfficialChunkedUploader,
+    )
+
+    class _Uploader(QQOfficialChunkedUploader):
+        raw_url = ""
+
+        async def _request_json(self, method, path, body):
+            response = await super()._request_json(method, path, body)
+            if path.endswith("/files") and isinstance(response, dict):
+                merged = response.get("data", response)
+                if isinstance(merged, dict):
+                    self.raw_url = str(merged.get("raw_url") or "")
+            return response
+
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "probe.png"
+        path.write_bytes(png)
+        uploader = _Uploader(event.bot.api._http)
+        await uploader.upload_group(
+            path, 1, "probe.png", event.message_obj.group_id
+        )
+    if not uploader.raw_url:
+        raise RuntimeError("合并响应里没有 raw_url")
+    return uploader.raw_url
+
+
+async def run_probes_two(event, command: str) -> str:
+    """Two sends plus a summary: markdown image + keyboard, and ``enter``."""
+
+    results: list[str] = []
+
+    async def markdown_image_with_keyboard():
+        url = await _upload_for_raw_url(event, _tall_png())
+        host = url.split("/")[2] if url.count("/") >= 2 else "?"
+        results.append(f"  raw_url 域名：{host}")
+        await _post(
+            event,
+            msg_type=2,
+            markdown={
+                "content": (
+                    "探测 5：markdown 里的图片，下面带按钮\n\n"
+                    f"![img #640px #1600px]({url})"
+                )
+            },
+            keyboard=_keyboard([_button("1", "1 查看榜单列表", f"{command} 榜单")]),
+        )
+
+    enter_button = _button("1", "点我：会不会自动发出", f"{command} 榜单")
+    enter_button["action"]["enter"] = True
+
+    for label, send in (
+        ("5 markdown 图片带按钮", markdown_image_with_keyboard),
+        (
+            "6 群里 enter 自动发送",
+            lambda: _post(
+                event,
+                msg_type=2,
+                markdown={"content": "探测 6：点下面按钮，看是直接发出还是只填进去"},
+                keyboard=_keyboard([enter_button]),
+            ),
+        ),
+    ):
+        try:
+            await send()
+        except Exception as exc:
+            results.append(f"{label}：❌ {_describe(exc)}")
+        else:
+            results.append(f"{label}：✅ 已发出")
+    lines = ["按钮原型 · 探测结果 2（原型分支，勿合并）", *results]
+    lines.append("5 要看图片下面有没有按钮；6 要点一下按钮看是否自动发出。")
+    return "\n".join(lines)
