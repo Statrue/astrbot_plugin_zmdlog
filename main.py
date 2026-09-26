@@ -26,6 +26,7 @@ except ImportError:  # pragma: no cover - depends on host AstrBot version
         # keep working without them.
         Image = Plain = None
 
+from . import prototype_qq_buttons  # PROTOTYPE: branch-only, never merge
 from .core import facts, messages
 from .core.account_binding import AccountBinding
 from .core.alias_admin import AliasAdmin
@@ -278,6 +279,16 @@ class ZmdLogBotPlugin(Star):
             ):
                 yield result
             return
+        if payload == "按钮探测" and prototype_qq_buttons.is_group_qq_official(
+            event
+        ):
+            # PROTOTYPE: side probes for the button question.
+            yield event.plain_result(
+                await prototype_qq_buttons.run_probes(
+                    event, self.web_base_url, self._command_prefix(event) + "zmdlog"
+                )
+            )
+            return
 
         try:
             route = parse_zmdlog_payload(payload)
@@ -324,7 +335,8 @@ class ZmdLogBotPlugin(Star):
             except Exception:
                 logger.exception("ZmdLogBot unexpected command failure")
                 message = messages.UNEXPECTED_FAILURE
-            yield event.plain_result(message)
+            async for result in self._prototype_text_result(event, message):
+                yield result
             return
         outcome, _ = await self._run_guarded(
             lambda: self.queries.dispatch(
@@ -336,7 +348,33 @@ class ZmdLogBotPlugin(Star):
             api_error_message=lambda exc: api_error_message(route, exc),
             failure_label="command",
         )
+        if outcome.image_path is None and outcome.message is not None:
+            async for result in self._prototype_text_result(event, outcome.message):
+                yield result
+            return
         yield self._outcome_result(event, outcome)
+
+    async def _prototype_text_result(self, event: AstrMessageEvent, text: str):
+        """PROTOTYPE: on the QQ official bot a candidate list carries buttons."""
+
+        code = (
+            extract_code(text)
+            if prototype_qq_buttons.is_group_qq_official(event)
+            else None
+        )
+        entry = self.candidates._entries.get(code) if code else None
+        if entry is None:
+            yield event.plain_result(text)
+            return
+        error = await prototype_qq_buttons.send_candidates(
+            event, text, entry, self._command_prefix(event) + "zmdlog"
+        )
+        if error is None:
+            # Sent outside AstrBot's pipeline: stop the default LLM reply.
+            event.should_call_llm(True)
+            event.stop_event()
+            return
+        yield event.plain_result(f"{text}\n（原型：按钮发送失败，{error}）")
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def pick_candidate(self, event: AstrMessageEvent):
