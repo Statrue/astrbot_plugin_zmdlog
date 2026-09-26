@@ -153,6 +153,10 @@ class ZmdLogBotPlugin(Star):
         )
         self.data_dir = self._plugin_data_dir()
         self.candidates = CandidateStore()
+        # PROTOTYPE: callback buttons when qqoffice_expand is installed.
+        self._expand = prototype_qq_buttons.ExpandBridge(
+            self.context, self._prototype_on_pick, logger.info
+        )
         self._matchers = MatcherCache(
             fuzzy_threshold=settings.fuzzy_match_threshold,
             ambiguity_score_gap=settings.ambiguity_score_gap,
@@ -248,6 +252,17 @@ class ZmdLogBotPlugin(Star):
 
         self.data.start()
         self.watcher.start()
+        self._expand.try_bind()
+
+    @filter.on_plugin_loaded()
+    async def _prototype_expand_loaded(self, metadata) -> None:
+        if getattr(metadata, "name", "") == prototype_qq_buttons.EXPAND_PLUGIN:
+            self._expand.try_bind()
+
+    @filter.on_plugin_unloaded()
+    async def _prototype_expand_unloaded(self, metadata) -> None:
+        if getattr(metadata, "name", "") == prototype_qq_buttons.EXPAND_PLUGIN:
+            self._expand.unbind()
 
     @filter.on_astrbot_loaded()
     async def on_astrbot_ready(self) -> None:
@@ -394,7 +409,11 @@ class ZmdLogBotPlugin(Star):
             yield event.plain_result(text)
             return
         error = await prototype_qq_buttons.send_candidates(
-            event, text, entry, self._command_prefix(event) + "zmdlog"
+            event,
+            text,
+            entry,
+            self._command_prefix(event) + "zmdlog",
+            callback=self._expand.available,
         )
         if error is None:
             # Sent outside AstrBot's pipeline: stop the default LLM reply.
@@ -402,6 +421,46 @@ class ZmdLogBotPlugin(Star):
             event.stop_event()
             return
         yield event.plain_result(f"{text}\n（原型：按钮发送失败，{error}）")
+
+    async def _prototype_on_pick(self, ev, code: str, index: int) -> None:
+        """PROTOTYPE: a callback button was tapped; answer with the page."""
+
+        view = self._expand.svc.for_event(ev)
+        entry = self.candidates._entries.get(code)
+        if (
+            entry is None
+            or not 1 <= index <= len(entry.choices)
+            or not entry.origin.endswith(f":{ev.group_openid}")
+        ):
+            await view.send_rich(content="这份候选列表已过期或序号无效，请重新查询。")
+            return
+        choice = entry.choices[index - 1]
+        if entry.view in {CandidateView.WATCH, CandidateView.WATCH_BOARD}:
+            requester = f"qq_official:{ev.member_openid}"
+            if entry.view is CandidateView.WATCH:
+                message = await self.watcher.remember_account(
+                    entry.origin,
+                    requester,
+                    account_id=choice.target.key,
+                    display_name=choice.target.name,
+                )
+            else:
+                message = await self.watcher.remember_board(
+                    entry.origin, requester, choice.target.key
+                )
+            await view.send_rich(content=message)
+            return
+        outcome, _ = await self._run_guarded(
+            lambda: self.queries.render_pick(entry, choice),
+            api_error_message=board_api_error_message,
+            failure_label="candidate",
+        )
+        if outcome.image_path is None:
+            await view.send_rich(content=outcome.message or "本次查询未产生结果。")
+            return
+        await prototype_qq_buttons.send_markdown_image(
+            self._expand, self.context, ev, outcome.image_path, "/zmdlog"
+        )
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def pick_candidate(self, event: AstrMessageEvent):
@@ -1043,6 +1102,7 @@ class ZmdLogBotPlugin(Star):
     async def terminate(self) -> None:
         """Release HTTP, browser, and generated-image resources."""
 
+        self._expand.unbind()
         tasks = tuple(self._background_tasks)
         for task in tasks:
             task.cancel()

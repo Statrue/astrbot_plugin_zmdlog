@@ -18,6 +18,7 @@ rather than hidden, because seeing it is the point. Never merge this file.
 import base64
 import itertools
 import random
+import re
 import struct
 import zlib
 
@@ -105,12 +106,14 @@ def _label(index: int, name: str, limit: int = 10) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def _button(button_id: str, label: str, data: str) -> dict:
+def _button(button_id: str, label: str, data: str, action_type: int = 2) -> dict:
+    """``action_type`` 2 fills the input box; 1 calls the bot back."""
+
     return {
         "id": button_id,
         "render_data": {"label": label, "visited_label": label, "style": 1},
         "action": {
-            "type": 2,
+            "type": action_type,
             "permission": {"type": 2},
             "data": data,
             "unsupport_tips": "请升级 QQ 后使用按钮",
@@ -137,26 +140,46 @@ def _describe(exc: Exception) -> str:
 
 
 async def send_candidates(
-    event, text: str, entry: PendingCandidates, command: str
+    event,
+    text: str,
+    entry: PendingCandidates,
+    command: str,
+    *,
+    callback: bool = False,
 ) -> str | None:
     """Send the candidate list as markdown with one button per candidate.
 
+    With ``callback`` (qqoffice_expand bound) a tap calls the bot back with
+    ``zmdpick:<code>:<n>``; otherwise it fills the full command in.
     Returns None when sent, or the error to show in the fallback text.
     """
 
-    buttons = [
-        _button(
-            str(index),
-            _label(index, choice.target.name),
-            button_command(entry, choice, command),
-        )
-        for index, choice in enumerate(entry.choices, start=1)
-    ]
+    if callback:
+        buttons = [
+            _button(
+                str(index),
+                _label(index, choice.target.name, limit=20),
+                f"zmdpick:{entry.code}:{index}",
+                action_type=1,
+            )
+            for index, choice in enumerate(entry.choices, start=1)
+        ]
+        hint = "，点下方按钮直接出图，或引用本条消息回复序号："
+    else:
+        buttons = [
+            _button(
+                str(index),
+                _label(index, choice.target.name, limit=20),
+                button_command(entry, choice, command),
+            )
+            for index, choice in enumerate(entry.choices, start=1)
+        ]
+        hint = _BUTTON_HINT
     try:
         await _post(
             event,
             msg_type=2,
-            markdown={"content": text.replace(_PICK_HINT, _BUTTON_HINT)},
+            markdown={"content": text.replace(_PICK_HINT, hint)},
             keyboard=_keyboard(buttons),
         )
     except Exception as exc:
@@ -257,13 +280,26 @@ def _tall_png(width: int = 640, height: int = 1600) -> bytes:
 
 
 async def _upload_for_raw_url(event, png: bytes, info: dict | None = None) -> str:
-    """Chunked-upload ``png`` and return the merge response's ``raw_url``.
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "probe.png"
+        path.write_bytes(png)
+        return await upload_file_for_raw_url(
+            event.bot.api._http, path, event.message_obj.group_id, info
+        )
+
+
+async def upload_file_for_raw_url(
+    http, path, group_openid: str, info: dict | None = None
+) -> str:
+    """Chunked-upload the PNG at ``path``; return the merge response's raw_url.
 
     AstrBot's uploader reads that response but keeps only file_info; wrap its
     one HTTP call to keep the COS link it drops.
     """
 
-    import tempfile
     from pathlib import Path
 
     from astrbot.core.platform.sources.qqofficial.qqofficial_chunked_upload import (
@@ -283,13 +319,9 @@ async def _upload_for_raw_url(event, png: bytes, info: dict | None = None) -> st
                         info["ttl"] = merged.get("ttl")
             return response
 
-    with tempfile.TemporaryDirectory() as folder:
-        path = Path(folder) / "probe.png"
-        path.write_bytes(png)
-        uploader = _Uploader(event.bot.api._http)
-        await uploader.upload_group(
-            path, 1, "probe.png", event.message_obj.group_id
-        )
+    path = Path(path)
+    uploader = _Uploader(http)
+    await uploader.upload_group(path, 1, path.name, group_openid)
     if not uploader.raw_url:
         raise RuntimeError("合并响应里没有 raw_url")
     return uploader.raw_url
@@ -467,3 +499,107 @@ async def run_probes_four(event, command: str, log) -> str:
     lines = ["按钮原型 · 探测结果 4（原型分支，勿合并）", *results]
     lines.append("看 9、10 两条消息里的图片能不能显示。")
     return "\n".join(lines)
+
+
+# --- Callback buttons through astrbot_plugin_qqoffice_expand ----------------
+
+EXPAND_PLUGIN = "astrbot_plugin_qqoffice_expand"
+_PICK_DATA = re.compile(r"^zmdpick:([A-Z2-9]{4}):(\d{1,2})$")
+
+
+class ExpandBridge:
+    """Bind to qqoffice_expand when it is installed; stay inert otherwise.
+
+    AstrBot cannot order plugin loads, so binding is tried on our load and
+    again whenever expand announces its own (the pattern its README gives).
+    """
+
+    def __init__(self, context, on_pick, log) -> None:
+        self.context = context
+        self.on_pick = on_pick  # async (ev, code, index) -> None
+        self.log = log
+        self.svc = None
+        self._unsubs: list = []
+
+    @property
+    def available(self) -> bool:
+        return self.svc is not None
+
+    def try_bind(self) -> bool:
+        try:
+            meta = self.context.get_registered_star(EXPAND_PLUGIN)
+        except Exception:
+            return False
+        star = getattr(meta, "star_cls", None) if meta else None
+        if not (meta and meta.activated and star and getattr(star, "ready", False)):
+            return False
+        if self.svc is star:
+            return True
+        self.unbind()
+        self.svc = star
+        self._unsubs.append(star.on("INTERACTION_CREATE", self._on_button))
+        self.log("ZmdLogBot PROTOTYPE bound to qqoffice_expand")
+        return True
+
+    def unbind(self) -> None:
+        for unsub in self._unsubs:
+            try:
+                unsub()
+            except Exception:
+                pass
+        self._unsubs.clear()
+        self.svc = None
+
+    async def _on_button(self, ev) -> None:
+        raw = ev.raw or {}
+        data = raw.get("data") or {}
+        kind = raw.get("type") or data.get("type")
+        if kind not in (11, 12) or ev.scene != "group" or not ev.group_openid:
+            return
+        button_data = (data.get("resolved") or {}).get("button_data") or ""
+        match = _PICK_DATA.match(button_data)
+        if match is None:
+            return
+        self.log(f"ZmdLogBot PROTOTYPE button {button_data}")
+        try:
+            await self.on_pick(ev, match.group(1), int(match.group(2)))
+        except Exception as exc:
+            self.log(f"ZmdLogBot PROTOTYPE pick failed: {_describe(exc)}")
+            try:
+                await self.svc.for_event(ev).send_rich(
+                    content=f"（原型：按钮出图失败，{_describe(exc)}）"
+                )
+            except Exception:
+                pass
+
+
+def _png_size(path) -> tuple[int, int]:
+    with open(path, "rb") as handle:
+        header = handle.read(24)
+    return struct.unpack(">II", header[16:24])
+
+
+async def send_markdown_image(
+    bridge: ExpandBridge, context, ev, image_path: str, command: str
+) -> None:
+    """Reply to a button tap with the page as a markdown image plus a button.
+
+    The image goes up in chunks for its raw_url, which COS serves as
+    octet-stream unless told otherwise, hence ``response-content-type``.
+    """
+
+    platform = context.get_platform_inst(ev.source.platform_id)
+    http = platform.get_client().api._http
+    raw_url = await upload_file_for_raw_url(http, image_path, ev.group_openid)
+    width, height = _png_size(image_path)
+    # Pages are captured at device scale 2; ask for their CSS size.
+    image = (
+        f"![img #{width // 2}px #{height // 2}px]"
+        f"({raw_url}&response-content-type=image%2Fpng)"
+    )
+    # send_rich merges both into the request body, so each keeps its own key.
+    keyboard = _keyboard([_button("1", "查看榜单列表", f"{command} 榜单")])
+    await bridge.svc.for_event(ev).send_rich(
+        markdown={"markdown": {"content": image}},
+        keyboard={"keyboard": keyboard},
+    )
