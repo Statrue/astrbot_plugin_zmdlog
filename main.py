@@ -298,6 +298,15 @@ class ZmdLogBotPlugin(Star):
                 )
             )
             return
+        if payload == "按钮探测3" and prototype_qq_buttons.is_group_qq_official(
+            event
+        ):
+            yield event.plain_result(
+                await prototype_qq_buttons.run_probes_three(
+                    event, self._command_prefix(event) + "zmdlog"
+                )
+            )
+            return
 
         try:
             route = parse_zmdlog_payload(payload)

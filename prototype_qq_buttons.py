@@ -256,7 +256,7 @@ def _tall_png(width: int = 640, height: int = 1600) -> bytes:
     )
 
 
-async def _upload_for_raw_url(event, png: bytes) -> str:
+async def _upload_for_raw_url(event, png: bytes, info: dict | None = None) -> str:
     """Chunked-upload ``png`` and return the merge response's ``raw_url``.
 
     AstrBot's uploader reads that response but keeps only file_info; wrap its
@@ -279,6 +279,8 @@ async def _upload_for_raw_url(event, png: bytes) -> str:
                 merged = response.get("data", response)
                 if isinstance(merged, dict):
                     self.raw_url = str(merged.get("raw_url") or "")
+                    if info is not None:
+                        info["ttl"] = merged.get("ttl")
             return response
 
     with tempfile.TemporaryDirectory() as folder:
@@ -337,4 +339,83 @@ async def run_probes_two(event, command: str) -> str:
             results.append(f"{label}：✅ 已发出")
     lines = ["按钮原型 · 探测结果 2（原型分支，勿合并）", *results]
     lines.append("5 要看图片下面有没有按钮；6 要点一下按钮看是否自动发出。")
+    return "\n".join(lines)
+
+
+# The example image of the official markdown docs (Tencent COS): known good.
+_DOCS_IMAGE = (
+    "https://resource5-1255303497.cos.ap-guangzhou.myqcloud.com"
+    "/abcmouse_word_watch/markdown/building.png"
+)
+
+
+async def _fetch_summary(url: str) -> str:
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(url)
+    except Exception as exc:
+        return f"❌ {type(exc).__name__}"
+    kind = response.headers.get("content-type", "?")
+    return f"HTTP {response.status_code} · {kind} · {len(response.content)} 字节"
+
+
+async def run_probes_three(event, command: str) -> str:
+    """Why did probe 5 show a broken image? Two sends plus a summary."""
+
+    from urllib.parse import parse_qs, urlsplit
+
+    button = [_button("1", "1 查看榜单列表", f"{command} 榜单")]
+    results: list[str] = []
+
+    async def attempt(label: str, send) -> None:
+        try:
+            await send()
+        except Exception as exc:
+            results.append(f"{label}：❌ {_describe(exc)}")
+        else:
+            results.append(f"{label}：✅ 已发出")
+
+    await attempt(
+        "7 文档示例图（腾讯 COS）",
+        lambda: _post(
+            event,
+            msg_type=2,
+            markdown={
+                "content": (
+                    "探测 7：官方文档的示例图，下面带按钮\n\n"
+                    f"![img #208px #320px]({_DOCS_IMAGE})"
+                )
+            },
+            keyboard=_keyboard(button),
+        ),
+    )
+
+    info: dict = {}
+    try:
+        url = await _upload_for_raw_url(event, _tall_png(), info)
+    except Exception as exc:
+        results.append(f"8 raw_url 上传：❌ {_describe(exc)}")
+    else:
+        query = parse_qs(urlsplit(url).query)
+        results.append(f"  raw_url ttl：{info.get('ttl')} 秒")
+        results.append(f"  raw_url 参数：{', '.join(sorted(query)) or '无'}")
+        results.append(f"  服务器直接取 raw_url：{await _fetch_summary(url)}")
+        await attempt(
+            "8 raw_url 用 <> 包起来",
+            lambda: _post(
+                event,
+                msg_type=2,
+                markdown={
+                    "content": (
+                        "探测 8：同一种 raw_url，用尖括号包起来\n\n"
+                        f"![img #640px #1600px](<{url}>)"
+                    )
+                },
+                keyboard=_keyboard(button),
+            ),
+        )
+    lines = ["按钮原型 · 探测结果 3（原型分支，勿合并）", *results]
+    lines.append("看 7、8 两条消息里的图片能不能显示。")
     return "\n".join(lines)
