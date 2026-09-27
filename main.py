@@ -467,8 +467,19 @@ class ZmdLogBotPlugin(Star):
         if outcome.image_path is None:
             await view.send_rich(content=outcome.message or "本次查询未产生结果。")
             return
+        buttons = None
+        if choice.target.target_type.value == "account":
+            # Q21: an account result links to its ZMDLogs page.
+            from .core.presentation.common import public_url
+
+            buttons = [
+                prototype_qq_buttons.link_button(
+                    "在 ZMDLogs 打开账号",
+                    public_url(self.web_base_url, "records", choice.target.key),
+                )
+            ]
         await prototype_qq_buttons.send_markdown_image(
-            self._expand, self.context, ev, outcome.image_path, "/zmdlog"
+            self._expand, self.context, ev, outcome.image_path, "/zmdlog", buttons
         )
 
     @filter.event_message_type(filter.EventMessageType.ALL)

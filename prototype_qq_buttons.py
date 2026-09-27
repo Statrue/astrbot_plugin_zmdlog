@@ -579,10 +579,21 @@ def _png_size(path) -> tuple[int, int]:
     return struct.unpack(">II", header[16:24])
 
 
+def link_button(label: str, url: str) -> dict:
+    """A jump button (action type 0): opens ``url`` instead of messaging."""
+
+    return _button("link", label, url, action_type=0)
+
+
 async def send_markdown_image(
-    bridge: ExpandBridge, context, ev, image_path: str, command: str
+    bridge: ExpandBridge,
+    context,
+    ev,
+    image_path: str,
+    command: str,
+    buttons: list[dict] | None = None,
 ) -> None:
-    """Reply to a button tap with the page as a markdown image plus a button.
+    """Reply to a button tap with the page as a markdown image plus buttons.
 
     The image goes up in chunks for its raw_url, which COS serves as
     octet-stream unless told otherwise, hence ``response-content-type``.
@@ -598,7 +609,9 @@ async def send_markdown_image(
         f"({raw_url}&response-content-type=image%2Fpng)"
     )
     # send_rich merges both into the request body, so each keeps its own key.
-    keyboard = _keyboard([_button("1", "查看榜单列表", f"{command} 榜单")])
+    keyboard = _keyboard(
+        buttons or [_button("1", "查看榜单列表", f"{command} 榜单")]
+    )
     await bridge.svc.for_event(ev).send_rich(
         markdown={"markdown": {"content": image}},
         keyboard={"keyboard": keyboard},
