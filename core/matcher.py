@@ -73,9 +73,11 @@ class MatchLevel(IntEnum):
     SIMILARITY = 9
 
 
-# A fuzzy hit below this is noise: 首 against 首领三 scores 0.11 and would
-# still be shown as "the closest board".
-MIN_SIMILARITY = 0.5
+# A fuzzy hit below this is noise, not "the closest board". The score is
+# the share of the shorter text lined up in one window, so the floor asks
+# for more than half: at exactly half, 你的 (sharing only 的 with 大地的弃子)
+# drew that dungeon's page for a message that named nothing.
+MIN_SIMILARITY = 0.6
 
 
 @dataclass(frozen=True, slots=True)

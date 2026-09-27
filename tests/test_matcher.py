@@ -410,3 +410,16 @@ class AliasPrecedenceTests(unittest.TestCase):
         result = RankingMatcher(_cards(), AliasConfig.empty()).match("一二三四")
 
         self.assertEqual(result.status, MatchStatus.NOT_FOUND)
+
+    def test_half_of_a_short_query_is_a_miss(self) -> None:
+        # 你的 shares only 的 with 大地的弃子, exactly half, and drew that
+        # dungeon's top three for a message that named nothing.
+        cards = (make_card("poison", "毒雾求生·苦难", "影拓丰碑1期 · 大地的弃子"),)
+        matcher = RankingMatcher(cards, AliasConfig.empty())
+
+        self.assertEqual(matcher.match("你的").status, MatchStatus.NOT_FOUND)
+        # A real typo lines up most of its characters and still lands.
+        typo = matcher.match("毒雾逃生")
+        self.assertEqual(typo.status, MatchStatus.MATCHED)
+        self.assertEqual(typo.selected.target.key, "poison")
+        self.assertEqual(typo.selected.level, MatchLevel.SIMILARITY)

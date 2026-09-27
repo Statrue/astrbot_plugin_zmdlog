@@ -265,9 +265,10 @@ class ToolServiceTests(unittest.TestCase):
     def test_a_weak_keyword_is_refused_rather_than_guessed(self) -> None:
         # A command shows the closest board and lets the reader judge. A tool
         # has no reader in the loop, so a guess becomes the model's answer.
-        # "一体三位" scrambles a real board name into a below-threshold
-        # similarity hit, which a command would have rendered anyway.
-        answer = run(self.service.board("一体三位"))
+        # "危境三一体" keeps three of its five characters from a real board
+        # name: above the similarity floor, below the threshold, a hit a
+        # command would have rendered anyway.
+        answer = run(self.service.board("危境三一体"))
 
         self.assertIsNone(answer.image_path)
         self.assertIn("没有可靠匹配", answer.text)
