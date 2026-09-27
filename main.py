@@ -427,11 +427,20 @@ class ZmdLogBotPlugin(Star):
 
         view = self._expand.svc.for_event(ev)
         entry = self.candidates._entries.get(code)
-        if (
-            entry is None
-            or not 1 <= index <= len(entry.choices)
-            or not entry.origin.endswith(f":{ev.group_openid}")
-        ):
+        # The first live tap was refused as "expired": log what the list's
+        # origin and the interaction actually carry instead of guessing.
+        logger.info(
+            "ZmdLogBot PROTOTYPE pick %s:%s entry=%s origin=%s ev.group=%s "
+            "ev.member=%s raw_keys=%s",
+            code,
+            index,
+            entry is not None,
+            entry.origin if entry else "-",
+            ev.group_openid,
+            ev.member_openid,
+            sorted((ev.raw or {}).keys()),
+        )
+        if entry is None or not 1 <= index <= len(entry.choices):
             await view.send_rich(content="这份候选列表已过期或序号无效，请重新查询。")
             return
         choice = entry.choices[index - 1]
