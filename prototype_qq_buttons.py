@@ -616,3 +616,42 @@ async def send_markdown_image(
         markdown={"markdown": {"content": image}},
         keyboard={"keyboard": keyboard},
     )
+
+
+async def run_probes_five(event, image_path: str, link: str) -> str:
+    """Q25: does a capped display ratio crop a long page, or stretch it?
+
+    The same page goes out three times: its real proportions, then capped at
+    height <= 1.5 x width, then at 1:1. Three sends plus the summary.
+    """
+
+    width, height = _png_size(image_path)
+    css_width, css_height = width // 2, height // 2
+    raw_url = await upload_file_for_raw_url(
+        event.bot.api._http, image_path, event.message_obj.group_id
+    )
+    url = f"{raw_url}&response-content-type=image%2Fpng"
+    results = [f"  原图 {width}×{height}，按 CSS 尺寸 {css_width}×{css_height}"]
+    variants = (("11 真实比例", None), ("12 高≤1.5×宽", 1.5), ("13 高≤宽", 1.0))
+    for label, ratio in variants:
+        cap = css_height if ratio is None else int(css_width * ratio)
+        shown = min(css_height, cap)
+        try:
+            await _post(
+                event,
+                msg_type=2,
+                markdown={
+                    "content": (
+                        f"探测 {label}（声明 {css_width}×{shown}）\n\n"
+                        f"![img #{css_width}px #{shown}px]({url})"
+                    )
+                },
+                keyboard=_keyboard([link_button("在 ZMDLogs 打开", link)]),
+            )
+        except Exception as exc:
+            results.append(f"{label}：❌ {_describe(exc)}")
+        else:
+            results.append(f"{label}：✅ 已发出")
+    lines = ["按钮原型 · 探测结果 5（原型分支，勿合并）", *results]
+    lines.append("看 12、13 是裁出顶部、整体缩小还是被拉变形；再点开看是不是完整原图。")
+    return "\n".join(lines)

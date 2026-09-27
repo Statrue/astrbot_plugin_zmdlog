@@ -331,6 +331,30 @@ class ZmdLogBotPlugin(Star):
                 )
             )
             return
+        probe_five = payload.startswith("按钮探测5")
+        if probe_five and prototype_qq_buttons.is_group_qq_official(event):
+            # Q25: render a real (long) page, then send it at three ratios.
+            probe_query = payload[len("按钮探测5") :].strip() or "榜单"
+            probe_route = parse_zmdlog_payload(probe_query)
+            outcome, _ = await self._run_guarded(
+                lambda: self.queries.dispatch(
+                    probe_route,
+                    command_prefix=self._command_prefix(event),
+                    origin=self._event_origin(event),
+                    requester_key=self._event_user_key(event),
+                ),
+                api_error_message=lambda exc: api_error_message(probe_route, exc),
+                failure_label="command",
+            )
+            if outcome.image_path is None:
+                yield event.plain_result(f"探测 5 没拿到图：{outcome.message}")
+                return
+            yield event.plain_result(
+                await prototype_qq_buttons.run_probes_five(
+                    event, outcome.image_path, self.web_base_url
+                )
+            )
+            return
 
         try:
             route = parse_zmdlog_payload(payload)
