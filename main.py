@@ -89,6 +89,13 @@ _BINDING_ROUTES = frozenset(
     {RouteKind.BIND, RouteKind.UNBIND, RouteKind.PRIMARY_ACCOUNT}
 )
 _NOTICE_SEND_TIMEOUT_SECONDS = 30.0
+# A tool picture waits for a streamed reply to finish going out. QQ official
+# keeps one send buffer per event: a send during the stream replaced the
+# model's text with the picture, and the stream's closing flush sent the
+# picture a second time. The agent is done when the wait starts, so only that
+# flush remains; a stream still open past this drops the picture.
+_STREAMED_REPLY_WAIT_SECONDS = 30.0
+_STREAMED_REPLY_POLL_SECONDS = 0.2
 # The pictures the tools of one turn drew, kept on the event until the model
 # has finished: exactly one is sent then, and several mean none is.
 _TOOL_PICTURES = "_zmdlog_tool_pictures"
@@ -951,10 +958,16 @@ class ZmdLogBotPlugin(Star):
             )
             return
         # In the background: the platform upload then overlaps the reply the
-        # pipeline is about to send instead of holding it back.
+        # pipeline is about to send instead of holding it back. A streamed
+        # reply is the exception, and the picture waits it out.
         self._spawn(self._send_tool_image(event, pictures[0]))
 
     async def _send_tool_image(self, event: AstrMessageEvent, path: str) -> None:
+        if not await _streamed_reply_delivered(event):
+            logger.warning(
+                "ZmdLogBot dropped a tool image: the reply was still streaming."
+            )
+            return
         try:
             await asyncio.wait_for(
                 event.send(MessageChain([Image.fromFileSystem(path)])),
@@ -991,6 +1004,30 @@ class ZmdLogBotPlugin(Star):
             if self.renderer is not None:
                 await self.renderer.close()
         logger.info("ZmdLogBot plugin terminated.")
+
+
+async def _streamed_reply_delivered(event: AstrMessageEvent) -> bool:
+    """Wait out a reply the pipeline is still streaming; False if it never ends.
+
+    No hook fires after a streamed reply has gone out. What does change is
+    the event's result: AstrBot swaps ``STREAMING_RESULT`` for
+    ``STREAMING_FINISH`` only once the adapter's ``send_streaming`` has
+    returned. It is compared by name, like the other version-dependent
+    lookups here, so a release without the enum still loads.
+    """
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _STREAMED_REPLY_WAIT_SECONDS
+    while (
+        getattr(
+            getattr(event.get_result(), "result_content_type", None), "name", None
+        )
+        == "STREAMING_RESULT"
+    ):
+        if loop.time() >= deadline:
+            return False
+        await asyncio.sleep(_STREAMED_REPLY_POLL_SECONDS)
+    return True
 
 
 def _shorten_tool_reply(text: str) -> str:

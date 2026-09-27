@@ -13,6 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from tests.helpers import (
     battle_detail_payload,
@@ -32,6 +33,8 @@ if str(REPO_ROOT.parent) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT.parent))
 
 if astrbot is not None:
+    from astrbot.api.event import ResultContentType
+
     # main.py imports its own ``.core`` package, so the exception classes the
     # handlers catch are the package's, not the ``core.*`` modules the rest of
     # the suite imports from the repo root. Use the same identities here.
@@ -85,9 +88,14 @@ class FakeEvent:
         chain = [Reply(quoted)] if quoted is not None else []
         self.message_obj = SimpleNamespace(message_str=text, message=chain)
         self.sent: list = []
+        # What the pipeline is delivering; a streamed reply sets it.
+        self.result = None
 
     def get_message_str(self) -> str:
         return self._text
+
+    def get_result(self):
+        return self.result
 
     async def send(self, chain) -> None:
         self.sent.append(chain)
@@ -1233,6 +1241,54 @@ class HandlerTests(unittest.TestCase):
 
         self.assertEqual(replies, ["找不到这个名字", "洛茜的事实"])
         self.assertEqual(len(sent), 1)
+
+    def _streaming_turn(self, event, *, finish: bool) -> None:
+        """One picture drawn while the reply streams; ``finish`` ends the stream."""
+
+        async def character(*args, **kwargs):
+            return ToolAnswer("大地的弃子", "/tmp/a.png")
+
+        self.plugin.tools.character = character
+        event.result = SimpleNamespace(
+            result_content_type=ResultContentType.STREAMING_RESULT
+        )
+
+        async def scenario():
+            await self.plugin.zmdlogs_character_standings(event, character="x")
+            await self.plugin.send_tool_picture(event, None, None)
+            await asyncio.sleep(0.05)
+            # Still streaming: the picture waits for the reply to go out.
+            self.assertEqual(event.sent, [])
+            if finish:
+                event.result = SimpleNamespace(
+                    result_content_type=ResultContentType.STREAMING_FINISH
+                )
+            await asyncio.gather(*self.plugin._background_tasks)
+
+        with (
+            mock.patch.object(plugin_main, "_STREAMED_REPLY_POLL_SECONDS", 0.01),
+            mock.patch.object(plugin_main, "_STREAMED_REPLY_WAIT_SECONDS", 0.2),
+        ):
+            run(scenario())
+
+    def test_a_streamed_reply_goes_out_before_the_picture(self) -> None:
+        # QQ official keeps one send buffer per event. A picture sent while
+        # the reply streamed replaced the model's text in it, and the stream's
+        # closing flush sent the picture a second time.
+        event = FakeEvent("输入你的，输出这个是为什么")
+
+        self._streaming_turn(event, finish=True)
+
+        self.assertEqual(len(event.sent), 1)
+        self.assertEqual(type(event.sent[0].chain[0]).__name__, "Image")
+
+    def test_a_reply_that_never_finishes_streaming_gets_no_picture(self) -> None:
+        # Sending anyway would be the duplicate again; the text is the answer.
+        event = FakeEvent("输入你的，输出这个是为什么")
+
+        self._streaming_turn(event, finish=False)
+
+        self.assertEqual(event.sent, [])
 
 
 if __name__ == "__main__":
