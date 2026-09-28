@@ -20,10 +20,10 @@ Python 3.11+ (`asyncio.timeout`, `datetime.UTC`), dependencies in
 **Read the module docstring first.** Every `core/` module opens with one, and
 the modules that carry a design worth understanding — `ranking_index`,
 `recipes/__init__`, `rank_watch`, `watch`, `queries`, `toolbox`, `facts`,
-`contract`, `timeline`, `telemetry`, `bindings`, `metrics`, `cache` — explain
-their economics and their reasons there. That is the module map; this file does not
-repeat it, and a behaviour question is answered by the docstring beside the
-code, not here.
+`contract`, `timeline`, `telemetry`, `bindings`, `origins`, `metrics`,
+`cache` — explain their economics and their reasons there. That is the module
+map; this file does not repeat it, and a behaviour question is answered by the
+docstring beside the code, not here.
 
 Two other sources of truth this file defers to:
 
@@ -149,6 +149,11 @@ group chats — plus the four LLM tools. All of them run through one error guard
   two-local-origins script when touching `_route_asset_request`.
 - **Every JSON store distinguishes missing from corrupt**
   (`core/persistence.py`) — a watch list is recoverable from nowhere else.
+- **A chat is its group.** Everything kept per chat — watch lists, 群榜
+  membership, candidate lists, the auto-expand cooldown — keys on
+  `main._event_origin`, never on `event.unified_msg_origin`, which AstrBot's
+  隔离对话 rewrites per member. `core/origins` explains the restore, and the
+  one-time move of records written before it.
 - **The binding file holds public data plus one platform user key, and never a
   code.** `bindings.json` is the one file tying a person to an account (README
   lists its fields); no QQ nickname, no site credential, no plaintext code —

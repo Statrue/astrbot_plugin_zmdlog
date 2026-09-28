@@ -20,6 +20,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from .matcher import fold_text
+from .origins import group_origin_of
 from .timestamps import parse_timestamp
 
 BINDINGS_VERSION = 1
@@ -52,17 +53,6 @@ def code_digest(code: str) -> str:
     """What the book stores about a redeemed code: never the code itself."""
 
     return hashlib.sha256(code.encode("ascii")).hexdigest()
-
-
-def is_group_origin(origin: str) -> bool:
-    """Whether an AstrBot ``unified_msg_origin`` names a group chat.
-
-    The origin is ``platform:MessageType:session`` and the group type is
-    spelled ``GroupMessage`` on every platform, so this is the one portable
-    group test there is; a private chat has no members to put on a board.
-    """
-
-    return ":GroupMessage:" in (origin or "")
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +211,28 @@ class BindingBook:
             current, groups=_with_origin(current.groups, origin), updated_at=now
         )
         return self._with_user(user_key, updated)
+
+    def with_group_origins(self) -> tuple["BindingBook", int]:
+        """Put the chats each user used under 隔离对话 back to their groups.
+
+        The user key is the member id the isolated origin was built from
+        (``core/origins``). ``updated_at`` stays: nobody did anything. The
+        count is how many recorded chats moved.
+        """
+
+        users: list[tuple[str, UserBindings]] = []
+        moved = 0
+        for key, bindings in self.users:
+            groups: tuple[str, ...] = ()
+            for origin in bindings.groups:
+                target = group_origin_of(origin, key)
+                if target is not None:
+                    moved += 1
+                groups = _with_origin(groups, target or origin)
+            users.append((key, replace(bindings, groups=groups)))
+        if not moved:
+            return self, 0
+        return replace(self, users=tuple(users)), moved
 
     def without_account(
         self, user_key: str, account_id: str, *, now: str

@@ -1,15 +1,22 @@
 """Tests for the 0.5.0 rank watch: watch lists, rank diffing, notice text."""
 
 import copy
+import logging
+import tempfile
 import unittest
 from dataclasses import replace
+from pathlib import Path
 
+from core.candidates import CandidateStore
 from core.models import (
     HotBossCard,
     HotBossRun,
     parse_boss_ranking,
     parse_public_user_rankings,
 )
+from core.persistence import load_json, save_json
+from core.rank_watch import WATCHLIST_FILE, RankWatcher
+from core.settings import PluginSettings
 from core.timestamps import parse_timestamp
 from core.watch import (
     AccountSnapshot,
@@ -51,6 +58,9 @@ BEFORE = "2026-08-20T00:00:00+00:00"
 CHECKED = "2026-08-22T00:00:00+00:00"
 AFTER = "2026-08-22T06:00:00+00:00"
 LATER = "2026-08-22T09:00:00+00:00"
+# What 隔离对话 made of GROUP for members 111 and 222.
+MEMBER_111 = "aiocqhttp:GroupMessage:111_1"
+MEMBER_222 = "aiocqhttp:GroupMessage:222_1"
 
 
 def account(
@@ -569,6 +579,70 @@ class WatchListMaintenanceTests(unittest.TestCase):
             watchlist.with_display_names({"usr_1": "CPU 0"}), (watchlist, False)
         )
         self.assertEqual(watchlist.with_display_names({}), (watchlist, False))
+
+    def test_entries_kept_under_isolation_move_to_their_group(self) -> None:
+        theirs = "aiocqhttp:222"
+        watchlist, _ = WatchList.empty().with_account(MEMBER_111, account("usr_1"))
+        watchlist, _ = watchlist.with_account(MEMBER_111, account("usr_2"))
+        watchlist, _ = watchlist.with_account(
+            MEMBER_222, account("usr_2", added_by=theirs)
+        )
+        watchlist, _ = watchlist.with_account(
+            MEMBER_222, account("usr_3", added_by=theirs)
+        )
+        watchlist, _ = watchlist.with_board(
+            MEMBER_222, board_entry("slug_a", added_by=theirs)
+        )
+        watchlist, _ = watchlist.with_account(
+            GROUP, account("usr_4", added_by="aiocqhttp:333")
+        )
+        watchlist, _ = watchlist.with_account(OTHER_GROUP, account("usr_1"))
+
+        moved, count = watchlist.with_group_origins()
+
+        self.assertEqual(count, 5)
+        grouped = moved.accounts_for(GROUP)
+        self.assertEqual(
+            [entry.account_id for entry in grouped],
+            ["usr_1", "usr_2", "usr_3", "usr_4"],
+        )
+        # Watched by both members: the first one seen keeps it.
+        self.assertEqual(grouped[1].added_by, "aiocqhttp:111")
+        self.assertEqual(
+            [entry.boss_slug for entry in moved.boards_for(GROUP)], ["slug_a"]
+        )
+        self.assertEqual(moved.accounts_for(MEMBER_111), ())
+        self.assertEqual(
+            moved.origins_by_account()["usr_1"], (GROUP, OTHER_GROUP)
+        )
+        again, count = moved.with_group_origins()
+        self.assertIs(again, moved)
+        self.assertEqual(count, 0)
+
+    def test_a_list_written_under_isolation_is_moved_when_loaded(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        stored, _ = WatchList.empty().with_account(MEMBER_111, account())
+        save_json(root / WATCHLIST_FILE, stored.to_payload())
+
+        # Loading reads the file and nothing else; the collaborators stay idle.
+        watcher = RankWatcher(
+            client=None,
+            data=None,
+            settings=PluginSettings(),
+            data_dir=root,
+            board_matcher=None,
+            candidates=CandidateStore(),
+            notify=None,
+            logger=logging.getLogger("t"),
+        )
+
+        self.assertEqual(
+            [entry.account_id for entry in watcher.watchlist.accounts_for(GROUP)],
+            ["usr_1"],
+        )
+        self.assertEqual(list(load_json(root / WATCHLIST_FILE)["groups"]), [GROUP])
 
 
 class BoardLabelTests(unittest.TestCase):

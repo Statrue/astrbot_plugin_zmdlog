@@ -142,6 +142,7 @@ class RankWatcher:
             _in(data_dir, RANK_HISTORY_FILE), label="rank history", warn=warn
         )
         self.watchlist: WatchList = parse_watchlist(self.watchlist_store.load())
+        self._file_watchlist_under_groups()
         self.rank_snapshots: dict[str, AccountSnapshot] = parse_snapshot_payload(
             self.rank_snapshot_store.load()
         )
@@ -575,6 +576,23 @@ class RankWatcher:
             self._save_history(history)
 
     # --- persistence -------------------------------------------------------------
+
+    def _file_watchlist_under_groups(self) -> None:
+        """Once per load: entries kept under 隔离对话 move to their groups.
+
+        The moved list is used even if the write fails; the move is repeated
+        on the next load, so nothing is lost by it.
+        """
+
+        watchlist, moved = self.watchlist.with_group_origins()
+        if not moved:
+            return
+        self.watchlist = watchlist
+        if self.watchlist_store.save(watchlist.to_payload()):
+            self._logger.info(
+                "ZmdLogBot watch list: moved %s entries from member chats to groups.",
+                moved,
+            )
 
     def _save_watchlist(self, updated: WatchList) -> bool:
         if not self.watchlist_store.save(updated.to_payload()):

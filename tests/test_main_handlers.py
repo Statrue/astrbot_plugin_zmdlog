@@ -81,12 +81,19 @@ class FakeEvent:
         origin: str = GROUP,
         quoted: str | None = None,
         sender: str = "111",
+        isolated_from: str | None = None,
     ):
+        """``isolated_from`` is the adapter's own session id when 隔离对话
+        rewrote ``origin`` per member, the way AstrBot's waking stage does."""
+
         self._text = text
         self._sender = sender
         self.unified_msg_origin = origin
         chain = [Reply(quoted)] if quoted is not None else []
-        self.message_obj = SimpleNamespace(message_str=text, message=chain)
+        self.message_obj = SimpleNamespace(
+            message_str=text, message=chain, session_id=isolated_from or ""
+        )
+        self._extras = {"_session_isolated": isolated_from is not None}
         self.sent: list = []
         # What the pipeline is delivering; a streamed reply sets it.
         self.result = None
@@ -114,6 +121,9 @@ class FakeEvent:
 
     def get_sender_id(self) -> str:
         return self._sender
+
+    def get_extra(self, key: str, default=None):
+        return self._extras.get(key, default)
 
 
 class FakeContext:
@@ -580,6 +590,30 @@ class HandlerTests(unittest.TestCase):
         self.assertIn("已取消关注榜单", removed)
         self.assertNotIn(slug, self.plugin.watcher.board_snapshots)
         self.assertEqual(self.plugin.watcher.watchlist.boards_for(GROUP), ())
+
+    def test_isolated_members_of_one_group_share_its_watch_list(self) -> None:
+        # 隔离对话 hands every member their own origin; the list is the group's.
+        self._enable_watch_storage()
+
+        def member(text: str, sender: str) -> FakeEvent:
+            return FakeEvent(
+                text,
+                origin=f"aiocqhttp:GroupMessage:{sender}_1",
+                sender=sender,
+                isolated_from="1",
+            )
+
+        (_, reply), = run(
+            collect(self.plugin.zmdlog(member("zmdlog 关注 榜单 三位一体", "111")))
+        )
+        self.assertIn("已关注榜单", reply)
+        (_, listing), = run(collect(self.plugin.zmdlog(member("zmdlog 关注", "222"))))
+
+        self.assertIn("1. 危境再现 · 测试区 · 三位一体", listing)
+        self.assertEqual(len(self.plugin.watcher.watchlist.boards_for(GROUP)), 1)
+        self.assertEqual(
+            self.plugin._event_origin(FakeEvent("x", origin=GROUP)), GROUP
+        )
 
     def test_board_watch_cycle_reports_a_new_top_run_once(self) -> None:
         self._enable_watch_storage()

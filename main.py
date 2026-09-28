@@ -48,6 +48,7 @@ from .core.matcher import (
     AliasConfig,
     MatcherCache,
 )
+from .core.origins import restore_group_origin
 from .core.persistence import load_json, save_json
 from .core.queries import (
     Outcome,
@@ -545,9 +546,23 @@ class ZmdLogBotPlugin(Star):
 
         Callers decide what an empty origin means for them — the watch routes
         refuse, the candidate store keys on it, auto-expand only dedupes.
+
+        Always the group's, even with 隔离对话 on: AstrBot then rewrites a
+        group message's origin per member and flags it, and the adapter's own
+        session id is put back (``core/origins`` explains why).
         """
 
-        return getattr(event, "unified_msg_origin", "") or ""
+        origin = getattr(event, "unified_msg_origin", "") or ""
+        get_extra = getattr(event, "get_extra", None)
+        try:
+            isolated = callable(get_extra) and bool(get_extra("_session_isolated"))
+        except Exception:
+            isolated = False
+        if not isolated:
+            return origin
+        message_obj = getattr(event, "message_obj", None)
+        adapter_session_id = getattr(message_obj, "session_id", "") or ""
+        return restore_group_origin(origin, str(adapter_session_id))
 
     @staticmethod
     def _event_user_key(event: AstrMessageEvent) -> str:

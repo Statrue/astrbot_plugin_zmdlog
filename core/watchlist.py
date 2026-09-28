@@ -7,10 +7,12 @@ it again) and when. Nothing here identifies a player.
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
 from .matcher import fold_text
+from .origins import group_origin_of
 
 WATCHLIST_VERSION = 2
 _BOARD_PART_RE = re.compile(r"\s*·\s*")
@@ -215,6 +217,24 @@ class WatchList:
             groups.append((origin, tuple(updated)))
         return (replace(self, groups=tuple(groups)), True) if changed else (self, False)
 
+    def with_group_origins(self) -> tuple["WatchList", int]:
+        """File every entry kept under a member's 隔离对话 origin under its group.
+
+        Each entry moves by its own ``added_by`` (``core/origins``). An entry
+        two members both watched collapses to the first one seen, which keeps
+        its adder; the count is how many entries moved.
+        """
+
+        groups, moved_accounts = _regrouped(
+            self.groups, key=lambda account: account.account_id
+        )
+        board_groups, moved_boards = _regrouped(
+            self.board_groups, key=lambda board: board.boss_slug
+        )
+        if not moved_accounts and not moved_boards:
+            return self, 0
+        return WatchList(groups, board_groups), moved_accounts + moved_boards
+
     def without_account(self, origin: str, account_id: str) -> "WatchList":
         groups: list[tuple[str, tuple[WatchedAccount, ...]]] = []
         for group_origin, accounts in self.groups:
@@ -353,6 +373,25 @@ class WatchList:
                 for origin in origins
             },
         }
+
+
+def _regrouped(
+    groups: tuple[tuple[str, tuple[Any, ...]], ...],
+    *,
+    key: Callable[[Any], str],
+) -> tuple[tuple[tuple[str, tuple[Any, ...]], ...], int]:
+    merged: dict[str, list[Any]] = {}
+    moved = 0
+    for origin, entries in groups:
+        for entry in entries:
+            target = group_origin_of(origin, entry.added_by)
+            if target is not None:
+                moved += 1
+            bucket = merged.setdefault(target or origin, [])
+            if all(key(kept) != key(entry) for kept in bucket):
+                bucket.append(entry)
+    regrouped = tuple((origin, tuple(entries)) for origin, entries in merged.items())
+    return regrouped, moved
 
 
 def _list_index(selector: str) -> int | None:

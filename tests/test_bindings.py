@@ -17,7 +17,6 @@ from core.bindings import (
     BoundAccount,
     code_digest,
     format_bindings,
-    is_group_origin,
     normalize_binding_code,
     parse_bindings,
 )
@@ -28,7 +27,7 @@ from core.client import (
     ZmdLogsClientError,
 )
 from core.models import AccountSearchHit, parse_boss_ranking
-from core.persistence import load_json
+from core.persistence import load_json, save_json
 from core.presentation import build_group_board_page
 from core.render import TemplateRenderer
 from core.routing import parse_zmdlog_payload
@@ -39,6 +38,9 @@ from tests.helpers import ranking_payload_with_rows
 GROUP = "aiocqhttp:GroupMessage:1"
 OTHER_GROUP = "aiocqhttp:GroupMessage:2"
 PRIVATE = "aiocqhttp:FriendMessage:9"
+# What 隔离对话 made of GROUP for USER and for OTHER_USER.
+USER_IN_GROUP = "aiocqhttp:GroupMessage:111_1"
+OTHER_USER_IN_GROUP = "aiocqhttp:GroupMessage:222_1"
 USER = "aiocqhttp:111"
 OTHER_USER = "aiocqhttp:222"
 NOW = "2026-09-15T10:00:00+00:00"
@@ -73,11 +75,6 @@ class CodeTests(unittest.TestCase):
         digest = code_digest(CODE)
         self.assertEqual(len(digest), 64)
         self.assertNotIn("7K4M", digest)
-
-    def test_only_group_origins_have_members(self) -> None:
-        self.assertTrue(is_group_origin(GROUP))
-        self.assertFalse(is_group_origin(PRIVATE))
-        self.assertFalse(is_group_origin(""))
 
 
 def add(book: BindingBook, user: str, account: BoundAccount, *, origin=GROUP, now=NOW):
@@ -174,6 +171,26 @@ class BookTests(unittest.TestCase):
             [a.account_id for a in book.accounts_in(GROUP)], ["usr_a", "usr_b"]
         )
         self.assertEqual(book.accounts_in(PRIVATE), ())
+
+    def test_chats_recorded_under_isolation_move_to_their_group(self) -> None:
+        book, _ = add(BindingBook.empty(), USER, bound("usr_a"), origin=USER_IN_GROUP)
+        book = book.with_group(USER, OTHER_GROUP, now=LATER)
+        book, _ = add(book, OTHER_USER, bound("usr_b"), origin=OTHER_USER_IN_GROUP)
+        self.assertEqual(book.members_of(GROUP), ())
+
+        moved, count = book.with_group_origins()
+
+        self.assertEqual(count, 2)
+        self.assertEqual(moved.for_user(USER).groups, (GROUP, OTHER_GROUP))
+        self.assertEqual(moved.for_user(OTHER_USER).groups, (GROUP,))
+        self.assertEqual(
+            sorted(a.account_id for a in moved.accounts_in(GROUP)), ["usr_a", "usr_b"]
+        )
+        # Moving is not something the user did.
+        self.assertEqual(moved.for_user(USER).updated_at, LATER)
+        again, count = moved.with_group_origins()
+        self.assertIs(again, moved)
+        self.assertEqual(count, 0)
 
     def test_used_codes_are_remembered_for_their_life_and_then_forgotten(self) -> None:
         digest = code_digest(CODE)
@@ -393,6 +410,19 @@ class ServiceTests(unittest.TestCase):
         accounts, total, members = capped.accounts_in(GROUP)
         self.assertEqual(len(accounts), 1)
         self.assertEqual((total, members), (2, 2))
+
+    def test_a_book_written_under_isolation_is_moved_when_loaded(self) -> None:
+        book, _ = add(BindingBook.empty(), USER, bound("usr_a"), origin=USER_IN_GROUP)
+        book, _ = add(book, OTHER_USER, bound("usr_b"), origin=OTHER_USER_IN_GROUP)
+        save_json(self.root / BINDINGS_FILE, book.to_payload())
+
+        service = self._service(self.client)
+
+        _, total, members = service.accounts_in(GROUP)
+        self.assertEqual((total, members), (2, 2))
+        stored = load_json(self.root / BINDINGS_FILE)
+        self.assertEqual(stored["users"][USER]["groups"], [GROUP])
+        self.assertEqual(stored["users"][OTHER_USER]["groups"], [GROUP])
 
     def test_without_a_data_directory_nothing_is_bound(self) -> None:
         service = AccountBinding(

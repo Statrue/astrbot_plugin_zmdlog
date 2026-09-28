@@ -24,13 +24,13 @@ from .bindings import (
     UserBindings,
     code_digest,
     format_bindings,
-    is_group_origin,
     normalize_binding_code,
     parse_bindings,
 )
 from .client import ZmdLogsAPIError, ZmdLogsClient, ZmdLogsClientError
 from .logs import LogSink
 from .messages import shorten
+from .origins import is_group_origin
 from .persistence import JsonStore
 from .routing import RouteKind, RouteRequest
 from .settings import PluginSettings
@@ -63,6 +63,24 @@ class AccountBinding:
         )
         self.book: BindingBook = parse_bindings(self.store.load())
         self._lock = asyncio.Lock()
+        self._file_chats_under_groups()
+
+    def _file_chats_under_groups(self) -> None:
+        """Once per load: chats recorded under 隔离对话 count as their groups.
+
+        The moved book is used even if the write fails; the move is repeated
+        on the next load, so nothing is lost by it.
+        """
+
+        book, moved = self.book.with_group_origins()
+        if not moved:
+            return
+        self.book = book
+        if self.store.save(book.to_payload()):
+            self._logger.info(
+                "ZmdLogBot bindings: moved %s member chats to their groups.",
+                moved,
+            )
 
     # --- reads for 我的 / 群榜 -----------------------------------------------------
 

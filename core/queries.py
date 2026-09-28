@@ -21,7 +21,6 @@ from dataclasses import dataclass
 
 from . import messages
 from .account_binding import AccountBinding
-from .bindings import is_group_origin
 from .candidates import (
     MAX_CANDIDATES,
     CandidateStore,
@@ -66,6 +65,7 @@ from .models import (
     BattleDetailSummary,
     HotBossCard,
 )
+from .origins import is_group_origin
 from .rank_watch import RankWatcher
 from .recipes import (
     IndexSnapshot,
