@@ -49,9 +49,9 @@ from .core.matcher import (
     MatcherCache,
 )
 from .core.origins import restore_group_origin
+from .core.outcome import Outcome
 from .core.persistence import load_json, save_json
 from .core.queries import (
-    Outcome,
     QueryService,
     api_error_message,
     battle_link_error_message,
@@ -317,13 +317,14 @@ class ZmdLogBotPlugin(Star):
                         command=self._command_prefix(event) + "zmdlog",
                     )
                 else:
-                    message = await self.watcher.handle_route(
+                    watch_outcome = await self.watcher.handle_route(
                         route,
                         origin=self._event_origin(event),
                         requester_key=self._event_user_key(event),
                         is_admin=self._event_is_admin(event),
                         command=self._command_prefix(event) + "zmdlog",
                     )
+                    message = watch_outcome.message
             except ZmdLogsClientError as exc:
                 logger.warning(
                     "ZmdLogBot request failed: %s", type(exc).__name__

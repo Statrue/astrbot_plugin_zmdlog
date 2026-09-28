@@ -32,7 +32,6 @@ from .candidates import (
     CandidateStore,
     CandidateView,
     account_choice,
-    format_candidates,
 )
 from .client import (
     MIN_ACCOUNT_SEARCH_LENGTH,
@@ -58,6 +57,7 @@ from .matcher import (
 )
 from .messages import shorten
 from .models import HotBossCard, PublicUserRankings
+from .outcome import Outcome
 from .persistence import JsonStore
 from .routing import RouteKind, RouteRequest
 from .settings import PluginSettings
@@ -239,13 +239,40 @@ class RankWatcher:
         requester_key: str,
         is_admin: bool,
         command: str,
-    ) -> str:
+    ) -> Outcome:
         """Maintain the watch list of one chat, in text; nothing is rendered.
 
         ``origin`` is the chat the command came from, ``requester_key`` the
         platform-scoped sender key, ``command`` the prefixed command name
-        echoed in hints.
+        echoed in hints. Only an addition can post a pick list, which the
+        outcome then carries.
         """
+
+        if origin and self.enabled:
+            if route.kind is RouteKind.WATCH_BOARD_ADD:
+                return await self._add_board(route.query, origin, requester_key)
+            if route.kind is RouteKind.WATCH_ADD:
+                return await self._add_account(route.query, origin, requester_key)
+        return Outcome(
+            message=self._answer_in_text(
+                route,
+                origin=origin,
+                requester_key=requester_key,
+                is_admin=is_admin,
+                command=command,
+            )
+        )
+
+    def _answer_in_text(
+        self,
+        route: RouteRequest,
+        *,
+        origin: str,
+        requester_key: str,
+        is_admin: bool,
+        command: str,
+    ) -> str:
+        """Review or prune a list, or refuse an addition that cannot be made."""
 
         if not origin:
             # Without a real origin every chat would share one list and the
@@ -303,13 +330,12 @@ class RankWatcher:
                 return messages.WATCHLIST_WRITE_FAILED
             self._forget_rank_snapshot(account.account_id)
             return f"已取消关注 {account.display_name}。"
-        if not self.enabled:
-            return messages.WATCH_DISABLED
-        if route.kind is RouteKind.WATCH_BOARD_ADD:
-            return await self._add_board(route.query, origin, requester_key)
-        return await self._add_account(route.query, origin, requester_key)
+        # An addition gets here only while polling is switched off.
+        return messages.WATCH_DISABLED
 
-    async def _add_board(self, query: str, origin: str, requester_key: str) -> str:
+    async def _add_board(
+        self, query: str, origin: str, requester_key: str
+    ) -> Outcome:
         """Resolve a board keyword the way queries do, then remember it.
 
         Dungeon and scope hits are flattened to their boards: the watch is on
@@ -322,7 +348,7 @@ class RankWatcher:
             self._logger.warning(
                 "ZmdLogBot request failed: %s", type(exc).__name__
             )
-            return messages.UPSTREAM_UNAVAILABLE
+            return Outcome(message=messages.UPSTREAM_UNAVAILABLE)
         matcher = self._board_matcher(cards)
         match = matcher.match(query, allowed_types=BOARD_QUERY_TARGETS)
         if match.status is MatchStatus.AMBIGUOUS:
@@ -333,18 +359,19 @@ class RankWatcher:
             choices = ()
         choices = matcher.expand_to_boards(choices)
         if not choices:
-            return f"没有找到与「{shorten(query)}」匹配的榜单。"
+            return Outcome(message=f"没有找到与「{shorten(query)}」匹配的榜单。")
         if len(choices) == 1:
-            return await self.remember_board(
+            added = await self.remember_board(
                 origin, requester_key, choices[0].target.key
             )
+            return Outcome(message=added)
         entry = self._candidates.remember(
             query,
             choices,
             view=CandidateView.WATCH_BOARD,
             origin=origin,
         )
-        return format_candidates(entry, ttl_seconds=self._candidates.ttl_seconds)
+        return Outcome.pick_list(entry, ttl_seconds=self._candidates.ttl_seconds)
 
     async def remember_board(
         self,
@@ -401,7 +428,7 @@ class RankWatcher:
         query: str,
         origin: str,
         requester_key: str,
-    ) -> str:
+    ) -> Outcome:
         """Resolve an id, link, or nickname, then remember it for this chat."""
 
         try:
@@ -415,14 +442,15 @@ class RankWatcher:
         try:
             if account_id is not None:
                 account = await self._data.get_public_user_rankings(account_id)
-                return await self.remember_account(
+                added = await self.remember_account(
                     origin,
                     requester_key,
                     account_id=account.account_id,
                     display_name=account.account_display_name,
                 )
+                return Outcome(message=added)
             if stripped is None:
-                return messages.ACCOUNT_REFERENCE_NEEDED
+                return Outcome(message=messages.ACCOUNT_REFERENCE_NEEDED)
             search = await self._client.search_public_accounts(
                 stripped,
                 limit=MAX_CANDIDATES,
@@ -430,23 +458,26 @@ class RankWatcher:
         except ZmdLogsAPIError as exc:
             self._logger.warning("ZmdLogBot API request failed: %s", exc.code)
             if exc.status_code == 404:
-                return messages.ACCOUNT_NOT_FOUND
-            return messages.UPSTREAM_UNAVAILABLE
+                return Outcome(message=messages.ACCOUNT_NOT_FOUND)
+            return Outcome(message=messages.UPSTREAM_UNAVAILABLE)
         except ZmdLogsClientError as exc:
             self._logger.warning(
                 "ZmdLogBot request failed: %s", type(exc).__name__
             )
-            return messages.UPSTREAM_UNAVAILABLE
+            return Outcome(message=messages.UPSTREAM_UNAVAILABLE)
         if not search.accounts:
-            return f"没有找到昵称包含「{shorten(stripped)}」的公开账号。"
+            return Outcome(
+                message=f"没有找到昵称包含「{shorten(stripped)}」的公开账号。"
+            )
         if len(search.accounts) == 1 and not search.has_more:
             hit = search.accounts[0]
-            return await self.remember_account(
+            added = await self.remember_account(
                 origin,
                 requester_key,
                 account_id=hit.account_id,
                 display_name=hit.account_display_name,
             )
+            return Outcome(message=added)
         entry = self._candidates.remember(
             stripped,
             tuple(
@@ -456,7 +487,7 @@ class RankWatcher:
             view=CandidateView.WATCH,
             origin=origin,
         )
-        return format_candidates(
+        return Outcome.pick_list(
             entry,
             ttl_seconds=self._candidates.ttl_seconds,
             note=(

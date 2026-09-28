@@ -17,7 +17,6 @@ searches boards and accounts alike.
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from . import messages
 from .account_binding import AccountBinding
@@ -27,7 +26,6 @@ from .candidates import (
     CandidateView,
     PendingCandidates,
     account_choice,
-    format_candidates,
 )
 from .characters import (
     CharacterResolution,
@@ -66,6 +64,7 @@ from .models import (
     HotBossCard,
 )
 from .origins import is_group_origin
+from .outcome import Outcome
 from .rank_watch import RankWatcher
 from .recipes import (
     IndexSnapshot,
@@ -143,14 +142,6 @@ _ACCOUNT_ROUTES = frozenset({RouteKind.ACCOUNT_QUERY, RouteKind.TREND_QUERY})
 CHARACTER_STATS_UNAVAILABLE = "character_statistics_not_available"
 
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
-
-
-@dataclass(frozen=True, slots=True)
-class Outcome:
-    """What a query produced: a rendered image, or a short text instead."""
-
-    image_path: str | None = None
-    message: str | None = None
 
 
 class QueryService:
@@ -371,7 +362,7 @@ class QueryService:
                 view=CandidateView.TREND,
                 stats_range=route.stats_range,
             )
-            return Outcome(message=self._format_candidates(entry))
+            return self._pick_list(entry)
         outcome = await self._account_search_outcome(
             route.query,
             origin=origin,
@@ -472,7 +463,7 @@ class QueryService:
                 compare_rank=pending.compare_rank,
                 metric=pending.metric,
             )
-            return Outcome(message=self._format_candidates(entry))
+            return self._pick_list(entry)
         if choice is None:
             return Outcome(message=_not_found_message(route.query, view))
         return await self._render_choice(
@@ -596,15 +587,13 @@ class QueryService:
             view=view,
             stats_range=stats_range,
         )
-        return Outcome(
-            message=self._format_candidates(
-                entry,
-                note=(
-                    messages.MORE_NICKNAME_HITS
-                    if search.has_more
-                    else None
-                ),
-            )
+        return self._pick_list(
+            entry,
+            note=(
+                messages.MORE_NICKNAME_HITS
+                if search.has_more
+                else None
+            ),
         )
 
     async def _search_account_choices(self, query: str) -> tuple[MatchChoice, ...]:
@@ -1145,13 +1134,13 @@ class QueryService:
             )
             return None
 
-    def _format_candidates(
+    def _pick_list(
         self,
         entry: PendingCandidates,
         *,
         note: str | None = None,
-    ) -> str:
-        return format_candidates(
+    ) -> Outcome:
+        return Outcome.pick_list(
             entry, ttl_seconds=self._candidates.ttl_seconds, note=note
         )
 
