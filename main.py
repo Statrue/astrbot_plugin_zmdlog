@@ -26,9 +26,11 @@ except ImportError:  # pragma: no cover - depends on host AstrBot version
         # keep working without them.
         Image = Plain = None
 
+from . import qq_official
 from .core import facts, messages
 from .core.account_binding import AccountBinding
 from .core.alias_admin import AliasAdmin
+from .core.buttons import pick_list_message
 from .core.candidates import (
     CandidateStore,
     CandidateView,
@@ -304,6 +306,7 @@ class ZmdLogBotPlugin(Star):
         ):
             # These reply in text and never reach _dispatch, so they need their
             # own guard: an unexpected error must not surface as a traceback.
+            watch_outcome: Outcome | None = None
             try:
                 if route.kind in _ALIAS_ROUTES:
                     message = await self.alias_admin.handle(
@@ -324,7 +327,6 @@ class ZmdLogBotPlugin(Star):
                         is_admin=self._event_is_admin(event),
                         command=self._command_prefix(event) + "zmdlog",
                     )
-                    message = watch_outcome.message
             except ZmdLogsClientError as exc:
                 logger.warning(
                     "ZmdLogBot request failed: %s", type(exc).__name__
@@ -333,6 +335,11 @@ class ZmdLogBotPlugin(Star):
             except Exception:
                 logger.exception("ZmdLogBot unexpected command failure")
                 message = messages.UNEXPECTED_FAILURE
+            if watch_outcome is not None:
+                # 关注 can post a pick list, which gets buttons like any other.
+                async for result in self._reply(event, watch_outcome):
+                    yield result
+                return
             yield event.plain_result(message)
             return
         outcome, _ = await self._run_guarded(
@@ -345,7 +352,8 @@ class ZmdLogBotPlugin(Star):
             api_error_message=lambda exc: api_error_message(route, exc),
             failure_label="command",
         )
-        yield self._outcome_result(event, outcome)
+        async for result in self._reply(event, outcome):
+            yield result
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def pick_candidate(self, event: AstrMessageEvent):
@@ -442,6 +450,42 @@ class ZmdLogBotPlugin(Star):
         except Exception:
             logger.exception("ZmdLogBot unexpected %s failure", failure_label)
             return Outcome(message=messages.UNEXPECTED_FAILURE), False
+
+    async def _reply(self, event: AstrMessageEvent, outcome: Outcome):
+        """Answer a command with ``outcome``, buttons and all where they fit.
+
+        On the QQ official bot a pick list goes out as markdown with a
+        button per pick, sent by the plugin's own hand; the event is then
+        stopped, so AstrBot neither sends anything more nor asks the model.
+        Everywhere else, and whenever those buttons cannot be sent, the reply
+        is the one it has always been.
+        """
+
+        if outcome.candidates is not None and await self._send_pick_buttons(
+            event, outcome
+        ):
+            event.stop_event()
+            return
+        yield self._outcome_result(event, outcome)
+
+    async def _send_pick_buttons(
+        self, event: AstrMessageEvent, outcome: Outcome
+    ) -> bool:
+        """Send ``outcome``'s pick list with command buttons; False if not sent."""
+
+        if self.settings.disable_qq_official_buttons or not qq_official.is_official(
+            event
+        ):
+            return False
+        message = pick_list_message(
+            outcome.candidates,
+            command=self._command_prefix(event) + "zmdlog",
+            ttl_seconds=self.candidates.ttl_seconds,
+            note=outcome.candidate_note,
+        )
+        if message is None:
+            return False
+        return await qq_official.send_markdown(event, message, logger=logger)
 
     @staticmethod
     def _outcome_result(event: AstrMessageEvent, outcome: Outcome):

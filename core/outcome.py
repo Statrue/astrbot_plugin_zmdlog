@@ -15,12 +15,15 @@ class Outcome:
 
     ``candidates`` is set when the text is a pick list: the entry the list
     was formatted from, so the host can offer the choices by other means
-    than the quoted-reply code without re-reading the text.
+    than the quoted-reply code without re-reading the text. ``candidate_note``
+    is the extra line the text carries under the choices, if any, so a list
+    offered another way can say the same.
     """
 
     image_path: str | None = None
     message: str | None = None
     candidates: PendingCandidates | None = None
+    candidate_note: str | None = None
 
     @classmethod
     def pick_list(
@@ -35,4 +38,5 @@ class Outcome:
         return cls(
             message=format_candidates(entry, ttl_seconds=ttl_seconds, note=note),
             candidates=entry,
+            candidate_note=note,
         )

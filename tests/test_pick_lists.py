@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 from core.candidates import CandidateStore, CandidateView, format_candidates
 from core.matcher import AliasConfig, MatcherCache
+from core.messages import MORE_NICKNAME_HITS
 from core.models import HotBossCard
 from core.queries import QueryService
 from core.rank_watch import RankWatcher
@@ -172,6 +173,32 @@ class QueryPickListTests(unittest.TestCase):
 
         local = self._dispatch(RouteKind.TREND_QUERY, "CPU", watcher=TwoHistories())
         self._assert_carries_its_list(local, view=CandidateView.TREND)
+
+    def test_the_list_carries_its_note_too(self) -> None:
+        class MoreHitsClient(TwoHitClient):
+            async def search_public_accounts(self, query, *, limit):
+                search = await super().search_public_accounts(query, limit=limit)
+                return SimpleNamespace(**{**vars(search), "has_more": True})
+
+        service = self._service()
+        service._client = MoreHitsClient()
+        outcome = run(
+            service.dispatch(
+                RouteRequest(RouteKind.ACCOUNT_QUERY, query="CPU"),
+                command_prefix="/",
+                origin=GROUP,
+            )
+        )
+
+        self.assertEqual(outcome.candidate_note, MORE_NICKNAME_HITS)
+        self.assertEqual(
+            outcome.message,
+            format_candidates(
+                outcome.candidates,
+                ttl_seconds=self.store.ttl_seconds,
+                note=MORE_NICKNAME_HITS,
+            ),
+        )
 
     def test_an_answer_without_a_list_carries_none(self) -> None:
         outcome = self._dispatch(RouteKind.ACCOUNT_QUERY, "")

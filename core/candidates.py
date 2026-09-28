@@ -16,6 +16,7 @@ _SELECTION_RE = re.compile(
 )
 DEFAULT_CANDIDATE_TTL_SECONDS = 10 * 60
 MAX_CANDIDATES = 5
+QUOTE_HINT = "引用本条消息回复序号即可"
 
 
 class CandidateView(str, Enum):
@@ -197,15 +198,31 @@ def format_candidates(
 ) -> str:
     """Compact, phone-friendly candidate list ending with the pick marker."""
 
-    title = _VIEW_TITLES[entry.view].format(count=len(entry.choices))
-    lines = [f"「{entry.query}」{title}，引用本条消息回复序号即可："]
+    lines = [list_heading(entry, hint=QUOTE_HINT)]
     for index, choice in enumerate(entry.choices, start=1):
         lines.append(f"{index}. {describe_choice(choice)}")
     if note:
         lines.append(note)
-    minutes = max(1, int(ttl_seconds // 60))
-    lines.append(f"候选编号 {entry.code} · {minutes} 分钟内有效")
+    lines.append(code_line(entry, ttl_seconds=ttl_seconds))
     return "\n".join(lines)
+
+
+def list_heading(entry: PendingCandidates, *, hint: str) -> str:
+    """The first line of a pick list: what matched, then how to pick."""
+
+    title = _VIEW_TITLES[entry.view].format(count=len(entry.choices))
+    return f"「{entry.query}」{title}，{hint}："
+
+
+def code_line(
+    entry: PendingCandidates,
+    *,
+    ttl_seconds: float = DEFAULT_CANDIDATE_TTL_SECONDS,
+) -> str:
+    """The marker a quoted reply is resolved by; always a list's last line."""
+
+    minutes = max(1, int(ttl_seconds // 60))
+    return f"候选编号 {entry.code} · {minutes} 分钟内有效"
 
 
 def describe_choice(choice: MatchChoice) -> str:

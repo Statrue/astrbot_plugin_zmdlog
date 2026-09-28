@@ -56,6 +56,9 @@ class PluginSettings:
     ranking_index_pace_seconds: float = 30.0
     bindings_enabled: bool = True
     group_board_max_accounts: int = 30
+    # The safety switch for everything the QQ official bot gets on top of
+    # what every other platform gets: on, its replies are what they were.
+    disable_qq_official_buttons: bool = False
 
     @property
     def rank_snapshot_max_age_seconds(self) -> float:
@@ -123,6 +126,7 @@ def load_settings(
         group_board_max_accounts=reader.positive_integer(
             "group_board_max_accounts", maximum=_MAX_GROUP_BOARD_ACCOUNTS
         ),
+        disable_qq_official_buttons=reader.flag("disable_qq_official_buttons"),
     )
 
 

@@ -38,7 +38,7 @@ Two other sources of truth this file defers to:
 
 ```bash
 .venv/Scripts/python.exe -m unittest discover -s tests -v          # full suite, offline, under 10 s
-.venv/Scripts/python.exe -m ruff check main.py core tests tools    # lint (ruff.toml: E/F/I/W, py311)
+.venv/Scripts/python.exe -m ruff check main.py qq_official.py core tests tools    # lint (ruff.toml: E/F/I/W, py311)
 .venv/Scripts/python.exe -m unittest tests.test_matcher -v         # one module
 .venv/Scripts/python.exe -m unittest tests.test_matcher.MatcherTests.test_slug_and_board_aliases_match_one_board
 ```

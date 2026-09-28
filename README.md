@@ -145,6 +145,7 @@ docker restart astrbot
 
 - 榜单名可以省略难度和副本前缀（`罗丹`、`山犼争王`），副本可以写一段或"系列+期数"（`山中见犼`、`丰碑4`、`影拓4`），拼音全拼和首字母都认（`luodan`、`ld`、`fb4`）。管理员加过的别名优先于自动推导的。
 - 匹配到多个目标时回一份编号候选列表，**引用那条消息回复序号**（`2`、`②`、`第2个` 都行）即可，10 分钟内有效。
+  在 QQ 官方机器人（`qq_official`，群聊和私聊都一样）上，每个候选下面还有一个按钮：点一下把选中那一项的完整指令填进输入框，发出去即可。按钮里存的是指令本身，不受 10 分钟的限制，谁都可以点。
 - 直接输入昵称时，榜单没有精确命中就同时搜索公开账号。
 - 选项写在末尾，`--选项 值`，顺序不限。`--属性` 认 物理 / 灼热 / 寒冷 / 自然 / 电磁，也认 火、冰、雷；`--职业` 认 先锋 / 近卫 / 重装 / 术士 / 突击 / 辅助，术师也认；`--范围` 认 `7d/14d/30d/all`，也认 一周、两周、一个月、近 30 天；`--潜能` 只有 `0`（零潜）/ `1-5`（有潜能）/ `all` 三档，这是上游接口的粒度。
 - `--口径 rdps`（也认 `团队贡献`）看每个榜的 rDPS 排名：只收录能算出团队贡献的记录（新版上传器的上传，目前很少），名次仍按通关时间排，主 C 按 rDPS 最高的角色算；具体榜单页会注明每条记录在 DPS 榜的名次和 DPS 口径的主 C。不写口径就是 DPS，关注、趋势、账号页只有 DPS。
@@ -195,6 +196,7 @@ AstrBot 接入大模型并开启函数调用后，群友直接用自然语言问
 | `ranking_index_pace_seconds` | `30` | 索引每隔多少秒重读一个榜，最低 5 |
 | `bindings_enabled` | `true` | 账号绑定（绑定 / 我的 / 群榜）；关闭后已有绑定仍可查看和解除 |
 | `group_board_max_accounts` | `30` | 群榜最多统计多少个绑定账号，1–200 |
+| `disable_qq_official_buttons` | `false` | 关掉 QQ 官方机器人（`qq_official`）的按钮，回复与不带按钮时完全相同 |
 
 ## 🔍 它是怎么工作的
 
@@ -226,7 +228,7 @@ AstrBot 接入大模型并开启函数调用后，群友直接用自然语言问
 
 ```bash
 python -m unittest discover -s tests -v      # 全部测试，离线，约 4 秒
-python -m ruff check main.py core tests tools
+python -m ruff check main.py qq_official.py core tests tools
 ```
 
 `main.py` 是唯一接触 AstrBot 的文件；`core/` 里是全部逻辑，不引用 AstrBot，可以单独测。每个模块的设计与取舍写在它自己的 docstring 里；不变量与设计决策见 [CLAUDE.md](CLAUDE.md)，上游接口事实见 [UPSTREAM.md](UPSTREAM.md)，视觉资源说明见 [resources/common/ASSETS.md](resources/common/ASSETS.md)。

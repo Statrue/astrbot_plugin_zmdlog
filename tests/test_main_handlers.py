@@ -8,6 +8,8 @@ pure core tests cannot reach.
 """
 
 import asyncio
+import dataclasses
+import re
 import sys
 import tempfile
 import unittest
@@ -82,21 +84,41 @@ class FakeEvent:
         quoted: str | None = None,
         sender: str = "111",
         isolated_from: str | None = None,
+        platform: str = "aiocqhttp",
+        group_openid: str | None = None,
+        user_openid: str | None = None,
+        api: "FakeBotApi | None" = None,
     ):
         """``isolated_from`` is the adapter's own session id when 隔离对话
-        rewrote ``origin`` per member, the way AstrBot's waking stage does."""
+        rewrote ``origin`` per member, the way AstrBot's waking stage does.
+
+        ``group_openid`` / ``user_openid`` shape the raw botpy message of a
+        QQ official group or private chat, and ``api`` stands in for the
+        adapter's ``bot.api``; a wild-bot event has no ``bot`` at all, so a
+        handler that reached for one there would fail loudly."""
 
         self._text = text
         self._sender = sender
+        self._platform = platform
         self.unified_msg_origin = origin
         chain = [Reply(quoted)] if quoted is not None else []
         self.message_obj = SimpleNamespace(
-            message_str=text, message=chain, session_id=isolated_from or ""
+            message_str=text,
+            message=chain,
+            session_id=isolated_from or "",
+            message_id="msg-1",
+            raw_message=SimpleNamespace(
+                group_openid=group_openid,
+                author=SimpleNamespace(user_openid=user_openid),
+            ),
         )
+        if api is not None:
+            self.bot = SimpleNamespace(api=api)
         self._extras = {"_session_isolated": isolated_from is not None}
         self.sent: list = []
         # What the pipeline is delivering; a streamed reply sets it.
         self.result = None
+        self.stopped = False
 
     def get_message_str(self) -> str:
         return self._text
@@ -117,13 +139,36 @@ class FakeEvent:
         return False
 
     def get_platform_name(self) -> str:
-        return "aiocqhttp"
+        return self._platform
+
+    def stop_event(self) -> None:
+        self.stopped = True
 
     def get_sender_id(self) -> str:
         return self._sender
 
     def get_extra(self, key: str, default=None):
         return self._extras.get(key, default)
+
+
+class FakeBotApi:
+    """botpy's ``bot.api``: records what was sent, or fails every send."""
+
+    def __init__(self, *, error: Exception | None = None) -> None:
+        self.calls: list[tuple[str, dict]] = []
+        self._error = error
+
+    async def post_group_message(self, **payload):
+        return self._record("group", payload)
+
+    async def post_c2c_message(self, **payload):
+        return self._record("c2c", payload)
+
+    def _record(self, scene: str, payload: dict):
+        self.calls.append((scene, payload))
+        if self._error is not None:
+            raise self._error
+        return {"id": "sent"}
 
 
 class FakeContext:
@@ -542,6 +587,166 @@ class HandlerTests(unittest.TestCase):
         # The summary card itself keeps working without loadout data.
         (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
         self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
+
+    # --- QQ official pick-list buttons ----------------------------------------
+
+    def _two_accounts_named_cpu(self) -> None:
+        async def search(query, *, limit):
+            return SimpleNamespace(
+                query=query,
+                has_more=False,
+                accounts=(
+                    SimpleNamespace(account_id="usr_a", account_display_name="CPU 0"),
+                    SimpleNamespace(account_id="usr_b", account_display_name="cpu*0"),
+                ),
+            )
+
+        self.plugin.client.search_public_accounts = search
+
+    def _official(self, text: str, *, api: "FakeBotApi", private: bool = False):
+        event = FakeEvent(
+            text,
+            origin=(
+                "default:FriendMessage:U1" if private else "default:GroupMessage:G1"
+            ),
+            platform="qq_official",
+            group_openid=None if private else "G1",
+            user_openid="U1" if private else None,
+            api=api,
+        )
+        return event, run(collect(self.plugin.zmdlog(event)))
+
+    def _assert_sent_with_buttons(self, api, event, *, scene: str, commands):
+        (sent_scene, payload), = api.calls
+        self.assertEqual(sent_scene, scene)
+        if scene == "group":
+            self.assertEqual(payload["group_openid"], "G1")
+        else:
+            self.assertEqual(payload["openid"], "U1")
+        # A passive reply to the message asked, numbered clear of the range
+        # AstrBot draws its own sequence numbers from.
+        self.assertEqual(payload["msg_id"], "msg-1")
+        self.assertGreater(payload["msg_seq"], 10_000)
+        self.assertEqual(payload["msg_type"], 2)
+        self.assertIn("点下方按钮", payload["markdown"]["content"])
+        self.assertIn("cpu\\*0", payload["markdown"]["content"])
+        self.assertEqual(
+            [
+                row["buttons"][0]["action"]["data"]
+                for row in payload["keyboard"]["content"]["rows"]
+            ],
+            commands,
+        )
+        # Sent outside the pipeline, so AstrBot must not answer on its own.
+        self.assertTrue(event.stopped)
+
+    def test_an_official_group_gets_the_pick_list_with_buttons(self) -> None:
+        self._two_accounts_named_cpu()
+        api = FakeBotApi()
+
+        event, results = self._official("/zmdlog 账号 CPU", api=api)
+
+        self.assertEqual(results, [])
+        self._assert_sent_with_buttons(
+            api,
+            event,
+            scene="group",
+            commands=["/zmdlog 账号 usr_a", "/zmdlog 账号 usr_b"],
+        )
+
+    def test_an_official_private_chat_gets_the_same_buttons(self) -> None:
+        self._two_accounts_named_cpu()
+        api = FakeBotApi()
+
+        event, results = self._official("/zmdlog 账号 CPU", api=api, private=True)
+
+        self.assertEqual(results, [])
+        self._assert_sent_with_buttons(
+            api,
+            event,
+            scene="c2c",
+            commands=["/zmdlog 账号 usr_a", "/zmdlog 账号 usr_b"],
+        )
+
+    def test_a_watch_pick_list_fills_in_the_watch_command(self) -> None:
+        self._enable_watch_storage()
+        self._two_accounts_named_cpu()
+        api = FakeBotApi()
+
+        event, results = self._official("/zmdlog 关注 CPU", api=api)
+
+        self.assertEqual(results, [])
+        self._assert_sent_with_buttons(
+            api,
+            event,
+            scene="group",
+            commands=["/zmdlog 关注 usr_a", "/zmdlog 关注 usr_b"],
+        )
+
+    def test_a_failed_button_send_falls_back_to_the_plain_list(self) -> None:
+        self._two_accounts_named_cpu()
+        for private in (False, True):
+            with self.subTest(private=private):
+                api = FakeBotApi(error=RuntimeError("response body with secrets"))
+
+                with mock.patch.object(plugin_main, "logger") as logger:
+                    event, results = self._official(
+                        "/zmdlog 账号 CPU", api=api, private=private
+                    )
+
+                self.assertEqual(len(api.calls), 1)
+                (kind, listing), = results
+                self.assertEqual(kind, "plain")
+                self.assertTrue(
+                    listing.startswith(
+                        "「CPU」匹配到 2 个目标，引用本条消息回复序号即可："
+                    )
+                )
+                self.assertFalse(event.stopped)
+                logged = repr(logger.warning.call_args_list)
+                self.assertIn("RuntimeError", logged)
+                self.assertNotIn("secrets", logged)
+
+    def test_other_platforms_and_the_switch_keep_the_plain_list(self) -> None:
+        self._two_accounts_named_cpu()
+        wild = run(collect(self.plugin.zmdlog(FakeEvent("/zmdlog 账号 CPU"))))
+        self.assertEqual(wild[0][0], "plain")
+
+        webhook_api = FakeBotApi()
+        webhook = FakeEvent(
+            "/zmdlog 账号 CPU",
+            platform="qq_official_webhook",
+            group_openid="G1",
+            api=webhook_api,
+        )
+        switched_api = FakeBotApi()
+        self.plugin.settings = dataclasses.replace(
+            self.plugin.settings, disable_qq_official_buttons=True
+        )
+        (webhook_kind, webhook_listing), = run(collect(self.plugin.zmdlog(webhook)))
+        switched, results = self._official("/zmdlog 账号 CPU", api=switched_api)
+
+        (switched_kind, switched_listing), = results
+        # Byte for byte what the wild bot gets, bar the per-list code.
+        code = re.compile(r"候选编号 [A-Z2-9]{4}")
+        for kind, listing in (
+            (webhook_kind, webhook_listing),
+            (switched_kind, switched_listing),
+        ):
+            self.assertEqual(kind, "plain")
+            self.assertEqual(code.sub("", listing), code.sub("", wild[0][1]))
+        self.assertEqual(webhook_api.calls, [])
+        self.assertEqual(switched_api.calls, [])
+
+    def test_a_reply_that_is_not_a_pick_list_is_not_sent_by_hand(self) -> None:
+        api = FakeBotApi()
+
+        event, results = self._official("/zmdlog 账号 x", api=api)
+
+        (kind, _), = results
+        self.assertEqual(kind, "plain")
+        self.assertEqual(api.calls, [])
+        self.assertFalse(event.stopped)
 
     # --- board watch ----------------------------------------------------------
 
