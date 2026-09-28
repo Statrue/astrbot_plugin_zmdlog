@@ -23,7 +23,7 @@ from .index import IndexSnapshot
 
 if TYPE_CHECKING:
     from ..datasource import ZmdLogsDataSource
-    from ..render import LongImageRenderer
+    from ..render import LongImageRenderer, RenderedImage
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +38,7 @@ class StandingsRecipe:
     elements: Mapping[str, str]
     metric: str = "dps"
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_character_standings(
             self.standings,
             query=self.query,
@@ -101,7 +101,7 @@ class ChampionsRecipe:
     unseen: tuple[str, ...]
     metric: str = "dps"
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_character_champions(
             self.tallies,
             board_count=self.board_count,

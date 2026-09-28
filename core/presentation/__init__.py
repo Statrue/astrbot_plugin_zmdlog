@@ -68,6 +68,7 @@ from .common import (
     format_duration,
     format_number,
     public_url,
+    safe_http_url,
 )
 from .compare import (
     CompareCurveView,
@@ -220,4 +221,5 @@ __all__ = [
     "format_duration",
     "format_number",
     "public_url",
+    "safe_http_url",
 ]

@@ -30,7 +30,11 @@ from . import qq_official
 from .core import facts, messages
 from .core.account_binding import AccountBinding
 from .core.alias_admin import AliasAdmin
-from .core.buttons import pick_list_message
+from .core.buttons import (
+    pick_list_message,
+    result_image_message,
+    result_keyboard,
+)
 from .core.candidates import (
     CandidateStore,
     CandidateView,
@@ -66,6 +70,7 @@ from .core.render import (
     RenderError,
     TemplateConfigurationError,
     read_plugin_version,
+    read_png_dimensions,
 )
 from .core.routing import (
     RouteKind,
@@ -402,7 +407,8 @@ class ZmdLogBotPlugin(Star):
         # delivered through the fallback renderer keeps the claim.
         if transient:
             await self._release_auto_expand(origin, battle_id)
-        yield self._outcome_result(event, outcome)
+        async for result in self._reply(event, outcome):
+            yield result
 
     async def _run_guarded(
         self,
@@ -455,13 +461,20 @@ class ZmdLogBotPlugin(Star):
         """Answer a command with ``outcome``, buttons and all where they fit.
 
         On the QQ official bot a pick list goes out as markdown with a
-        button per pick, sent by the plugin's own hand; the event is then
-        stopped, so AstrBot neither sends anything more nor asks the model.
-        Everywhere else, and whenever those buttons cannot be sent, the reply
-        is the one it has always been.
+        button per pick, and a picture about one thing as a markdown image
+        with a button to that thing's ZMDLogs page, both sent by the
+        plugin's own hand; the event is then stopped, so AstrBot neither
+        sends anything more nor asks the model. Everywhere else, and
+        whenever those cannot be sent, the reply is the one it has always
+        been.
         """
 
         if outcome.candidates is not None and await self._send_pick_buttons(
+            event, outcome
+        ):
+            event.stop_event()
+            return
+        if outcome.target is not None and await self._send_result_image(
             event, outcome
         ):
             event.stop_event()
@@ -496,6 +509,41 @@ class ZmdLogBotPlugin(Star):
             return False
         return await qq_official.send_markdown(event, message, logger=logger)
 
+    async def _send_result_image(
+        self, event: AstrMessageEvent, outcome: Outcome
+    ) -> bool:
+        """Send ``outcome``'s picture as markdown with its jump button.
+
+        False when it did not go out, and the native picture is due: the
+        page carries no scale, its target no safe link, or the upload or
+        the send failed.
+        """
+
+        if not self._answers_as_official(event) or outcome.image_scale is None:
+            return False
+        keyboard = result_keyboard(outcome.target, web_base_url=self.web_base_url)
+        if keyboard is None:
+            return False
+        try:
+            size = read_png_dimensions(Path(outcome.image_path))
+        except RenderError as exc:
+            logger.warning(
+                "ZmdLogBot cannot size a result image: %s", type(exc).__name__
+            )
+            return False
+        raw_url = await qq_official.upload_image(
+            event, outcome.image_path, logger=logger
+        )
+        if raw_url is None:
+            return False
+        message = result_image_message(
+            raw_url, size=size, scale=outcome.image_scale, keyboard=keyboard
+        )
+        if message is None:
+            logger.warning("ZmdLogBot QQ official image link is unusable.")
+            return False
+        return await qq_official.send_markdown(event, message, logger=logger)
+
     def _outcome_result(self, event: AstrMessageEvent, outcome: Outcome):
         if outcome.image_path is not None:
             return event.image_result(outcome.image_path)
@@ -506,7 +554,8 @@ class ZmdLogBotPlugin(Star):
 
         That adapter sends markdown unless told otherwise, so a nickname's
         ``*`` or ``_`` set the reply in bold or italic. Of the replies, only
-        the pick list with buttons is markdown, and it escapes what it prints.
+        the pick list with buttons and the result picture are markdown; the
+        list escapes what it prints, and the picture prints no text.
         """
 
         result = event.plain_result(text)
@@ -551,7 +600,8 @@ class ZmdLogBotPlugin(Star):
             api_error_message=board_api_error_message,
             failure_label="candidate",
         )
-        yield self._outcome_result(event, outcome)
+        async for result in self._reply(event, outcome):
+            yield result
 
     @staticmethod
     def _quoted_candidate_code(event: AstrMessageEvent) -> str | None:

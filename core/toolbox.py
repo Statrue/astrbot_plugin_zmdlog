@@ -856,7 +856,9 @@ class ToolService:
         """
 
         try:
-            return await draw(self._renderer())
+            # A tool's picture goes out as a plain image, so only the file
+            # matters; the scale is for the command path's markdown picture.
+            return (await draw(self._renderer())).path
         except Exception as exc:
             self._logger.warning(
                 "ZmdLogBot tool could not render its page: %s", type(exc).__name__

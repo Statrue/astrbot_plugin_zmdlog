@@ -8,7 +8,7 @@ from ..models import CharacterBossStatistics, CharacterStatistics
 
 if TYPE_CHECKING:
     from ..datasource import ZmdLogsDataSource
-    from ..render import LongImageRenderer
+    from ..render import LongImageRenderer, RenderedImage
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,7 +19,7 @@ class CharacterStatsRecipe:
     query: str
     web_base_url: str | None
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_character_stats(
             self.stats, query=self.query, web_base_url=self.web_base_url
         )
@@ -51,7 +51,7 @@ class CharacterBossRecipe:
     query: str
     web_base_url: str | None
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_character_boss(
             self.stats, query=self.query, web_base_url=self.web_base_url
         )

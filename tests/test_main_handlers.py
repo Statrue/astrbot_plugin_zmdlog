@@ -10,12 +10,15 @@ pure core tests cannot reach.
 import asyncio
 import dataclasses
 import re
+import struct
 import sys
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+from urllib.parse import urlsplit
 
 from tests.helpers import (
     battle_detail_payload,
@@ -54,7 +57,7 @@ if astrbot is not None:
         parse_hot_bosses,
         parse_public_user_rankings,
     )
-    from astrbot_plugin_zmdlog.core.render import RenderError
+    from astrbot_plugin_zmdlog.core.render import RenderedImage, RenderError
     from astrbot_plugin_zmdlog.core.timestamps import utc_now_text
     from astrbot_plugin_zmdlog.core.toolbox import ToolAnswer
     from astrbot_plugin_zmdlog.core.watch import (
@@ -162,12 +165,80 @@ class FakeEvent:
         return self._extras.get(key, default)
 
 
-class FakeBotApi:
-    """botpy's ``bot.api``: records what was sent, or fails every send."""
+class FakeHttpResponse:
+    """One aiohttp response, as AstrBot's uploader reads it."""
 
-    def __init__(self, *, error: Exception | None = None) -> None:
+    status = 200
+
+    def __init__(self, body: dict) -> None:
+        self._body = body
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def json(self, content_type=None):
+        return self._body
+
+    async def text(self, errors=None):
+        return ""
+
+
+class FakeBotHttp:
+    """botpy's ``BotHttp`` as AstrBot's chunked uploader drives it.
+
+    Every request is answered from memory: the prepare hands out one part,
+    its PUT and acknowledgement succeed, and the merge answers with
+    ``raw_url`` (left out when None). ``error`` fails the first request.
+    ``paths`` records the path of every request, in order.
+    """
+
+    is_sandbox = False
+    _headers: dict = {}
+
+    def __init__(
+        self, *, raw_url: str | None = None, error: Exception | None = None
+    ) -> None:
+        self.raw_url = raw_url
+        self.error = error
+        self.paths: list[str] = []
+        self._session = self
+
+    async def check_session(self) -> None:
+        return None
+
+    def request(self, method, url, **kwargs):
+        if self.error is not None:
+            raise self.error
+        path = urlsplit(url).path
+        self.paths.append(path)
+        body: dict = {}
+        if path.endswith("/upload_prepare"):
+            body = {
+                "upload_id": "upload-1",
+                "block_size": 1 << 20,
+                "parts": [{"index": 1, "presigned_url": "https://cos.invalid/part"}],
+            }
+        elif path.endswith("/files"):
+            body = {"file_uuid": "uuid-1", "file_info": "info-1", "ttl": 0}
+            if self.raw_url is not None:
+                body["raw_url"] = self.raw_url
+        return FakeHttpResponse(body)
+
+
+class FakeBotApi:
+    """botpy's ``bot.api``: records what was sent, or fails every send.
+
+    ``http`` is its authenticated client, which uploads go through."""
+
+    def __init__(
+        self, *, error: Exception | None = None, http: FakeBotHttp | None = None
+    ) -> None:
         self.calls: list[tuple[str, dict]] = []
         self._error = error
+        self._http = http
 
     async def post_group_message(self, **payload):
         return self._record("group", payload)
@@ -187,33 +258,39 @@ class FakeContext:
         return {"wake_prefix": ["/"]}
 
 
+def capture(path: str, scale: int = 2) -> "RenderedImage":
+    """What the renderer hands back for one page."""
+
+    return RenderedImage(path, scale)
+
+
 class FakeRenderer:
     async def render_battle(self, battle, **kwargs):
-        return "/tmp/battle.png"
+        return capture("/tmp/battle.png")
 
     async def render_loadout(self, battle, **kwargs):
-        return "/tmp/loadout.png"
+        return capture("/tmp/loadout.png")
 
     async def render_skills(self, battle, **kwargs):
-        return "/tmp/skills.png"
+        return capture("/tmp/skills.png")
 
     async def render_trend(self, history, **kwargs):
-        return "/tmp/trend.png"
+        return capture("/tmp/trend.png")
 
     async def render_timeline(self, export, **kwargs):
-        return "/tmp/timeline.png"
+        return capture("/tmp/timeline.png")
 
     async def render_compare(self, first, second, **kwargs):
-        return "/tmp/compare.png"
+        return capture("/tmp/compare.png")
 
     async def render_account(self, account, **kwargs):
-        return "/tmp/account.png"
+        return capture("/tmp/account.png")
 
     async def render_ranking(self, ranking, **kwargs):
-        return "/tmp/ranking.png"
+        return capture("/tmp/ranking.png")
 
     async def render_all_top3(self, cards, **kwargs):
-        return "/tmp/top3.png"
+        return capture("/tmp/top3.png")
 
 
 def run(coro):
@@ -420,7 +497,7 @@ class HandlerTests(unittest.TestCase):
         async def render(tallies, **kwargs):
             captured["tallies"] = tallies
             captured.update(kwargs)
-            return "/tmp/champions.png"
+            return capture("/tmp/champions.png")
 
         self.plugin.data.get_character_types = types
         self.plugin.renderer.render_character_champions = render
@@ -445,7 +522,7 @@ class HandlerTests(unittest.TestCase):
 
         async def render(standings, **kwargs):
             drawn.append(standings)
-            return "/tmp/standings.png"
+            return capture("/tmp/standings.png")
 
         self.plugin.renderer.render_character_standings = render
 
@@ -810,6 +887,250 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(reply[0], "plain")
         self.assertIs(reply.use_markdown_, False)
 
+    # --- QQ official result images ----------------------------------------------
+
+    RAW_URL = (
+        "https://qqbot-file-upload-1251316161.cos.accelerate.myqcloud.com"
+        "/f0/part_1?q-sign-algorithm=sha1&q-ak=AKID&q-signature=secret0a1b"
+    )
+    ACCOUNT = "usr_1234567890abcdef"
+
+    def _png(self, width: int, height: int) -> str:
+        """A PNG whose header says ``width`` x ``height``, as a capture's does."""
+
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+        chunk = (
+            struct.pack(">I", len(header))
+            + b"IHDR"
+            + header
+            + struct.pack(">I", zlib.crc32(b"IHDR" + header))
+        )
+        path = Path(directory.name) / "zmd-account.png"
+        path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk)
+        return str(path)
+
+    def _account_page(self, *, size=(2560, 3000), scale=2) -> str:
+        """The account page, drawn as a capture of ``size`` at ``scale``."""
+
+        path = self._png(*size)
+
+        async def account(requested_id):
+            return parse_public_user_rankings(public_user_rankings_payload())
+
+        async def render_account(account, **kwargs):
+            return capture(path, scale)
+
+        self.plugin.data.get_public_user_rankings = account
+        self.plugin.renderer.render_account = render_account
+        return path
+
+    def test_an_official_chat_gets_the_picture_as_markdown_with_its_link(
+        self,
+    ) -> None:
+        self._account_page(size=(2560, 3000), scale=2)
+        for private, scene, prefix in (
+            (False, "group", "/v2/groups/G1/"),
+            (True, "c2c", "/v2/users/U1/"),
+        ):
+            with self.subTest(scene=scene):
+                http = FakeBotHttp(raw_url=self.RAW_URL)
+                api = FakeBotApi(http=http)
+
+                event, results = self._official(
+                    f"/zmdlog 账号 {self.ACCOUNT}", api=api, private=private
+                )
+
+                self.assertEqual(results, [])
+                self.assertTrue(event.stopped)
+                # Uploaded in pieces to where the reply goes: the merge is
+                # the one response that carries a link to the stored file.
+                self.assertTrue(http.paths[0].startswith(prefix))
+                self.assertTrue(http.paths[-1].endswith("/files"))
+                (sent_scene, payload), = api.calls
+                self.assertEqual(sent_scene, scene)
+                self.assertEqual(payload["msg_id"], "msg-1")
+                self.assertGreater(payload["msg_seq"], 10_000)
+                self.assertEqual(payload["msg_type"], 2)
+                # 2560 x 3000 device pixels at 2x: 1280 x 1500 CSS pixels.
+                self.assertEqual(
+                    payload["markdown"]["content"],
+                    f"![img #1280px #1500px]"
+                    f"({self.RAW_URL}&response-content-type=image%2Fpng)",
+                )
+                (row,) = payload["keyboard"]["content"]["rows"]
+                (button,) = row["buttons"]
+                self.assertEqual(button["action"]["type"], 0)
+                self.assertEqual(
+                    button["action"]["data"],
+                    f"https://zmdlogs.com/records/{self.ACCOUNT}",
+                )
+
+    def test_a_long_page_captured_at_1x_is_declared_at_its_own_size(self) -> None:
+        self._account_page(size=(1280, 7588), scale=1)
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+
+        self._official(f"/zmdlog 账号 {self.ACCOUNT}", api=api)
+
+        (_, payload), = api.calls
+        self.assertTrue(
+            payload["markdown"]["content"].startswith("![img #1280px #7588px](")
+        )
+
+    def test_a_picture_that_cannot_go_as_markdown_goes_as_itself(self) -> None:
+        path = self._account_page()
+        for label, api in (
+            (
+                "the upload fails",
+                FakeBotApi(
+                    http=FakeBotHttp(error=RuntimeError("401 with a token in it"))
+                ),
+            ),
+            ("the upload gives no link", FakeBotApi(http=FakeBotHttp())),
+            (
+                "the send fails",
+                FakeBotApi(
+                    http=FakeBotHttp(raw_url=self.RAW_URL),
+                    error=RuntimeError("rejected with a body"),
+                ),
+            ),
+        ):
+            for private in (False, True):
+                with self.subTest(label, private=private):
+                    with mock.patch.object(plugin_main, "logger") as logger:
+                        event, results = self._official(
+                            f"/zmdlog 账号 {self.ACCOUNT}", api=api, private=private
+                        )
+
+                    self.assertEqual(results, [("image", path)])
+                    self.assertFalse(event.stopped)
+                    logged = repr(logger.method_calls)
+                    self.assertIn("ZmdLogBot", logged)
+                    # Only an exception's type: never the signed link, and
+                    # never what the platform said back.
+                    for secret in ("secret0a1b", "token", "body", "myqcloud"):
+                        self.assertNotIn(secret, logged)
+
+    def test_the_quoted_pick_and_the_expanded_link_go_as_markdown_too(
+        self,
+    ) -> None:
+        self._account_page()
+        self._two_accounts_named_cpu()
+        listing_api = FakeBotApi()
+        self._official("/zmdlog 账号 CPU", api=listing_api)
+        (_, listing), = listing_api.calls
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+        # A reply quoting the list carries the list's text back.
+        pick = self._official_event(
+            "1", api=api, quoted=listing["markdown"]["content"]
+        )
+
+        self.assertEqual(run(collect(self.plugin.pick_candidate(pick))), [])
+        (_, payload), = api.calls
+        self.assertIn("/records/usr_a", repr(payload["keyboard"]))
+
+        async def detail(battle_id):
+            return parse_battle_detail(battle_detail_payload())
+
+        path = self._png(2560, 2000)
+
+        async def render_battle(battle, **kwargs):
+            return capture(path)
+
+        self.plugin.data.get_battle_detail = detail
+        self.plugin.renderer.render_battle = render_battle
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+        link = self._official_event(
+            "看 https://zmdlogs.com/battle/btl_upload_abcdef123456", api=api
+        )
+
+        self.assertEqual(run(collect(self.plugin.expand_battle_link(link))), [])
+        (_, payload), = api.calls
+        self.assertIn(
+            "https://zmdlogs.com/battle/btl_upload_abcdef123456",
+            repr(payload["keyboard"]),
+        )
+
+    def test_the_trend_and_the_group_board_link_their_account_and_board(
+        self,
+    ) -> None:
+        from astrbot_plugin_zmdlog.core.models import AccountSearchHit
+
+        self._enable_binding_storage()
+        self._seed_history()
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        uploader = ranking.rows[0]
+
+        async def lookup(code):
+            return AccountSearchHit(uploader.account_id, uploader.account_display_name)
+
+        async def ranking_read(boss_slug, **kwargs):
+            return ranking
+
+        path = self._png(2560, 2000)
+
+        async def draw(*args, **kwargs):
+            return capture(path)
+
+        self.plugin.client.get_binding_code_account = lookup
+        self.plugin.data.get_boss_ranking = ranking_read
+        self.plugin.renderer.render_trend = draw
+        self.plugin.renderer.render_group_board = draw
+        self._official("/zmdlog 绑定 ZMD-AAAA-BBBB", api=FakeBotApi())
+        for text, link in (
+            ("/zmdlog 趋势 usr_1234567890abcdef", "/records/usr_1234567890abcdef"),
+            ("/zmdlog 群榜 三位一体", f"/boss/{ranking.boss_slug}"),
+        ):
+            with self.subTest(text=text):
+                api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+
+                _, results = self._official(text, api=api)
+
+                self.assertEqual(results, [])
+                (_, payload), = api.calls
+                (row,) = payload["keyboard"]["content"]["rows"]
+                self.assertEqual(
+                    row["buttons"][0]["action"]["data"], f"https://zmdlogs.com{link}"
+                )
+
+    def test_pages_about_no_one_thing_stay_native_pictures(self) -> None:
+        async def all_top3(cards, **kwargs):
+            return capture(self._png(1280, 9000), 1)
+
+        self.plugin.renderer.render_all_top3 = all_top3
+        http = FakeBotHttp(raw_url=self.RAW_URL)
+        api = FakeBotApi(http=http)
+
+        _, results = self._official("/zmdlog 榜单", api=api)
+
+        ((kind, _),) = results
+        self.assertEqual(kind, "image")
+        self.assertEqual(api.calls, [])
+        self.assertEqual(http.paths, [])
+
+    def test_other_platforms_and_the_switch_keep_the_native_picture(self) -> None:
+        path = self._account_page()
+        text = f"/zmdlog 账号 {self.ACCOUNT}"
+        wild = run(collect(self.plugin.zmdlog(FakeEvent(text))))
+        webhook_api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+        webhook = FakeEvent(
+            text, platform="qq_official_webhook", group_openid="G1", api=webhook_api
+        )
+        webhook_results = run(collect(self.plugin.zmdlog(webhook)))
+        self.plugin.settings = dataclasses.replace(
+            self.plugin.settings, disable_qq_official_buttons=True
+        )
+        switched_api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+        _, switched_results = self._official(text, api=switched_api)
+
+        for results in (wild, webhook_results, switched_results):
+            self.assertEqual(results, [("image", path)])
+        self.assertEqual(webhook_api.calls, [])
+        self.assertEqual(webhook_api._http.paths, [])
+        self.assertEqual(switched_api.calls, [])
+        self.assertEqual(switched_api._http.paths, [])
+
     # --- board watch ----------------------------------------------------------
 
     def _enable_watch_storage(self) -> None:
@@ -1127,7 +1448,7 @@ class HandlerTests(unittest.TestCase):
 
         async def render_group_board(ranking, rows, **kwargs):
             drawn.append((rows, kwargs))
-            return "/tmp/group-board.png"
+            return capture("/tmp/group-board.png")
 
         async def ranking_read(boss_slug, **kwargs):
             return ranking
@@ -1225,7 +1546,7 @@ class HandlerTests(unittest.TestCase):
 
         async def render_timeline(export, **kwargs):
             received.append(kwargs)
-            return "/tmp/timeline.png"
+            return capture("/tmp/timeline.png")
 
         self.plugin.data.get_boss_ranking = ranking
         self.plugin.data.get_battle_export = export
@@ -1258,7 +1579,7 @@ class HandlerTests(unittest.TestCase):
 
         async def render_battle(battle, **kwargs):
             received.append(kwargs)
-            return "/tmp/battle.png"
+            return capture("/tmp/battle.png")
 
         self.plugin.data.get_battle_detail = detail
         self.plugin.data.get_battle_export = export
@@ -1296,7 +1617,7 @@ class HandlerTests(unittest.TestCase):
 
         async def render_ranking(ranking, **kwargs):
             received.append(kwargs)
-            return "/tmp/ranking.png"
+            return capture("/tmp/ranking.png")
 
         self.plugin.data.get_boss_ranking = ranking
         self.plugin.renderer.render_ranking = render_ranking
@@ -1333,7 +1654,7 @@ class HandlerTests(unittest.TestCase):
 
         async def render_compare(first, second, **kwargs):
             received.append({"ids": (first.battle_id, second.battle_id), **kwargs})
-            return "/tmp/compare.png"
+            return capture("/tmp/compare.png")
 
         self.plugin.data.get_boss_ranking = ranking
         self.plugin.data.get_battle_detail = detail
@@ -1414,7 +1735,7 @@ class HandlerTests(unittest.TestCase):
 
         async def render_loadout(battle, **kwargs):
             seen.append(kwargs.get("suits"))
-            return "/tmp/loadout.png"
+            return capture("/tmp/loadout.png")
 
         wanted_suits: list[tuple] = []
 
@@ -1480,13 +1801,13 @@ class HandlerTests(unittest.TestCase):
 
     # --- LLM tool pictures ------------------------------------------------------
 
-    def _tool_turn(self, *answers: ToolAnswer):
+    def _tool_turn(self, *answers: ToolAnswer, event: FakeEvent | None = None):
         """One turn's tool calls, then the agent-done hook.
 
         Returns the replies the model got and the chains the chat received.
         """
 
-        event = FakeEvent("突击里谁最菜")
+        event = event or FakeEvent("突击里谁最菜")
         replies: list[str] = []
 
         async def scenario():
@@ -1518,6 +1839,19 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(replies, ["洛茜的事实"])
         self.assertEqual(len(sent), 1)
         self.assertEqual(type(sent[0].chain[0]).__name__, "Image")
+
+    def test_a_tool_picture_on_the_official_bot_stays_a_native_picture(
+        self,
+    ) -> None:
+        http = FakeBotHttp(raw_url=self.RAW_URL)
+        api = FakeBotApi(http=http)
+        event = self._official_event("突击里谁最菜", api=api)
+
+        _, sent = self._tool_turn(ToolAnswer("洛茜的事实", "/tmp/a.png"), event=event)
+
+        self.assertEqual(type(sent[0].chain[0]).__name__, "Image")
+        self.assertEqual(api.calls, [])
+        self.assertEqual(http.paths, [])
 
     def test_several_subjects_in_one_turn_send_no_picture(self) -> None:
         # Four characters compared: the first page would be an arbitrary pick.

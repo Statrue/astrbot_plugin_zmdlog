@@ -115,6 +115,19 @@ DEFAULT_OUTPUT_TTL_SECONDS = 10 * 60
 DEFAULT_MAX_OUTPUT_FILES = 50
 
 
+@dataclass(frozen=True, slots=True)
+class RenderedImage:
+    """One captured page: the PNG, and the device pixels per CSS pixel.
+
+    The scale is the one the capture actually used. It follows the page kind
+    (``_HIGH_DPI_PAGE_KINDS``), except that a page too long for 2x falls
+    back to 1x, so no caller can work it out from the kind alone.
+    """
+
+    path: str
+    scale: int
+
+
 class TemplateConfigurationError(ValueError):
     """Raised when local template metadata is missing or malformed."""
 
@@ -777,14 +790,14 @@ class AssetCache:
 def _captured(
     page_kind: str,
     build_html: Callable[..., str],
-) -> Callable[..., Awaitable[str]]:
+) -> Callable[..., Awaitable[RenderedImage]]:
     """Build the :class:`LongImageRenderer` method that captures one page.
 
     Every caller passes keyword arguments, so the wrapper forwards them to the
     :class:`TemplateRenderer` method unchanged and adds only the page kind.
     """
 
-    async def render(self, *args: Any, **kwargs: Any) -> str:
+    async def render(self, *args: Any, **kwargs: Any) -> RenderedImage:
         return await self._render(
             page_kind,
             partial(build_html, self.templates, *args, **kwargs),
@@ -896,17 +909,17 @@ class LongImageRenderer:
     async def warm_up(self) -> None:
         """Launch Chromium and render one page so the first query is fast."""
 
-        output_path = await self._render(
+        warmed = await self._render(
             "warmup",
             partial(self.templates.render_help, command_prefix="/"),
         )
-        await self._discard_output(Path(output_path))
+        await self._discard_output(Path(warmed.path))
 
     async def _render(
         self,
         page_kind: str,
         build: Callable[..., str],
-    ) -> str:
+    ) -> RenderedImage:
         """Render one page with ``build(embed_fonts=...)`` and capture it.
 
         Chromium gets the small document with linked fonts. When only the
@@ -928,7 +941,7 @@ class LongImageRenderer:
                 pass  # The linked copy is still a complete page, in system fonts.
             raise
 
-    async def _capture(self, html: str, page_kind: str) -> str:
+    async def _capture(self, html: str, page_kind: str) -> RenderedImage:
         """Wait for a capture slot, then capture; both waits are bounded.
 
         Only the queue wait is under the timeout. Wrapping the capture as
@@ -961,7 +974,7 @@ class LongImageRenderer:
         finally:
             self._render_semaphore.release()
 
-    async def _capture_once(self, html: str, page_kind: str) -> str:
+    async def _capture_once(self, html: str, page_kind: str) -> RenderedImage:
         browser = await self._ensure_browser()
         output_path = await self._reserve_output_path(page_kind)
         scale = 2 if page_kind in _HIGH_DPI_PAGE_KINDS else 1
@@ -983,11 +996,11 @@ class LongImageRenderer:
                 type="png",
                 timeout=self.render_timeout_ms,
             )
-            width, height = _read_png_dimensions(output_path)
+            width, height = read_png_dimensions(output_path)
             if width != 1280 * scale or height < metrics["height"] * scale:
                 raise RenderError("captured image does not contain the full page")
             await self._complete_output(output_path)
-            return str(output_path)
+            return RenderedImage(str(output_path), scale)
         except RenderError:
             await self._discard_output(output_path)
             raise
@@ -1473,7 +1486,7 @@ def _load_fonts(
     return files, Markup("\n".join(embedded)), Markup("\n".join(linked))
 
 
-def _read_png_dimensions(path: Path) -> tuple[int, int]:
+def read_png_dimensions(path: Path) -> tuple[int, int]:
     try:
         with path.open("rb") as stream:
             header = stream.read(24)

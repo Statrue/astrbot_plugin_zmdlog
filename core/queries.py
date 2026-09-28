@@ -64,7 +64,7 @@ from .models import (
     HotBossCard,
 )
 from .origins import is_group_origin
-from .outcome import Outcome
+from .outcome import Outcome, PageSubject, PageTarget
 from .rank_watch import RankWatcher
 from .recipes import (
     IndexSnapshot,
@@ -216,7 +216,10 @@ class QueryService:
         recipe = await prepare_battle(
             self._data, battle_id, query=battle_id, web_base_url=self._web_base_url
         )
-        return Outcome(image_path=await recipe.draw(self._renderer()))
+        return Outcome.image(
+            await recipe.draw(self._renderer()),
+            target=PageTarget(PageSubject.BATTLE, battle_id, CandidateView.BATTLE),
+        )
 
     async def _index(self, metric: str = METRIC_DPS) -> IndexSnapshot | Outcome:
         """The ranking index for ``metric``, or the reply for one still filling."""
@@ -240,8 +243,9 @@ class QueryService:
 
         renderer = self._renderer()
         if route.kind is RouteKind.HELP:
-            image_path = await renderer.render_help(command_prefix=command_prefix)
-            return Outcome(image_path=image_path)
+            return Outcome.image(
+                await renderer.render_help(command_prefix=command_prefix)
+            )
 
         if route.kind is RouteKind.MY_ACCOUNT:
             return await self._render_my_account(
@@ -263,7 +267,7 @@ class QueryService:
             recipe = await prepare_boards_overview(
                 self._data, web_base_url=self._web_base_url
             )
-            return Outcome(image_path=await recipe.draw(renderer))
+            return Outcome.image(await recipe.draw(renderer))
 
         if route.kind is RouteKind.ACCOUNT_QUERY:
             account_id = self._account_reference(route.query)
@@ -331,7 +335,7 @@ class QueryService:
                 web_base_url=self._web_base_url,
                 metric=route.metric,
             )
-            return Outcome(image_path=await recipe.draw(renderer))
+            return Outcome.image(await recipe.draw(renderer))
         return None
 
     async def _dispatch_trend(self, route: RouteRequest, *, origin: str) -> Outcome:
@@ -532,7 +536,7 @@ class QueryService:
         recipe = prepare_dungeon_overview(
             choice, cards, query=query, web_base_url=self._web_base_url
         )
-        return Outcome(image_path=await recipe.draw(self._renderer()))
+        return Outcome.image(await recipe.draw(self._renderer()))
 
     # --- accounts --------------------------------------------------------------------
 
@@ -632,7 +636,10 @@ class QueryService:
                 raise
             self._logger.warning("ZmdLogBot API request failed: %s", exc.code)
             return Outcome(message=messages.ACCOUNT_NOT_FOUND)
-        return Outcome(image_path=await recipe.draw(renderer))
+        return Outcome.image(
+            await recipe.draw(renderer),
+            target=PageTarget(PageSubject.ACCOUNT, account_id),
+        )
 
     async def _render_my_account(
         self,
@@ -739,7 +746,7 @@ class QueryService:
                 )
             )
         index = self._data.ranking_index
-        image_path = await self._renderer().render_group_board(
+        rendered = await self._renderer().render_group_board(
             ranking,
             rows,
             query=query,
@@ -757,7 +764,15 @@ class QueryService:
                 else None
             ),
         )
-        return Outcome(image_path=image_path)
+        return Outcome.image(
+            rendered,
+            target=PageTarget(
+                PageSubject.BOARD,
+                ranking.boss_slug,
+                CandidateView.GROUP_BOARD,
+                metric=ranking.metric,
+            ),
+        )
 
     async def _render_trend(
         self,
@@ -775,14 +790,17 @@ class QueryService:
         history = self._watcher.history_for(account_id)
         if history is None or not history.boards:
             return Outcome(message=messages.TREND_NO_DATA)
-        image_path = await self._renderer().render_trend(
+        rendered = await self._renderer().render_trend(
             history,
             query=query,
             web_base_url=self._web_base_url,
             time_range=time_range,
             last_checked=self._watcher.last_checked(account_id),
         )
-        return Outcome(image_path=image_path)
+        return Outcome.image(
+            rendered,
+            target=PageTarget(PageSubject.ACCOUNT, account_id, CandidateView.TREND),
+        )
 
     # --- characters ------------------------------------------------------------------
 
@@ -795,7 +813,7 @@ class QueryService:
         if isinstance(snapshot, Outcome):
             return snapshot
         recipe = prepare_records(self._data, snapshot, time_range=time_range)
-        return Outcome(image_path=await recipe.draw(self._renderer()))
+        return Outcome.image(await recipe.draw(self._renderer()))
 
     async def _render_player_champions(
         self, time_range: str, *, metric: str = METRIC_DPS
@@ -806,7 +824,7 @@ class QueryService:
         if isinstance(snapshot, Outcome):
             return snapshot
         recipe = prepare_player_champions(snapshot, time_range=time_range)
-        return Outcome(image_path=await recipe.draw(self._renderer()))
+        return Outcome.image(await recipe.draw(self._renderer()))
 
     async def _render_character_standings(
         self,
@@ -837,7 +855,7 @@ class QueryService:
                 profession=profession_filter,
                 time_range=time_range,
             )
-            return Outcome(image_path=await recipe.draw(self._renderer()))
+            return Outcome.image(await recipe.draw(self._renderer()))
         names = resolve_standing_names(query, snapshot.fielded)
         if isinstance(names, str):
             return Outcome(message=names)
@@ -850,7 +868,7 @@ class QueryService:
         )
         if isinstance(recipe, str):
             return Outcome(message=recipe)
-        return Outcome(image_path=await recipe.draw(self._renderer()))
+        return Outcome.image(await recipe.draw(self._renderer()))
 
     async def _resolve_catalog_character(
         self,
@@ -916,7 +934,7 @@ class QueryService:
             web_base_url=self._web_base_url,
             metric=pending.metric,
         )
-        return Outcome(image_path=await recipe.draw(self._renderer()))
+        return Outcome.image(await recipe.draw(self._renderer()))
 
     async def _character_name_hint(
         self,
@@ -971,9 +989,22 @@ class QueryService:
                 web_base_url=self._web_base_url,
                 metric=pending.metric,
             )
-            return Outcome(image_path=await recipe.draw(renderer))
+            return Outcome.image(
+                await recipe.draw(renderer),
+                target=PageTarget(
+                    PageSubject.BOARD,
+                    boss_slug,
+                    CandidateView.CHARACTER_STATS,
+                    metric=pending.metric,
+                    stats_range=pending.stats_range,
+                    stats_potential=pending.stats_potential,
+                ),
+            )
 
         ranking = await self._data.get_boss_ranking(boss_slug, metric=pending.metric)
+        board = PageTarget(
+            PageSubject.BOARD, boss_slug, pending.view, metric=pending.metric
+        )
         if pending.view is CandidateView.COMPARE:
             wanted = (pending.battle_rank, pending.compare_rank)
             rows = {
@@ -1000,13 +1031,13 @@ class QueryService:
                 row.battle_id, pending.view, query=query
             )
         if pending.view is CandidateView.ROSTER:
-            image_path = await renderer.render_roster(
+            rendered = await renderer.render_roster(
                 ranking,
                 query=query,
                 ranking_limit=ranking_limit,
                 web_base_url=self._web_base_url,
             )
-            return Outcome(image_path=image_path)
+            return Outcome.image(rendered, target=board)
         if pending.view is CandidateView.GROUP_BOARD:
             return await self._render_group_board(
                 ranking, query=query, origin=pending.origin, limit=ranking_limit
@@ -1023,7 +1054,7 @@ class QueryService:
         )
         if isinstance(recipe, str):
             return Outcome(message=recipe)
-        return Outcome(image_path=await recipe.draw(renderer))
+        return Outcome.image(await recipe.draw(renderer), target=board)
 
     # --- battles ---------------------------------------------------------------------
 
@@ -1042,6 +1073,7 @@ class QueryService:
         """
 
         renderer = self._renderer()
+        target = PageTarget(PageSubject.BATTLE, battle_id, view)
         if view is CandidateView.TIMELINE:
             # The detail only adds the BUFF 覆盖 band, so it is fetched
             # alongside the export rather than after it; awaiting it second
@@ -1061,20 +1093,20 @@ class QueryService:
                 return Outcome(message=refusal)
             if isinstance(export, BaseException):
                 raise export
-            image_path = await renderer.render_timeline(
+            rendered = await renderer.render_timeline(
                 export,
                 query=query,
                 web_base_url=self._web_base_url,
                 battle=None if isinstance(battle, BaseException) else battle,
             )
-            return Outcome(image_path=image_path)
+            return Outcome.image(rendered, target=target)
         if view in (CandidateView.LOADOUT, CandidateView.SKILLS):
             # Neither page reads the cast export, so neither pays for it.
             battle = await self._data.get_battle_detail(battle_id)
             if view is CandidateView.LOADOUT:
                 if not battle.roster:
                     return Outcome(message=messages.NO_LOADOUT)
-                image_path = await renderer.render_loadout(
+                rendered = await renderer.render_loadout(
                     battle,
                     query=query,
                     web_base_url=self._web_base_url,
@@ -1083,14 +1115,14 @@ class QueryService:
             else:
                 if not battle.skill_stats:
                     return Outcome(message=messages.NO_SKILL_STATS)
-                image_path = await renderer.render_skills(
+                rendered = await renderer.render_skills(
                     battle, query=query, web_base_url=self._web_base_url
                 )
-            return Outcome(image_path=image_path)
+            return Outcome.image(rendered, target=target)
         recipe = await prepare_battle(
             self._data, battle_id, query=query, web_base_url=self._web_base_url
         )
-        return Outcome(image_path=await recipe.draw(renderer))
+        return Outcome.image(await recipe.draw(renderer), target=target)
 
     async def _render_compare(
         self,
@@ -1117,7 +1149,8 @@ class QueryService:
         )
         if recipe.refusal is not None:
             return Outcome(message=recipe.refusal)
-        return Outcome(image_path=await recipe.draw(renderer))
+        # Two battles: neither one's ZMDLogs page is this page.
+        return Outcome.image(await recipe.draw(renderer))
 
     async def _battle_detail_if_available(
         self,

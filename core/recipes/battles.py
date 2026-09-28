@@ -11,7 +11,7 @@ from ..models import BattleDetailSummary, BattleExport
 
 if TYPE_CHECKING:
     from ..datasource import ZmdLogsDataSource
-    from ..render import LongImageRenderer
+    from ..render import LongImageRenderer, RenderedImage
 
 EXPORT_UNSUPPORTED = "battle_export_unsupported"
 
@@ -42,7 +42,7 @@ class BattleRecipe:
     query: str
     web_base_url: str
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_battle(
             self.battle,
             query=self.query,
@@ -100,7 +100,7 @@ class CompareRecipe:
     rank_a: int | None = None
     rank_b: int | None = None
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_compare(
             self.first,
             self.second,

@@ -23,7 +23,7 @@ from ..routing import DEFAULT_RANKING_TOP
 
 if TYPE_CHECKING:
     from ..datasource import ZmdLogsDataSource
-    from ..render import LongImageRenderer
+    from ..render import LongImageRenderer, RenderedImage
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +48,7 @@ class RankingRecipe:
     dps_rows: Mapping[str, BossRankingRow] | None = None
     dps_row_count: int | None = None
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_ranking(
             self.ranking,
             query=self.query,
@@ -197,7 +197,7 @@ class BoardsOverviewRecipe:
     query: str
     web_base_url: str | None
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_all_top3(
             self.cards, query=self.query, web_base_url=self.web_base_url
         )
@@ -221,7 +221,7 @@ class DungeonOverviewRecipe:
     query: str
     web_base_url: str | None
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_dungeon_top3(
             self.choice, self.cards, query=self.query, web_base_url=self.web_base_url
         )

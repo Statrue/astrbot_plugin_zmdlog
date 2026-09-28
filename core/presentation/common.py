@@ -157,7 +157,7 @@ def _initial(value: str) -> str:
     return value[:1] or "?"
 
 
-def _safe_http_url(value: str | None) -> str | None:
+def safe_http_url(value: str | None) -> str | None:
     if value is None:
         return None
     parsed = urlsplit(value)
@@ -176,9 +176,9 @@ def _safe_asset_url(
     if value is None:
         return None
     if base_url is None:
-        return _safe_http_url(value)
+        return safe_http_url(value)
     resolved = urljoin(f"{base_url.rstrip('/')}/", value)
-    return _safe_http_url(resolved)
+    return safe_http_url(resolved)
 
 
 def public_url(base_url: str, resource: str, identifier: str) -> str:

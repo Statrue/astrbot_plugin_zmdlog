@@ -9,7 +9,7 @@ from ..standings import AccountTally, account_tallies
 from .index import IndexSnapshot
 
 if TYPE_CHECKING:
-    from ..render import LongImageRenderer
+    from ..render import LongImageRenderer, RenderedImage
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +22,7 @@ class PlayerChampionsRecipe:
     query: str = "玩家排名"
     metric: str = "dps"
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_player_champions(
             self.tallies,
             board_count=self.board_count,

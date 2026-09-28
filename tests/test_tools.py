@@ -21,6 +21,7 @@ from core.models import (
 )
 from core.queries import tool_api_error_message
 from core.ranking_index import IndexEntry
+from core.render import RenderedImage
 from core.settings import PluginSettings
 from core.toolbox import ToolAnswer, ToolService
 from tests.helpers import (
@@ -41,13 +42,17 @@ def run(coro):
 
 
 class FakeRenderer:
-    """Records what a tool asked to draw and hands back a path."""
+    """Records what a tool asked to draw and hands back a capture of it.
+
+    ``scale`` is the one every capture reports, 2 unless a test sets it.
+    """
 
     def __init__(self, fail: bool = False) -> None:
         self.calls: list[str] = []
         self.args: dict[str, tuple] = {}
         self.kwargs: dict[str, dict] = {}
         self.fail = fail
+        self.scale = 2
 
     def _page(self, kind):
         async def render(*args, **kwargs):
@@ -56,7 +61,7 @@ class FakeRenderer:
             self.kwargs[kind] = kwargs
             if self.fail:
                 raise RuntimeError("no chromium")
-            return f"/tmp/{kind}.png"
+            return RenderedImage(f"/tmp/{kind}.png", self.scale)
 
         return render
 

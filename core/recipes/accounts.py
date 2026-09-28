@@ -9,7 +9,7 @@ from ..models import BossRankingRow, PublicUserRankings
 
 if TYPE_CHECKING:
     from ..datasource import ZmdLogsDataSource
-    from ..render import LongImageRenderer
+    from ..render import LongImageRenderer, RenderedImage
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +26,7 @@ class AccountRecipe:
     query: str
     web_base_url: str
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_account(
             self.account,
             query=self.query,

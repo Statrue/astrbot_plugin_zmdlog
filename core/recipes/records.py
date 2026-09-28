@@ -10,7 +10,7 @@ from .index import IndexSnapshot
 
 if TYPE_CHECKING:
     from ..datasource import ZmdLogsDataSource
-    from ..render import LongImageRenderer
+    from ..render import LongImageRenderer, RenderedImage
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,7 +25,7 @@ class RecordsRecipe:
     query: str = "新纪录"
     metric: str = "dps"
 
-    async def draw(self, renderer: "LongImageRenderer") -> str:
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_records(
             self.events,
             self.activity,
