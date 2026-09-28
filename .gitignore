@@ -1,6 +1,9 @@
 # Local planning docs (design drafts, upstream API proposals); superseded
-# ones live in docs/archive/. Nothing under docs/ is meant to be committed.
-/docs/
+# ones live in docs/archive/. Only the agent-skill config (docs/agents/) and
+# the ADRs (docs/adr/) are committed.
+/docs/*
+!/docs/agents/
+!/docs/adr/
 
 # Local IDE metadata
 /.idea/

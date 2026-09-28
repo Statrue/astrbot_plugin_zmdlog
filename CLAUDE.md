@@ -274,6 +274,20 @@ when the user settled the question.
   appears on a market card, only in that dropdown, which is not worth the red
   text.
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `Statrue/astrbot_plugin_zmdlog` (public), via `gh`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label named after its role (`wontfix` already exists). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root, created lazily. See `docs/agents/domain.md`.
+
 ## References
 
 - AstrBot plugin dev docs: https://docs.astrbot.app/dev/star/plugin-new.html
@@ -283,5 +297,6 @@ when the user settled the question.
 - Reference plugin for structure/visual style only:
   https://github.com/Entropy-Increase-Team/astrbot_plugin_endfield (AGPL-3.0;
   its background image was used until the Endfield restyle and is no longer present)
-- Planning notes under `docs/` are local and gitignored.
+- Planning notes under `docs/` are local and gitignored, except `docs/agents/`
+  and `docs/adr/`.
   [UPSTREAM.md](UPSTREAM.md) is the source of truth for the API contract.
