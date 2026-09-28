@@ -75,6 +75,17 @@ class Reply:
         self.message_str = text
 
 
+class FakeResult(tuple):
+    """``(kind, payload)``, compared as a plain tuple, that also records
+    ``use_markdown`` the way AstrBot's MessageEventResult does."""
+
+    use_markdown_ = None
+
+    def use_markdown(self, use: bool | None = True):
+        self.use_markdown_ = use
+        return self
+
+
 class FakeEvent:
     def __init__(
         self,
@@ -130,10 +141,10 @@ class FakeEvent:
         self.sent.append(chain)
 
     def plain_result(self, text: str):
-        return ("plain", text)
+        return FakeResult(("plain", text))
 
     def image_result(self, path: str):
-        return ("image", path)
+        return FakeResult(("image", path))
 
     def is_admin(self) -> bool:
         return False
@@ -603,8 +614,11 @@ class HandlerTests(unittest.TestCase):
 
         self.plugin.client.search_public_accounts = search
 
-    def _official(self, text: str, *, api: "FakeBotApi", private: bool = False):
-        event = FakeEvent(
+    @staticmethod
+    def _official_event(
+        text: str, *, api: "FakeBotApi", private: bool = False, **extra
+    ) -> FakeEvent:
+        return FakeEvent(
             text,
             origin=(
                 "default:FriendMessage:U1" if private else "default:GroupMessage:G1"
@@ -613,7 +627,11 @@ class HandlerTests(unittest.TestCase):
             group_openid=None if private else "G1",
             user_openid="U1" if private else None,
             api=api,
+            **extra,
         )
+
+    def _official(self, text: str, *, api: "FakeBotApi", private: bool = False):
+        event = self._official_event(text, api=api, private=private)
         return event, run(collect(self.plugin.zmdlog(event)))
 
     def _assert_sent_with_buttons(self, api, event, *, scene: str, commands):
@@ -697,6 +715,8 @@ class HandlerTests(unittest.TestCase):
                 self.assertEqual(len(api.calls), 1)
                 (kind, listing), = results
                 self.assertEqual(kind, "plain")
+                # Its nicknames are unescaped, so markdown would misread them.
+                self.assertIs(results[0].use_markdown_, False)
                 self.assertTrue(
                     listing.startswith(
                         "「CPU」匹配到 2 个目标，引用本条消息回复序号即可："
@@ -723,7 +743,8 @@ class HandlerTests(unittest.TestCase):
         self.plugin.settings = dataclasses.replace(
             self.plugin.settings, disable_qq_official_buttons=True
         )
-        (webhook_kind, webhook_listing), = run(collect(self.plugin.zmdlog(webhook)))
+        (webhook_result,) = run(collect(self.plugin.zmdlog(webhook)))
+        webhook_kind, webhook_listing = webhook_result
         switched, results = self._official("/zmdlog 账号 CPU", api=switched_api)
 
         (switched_kind, switched_listing), = results
@@ -735,6 +756,9 @@ class HandlerTests(unittest.TestCase):
         ):
             self.assertEqual(kind, "plain")
             self.assertEqual(code.sub("", listing), code.sub("", wild[0][1]))
+        # Nor is the platform's markdown default overridden there.
+        for reply in (wild[0], webhook_result, results[0]):
+            self.assertIsNone(reply.use_markdown_)
         self.assertEqual(webhook_api.calls, [])
         self.assertEqual(switched_api.calls, [])
 
@@ -747,6 +771,44 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(kind, "plain")
         self.assertEqual(api.calls, [])
         self.assertFalse(event.stopped)
+
+    def test_every_other_official_text_reply_goes_out_as_plain_text(self) -> None:
+        # A nickname's * or _ would otherwise set the reply in bold or italic.
+        self._enable_watch_storage()
+        self._enable_binding_storage()
+        for private in (False, True):
+            api = FakeBotApi()
+            for text in (
+                "/zmdlog 别名 乱写",  # a parse error
+                "/zmdlog 账号 x",  # a query error
+                "/zmdlog 别名",
+                "/zmdlog 关注",
+                "/zmdlog 我的",
+            ):
+                with self.subTest(text=text, private=private):
+                    _, results = self._official(text, api=api, private=private)
+                    (reply,) = results
+                    self.assertEqual(reply[0], "plain")
+                    self.assertIs(reply.use_markdown_, False)
+            with self.subTest("an expired pick", private=private):
+                expired = self._official_event(
+                    "2", api=api, private=private, quoted="候选编号 ABCD"
+                )
+                (reply,) = run(collect(self.plugin.pick_candidate(expired)))
+                self.assertEqual(reply[0], "plain")
+                self.assertIs(reply.use_markdown_, False)
+            self.assertEqual(api.calls, [])
+
+        async def missing(battle_id):
+            raise ZmdLogsAPIError(404, "battle_not_found", "gone")
+
+        self.plugin.data.get_battle_detail = missing
+        link = self._official_event(
+            "看 https://zmdlogs.com/battle/btl_upload_abcdef123456", api=api
+        )
+        (reply,) = run(collect(self.plugin.expand_battle_link(link)))
+        self.assertEqual(reply[0], "plain")
+        self.assertIs(reply.use_markdown_, False)
 
     # --- board watch ----------------------------------------------------------
 

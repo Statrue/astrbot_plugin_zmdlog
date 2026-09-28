@@ -292,12 +292,12 @@ class ZmdLogBotPlugin(Star):
         try:
             route = parse_zmdlog_payload(payload)
         except RouteParseError as exc:
-            yield event.plain_result(str(exc))
+            yield self._text_result(event, str(exc))
             return
         except ValueError:
             # Defence in depth: a parse-layer ValueError that is not a
             # RouteParseError must still answer briefly, never as a traceback.
-            yield event.plain_result("指令参数无法解析，请检查后重试。")
+            yield self._text_result(event, "指令参数无法解析，请检查后重试。")
             return
         if (
             route.kind in _ALIAS_ROUTES
@@ -340,7 +340,7 @@ class ZmdLogBotPlugin(Star):
                 async for result in self._reply(event, watch_outcome):
                     yield result
                 return
-            yield event.plain_result(message)
+            yield self._text_result(event, message)
             return
         outcome, _ = await self._run_guarded(
             lambda: self.queries.dispatch(
@@ -468,14 +468,23 @@ class ZmdLogBotPlugin(Star):
             return
         yield self._outcome_result(event, outcome)
 
+    def _answers_as_official(self, event: AstrMessageEvent) -> bool:
+        """Whether ``event`` is answered the QQ official bot's way.
+
+        Not merely whether it came from that bot: the switch turns all of it
+        off, and the bot then answers the way it did before any of it.
+        """
+
+        return not self.settings.disable_qq_official_buttons and (
+            qq_official.is_official(event)
+        )
+
     async def _send_pick_buttons(
         self, event: AstrMessageEvent, outcome: Outcome
     ) -> bool:
         """Send ``outcome``'s pick list with command buttons; False if not sent."""
 
-        if self.settings.disable_qq_official_buttons or not qq_official.is_official(
-            event
-        ):
+        if not self._answers_as_official(event):
             return False
         message = pick_list_message(
             outcome.candidates,
@@ -487,11 +496,25 @@ class ZmdLogBotPlugin(Star):
             return False
         return await qq_official.send_markdown(event, message, logger=logger)
 
-    @staticmethod
-    def _outcome_result(event: AstrMessageEvent, outcome: Outcome):
+    def _outcome_result(self, event: AstrMessageEvent, outcome: Outcome):
         if outcome.image_path is not None:
             return event.image_result(outcome.image_path)
-        return event.plain_result(outcome.message or "本次查询未产生结果。")
+        return self._text_result(event, outcome.message or "本次查询未产生结果。")
+
+    def _text_result(self, event: AstrMessageEvent, text: str):
+        """A text reply; on the QQ official bot, one sent as plain text.
+
+        That adapter sends markdown unless told otherwise, so a nickname's
+        ``*`` or ``_`` set the reply in bold or italic. Of the replies, only
+        the pick list with buttons is markdown, and it escapes what it prints.
+        """
+
+        result = event.plain_result(text)
+        use_markdown = getattr(result, "use_markdown", None)
+        # Older AstrBot releases cannot say so; the reply still goes out.
+        if use_markdown is not None and self._answers_as_official(event):
+            use_markdown(False)
+        return result
 
     async def _reply_with_candidate(
         self,
@@ -503,7 +526,7 @@ class ZmdLogBotPlugin(Star):
             code, selection, origin=self._event_origin(event)
         )
         if resolved is None:
-            yield event.plain_result("这份候选列表已过期或序号无效，请重新查询。")
+            yield self._text_result(event, "这份候选列表已过期或序号无效，请重新查询。")
             return
         entry, choice = resolved
         if entry.view in {CandidateView.WATCH, CandidateView.WATCH_BOARD}:
@@ -520,7 +543,7 @@ class ZmdLogBotPlugin(Star):
                 message = await self.watcher.remember_board(
                     origin, requester, choice.target.key
                 )
-            yield event.plain_result(message)
+            yield self._text_result(event, message)
             return
 
         outcome, _ = await self._run_guarded(

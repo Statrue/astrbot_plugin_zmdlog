@@ -196,7 +196,7 @@ AstrBot 接入大模型并开启函数调用后，群友直接用自然语言问
 | `ranking_index_pace_seconds` | `30` | 索引每隔多少秒重读一个榜，最低 5 |
 | `bindings_enabled` | `true` | 账号绑定（绑定 / 我的 / 群榜）；关闭后已有绑定仍可查看和解除 |
 | `group_board_max_accounts` | `30` | 群榜最多统计多少个绑定账号，1–200 |
-| `disable_qq_official_buttons` | `false` | 关掉 QQ 官方机器人（`qq_official`）的按钮，回复与不带按钮时完全相同 |
+| `disable_qq_official_buttons` | `false` | 关掉 QQ 官方机器人（`qq_official`）的按钮与纯文本回复：候选列表不带按钮，文字回复回到适配器默认的 markdown |
 
 ## 🔍 它是怎么工作的
 
