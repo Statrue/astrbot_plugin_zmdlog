@@ -1078,9 +1078,18 @@ class HandlerTests(unittest.TestCase):
         self.plugin.renderer.render_trend = draw
         self.plugin.renderer.render_group_board = draw
         self._official("/zmdlog 绑定 ZMD-AAAA-BBBB", api=FakeBotApi())
-        for text, link in (
-            ("/zmdlog 趋势 usr_1234567890abcdef", "/records/usr_1234567890abcdef"),
-            ("/zmdlog 群榜 三位一体", f"/boss/{ranking.boss_slug}"),
+        slug = ranking.boss_slug
+        for text, link, siblings in (
+            (
+                "/zmdlog 趋势 usr_1234567890abcdef",
+                "/records/usr_1234567890abcdef",
+                ["/zmdlog 账号 usr_1234567890abcdef"],
+            ),
+            (
+                "/zmdlog 群榜 三位一体",
+                f"/boss/{slug}",
+                [f"/zmdlog 榜单 {slug}", f"/zmdlog 阵容 {slug}"],
+            ),
         ):
             with self.subTest(text=text):
                 api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
@@ -1089,9 +1098,14 @@ class HandlerTests(unittest.TestCase):
 
                 self.assertEqual(results, [])
                 (_, payload), = api.calls
-                (row,) = payload["keyboard"]["content"]["rows"]
+                jump, views = payload["keyboard"]["content"]["rows"]
                 self.assertEqual(
-                    row["buttons"][0]["action"]["data"], f"https://zmdlogs.com{link}"
+                    jump["buttons"][0]["action"]["data"], f"https://zmdlogs.com{link}"
+                )
+                # The other views fill in a command with the prefix typed.
+                self.assertEqual(
+                    [button["action"]["data"] for button in views["buttons"]],
+                    siblings,
                 )
 
     def test_pages_about_no_one_thing_stay_native_pictures(self) -> None:

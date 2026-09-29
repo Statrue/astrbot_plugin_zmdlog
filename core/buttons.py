@@ -33,6 +33,13 @@ is cropped around its middle, taking the page header and the first rows, so
 a half pixel rounds the height up. The link is the platform's own storage
 URL, asked to answer as ``image/png`` — by default it answers
 ``application/octet-stream``, which the client draws as a broken image.
+
+Beside the jump button, up to three command buttons open the same thing's
+other pages (``_SIBLINGS``), built like a pick's: the key and the view word,
+and a board's metric. A page the drawing showed this thing does not have —
+an old upload's loadout, an unwatched account's trend — gets no button, and
+neither does a board's battle under a non-DPS board, since 战报 takes no
+metric and would open the DPS board's first place instead.
 """
 
 import re
@@ -93,6 +100,62 @@ _BATTLE_VIEWS = frozenset(
         CandidateView.TIMELINE,
     }
 )
+# What each page with a target offers besides its jump button: the other
+# views of the same thing, at most three, settled per page. The four
+# battle pages are one family, the board's pages another, an account and
+# its trend a third. A page about no one thing has no entry, and no button.
+_SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = {
+    (PageSubject.BATTLE, CandidateView.BATTLE): (
+        CandidateView.LOADOUT,
+        CandidateView.SKILLS,
+        CandidateView.TIMELINE,
+    ),
+    (PageSubject.BATTLE, CandidateView.LOADOUT): (
+        CandidateView.BATTLE,
+        CandidateView.SKILLS,
+        CandidateView.TIMELINE,
+    ),
+    (PageSubject.BATTLE, CandidateView.SKILLS): (
+        CandidateView.BATTLE,
+        CandidateView.LOADOUT,
+        CandidateView.TIMELINE,
+    ),
+    (PageSubject.BATTLE, CandidateView.TIMELINE): (
+        CandidateView.BATTLE,
+        CandidateView.LOADOUT,
+        CandidateView.SKILLS,
+    ),
+    # 战报 on a board is its first place's battle.
+    (PageSubject.BOARD, CandidateView.RANKING): (
+        CandidateView.ROSTER,
+        CandidateView.CHARACTER_STATS,
+        CandidateView.BATTLE,
+    ),
+    (PageSubject.BOARD, CandidateView.ROSTER): (
+        CandidateView.RANKING,
+        CandidateView.CHARACTER_STATS,
+    ),
+    (PageSubject.BOARD, CandidateView.CHARACTER_STATS): (
+        CandidateView.RANKING,
+        CandidateView.ROSTER,
+    ),
+    (PageSubject.BOARD, CandidateView.GROUP_BOARD): (
+        CandidateView.RANKING,
+        CandidateView.ROSTER,
+    ),
+    (PageSubject.ACCOUNT, CandidateView.RANKING): (CandidateView.TREND,),
+    (PageSubject.ACCOUNT, CandidateView.TREND): (CandidateView.RANKING,),
+}
+# A board's views that list its records, and so take --top.
+_LISTING_VIEWS = frozenset(
+    {CandidateView.RANKING, CandidateView.ROSTER, CandidateView.GROUP_BOARD}
+)
+# A sibling's label is its command word, except where that word alone would
+# not say which page it opens.
+_SIBLING_LABELS = {
+    (PageSubject.BOARD, CandidateView.BATTLE): "第 1 名战报",
+    (PageSubject.ACCOUNT, CandidateView.TREND): "名次趋势",
+}
 _PNG_CONTENT_TYPE = "response-content-type=image%2Fpng"
 # URL characters that cannot end a markdown image: no space, no bracket or
 # parenthesis, no fragment (the content-type parameter must follow the query).
@@ -232,14 +295,58 @@ def result_image_message(
 
 
 def result_keyboard(
-    target: PageTarget, *, web_base_url: str
+    target: PageTarget, *, web_base_url: str, command: str
 ) -> dict[str, Any] | None:
-    """The keyboard under a result picture; None when it can have no button."""
+    """The keyboard under a result picture; None when it can have no link.
+
+    The jump button fills the first row; the page's other views of the same
+    target (``_SIBLINGS``) share the second, as command buttons. ``command``
+    is the prefixed command name (``/zmdlog``).
+    """
 
     url = _jump_url(target, web_base_url=web_base_url)
     if url is None:
         return None
-    return keyboard([jump_button("open", JUMP_LABEL, url)])
+    rows = [[jump_button("open", JUMP_LABEL, url)]]
+    siblings = [
+        command_button(f"view-{view.value}", label, sibling_command)
+        for view, label, sibling_command in _sibling_commands(target, command)
+    ]
+    if siblings:
+        rows.append(siblings)
+    return _keyboard_rows(rows)
+
+
+def _sibling_commands(
+    target: PageTarget, command: str
+) -> list[tuple[CandidateView, str, str]]:
+    """``(view, label, command)`` of every other view ``target``'s page offers.
+
+    A board keeps its metric: the other views of an rDPS board are its rDPS
+    views, and one that takes no metric (战报) is left off rather than open
+    the DPS board's battle. Its length (``--top``) goes wherever it means the
+    same, the board's lists; its statistics window and potential belong to
+    the statistics page. A battle or an account command takes no option.
+    """
+
+    words = _ACCOUNT_WORDS if target.subject is PageSubject.ACCOUNT else _BOARD_WORDS
+    other_metric = (
+        target.subject is PageSubject.BOARD and target.metric != DEFAULT_METRIC
+    )
+    offered = []
+    for view in _SIBLINGS.get((target.subject, target.view), ()):
+        if view in target.unavailable:
+            continue
+        if other_metric and view in _BATTLE_VIEWS:
+            continue
+        parts = [command, words[view], target.key]
+        if target.ranking_top is not None and view in _LISTING_VIEWS:
+            parts += ["--top", str(target.ranking_top)]
+        if other_metric:
+            parts += ["--口径", target.metric]
+        label = _SIBLING_LABELS.get((target.subject, view), words[view])
+        offered.append((view, label, " ".join(parts)))
+    return offered
 
 
 def _jump_url(target: PageTarget, *, web_base_url: str) -> str | None:
@@ -299,7 +406,11 @@ def _button(button_id: str, label: str, action: int, data: str) -> dict[str, Any
 def keyboard(buttons: list[dict[str, Any]]) -> dict[str, Any]:
     """One button per row, full width, in the order given."""
 
-    return {"content": {"rows": [{"buttons": [button]} for button in buttons]}}
+    return _keyboard_rows([[button] for button in buttons])
+
+
+def _keyboard_rows(rows: list[list[dict[str, Any]]]) -> dict[str, Any]:
+    return {"content": {"rows": [{"buttons": row} for row in rows]}}
 
 
 def escape_markdown(text: str) -> str:

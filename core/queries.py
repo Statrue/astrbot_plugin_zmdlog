@@ -67,6 +67,7 @@ from .origins import is_group_origin
 from .outcome import Outcome, PageSubject, PageTarget
 from .rank_watch import RankWatcher
 from .recipes import (
+    BattleRecipe,
     IndexSnapshot,
     export_refusal,
     index_snapshot,
@@ -218,7 +219,7 @@ class QueryService:
         )
         return Outcome.image(
             await recipe.draw(self._renderer()),
-            target=PageTarget(PageSubject.BATTLE, battle_id, CandidateView.BATTLE),
+            target=_card_target(recipe, battle_id),
         )
 
     async def _index(self, metric: str = METRIC_DPS) -> IndexSnapshot | Outcome:
@@ -636,9 +637,18 @@ class QueryService:
                 raise
             self._logger.warning("ZmdLogBot API request failed: %s", exc.code)
             return Outcome(message=messages.ACCOUNT_NOT_FOUND)
+        # A trend exists only for an account the rank watch has polled.
+        history = self._watcher.history_for(account_id)
+        no_trend = history is None or not history.boards
         return Outcome.image(
             await recipe.draw(renderer),
-            target=PageTarget(PageSubject.ACCOUNT, account_id),
+            target=PageTarget(
+                PageSubject.ACCOUNT,
+                account_id,
+                unavailable=(
+                    frozenset({CandidateView.TREND}) if no_trend else frozenset()
+                ),
+            ),
         )
 
     async def _render_my_account(
@@ -722,6 +732,7 @@ class QueryService:
         query: str,
         origin: str,
         limit: int,
+        target: PageTarget,
     ) -> Outcome:
         """The chat's bound accounts on one board, from the ranking already read.
 
@@ -764,15 +775,7 @@ class QueryService:
                 else None
             ),
         )
-        return Outcome.image(
-            rendered,
-            target=PageTarget(
-                PageSubject.BOARD,
-                ranking.boss_slug,
-                CandidateView.GROUP_BOARD,
-                metric=ranking.metric,
-            ),
-        )
+        return Outcome.image(rendered, target=target)
 
     async def _render_trend(
         self,
@@ -1003,7 +1006,11 @@ class QueryService:
 
         ranking = await self._data.get_boss_ranking(boss_slug, metric=pending.metric)
         board = PageTarget(
-            PageSubject.BOARD, boss_slug, pending.view, metric=pending.metric
+            PageSubject.BOARD,
+            boss_slug,
+            pending.view,
+            metric=pending.metric,
+            ranking_top=pending.ranking_top,
         )
         if pending.view is CandidateView.COMPARE:
             wanted = (pending.battle_rank, pending.compare_rank)
@@ -1040,7 +1047,11 @@ class QueryService:
             return Outcome.image(rendered, target=board)
         if pending.view is CandidateView.GROUP_BOARD:
             return await self._render_group_board(
-                ranking, query=query, origin=pending.origin, limit=ranking_limit
+                ranking,
+                query=query,
+                origin=pending.origin,
+                limit=ranking_limit,
+                target=board,
             )
 
         recipe = await prepare_ranking(
@@ -1073,7 +1084,6 @@ class QueryService:
         """
 
         renderer = self._renderer()
-        target = PageTarget(PageSubject.BATTLE, battle_id, view)
         if view is CandidateView.TIMELINE:
             # The detail only adds the BUFF 覆盖 band, so it is fetched
             # alongside the export rather than after it; awaiting it second
@@ -1093,13 +1103,16 @@ class QueryService:
                 return Outcome(message=refusal)
             if isinstance(export, BaseException):
                 raise export
+            detail = None if isinstance(battle, BaseException) else battle
             rendered = await renderer.render_timeline(
                 export,
                 query=query,
                 web_base_url=self._web_base_url,
-                battle=None if isinstance(battle, BaseException) else battle,
+                battle=detail,
             )
-            return Outcome.image(rendered, target=target)
+            return Outcome.image(
+                rendered, target=_battle_target(battle_id, view, detail)
+            )
         if view in (CandidateView.LOADOUT, CandidateView.SKILLS):
             # Neither page reads the cast export, so neither pays for it.
             battle = await self._data.get_battle_detail(battle_id)
@@ -1118,11 +1131,15 @@ class QueryService:
                 rendered = await renderer.render_skills(
                     battle, query=query, web_base_url=self._web_base_url
                 )
-            return Outcome.image(rendered, target=target)
+            return Outcome.image(
+                rendered, target=_battle_target(battle_id, view, battle)
+            )
         recipe = await prepare_battle(
             self._data, battle_id, query=query, web_base_url=self._web_base_url
         )
-        return Outcome.image(await recipe.draw(renderer), target=target)
+        return Outcome.image(
+            await recipe.draw(renderer), target=_card_target(recipe, battle_id)
+        )
 
     async def _render_compare(
         self,
@@ -1176,6 +1193,46 @@ class QueryService:
         return Outcome.pick_list(
             entry, ttl_seconds=self._candidates.ttl_seconds, note=note
         )
+
+
+# --- page targets -------------------------------------------------------------------
+
+
+def _battle_target(
+    battle_id: str,
+    view: CandidateView,
+    battle: BattleDetailSummary | None = None,
+    *,
+    casts_refused: bool = False,
+) -> PageTarget:
+    """The battle a page is about, less the pages its upload cannot draw.
+
+    Only what the page already read counts: without the detail the loadout
+    and skill pages are assumed there, and only the export endpoint's own
+    refusal of an old upload rules the rail out (a rate limit passes).
+    """
+
+    unavailable = set()
+    if battle is not None and not battle.roster:
+        unavailable.add(CandidateView.LOADOUT)
+    if battle is not None and not battle.skill_stats:
+        unavailable.add(CandidateView.SKILLS)
+    if casts_refused:
+        unavailable.add(CandidateView.TIMELINE)
+    return PageTarget(
+        PageSubject.BATTLE, battle_id, view, unavailable=frozenset(unavailable)
+    )
+
+
+def _card_target(recipe: BattleRecipe, battle_id: str) -> PageTarget:
+    """The battle card's target: it read the detail and asked for the casts."""
+
+    return _battle_target(
+        battle_id,
+        CandidateView.BATTLE,
+        recipe.battle,
+        casts_refused=recipe.casts_unsupported,
+    )
 
 
 # --- route helpers ------------------------------------------------------------------

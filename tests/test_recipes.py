@@ -10,6 +10,7 @@ it echoes what was typed, and the two paths are typed at differently.
 import asyncio
 import logging
 import unittest
+from types import SimpleNamespace
 
 from core import messages
 from core.candidates import CandidateStore
@@ -76,7 +77,8 @@ class SamePictureTests(unittest.TestCase):
             renderer=lambda: self.command_renderer,
             candidates=CandidateStore(),
             board_matcher=board_matcher,
-            watcher=None,
+            # The rank watch polled nobody: no account here has a trend.
+            watcher=SimpleNamespace(history_for=lambda account_id: None),
             settings=settings,
             logger=logger,
         )

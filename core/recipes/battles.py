@@ -16,6 +16,16 @@ if TYPE_CHECKING:
 EXPORT_UNSUPPORTED = "battle_export_unsupported"
 
 
+def casts_unsupported(error: ZmdLogsAPIError) -> bool:
+    """Whether the export endpoint refused an upload older than parser v33.
+
+    Such an upload carries no casts, now or ever; every other refusal may
+    pass on a retry.
+    """
+
+    return error.status_code == 422 and error.code == EXPORT_UNSUPPORTED
+
+
 def export_refusal(error: ZmdLogsAPIError) -> str | None:
     """The one-line reason the export endpoint gave, for the two known refusals.
 
@@ -23,7 +33,7 @@ def export_refusal(error: ZmdLogsAPIError) -> str | None:
     is rate-limited per IP (429); anything else is not the reader's concern.
     """
 
-    if error.status_code == 422 and error.code == EXPORT_UNSUPPORTED:
+    if casts_unsupported(error):
         return messages.NO_TIMELINE
     if error.status_code == 429:
         return messages.TIMELINE_RATE_LIMITED
@@ -41,6 +51,8 @@ class BattleRecipe:
     suits: dict[str, str]
     query: str
     web_base_url: str
+    # The upload has no casts at all, so it has no 技能轴 either.
+    casts_unsupported: bool = False
 
     async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_battle(
@@ -76,6 +88,7 @@ async def prepare_battle(
         suits=await data.equip_suits_for(battle),
         query=query,
         web_base_url=web_base_url,
+        casts_unsupported=error is not None and casts_unsupported(error),
     )
 
 

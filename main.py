@@ -512,7 +512,7 @@ class ZmdLogBotPlugin(Star):
     async def _send_result_image(
         self, event: AstrMessageEvent, outcome: Outcome
     ) -> bool:
-        """Send ``outcome``'s picture as markdown with its jump button.
+        """Send ``outcome``'s picture as markdown with its buttons under it.
 
         False when it did not go out, and the native picture is due: the
         page carries no scale, its target no safe link, or the upload or
@@ -521,7 +521,11 @@ class ZmdLogBotPlugin(Star):
 
         if not self._answers_as_official(event) or outcome.image_scale is None:
             return False
-        keyboard = result_keyboard(outcome.target, web_base_url=self.web_base_url)
+        keyboard = result_keyboard(
+            outcome.target,
+            web_base_url=self.web_base_url,
+            command=self._command_prefix(event) + "zmdlog",
+        )
         if keyboard is None:
             return False
         try:

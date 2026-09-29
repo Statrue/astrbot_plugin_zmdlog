@@ -12,9 +12,11 @@ of the one thing the picture is about.
 import asyncio
 import logging
 import unittest
+from types import SimpleNamespace
 
 from core.buttons import result_image_message, result_keyboard
 from core.candidates import CandidateStore, CandidateView
+from core.client import ZmdLogsAPIError
 from core.matcher import AliasConfig, MatcherCache
 from core.models import (
     parse_battle_detail,
@@ -25,7 +27,7 @@ from core.models import (
 )
 from core.outcome import PageSubject, PageTarget
 from core.queries import QueryService
-from core.routing import RouteKind, RouteRequest
+from core.routing import RouteKind, RouteRequest, parse_zmdlog_payload
 from core.settings import PluginSettings
 from tests.helpers import (
     battle_detail_payload,
@@ -51,6 +53,7 @@ RAW_URL = (
     "/f0/part_1?q-sign-algorithm=sha1&q-ak=AKID&q-signature=0a1b"
 )
 KEYBOARD = {"content": {"rows": []}}
+COMMAND = "/zmdlog"
 
 
 class ResultImageMessageTests(unittest.TestCase):
@@ -125,48 +128,47 @@ class ResultImageMessageTests(unittest.TestCase):
                 )
 
 
+def buttons_of(keyboard) -> list[dict]:
+    return [button for row in keyboard["content"]["rows"] for button in row["buttons"]]
+
+
 def jump_links(target: PageTarget, web_base_url: str = WEB) -> list[str] | None:
-    keyboard = result_keyboard(target, web_base_url=web_base_url)
+    keyboard = result_keyboard(target, web_base_url=web_base_url, command=COMMAND)
     if keyboard is None:
         return None
     return [
         button["action"]["data"]
-        for row in keyboard["content"]["rows"]
-        for button in row["buttons"]
+        for button in buttons_of(keyboard)
+        if button["action"]["type"] == 0
     ]
 
 
 class JumpButtonTests(unittest.TestCase):
     def test_one_jump_button_that_everyone_may_tap(self) -> None:
         keyboard = result_keyboard(
-            PageTarget(PageSubject.ACCOUNT, ACCOUNT), web_base_url=WEB
+            PageTarget(PageSubject.ACCOUNT, ACCOUNT), web_base_url=WEB, command=COMMAND
         )
 
+        # The first row, full width; the page's other views go under it.
         self.assertEqual(
-            keyboard,
+            keyboard["content"]["rows"][0],
             {
-                "content": {
-                    "rows": [
-                        {
-                            "buttons": [
-                                {
-                                    "id": "open",
-                                    "render_data": {
-                                        "label": "在 ZMDLogs 打开",
-                                        "visited_label": "在 ZMDLogs 打开",
-                                        "style": 1,
-                                    },
-                                    "action": {
-                                        "type": 0,
-                                        "permission": {"type": 2},
-                                        "data": f"{WEB}/records/{ACCOUNT}",
-                                        "unsupport_tips": "请升级 QQ 后使用按钮",
-                                    },
-                                }
-                            ]
-                        }
-                    ]
-                }
+                "buttons": [
+                    {
+                        "id": "open",
+                        "render_data": {
+                            "label": "在 ZMDLogs 打开",
+                            "visited_label": "在 ZMDLogs 打开",
+                            "style": 1,
+                        },
+                        "action": {
+                            "type": 0,
+                            "permission": {"type": 2},
+                            "data": f"{WEB}/records/{ACCOUNT}",
+                            "unsupport_tips": "请升级 QQ 后使用按钮",
+                        },
+                    }
+                ]
             },
         )
 
@@ -177,7 +179,7 @@ class JumpButtonTests(unittest.TestCase):
         for target, link in (
             (PageTarget(PageSubject.ACCOUNT, ACCOUNT), f"/records/{ACCOUNT}"),
             (
-                PageTarget(PageSubject.ACCOUNT, ACCOUNT, view.TREND, stats_range="7d"),
+                PageTarget(PageSubject.ACCOUNT, ACCOUNT, view.TREND),
                 f"/records/{ACCOUNT}",
             ),
             (PageTarget(PageSubject.BATTLE, BATTLE, view.BATTLE), f"/battle/{BATTLE}"),
@@ -224,6 +226,231 @@ class JumpButtonTests(unittest.TestCase):
                 )
 
 
+def sibling_buttons(target: PageTarget) -> list[tuple[str, str]]:
+    """``(label, command)`` of every command button under ``target``'s picture."""
+
+    keyboard = result_keyboard(target, web_base_url=WEB, command=COMMAND)
+    return [
+        (button["render_data"]["label"], button["action"]["data"])
+        for button in buttons_of(keyboard)
+        if button["action"]["type"] == 2
+    ]
+
+
+V = CandidateView
+# Every page with a target, as (subject, view): the sibling table must name
+# each one, and nothing else.
+EVERY_PAGE = (
+    (PageSubject.ACCOUNT, V.RANKING),
+    (PageSubject.ACCOUNT, V.TREND),
+    (PageSubject.BATTLE, V.BATTLE),
+    (PageSubject.BATTLE, V.LOADOUT),
+    (PageSubject.BATTLE, V.SKILLS),
+    (PageSubject.BATTLE, V.TIMELINE),
+    (PageSubject.BOARD, V.RANKING),
+    (PageSubject.BOARD, V.ROSTER),
+    (PageSubject.BOARD, V.CHARACTER_STATS),
+    (PageSubject.BOARD, V.GROUP_BOARD),
+)
+_KEYS = {PageSubject.ACCOUNT: ACCOUNT, PageSubject.BATTLE: BATTLE}
+
+
+def page(subject: PageSubject, view: CandidateView, **options) -> PageTarget:
+    return PageTarget(subject, _KEYS.get(subject, SLUG), view, **options)
+
+
+# What a label promises, and the route that draws it for each subject.
+LABELS = {
+    "战报": V.BATTLE,
+    "配装": V.LOADOUT,
+    "技能": V.SKILLS,
+    "技能轴": V.TIMELINE,
+    "榜单": V.RANKING,
+    "阵容": V.ROSTER,
+    "角色统计": V.CHARACTER_STATS,
+    "第 1 名战报": V.BATTLE,
+    "账号": V.RANKING,
+    "名次趋势": V.TREND,
+}
+ROUTE_OF = {
+    (PageSubject.ACCOUNT, V.RANKING): RouteKind.ACCOUNT_QUERY,
+    (PageSubject.ACCOUNT, V.TREND): RouteKind.TREND_QUERY,
+    (PageSubject.BATTLE, V.BATTLE): RouteKind.BATTLE_QUERY,
+    (PageSubject.BATTLE, V.LOADOUT): RouteKind.LOADOUT_QUERY,
+    (PageSubject.BATTLE, V.SKILLS): RouteKind.SKILL_QUERY,
+    (PageSubject.BATTLE, V.TIMELINE): RouteKind.TIMELINE_QUERY,
+    (PageSubject.BOARD, V.RANKING): RouteKind.RANKING_QUERY,
+    (PageSubject.BOARD, V.ROSTER): RouteKind.ROSTER_QUERY,
+    (PageSubject.BOARD, V.CHARACTER_STATS): RouteKind.CHARACTER_STATS,
+    (PageSubject.BOARD, V.BATTLE): RouteKind.BATTLE_QUERY,
+}
+
+
+class SiblingButtonTests(unittest.TestCase):
+    """The page's other views, one command button each, under its jump button."""
+
+    def test_each_page_offers_its_other_views(self) -> None:
+        c = COMMAND
+        for target, expected in (
+            (
+                page(PageSubject.BATTLE, V.BATTLE),
+                [
+                    ("配装", f"{c} 配装 {BATTLE}"),
+                    ("技能", f"{c} 技能 {BATTLE}"),
+                    ("技能轴", f"{c} 技能轴 {BATTLE}"),
+                ],
+            ),
+            (
+                page(PageSubject.BATTLE, V.TIMELINE),
+                [
+                    ("战报", f"{c} 战报 {BATTLE}"),
+                    ("配装", f"{c} 配装 {BATTLE}"),
+                    ("技能", f"{c} 技能 {BATTLE}"),
+                ],
+            ),
+            (
+                page(PageSubject.BOARD, V.RANKING),
+                [
+                    ("阵容", f"{c} 阵容 {SLUG}"),
+                    ("角色统计", f"{c} 角色统计 {SLUG}"),
+                    ("第 1 名战报", f"{c} 战报 {SLUG}"),
+                ],
+            ),
+            (
+                page(PageSubject.BOARD, V.CHARACTER_STATS),
+                [("榜单", f"{c} 榜单 {SLUG}"), ("阵容", f"{c} 阵容 {SLUG}")],
+            ),
+            (
+                page(PageSubject.BOARD, V.GROUP_BOARD),
+                [("榜单", f"{c} 榜单 {SLUG}"), ("阵容", f"{c} 阵容 {SLUG}")],
+            ),
+            (
+                page(PageSubject.ACCOUNT, V.RANKING),
+                [("名次趋势", f"{c} 趋势 {ACCOUNT}")],
+            ),
+            (
+                page(PageSubject.ACCOUNT, V.TREND),
+                [("账号", f"{c} 账号 {ACCOUNT}")],
+            ),
+        ):
+            with self.subTest(target=target):
+                self.assertEqual(sibling_buttons(target), expected)
+
+    def test_a_board_page_keeps_its_metric_in_every_command(self) -> None:
+        commands = [
+            command
+            for _, command in sibling_buttons(
+                page(PageSubject.BOARD, V.RANKING, metric="rdps")
+            )
+        ]
+
+        # No 第 1 名战报: 战报 takes no --口径, so it would open the DPS
+        # board's first place under an rDPS page — the two never mix.
+        self.assertEqual(
+            commands,
+            [
+                f"{COMMAND} 阵容 {SLUG} --口径 rdps",
+                f"{COMMAND} 角色统计 {SLUG} --口径 rdps",
+            ],
+        )
+
+    def test_a_board_page_keeps_its_length_where_the_view_takes_one(self) -> None:
+        # --top means the same on 榜单, 阵容 and 群榜; 角色统计 and 战报
+        # refuse it.
+        for view, expected in (
+            (
+                V.RANKING,
+                [
+                    f"{COMMAND} 阵容 {SLUG} --top 30",
+                    f"{COMMAND} 角色统计 {SLUG}",
+                    f"{COMMAND} 战报 {SLUG}",
+                ],
+            ),
+            (
+                V.GROUP_BOARD,
+                [f"{COMMAND} 榜单 {SLUG} --top 30", f"{COMMAND} 阵容 {SLUG} --top 30"],
+            ),
+        ):
+            with self.subTest(view=view):
+                target = page(PageSubject.BOARD, view, ranking_top=30)
+
+                self.assertEqual(
+                    [command for _, command in sibling_buttons(target)], expected
+                )
+
+    def test_every_command_parses_back_to_the_page_its_label_names(self) -> None:
+        # The load-bearing check: typed back in, each command must draw the
+        # page its label promises, of this target, under the same metric.
+        for subject, view in EVERY_PAGE:
+            board = subject is PageSubject.BOARD
+            for metric in ("dps", "rdps") if board else ("dps",):
+                for top in (None, 30) if board else (None,):
+                    target = page(subject, view, metric=metric, ranking_top=top)
+                    for label, command in sibling_buttons(target):
+                        with self.subTest(command=command):
+                            payload = command.removeprefix(f"{COMMAND} ")
+                            route = parse_zmdlog_payload(payload)
+                            drawn = LABELS[label]
+
+                            self.assertIs(route.kind, ROUTE_OF[subject, drawn])
+                            self.assertEqual(route.query, target.key)
+                            self.assertEqual(route.metric, metric)
+                            self.assertEqual(route.battle_rank, 1)
+                            if drawn in (V.RANKING, V.ROSTER) and board:
+                                self.assertEqual(route.ranking_top, top)
+
+    def test_every_page_with_a_target_has_a_list(self) -> None:
+        for subject, view in EVERY_PAGE:
+            with self.subTest(subject=subject, view=view):
+                self.assertTrue(sibling_buttons(page(subject, view)))
+
+    def test_a_view_the_target_lacks_gets_no_button(self) -> None:
+        # An older upload has no loadout, skill statistics or casts; an
+        # account the rank watch never polled has no trend.
+        battle = page(
+            PageSubject.BATTLE,
+            V.BATTLE,
+            unavailable=frozenset({V.LOADOUT, V.TIMELINE}),
+        )
+        account = page(
+            PageSubject.ACCOUNT, V.RANKING, unavailable=frozenset({V.TREND})
+        )
+
+        self.assertEqual(
+            sibling_buttons(battle), [("技能", f"{COMMAND} 技能 {BATTLE}")]
+        )
+        self.assertEqual(sibling_buttons(account), [])
+        # The jump button stays: the page itself is still on ZMDLogs.
+        self.assertEqual(jump_links(account), [f"{WEB}/records/{ACCOUNT}"])
+
+    def test_no_keyboard_breaks_the_five_by_five_limit(self) -> None:
+        for subject, view in EVERY_PAGE:
+            with self.subTest(subject=subject, view=view):
+                keyboard = result_keyboard(
+                    page(subject, view), web_base_url=WEB, command=COMMAND
+                )
+                rows = keyboard["content"]["rows"]
+
+                self.assertLessEqual(len(rows), 5)
+                for row in rows:
+                    self.assertLessEqual(len(row["buttons"]), 5)
+                # A button's id is unique within its keyboard.
+                ids = [button["id"] for button in buttons_of(keyboard)]
+                self.assertEqual(len(ids), len(set(ids)))
+
+
+class FakeWatcher:
+    """The rank watch as the account page asks it: whose trend is on record."""
+
+    def __init__(self, *watched: str) -> None:
+        self.watched = set(watched)
+
+    def history_for(self, account_id):
+        if account_id not in self.watched:
+            return None
+        return SimpleNamespace(account_id=account_id, boards=("one board",))
+
+
 class OutcomeTargetTests(unittest.TestCase):
     """What ``dispatch`` hands the host: the picture, its scale, its subject."""
 
@@ -249,7 +476,7 @@ class OutcomeTargetTests(unittest.TestCase):
             board_matcher=lambda cards: matchers.matcher_for(
                 cards, AliasConfig.empty()
             ),
-            watcher=None,
+            watcher=FakeWatcher(ACCOUNT),
             settings=PluginSettings(web_base_url=WEB),
             logger=logging.getLogger("test"),
         )
@@ -268,6 +495,37 @@ class OutcomeTargetTests(unittest.TestCase):
         self.assertEqual(outcome.image_path, "/tmp/account.png")
         self.assertEqual(outcome.image_scale, 1)
         self.assertEqual(outcome.target, PageTarget(PageSubject.ACCOUNT, ACCOUNT))
+
+    def test_an_account_nobody_watched_has_no_trend_to_offer(self) -> None:
+        self.queries._watcher = FakeWatcher()
+
+        outcome = self._command(RouteKind.ACCOUNT_QUERY, query=ACCOUNT)
+
+        self.assertEqual(outcome.target.unavailable, frozenset({V.TREND}))
+
+    def test_a_battle_names_the_pages_its_upload_cannot_draw(self) -> None:
+        async def old_upload(battle_id):
+            raise ZmdLogsAPIError(422, "battle_export_unsupported", "old")
+
+        payload = battle_detail_payload()
+        payload["roleSkillStats"] = []
+        self.data.battles[BATTLE] = parse_battle_detail(payload)
+        self.data.get_battle_export = old_upload
+        for kind, unavailable in (
+            # The card read the detail and heard the export refused.
+            (RouteKind.BATTLE_QUERY, {V.SKILLS, V.TIMELINE}),
+            # The loadout page read the detail only; casts are unknown.
+            (RouteKind.LOADOUT_QUERY, {V.SKILLS}),
+        ):
+            with self.subTest(kind=kind):
+                outcome = self._command(kind, query=BATTLE)
+
+                self.assertEqual(outcome.target.unavailable, frozenset(unavailable))
+
+    def test_a_battle_with_every_page_hides_nothing(self) -> None:
+        outcome = self._command(RouteKind.BATTLE_QUERY, query=BATTLE)
+
+        self.assertEqual(outcome.target.unavailable, frozenset())
 
     def test_battle_pages_carry_their_battle(self) -> None:
         async def export(battle_id):
