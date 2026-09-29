@@ -2032,6 +2032,40 @@ class HandlerTests(unittest.TestCase):
         (kind, reply), = self._zmdlog("zmdlog 解绑 全部")
         self.assertIn("已解除全部 2 个绑定", reply)
 
+    def test_the_v2_adapter_knows_a_person_by_the_official_key(self) -> None:
+        # Its sender id is the same member_openid, so a binding made on one
+        # adapter holds on the other; the webhook and the wild bot keep theirs.
+        for platform, expected in (
+            ("qq_official_v2", "qq_official:111"),
+            ("qq_official", "qq_official:111"),
+            ("qq_official_webhook", "qq_official_webhook:111"),
+            ("aiocqhttp", "aiocqhttp:111"),
+        ):
+            with self.subTest(platform=platform):
+                event = FakeEvent("zmdlog 我的", platform=platform)
+                self.assertEqual(self.plugin._event_user_key(event), expected)
+
+        from astrbot_plugin_zmdlog.core.models import AccountSearchHit
+
+        self._enable_binding_storage()
+
+        async def lookup(code):
+            return AccountSearchHit("usr_1234567890abcdef", "测试账号")
+
+        self.plugin.client.get_binding_code_account = lookup
+        (kind, reply), = self._zmdlog(
+            "zmdlog 绑定 ZMD-7K4M-QX2E",
+            platform="qq_official_v2",
+            origin="qq_official_v2:GroupMessage:G1",
+        )
+        self.assertIn("已绑定 测试账号", reply)
+        self.assertEqual(
+            [b.account_id for b in self.plugin.bindings.bindings_for(
+                "qq_official:111"
+            ).accounts],
+            ["usr_1234567890abcdef"],
+        )
+
     def test_binding_needs_a_sender_and_survives_an_outage(self) -> None:
         self._enable_binding_storage()
 

@@ -109,6 +109,7 @@ _CJK_DIGITS = {
 }
 _CJK_NUMBER_RE = re.compile(r"([一二两三四五六七八九])?(十)?([一二三四五六七八九])?")
 _PLUGIN_DATA_NAME = "astrbot_plugin_zmdlog"
+_USER_KEY_ALIASES = {"qq_official_v2": qq_official.PLATFORM_NAME}
 _BATTLE_LINK_FILTER = (
     r"https?://[^\s<>\"']+/(?:battle|share|axis)/btl_[A-Za-z0-9_-]+"
 )
@@ -844,7 +845,7 @@ class ZmdLogBotPlugin(Star):
 
     @staticmethod
     def _event_user_key(event: AstrMessageEvent) -> str:
-        """Platform-scoped sender key, used only for "who may remove this"."""
+        """Platform-scoped sender key: whose bindings, who may remove a 关注."""
 
         platform = getattr(event, "get_platform_name", None)
         sender = getattr(event, "get_sender_id", None)
@@ -1313,10 +1314,16 @@ def _parse_route(payload: str) -> RouteRequest | str:
 
 def _user_key(platform_name: str, sender_id: str) -> str:
     """``platform:sender``, the key 关注 and 绑定 know a person by; empty
-    when either part is missing."""
+    when either part is missing.
+
+    ``qq_official_v2`` is the official bot behind another adapter, with the
+    same member_openid for a sender, so it keys as ``qq_official`` and
+    switching adapters keeps every binding. The webhook adapter is left as it
+    is, and the wild bot's ids are a different namespace altogether."""
 
     if not platform_name or not sender_id:
         return ""
+    platform_name = _USER_KEY_ALIASES.get(platform_name, platform_name)
     return f"{platform_name}:{sender_id}"
 
 
