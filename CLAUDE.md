@@ -293,7 +293,10 @@ when the user settled the question.
   has the fallback the detail page lacks). The cost is a filter bucket of our
   own instead of joining the 394 plugins under `娱乐` — the category never
   appears on a market card, only in that dropdown, which is not worth the red
-  text.
+  text. The detail page's 更新日志 is `CHANGELOG.md` at the plugin root, read
+  from the installed directory (none before 1.1.0, so it said 暂无更新日志); a
+  release moves it together with the `metadata.yaml` version and the README
+  badge.
 - **The QQ official bot answers a private chat as it answers a group**
   (2026-09-28, reversing "no buttons in private chats"): pick-list buttons,
   the markdown picture and its buttons, callbacks and notice buttons all go to
