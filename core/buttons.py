@@ -40,6 +40,15 @@ and a board's metric. A page the drawing showed this thing does not have —
 an old upload's loadout, an unwatched account's trend — gets no button, and
 neither does a board's battle under a non-DPS board, since 战报 takes no
 metric and would open the DPS board's first place instead.
+
+With callbacks on (a default-off switch; ``qq_official`` explains the
+patch), a command button whose command draws a page becomes a *callback*
+button: the tap goes to the bot, which answers with the page at once. It
+carries the same command, not a list number, for the same reason. A
+configuration command (关注, 绑定, 别名) stays a fill-in button, because
+the tap handler refuses those — whatever a button carries arrives from
+the tapping client, so it is read like a typed message
+(``read_button_command``) and trusted no further.
 """
 
 import re
@@ -58,7 +67,13 @@ from .matcher import MatchChoice, TargetType
 from .metrics import DEFAULT_METRIC
 from .outcome import PageSubject, PageTarget, SitePage
 from .presentation import public_url, safe_http_url
-from .routing import DEFAULT_STATS_POTENTIAL, DEFAULT_STATS_RANGE, DEFAULT_TREND_RANGE
+from .routing import (
+    CONFIGURATION_ROUTES,
+    DEFAULT_STATS_POTENTIAL,
+    DEFAULT_STATS_RANGE,
+    DEFAULT_TREND_RANGE,
+    parse_zmdlog_payload,
+)
 
 # Measured on the QQ client: fifteen characters show in full. The row number
 # goes in front of the name and is not counted.
@@ -66,9 +81,16 @@ MAX_LABEL_NAME_CHARS = 15
 BUTTON_HINT = "点下方按钮，或引用本条消息回复序号"
 UNSUPPORTED_TIP = "请升级 QQ 后使用按钮"
 JUMP_LABEL = "在 ZMDLogs 打开"
-# Keyboard action types: open a link, or fill a command into the input box.
+# Keyboard action types: open a link, send the data to the bot, or fill a
+# command into the input box.
 _ACTION_JUMP = 0
+_ACTION_CALLBACK = 1
 _ACTION_COMMAND = 2
+_COMMAND_NAME = "zmdlog"
+# What a button's data may be to be read as a command. Ours stay far under
+# both; a wake prefix is a character or two.
+MAX_BUTTON_DATA_CHARS = 512
+_MAX_PREFIX_CHARS = 8
 # Permission type 2: anyone in the chat may tap, not only who asked.
 _EVERYONE = {"type": 2}
 _STYLE_BLUE = 1
@@ -174,6 +196,31 @@ class ButtonMessage:
     keyboard: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class ButtonCommand:
+    """The zmdlog command a button carries.
+
+    ``prefix`` is the wake prefix it was written with (``/``), so buttons in
+    the answer are written the same way; ``payload`` is everything after the
+    command name, as the command handler reads a typed message.
+    """
+
+    prefix: str
+    payload: str
+
+
+def read_button_command(data: object) -> ButtonCommand | None:
+    """``data`` read as a typed ``zmdlog`` command; None when it is not one."""
+
+    if not isinstance(data, str) or len(data) > MAX_BUTTON_DATA_CHARS:
+        return None
+    head, _, payload = " ".join(data.split()).partition(" ")
+    prefix = head.removesuffix(_COMMAND_NAME)
+    if prefix == head or len(prefix) > _MAX_PREFIX_CHARS:
+        return None
+    return ButtonCommand(prefix, payload)
+
+
 def pick_command(
     entry: PendingCandidates,
     choice: MatchChoice,
@@ -236,12 +283,14 @@ def pick_list_message(
     command: str,
     ttl_seconds: float,
     note: str | None = None,
+    callback: bool = False,
 ) -> ButtonMessage | None:
     """The pick list as markdown, one command button per pick under it.
 
     None when no pick can have a button; the plain list is all there is then.
     The quoted-reply code stays, as the last paragraph: the old way of
-    picking keeps working next to the buttons.
+    picking keeps working next to the buttons. ``callback`` makes every
+    button that draws a page answer the tap itself.
     """
 
     buttons = []
@@ -249,7 +298,12 @@ def pick_list_message(
         data = pick_command(entry, choice, command=command)
         if data is not None:
             buttons.append(
-                command_button(str(index), _label(index, choice.target.name), data)
+                command_button(
+                    str(index),
+                    _label(index, choice.target.name),
+                    data,
+                    callback=callback,
+                )
             )
     if not buttons:
         return None
@@ -313,13 +367,18 @@ def site_page_message(
 
 
 def result_keyboard(
-    target: PageTarget, *, web_base_url: str, command: str
+    target: PageTarget,
+    *,
+    web_base_url: str,
+    command: str,
+    callback: bool = False,
 ) -> dict[str, Any] | None:
     """The keyboard under a result picture; None when it can have no link.
 
     The jump button fills the first row; the page's other views of the same
-    target (``_SIBLINGS``) share the second, as command buttons. ``command``
-    is the prefixed command name (``/zmdlog``).
+    target (``_SIBLINGS``) share the second, as command buttons — callback
+    buttons with ``callback``. ``command`` is the prefixed command name
+    (``/zmdlog``).
     """
 
     url = _jump_url(target, web_base_url=web_base_url)
@@ -327,7 +386,9 @@ def result_keyboard(
         return None
     rows = [[jump_button("open", JUMP_LABEL, url)]]
     siblings = [
-        command_button(f"view-{view.value}", label, sibling_command)
+        command_button(
+            f"view-{view.value}", label, sibling_command, callback=callback
+        )
         for view, label, sibling_command in _sibling_commands(target, command)
     ]
     if siblings:
@@ -396,10 +457,32 @@ def _jump_url(target: PageTarget, *, web_base_url: str) -> str | None:
     return safe_http_url(url)
 
 
-def command_button(button_id: str, label: str, data: str) -> dict[str, Any]:
-    """A button that fills ``data`` into the input box when tapped."""
+def command_button(
+    button_id: str, label: str, data: str, *, callback: bool = False
+) -> dict[str, Any]:
+    """A button that fills ``data`` into the input box when tapped.
 
-    return _button(button_id, label, _ACTION_COMMAND, data)
+    With ``callback``, one whose command draws a page sends ``data`` to the
+    bot instead, which answers with the page.
+    """
+
+    action = (
+        _ACTION_CALLBACK if callback and _draws_a_page(data) else _ACTION_COMMAND
+    )
+    return _button(button_id, label, action, data)
+
+
+def _draws_a_page(data: str) -> bool:
+    """Whether the tap handler would run ``data``: a query, not a setting."""
+
+    command = read_button_command(data)
+    if command is None:
+        return False
+    try:
+        route = parse_zmdlog_payload(command.payload)
+    except ValueError:
+        return False
+    return route.kind not in CONFIGURATION_ROUTES
 
 
 def jump_button(button_id: str, label: str, url: str) -> dict[str, Any]:

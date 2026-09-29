@@ -237,8 +237,13 @@ class FakeBotApi:
         self, *, error: Exception | None = None, http: FakeBotHttp | None = None
     ) -> None:
         self.calls: list[tuple[str, dict]] = []
+        self.acks: list[tuple[str, int, int]] = []
         self._error = error
         self._http = http
+
+    async def on_interaction_result(self, interaction_id: str, code: int):
+        # With how many messages had gone out: the acknowledgement comes first.
+        self.acks.append((interaction_id, code, len(self.calls)))
 
     async def post_group_message(self, **payload):
         return self._record("group", payload)
@@ -254,8 +259,43 @@ class FakeBotApi:
 
 
 class FakeContext:
+    def __init__(self, stars=()) -> None:
+        self.stars = list(stars)
+
     def get_config(self, origin):
         return {"wake_prefix": ["/"]}
+
+    def get_all_stars(self):
+        return self.stars
+
+
+def official_adapter_class(api: "FakeBotApi"):
+    """AstrBot's built-in adapter class as the callback patch sees it: an
+    adapter whose botpy ``client`` has intents and ``api``."""
+
+    class Adapter:
+        def __init__(self, platform_config, platform_settings, event_queue):
+            self.config = platform_config
+            self.client = SimpleNamespace(intents=1 << 30, api=api)
+
+        def meta(self):
+            return SimpleNamespace(id=self.config["id"])
+
+    return Adapter
+
+
+def tap_of(data: str, *, private: bool = False, member: str = "111"):
+    """A button tap in the official group G1, or in U1's private chat."""
+
+    return SimpleNamespace(
+        id="itx-1",
+        type=11,
+        event_id="INTERACTION_CREATE:e-1",
+        data=SimpleNamespace(resolved=SimpleNamespace(button_data=data)),
+        group_openid=None if private else "G1",
+        group_member_openid=None if private else member,
+        user_openid="U1" if private else None,
+    )
 
 
 def capture(path: str, scale: int = 2) -> "RenderedImage":
@@ -1195,6 +1235,211 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(switched_api._http.paths, [])
 
     # --- board watch ----------------------------------------------------------
+
+    # --- QQ official: button callbacks -------------------------------------------
+
+    def _enable_callbacks(self, api: "FakeBotApi"):
+        """Switch callbacks on and load; the adapter AstrBot builds after."""
+
+        self.plugin.settings = dataclasses.replace(
+            self.plugin.settings, qq_official_callbacks=True
+        )
+        cls = official_adapter_class(api)
+        with mock.patch.object(
+            plugin_main.qq_official, "_builtin_adapter_class", return_value=cls
+        ):
+            self.plugin._install_callbacks()
+        self.addCleanup(self.plugin._remove_callbacks)
+        return cls({"id": "default"}, {}, None)
+
+    def _tap(self, adapter, data: str, *, private: bool = False) -> None:
+        run(adapter.client.on_interaction_create(tap_of(data, private=private)))
+
+    def test_callbacks_patch_nothing_unless_switched_on(self) -> None:
+        for label, settings in (
+            ("off by default", {}),
+            (
+                "buttons disabled",
+                {"qq_official_callbacks": True, "disable_qq_official_buttons": True},
+            ),
+        ):
+            with self.subTest(label):
+                self.plugin.settings = dataclasses.replace(
+                    plugin_main.load_settings({}, warn=lambda message: None),
+                    **settings,
+                )
+                cls = official_adapter_class(FakeBotApi())
+                original = cls.__init__
+                with mock.patch.object(
+                    plugin_main.qq_official, "_builtin_adapter_class", return_value=cls
+                ):
+                    self.plugin._install_callbacks()
+
+                self.assertIs(cls.__init__, original)
+                client = cls({"id": "default"}, {}, None).client
+                self.assertEqual(client.intents, 1 << 30)
+                self.assertFalse(hasattr(client, "on_interaction_create"))
+
+    def test_the_patch_follows_the_plugin_in_and_out(self) -> None:
+        cls = official_adapter_class(FakeBotApi())
+        original = cls.__init__
+        self.plugin.settings = dataclasses.replace(
+            self.plugin.settings, qq_official_callbacks=True
+        )
+        with mock.patch.object(
+            plugin_main.qq_official, "_builtin_adapter_class", return_value=cls
+        ):
+            self.plugin._install_callbacks()
+            patched = cls.__init__
+            self.plugin.renderer = None  # the fake has nothing to close
+            run(self.plugin.terminate())
+
+        self.assertIsNot(patched, original)
+        self.assertIs(cls.__init__, original)
+
+    def test_with_expand_enabled_taps_are_left_to_it(self) -> None:
+        expand = SimpleNamespace(
+            name=plugin_main.qq_official.EXPAND_PLUGIN, activated=True
+        )
+        self.plugin.context = FakeContext([expand])
+        api = FakeBotApi()
+
+        with mock.patch.object(plugin_main, "logger") as logger:
+            adapter = self._enable_callbacks(api)
+
+        self.assertFalse(hasattr(adapter.client, "on_interaction_create"))
+        self.assertEqual(adapter.client.intents, 1 << 30)
+        self.assertIn("qqoffice_expand", repr(logger.warning.call_args_list))
+
+    def test_a_tap_draws_the_page_the_typed_command_draws(self) -> None:
+        self._account_page()
+        self._seed_history()  # so the page offers its trend
+        data = f"/zmdlog 账号 {self.ACCOUNT}"
+        for private, scene in ((False, "group"), (True, "c2c")):
+            with self.subTest(scene=scene):
+                api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+                adapter = self._enable_callbacks(api)
+                typed = self._official_event(data, api=api, private=private)
+                # The typed command, on the connection that takes taps.
+                typed.bot = adapter.client
+                run(collect(self.plugin.zmdlog(typed)))
+
+                self._tap(adapter, data, private=private)
+
+                (_, by_hand), (tapped_scene, by_tap) = api.calls
+                self.assertEqual(tapped_scene, scene)
+                # Acknowledged before the page went out.
+                self.assertEqual(api.acks, [("itx-1", 0, 1)])
+                self.assertEqual(by_tap["event_id"], "INTERACTION_CREATE:e-1")
+                self.assertNotIn("msg_id", by_tap)
+                self.assertGreater(by_tap["msg_seq"], 10_000)
+                for field in ("msg_type", "markdown", "keyboard"):
+                    self.assertEqual(by_tap[field], by_hand[field])
+                # Its other views answer a tap too, carrying the same commands.
+                (jump,), (trend,) = (
+                    row["buttons"] for row in by_tap["keyboard"]["content"]["rows"]
+                )
+                self.assertEqual(jump["action"]["type"], 0)
+                self.assertEqual(trend["action"]["type"], 1)
+                self.assertEqual(
+                    trend["action"]["data"], f"/zmdlog 趋势 {self.ACCOUNT}"
+                )
+
+    def test_a_tapped_pick_list_answers_taps_but_a_watch_list_fills_in(
+        self,
+    ) -> None:
+        self._enable_watch_storage()
+        self._two_accounts_named_cpu()
+        api = FakeBotApi()
+        adapter = self._enable_callbacks(api)
+
+        self._tap(adapter, "/zmdlog 账号 CPU")
+        watch = self._official_event("/zmdlog 关注 CPU", api=api)
+        watch.bot = adapter.client
+        run(collect(self.plugin.zmdlog(watch)))
+
+        (_, listing), (_, watching) = api.calls
+        for payload, action in ((listing, 1), (watching, 2)):
+            rows = payload["keyboard"]["content"]["rows"]
+            self.assertEqual(
+                [row["buttons"][0]["action"]["type"] for row in rows],
+                [action, action],
+            )
+        # The quoted-reply code of a tapped list works like a typed one's.
+        code = re.search(r"候选编号 ([A-Z2-9]{4})", listing["markdown"]["content"])
+        self.assertIsNotNone(
+            self.plugin.candidates.resolve(
+                code[1], "1", origin="default:GroupMessage:G1"
+            )
+        )
+
+    def test_a_tap_that_would_change_settings_is_refused(self) -> None:
+        self._enable_watch_storage()
+        self._enable_binding_storage()
+        api = FakeBotApi()
+        adapter = self._enable_callbacks(api)
+        for data in (
+            "/zmdlog 关注 usr_a",
+            "/zmdlog 取关 usr_a",
+            "/zmdlog 绑定 ZMD-AAAA-BBBB",
+            "/zmdlog 别名 添加 罗丹 dung01_group_bossrush01",
+        ):
+            with self.subTest(data=data):
+                with mock.patch.object(plugin_main, "logger") as logger:
+                    self._tap(adapter, data)
+
+                self.assertEqual(api.calls, [])
+                logged = repr(logger.method_calls)
+                self.assertIn("ZmdLogBot", logged)
+                self.assertNotIn("usr_a", logged)
+                self.assertNotIn("ZMD-AAAA", logged)
+        self.assertFalse(self.plugin.watcher.watchlist_store.path.exists())
+        self.assertFalse(self.plugin.bindings.store.path.exists())
+
+    def test_a_tapped_query_that_fails_says_what_the_typed_one_says(self) -> None:
+        async def down(*args, **kwargs):
+            raise ZmdLogsClientError("down")
+
+        self.plugin.data.get_public_user_rankings = down
+        for data in (
+            "/zmdlog 账号 x",  # refused before any request
+            f"/zmdlog 账号 {self.ACCOUNT}",  # upstream down
+            "/zmdlog 榜单 罗丹 --top 99",  # a parse error
+        ):
+            with self.subTest(data=data):
+                api = FakeBotApi()
+                adapter = self._enable_callbacks(api)
+                _, typed = self._official(data, api=FakeBotApi())
+
+                self._tap(adapter, data)
+
+                (_, payload), = api.calls
+                (reply,) = typed
+                self.assertEqual(payload["msg_type"], 0)
+                self.assertEqual(payload["content"], reply[1])
+                self.assertEqual(payload["event_id"], "INTERACTION_CREATE:e-1")
+
+    def test_a_tapped_page_about_no_one_thing_goes_as_a_native_picture(
+        self,
+    ) -> None:
+        path = self._png(2560, 2000)
+
+        async def render_all_top3(cards, **kwargs):
+            return capture(path)
+
+        self.plugin.renderer.render_all_top3 = render_all_top3
+        http = FakeBotHttp(raw_url=self.RAW_URL)
+        api = FakeBotApi(http=http)
+        adapter = self._enable_callbacks(api)
+
+        self._tap(adapter, "/zmdlog 榜单", private=True)
+
+        self.assertTrue(http.paths[0].startswith("/v2/users/U1/"))
+        (scene, payload), = api.calls
+        self.assertEqual(scene, "c2c")
+        self.assertEqual(payload["msg_type"], 7)
+        self.assertEqual(payload["media"]["file_info"], "info-1")
+        self.assertEqual(payload["event_id"], "INTERACTION_CREATE:e-1")
 
     def _enable_watch_storage(self) -> None:
         directory = tempfile.TemporaryDirectory()

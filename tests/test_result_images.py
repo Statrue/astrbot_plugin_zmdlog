@@ -423,6 +423,33 @@ class SiblingButtonTests(unittest.TestCase):
         # The jump button stays: the page itself is still on ZMDLogs.
         self.assertEqual(jump_links(account), [f"{WEB}/records/{ACCOUNT}"])
 
+    def test_with_callbacks_every_other_view_answers_the_tap(self) -> None:
+        for subject, view in EVERY_PAGE:
+            target = page(subject, view)
+            with self.subTest(subject=subject, view=view):
+                filled = buttons_of(
+                    result_keyboard(target, web_base_url=WEB, command=COMMAND)
+                )
+                tapped = buttons_of(
+                    result_keyboard(
+                        target, web_base_url=WEB, command=COMMAND, callback=True
+                    )
+                )
+
+                # The same buttons with the same commands; only a command
+                # button turns into a callback, the jump stays a link.
+                self.assertEqual(
+                    [button["action"]["data"] for button in tapped],
+                    [button["action"]["data"] for button in filled],
+                )
+                self.assertEqual(
+                    [button["action"]["type"] for button in tapped],
+                    [
+                        1 if button["action"]["type"] == 2 else 0
+                        for button in filled
+                    ],
+                )
+
     def test_no_keyboard_breaks_the_five_by_five_limit(self) -> None:
         for subject, view in EVERY_PAGE:
             with self.subTest(subject=subject, view=view):

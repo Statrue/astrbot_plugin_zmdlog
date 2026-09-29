@@ -32,6 +32,7 @@ from .core.account_binding import AccountBinding
 from .core.alias_admin import AliasAdmin
 from .core.buttons import (
     pick_list_message,
+    read_button_command,
     result_image_message,
     result_keyboard,
     site_page_message,
@@ -74,29 +75,18 @@ from .core.render import (
     read_png_dimensions,
 )
 from .core.routing import (
-    RouteKind,
+    ALIAS_ROUTES,
+    BINDING_ROUTES,
+    CONFIGURATION_ROUTES,
     RouteParseError,
+    RouteRequest,
     parse_zmdlog_payload,
 )
 from .core.settings import load_settings
 from .core.toolbox import ToolService
 
-_ALIAS_ROUTES = frozenset(
-    {RouteKind.ALIAS_LIST, RouteKind.ALIAS_ADD, RouteKind.ALIAS_REMOVE}
-)
-_WATCH_ROUTES = frozenset(
-    {
-        RouteKind.WATCH_LIST,
-        RouteKind.WATCH_ADD,
-        RouteKind.WATCH_REMOVE,
-        RouteKind.WATCH_BOARD_ADD,
-        RouteKind.WATCH_BOARD_REMOVE,
-    }
-)
-# Text-only like 关注: a binding is a configuration action, not a query.
-_BINDING_ROUTES = frozenset(
-    {RouteKind.BIND, RouteKind.UNBIND, RouteKind.PRIMARY_ACCOUNT}
-)
+_NO_RESULT = "本次查询未产生结果。"
+_UNPARSABLE = "指令参数无法解析，请检查后重试。"
 _NOTICE_SEND_TIMEOUT_SECONDS = 30.0
 # A tool picture waits for a streamed reply to finish going out. QQ official
 # keeps one send buffer per event: a send during the stream replaced the
@@ -228,6 +218,7 @@ class ZmdLogBotPlugin(Star):
         )
         self._auto_expand_lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
+        self._callbacks: qq_official.Callbacks | None = None
         if getattr(filter, "on_agent_done", None) is None:
             logger.warning(
                 "ZmdLogBot: this AstrBot has no on_agent_done hook; the LLM "
@@ -263,6 +254,47 @@ class ZmdLogBotPlugin(Star):
 
         self.data.start()
         self.watcher.start()
+        self._install_callbacks()
+
+    def _install_callbacks(self) -> None:
+        """Patch the QQ official adapter for button taps, when switched on.
+
+        On every load, like the watcher: a patch left off by one load is
+        never missing from the next, and an AstrBot upgraded from the WebUI
+        is patched like the one before it. ``qq_official`` explains what the
+        patch does and when it stands aside.
+        """
+
+        self._remove_callbacks()
+        settings = self.settings
+        if not settings.qq_official_callbacks or settings.disable_qq_official_buttons:
+            return
+        self._callbacks = qq_official.install_callbacks(
+            self._answer_click,
+            accepts=lambda data: read_button_command(data) is not None,
+            expand_active=self._expand_enabled,
+            logger=logger,
+        )
+
+    def _remove_callbacks(self) -> None:
+        if self._callbacks is not None:
+            self._callbacks.remove()
+            self._callbacks = None
+
+    def _expand_enabled(self) -> bool:
+        """Whether qqoffice_expand is loaded and on: it patches the same
+        adapter and answers the same taps."""
+
+        try:
+            stars = tuple(self.context.get_all_stars() or ())
+        except Exception:
+            return False
+        return any(
+            getattr(star, "activated", False)
+            and qq_official.EXPAND_PLUGIN
+            in (getattr(star, "name", None), getattr(star, "root_dir_name", None))
+            for star in stars
+        )
 
     @filter.on_astrbot_loaded()
     async def on_astrbot_ready(self) -> None:
@@ -295,30 +327,20 @@ class ZmdLogBotPlugin(Star):
                 yield result
             return
 
-        try:
-            route = parse_zmdlog_payload(payload)
-        except RouteParseError as exc:
-            yield self._text_result(event, str(exc))
+        route = _parse_route(payload)
+        if isinstance(route, str):
+            yield self._text_result(event, route)
             return
-        except ValueError:
-            # Defence in depth: a parse-layer ValueError that is not a
-            # RouteParseError must still answer briefly, never as a traceback.
-            yield self._text_result(event, "指令参数无法解析，请检查后重试。")
-            return
-        if (
-            route.kind in _ALIAS_ROUTES
-            or route.kind in _WATCH_ROUTES
-            or route.kind in _BINDING_ROUTES
-        ):
+        if route.kind in CONFIGURATION_ROUTES:
             # These reply in text and never reach _dispatch, so they need their
             # own guard: an unexpected error must not surface as a traceback.
             reply: Outcome | None = None
             try:
-                if route.kind in _ALIAS_ROUTES:
+                if route.kind in ALIAS_ROUTES:
                     message = await self.alias_admin.handle(
                         route, is_admin=self._event_is_admin(event)
                     )
-                elif route.kind in _BINDING_ROUTES:
+                elif route.kind in BINDING_ROUTES:
                     reply = await self.bindings.handle_route(
                         route,
                         origin=self._event_origin(event),
@@ -422,10 +444,10 @@ class ZmdLogBotPlugin(Star):
         """Run one query action and turn every failure into a short reply.
 
         This is the single error ladder behind the command, the quoted
-        candidate pick and the auto-expand handler, so the three can never
-        drift apart again. The flag says whether the failure was transient,
-        i.e. a retry could plausibly succeed; only the auto-expand cooldown
-        reads it.
+        candidate pick, the auto-expand handler and the button tap, so they
+        can never drift apart again. The flag says whether the failure was
+        transient, i.e. a retry could plausibly succeed; only the auto-expand
+        cooldown reads it.
         """
 
         try:
@@ -462,28 +484,17 @@ class ZmdLogBotPlugin(Star):
     async def _reply(self, event: AstrMessageEvent, outcome: Outcome):
         """Answer a command with ``outcome``, buttons and all where they fit.
 
-        On the QQ official bot a pick list goes out as markdown with a
-        button per pick, a picture about one thing as a markdown image
-        with a button to that thing's ZMDLogs page, and a text that sends
-        the reader to the site with a button to the page it names, all sent
-        by the plugin's own hand; the event is then stopped, so AstrBot
-        neither sends anything more nor asks the model. Everywhere else,
-        and whenever those cannot be sent, the reply is the one it has
+        On the QQ official bot, whatever ``_send_with_buttons`` can send goes
+        out by the plugin's own hand, and the event is then stopped, so
+        AstrBot neither sends anything more nor asks the model. Everywhere
+        else, and whenever that cannot be sent, the reply is the one it has
         always been.
         """
 
-        if outcome.candidates is not None and await self._send_pick_buttons(
-            event, outcome
-        ):
-            event.stop_event()
-            return
-        if outcome.target is not None and await self._send_result_image(
-            event, outcome
-        ):
-            event.stop_event()
-            return
-        if outcome.site_page is not None and await self._send_site_page(
-            event, outcome
+        if self._answers_as_official(event) and await self._send_with_buttons(
+            qq_official.chat_of(event),
+            outcome,
+            command=self._command_prefix(event) + "zmdlog",
         ):
             event.stop_event()
             return
@@ -500,25 +511,61 @@ class ZmdLogBotPlugin(Star):
             qq_official.is_official(event)
         )
 
-    async def _send_pick_buttons(
-        self, event: AstrMessageEvent, outcome: Outcome
+    async def _send_with_buttons(
+        self, chat: qq_official.Chat, outcome: Outcome, *, command: str
     ) -> bool:
-        """Send ``outcome``'s pick list with command buttons; False if not sent."""
+        """Send ``outcome`` into a QQ official ``chat`` with its buttons.
 
-        if not self._answers_as_official(event):
-            return False
+        A pick list goes out as markdown with a button per pick, a picture
+        about one thing as a markdown image with a button to that thing's
+        ZMDLogs page, and a text that sends the reader to the site with a
+        button to the page it names. Where the chat's connection takes taps,
+        a button that draws a page answers the tap itself. False when
+        ``outcome`` has no buttons or they could not be sent. ``command`` is
+        the prefixed command name the buttons write.
+        """
+
+        callback = self._callbacks is not None and self._callbacks.live(chat)
+        if outcome.candidates is not None and await self._send_pick_buttons(
+            chat, outcome, command=command, callback=callback
+        ):
+            return True
+        if outcome.target is not None and await self._send_result_image(
+            chat, outcome, command=command, callback=callback
+        ):
+            return True
+        return outcome.site_page is not None and await self._send_site_page(
+            chat, outcome
+        )
+
+    async def _send_pick_buttons(
+        self,
+        chat: qq_official.Chat,
+        outcome: Outcome,
+        *,
+        command: str,
+        callback: bool,
+    ) -> bool:
+        """Send ``outcome``'s pick list with its buttons; False if not sent."""
+
         message = pick_list_message(
             outcome.candidates,
-            command=self._command_prefix(event) + "zmdlog",
+            command=command,
             ttl_seconds=self.candidates.ttl_seconds,
             note=outcome.candidate_note,
+            callback=callback,
         )
         if message is None:
             return False
-        return await qq_official.send_markdown(event, message, logger=logger)
+        return await qq_official.send_markdown(chat, message, logger=logger)
 
     async def _send_result_image(
-        self, event: AstrMessageEvent, outcome: Outcome
+        self,
+        chat: qq_official.Chat,
+        outcome: Outcome,
+        *,
+        command: str,
+        callback: bool,
     ) -> bool:
         """Send ``outcome``'s picture as markdown with its buttons under it.
 
@@ -527,12 +574,13 @@ class ZmdLogBotPlugin(Star):
         the send failed.
         """
 
-        if not self._answers_as_official(event) or outcome.image_scale is None:
+        if outcome.image_scale is None:
             return False
         keyboard = result_keyboard(
             outcome.target,
             web_base_url=self.web_base_url,
-            command=self._command_prefix(event) + "zmdlog",
+            command=command,
+            callback=callback,
         )
         if keyboard is None:
             return False
@@ -543,37 +591,85 @@ class ZmdLogBotPlugin(Star):
                 "ZmdLogBot cannot size a result image: %s", type(exc).__name__
             )
             return False
-        raw_url = await qq_official.upload_image(
-            event, outcome.image_path, logger=logger
+        upload = await qq_official.upload_image(
+            chat, outcome.image_path, logger=logger
         )
-        if raw_url is None:
+        if upload is None:
+            return False
+        if upload.raw_url is None:
+            logger.warning("ZmdLogBot QQ official image upload returned no link.")
             return False
         message = result_image_message(
-            raw_url, size=size, scale=outcome.image_scale, keyboard=keyboard
+            upload.raw_url, size=size, scale=outcome.image_scale, keyboard=keyboard
         )
         if message is None:
             logger.warning("ZmdLogBot QQ official image link is unusable.")
             return False
-        return await qq_official.send_markdown(event, message, logger=logger)
+        return await qq_official.send_markdown(chat, message, logger=logger)
 
     async def _send_site_page(
-        self, event: AstrMessageEvent, outcome: Outcome
+        self, chat: qq_official.Chat, outcome: Outcome
     ) -> bool:
         """Send ``outcome``'s text with a button to the site page it names."""
 
-        if not self._answers_as_official(event) or outcome.message is None:
+        if outcome.message is None:
             return False
         message = site_page_message(
             outcome.message, outcome.site_page, web_base_url=self.web_base_url
         )
         if message is None:
             return False
-        return await qq_official.send_markdown(event, message, logger=logger)
+        return await qq_official.send_markdown(chat, message, logger=logger)
+
+    async def _answer_click(self, click: qq_official.Click) -> None:
+        """Answer a tapped callback button with what its command draws.
+
+        The button carries a whole command, read the way a typed one is, and
+        only a query runs: the data is whatever the tapping client sends, so
+        a command that would add a watch, bind an account or edit an alias
+        is refused. Errors take the typed command's ladder and wording. The
+        answer goes to the chat tapped in, as a reply to the tap; without
+        buttons, as plain text or a native picture.
+        """
+
+        request = read_button_command(click.data)
+        if request is None:
+            return
+        route = _parse_route(request.payload)
+        if isinstance(route, str):
+            outcome = Outcome(message=route)
+        elif route.kind in CONFIGURATION_ROUTES:
+            logger.warning("ZmdLogBot refused a button callback that is no query.")
+            return
+        else:
+            outcome, _ = await self._run_guarded(
+                lambda: self.queries.dispatch(
+                    route,
+                    command_prefix=request.prefix,
+                    origin=click.origin,
+                    requester_key=_user_key(
+                        qq_official.PLATFORM_NAME, click.sender_id
+                    ),
+                ),
+                api_error_message=lambda exc: api_error_message(route, exc),
+                failure_label="callback",
+            )
+        chat = click.chat
+        if await self._send_with_buttons(
+            chat, outcome, command=request.prefix + "zmdlog"
+        ):
+            return
+        if outcome.image_path is not None:
+            await qq_official.send_image(chat, outcome.image_path, logger=logger)
+        else:
+            await qq_official.send_text(
+                chat, outcome.message or _NO_RESULT, logger=logger
+            )
 
     def _outcome_result(self, event: AstrMessageEvent, outcome: Outcome):
         if outcome.image_path is not None:
             return event.image_result(outcome.image_path)
-        return self._text_result(event, outcome.message or "本次查询未产生结果。")
+        return self._text_result(event, outcome.message or _NO_RESULT)
 
     def _text_result(self, event: AstrMessageEvent, text: str):
         """A text reply; on the QQ official bot, one sent as plain text.
@@ -719,9 +815,7 @@ class ZmdLogBotPlugin(Star):
             sender_id = sender() if callable(sender) else ""
         except Exception:
             return ""
-        if not platform_name or not sender_id:
-            return ""
-        return f"{platform_name}:{sender_id}"
+        return _user_key(platform_name, sender_id)
 
     @staticmethod
     def _event_is_admin(event: AstrMessageEvent) -> bool:
@@ -1155,6 +1249,7 @@ class ZmdLogBotPlugin(Star):
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        self._remove_callbacks()
         await self.watcher.stop()
         await self.data.close()
         try:
@@ -1163,6 +1258,28 @@ class ZmdLogBotPlugin(Star):
             if self.renderer is not None:
                 await self.renderer.close()
         logger.info("ZmdLogBot plugin terminated.")
+
+
+def _parse_route(payload: str) -> RouteRequest | str:
+    """``payload`` routed, or the short text a user gets when it cannot be."""
+
+    try:
+        return parse_zmdlog_payload(payload)
+    except RouteParseError as exc:
+        return str(exc)
+    except ValueError:
+        # Defence in depth: a parse-layer ValueError that is not a
+        # RouteParseError must still answer briefly, never as a traceback.
+        return _UNPARSABLE
+
+
+def _user_key(platform_name: str, sender_id: str) -> str:
+    """``platform:sender``, the key 关注 and 绑定 know a person by; empty
+    when either part is missing."""
+
+    if not platform_name or not sender_id:
+        return ""
+    return f"{platform_name}:{sender_id}"
 
 
 async def _streamed_reply_delivered(event: AstrMessageEvent) -> bool:

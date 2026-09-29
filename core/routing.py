@@ -173,6 +173,28 @@ class RouteKind(str, Enum):
     GROUP_BOARD = "group_board"
 
 
+ALIAS_ROUTES = frozenset(
+    {RouteKind.ALIAS_LIST, RouteKind.ALIAS_ADD, RouteKind.ALIAS_REMOVE}
+)
+WATCH_ROUTES = frozenset(
+    {
+        RouteKind.WATCH_LIST,
+        RouteKind.WATCH_ADD,
+        RouteKind.WATCH_REMOVE,
+        RouteKind.WATCH_BOARD_ADD,
+        RouteKind.WATCH_BOARD_REMOVE,
+    }
+)
+BINDING_ROUTES = frozenset(
+    {RouteKind.BIND, RouteKind.UNBIND, RouteKind.PRIMARY_ACCOUNT}
+)
+# The configuration actions — 别名, 关注, 绑定 — as against the queries,
+# which draw a page (群榜 among them, though it enrols whoever asks). They
+# answer in text, and a tapped callback button never runs one: its data is
+# whatever the tapping client sends.
+CONFIGURATION_ROUTES = ALIAS_ROUTES | WATCH_ROUTES | BINDING_ROUTES
+
+
 _BATTLE_STYLE_COMMANDS.update(
     {
         "战报": RouteKind.BATTLE_QUERY,

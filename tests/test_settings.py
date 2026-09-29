@@ -56,6 +56,7 @@ class SettingsTests(unittest.TestCase):
                 "rank_watch_interval_seconds": 600,
                 "rank_watch_rank_threshold": 3.9,
                 "disable_qq_official_buttons": "yes",
+                "qq_official_callbacks": 1,
             },
             warn=warnings.append,
         )
@@ -76,6 +77,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.rank_watch_interval_seconds, 600.0)
         self.assertEqual(settings.rank_watch_rank_threshold, 3)
         self.assertTrue(settings.disable_qq_official_buttons)
+        self.assertTrue(settings.qq_official_callbacks)
 
     def test_unusable_values_warn_once_and_keep_the_default(self) -> None:
         bad_values = {

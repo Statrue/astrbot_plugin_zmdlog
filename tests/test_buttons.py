@@ -13,9 +13,11 @@ import unittest
 from core import messages
 from core.buttons import (
     MAX_LABEL_NAME_CHARS,
+    ButtonCommand,
     escape_markdown,
     pick_command,
     pick_list_message,
+    read_button_command,
     site_page_message,
 )
 from core.candidates import (
@@ -369,6 +371,95 @@ class PickListMessageTests(unittest.TestCase):
 
         self.assertEqual(re.sub(r"\\(.)", r"\1", escaped), text)
         self.assertEqual(escape_markdown("中文 · 公开账号"), "中文 · 公开账号")
+
+
+class CallbackButtonTests(unittest.TestCase):
+    """With callbacks on, a pick that draws a page answers the tap itself.
+
+    The button carries the very command the fill-in button would, so the
+    page is the one the typed command draws. A command that changes what
+    the plugin keeps is never a callback: the tap handler refuses those.
+    """
+
+    def test_a_query_pick_becomes_a_callback_with_the_same_command(self) -> None:
+        entry = entry_for(
+            CandidateView.RANKING,
+            board_choice(),
+            account_choice(ACCOUNT, "CPU 0", query="cpu"),
+        )
+
+        filled = pick_list_message(entry, command=COMMAND, ttl_seconds=600)
+        tapped = pick_list_message(
+            entry, command=COMMAND, ttl_seconds=600, callback=True
+        )
+
+        self.assertEqual(tapped.markdown, filled.markdown)
+        for filled_row, tapped_row in zip(
+            filled.keyboard["content"]["rows"],
+            tapped.keyboard["content"]["rows"],
+            strict=True,
+        ):
+            (fill,) = filled_row["buttons"]
+            (tap,) = tapped_row["buttons"]
+            self.assertEqual(tap["action"]["type"], 1)
+            self.assertEqual(tap["action"]["data"], fill["action"]["data"])
+            self.assertEqual(tap["action"]["permission"], {"type": 2})
+
+    def test_a_watch_pick_still_only_fills_the_command_in(self) -> None:
+        for view, choice in (
+            (CandidateView.WATCH, account_choice(ACCOUNT, "CPU 0", query="cpu")),
+            (CandidateView.WATCH_BOARD, board_choice()),
+        ):
+            with self.subTest(view=view):
+                message = pick_list_message(
+                    entry_for(view, choice),
+                    command=COMMAND,
+                    ttl_seconds=600,
+                    callback=True,
+                )
+
+                (row,) = message.keyboard["content"]["rows"]
+                self.assertEqual(row["buttons"][0]["action"]["type"], 2)
+
+    def test_button_data_reads_as_the_typed_command_would(self) -> None:
+        entry = entry_for(
+            CandidateView.COMPARE,
+            board_choice(),
+            battle_rank=2,
+            compare_rank=5,
+        )
+        data = pick_command(entry, entry.choices[0], command=COMMAND)
+
+        request = read_button_command(data)
+
+        self.assertEqual(request.prefix, "/")
+        self.assertEqual(
+            parse_zmdlog_payload(request.payload), parse_button(data)
+        )
+        for data, prefix, payload in (
+            ("zmdlog 账号 usr_a", "", "账号 usr_a"),
+            ("#zmdlog   榜单\n罗丹 ", "#", "榜单 罗丹"),
+            ("/zmdlog", "/", ""),
+        ):
+            with self.subTest(data=data):
+                self.assertEqual(
+                    read_button_command(data), ButtonCommand(prefix, payload)
+                )
+
+    def test_data_that_is_no_zmdlog_command_is_not_ours(self) -> None:
+        for data in (
+            None,
+            42,
+            "",
+            "   ",
+            "账号 usr_a",
+            "/zmdlogs 账号 usr_a",
+            "/help zmdlog",
+            "a-very-long-prefix/zmdlog 账号 usr_a",
+            "/zmdlog " + "罗" * 600,
+        ):
+            with self.subTest(data=data):
+                self.assertIsNone(read_button_command(data))
 
 
 class SitePageMessageTests(unittest.TestCase):

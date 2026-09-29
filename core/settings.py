@@ -59,6 +59,9 @@ class PluginSettings:
     # The safety switch for everything the QQ official bot gets on top of
     # what every other platform gets: on, its replies are what they were.
     disable_qq_official_buttons: bool = False
+    # Button taps answered with the page at once, through a runtime patch of
+    # AstrBot's built-in adapter; off unless the deployer turns it on.
+    qq_official_callbacks: bool = False
 
     @property
     def rank_snapshot_max_age_seconds(self) -> float:
@@ -127,6 +130,7 @@ def load_settings(
             "group_board_max_accounts", maximum=_MAX_GROUP_BOARD_ACCOUNTS
         ),
         disable_qq_official_buttons=reader.flag("disable_qq_official_buttons"),
+        qq_official_callbacks=reader.flag("qq_official_callbacks"),
     )
 
 
