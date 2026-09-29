@@ -41,6 +41,14 @@ an old upload's loadout, an unwatched account's trend — gets no button, and
 neither does a board's battle under a non-DPS board, since 战报 takes no
 metric and would open the DPS board's first place instead.
 
+A rank notice carries a jump button for every battle it prints a link to,
+under the label ``core/watch`` gave it (``战报 1``). In the markdown the
+label takes the printed link's place, at the end of the line above it —
+the line that says whose record it is — so text and button name each
+battle the same way; the plain text keeps its links. The keyboard holds
+five rows of five: a full merge names at most fifteen battles, one per row
+while five fit; a notice naming more than twenty-five goes as plain text.
+
 With callbacks on (a default-off switch; ``qq_official`` explains the
 patch), a command button whose command draws a page becomes a *callback*
 button: the tap goes to the bot, which answers with the page at once. It
@@ -74,6 +82,7 @@ from .routing import (
     DEFAULT_TREND_RANGE,
     parse_zmdlog_payload,
 )
+from .watch import Notice
 
 # Measured on the QQ client: fifteen characters show in full. The row number
 # goes in front of the name and is not counted.
@@ -91,6 +100,9 @@ _COMMAND_NAME = "zmdlog"
 # both; a wake prefix is a character or two.
 MAX_BUTTON_DATA_CHARS = 512
 _MAX_PREFIX_CHARS = 8
+# What a keyboard may hold, per the platform: five rows of five buttons.
+MAX_KEYBOARD_ROWS = 5
+MAX_ROW_BUTTONS = 5
 # Permission type 2: anyone in the chat may tap, not only who asked.
 _EVERYONE = {"type": 2}
 _STYLE_BLUE = 1
@@ -364,6 +376,39 @@ def site_page_message(
         return None
     button = jump_button("open", _SITE_PAGE_LABELS[page], url)
     return ButtonMessage(markdown=escape_markdown(text), keyboard=keyboard([button]))
+
+
+def notice_message(notice: Notice) -> ButtonMessage | None:
+    """A rank notice as markdown, a jump button per battle it prints.
+
+    None when it prints no battle a button can open, or more than a keyboard
+    holds; the plain notice, links and all, is all there is then.
+    """
+
+    links = [link for link in notice.links if safe_http_url(link.url) is not None]
+    if not links or len(links) > MAX_KEYBOARD_ROWS * MAX_ROW_BUTTONS:
+        return None
+    labels = {link.url: link.label for link in links}
+    lines: list[str] = []
+    for line in notice.text.split("\n"):
+        label = labels.get(line)
+        if label is None:
+            lines.append(escape_markdown(line))
+        elif lines:
+            lines[-1] += f" · {escape_markdown(label)}"
+        else:
+            lines.append(escape_markdown(label))
+    buttons = [
+        jump_button(f"battle-{number}", link.label, link.url)
+        for number, link in enumerate(links, start=1)
+    ]
+    # As few to a row as fit: a button is as wide as its row allows.
+    per_row = -(-len(buttons) // MAX_KEYBOARD_ROWS)
+    rows = [
+        buttons[start : start + per_row]
+        for start in range(0, len(buttons), per_row)
+    ]
+    return ButtonMessage(markdown="\n".join(lines), keyboard=_keyboard_rows(rows))
 
 
 def result_keyboard(

@@ -96,7 +96,8 @@ group chats — plus the four LLM tools. All of them run through one error guard
 - **Image-only output, with two carve-outs.** Any query or help result is one
   PNG; a render failure returns a short error text, never a text fallback of the
   data. The carve-outs: rank-watch notices and the 关注 / 取关 / 别名 / 绑定
-  replies are plain text (configuration actions and pushes, not query results),
+  replies are text (configuration actions and pushes, not query results; on
+  the QQ official bot a notice carries a jump button per battle it names),
   and the LLM tools send the picture *and* return text, because the text is what
   the model reasons over.
 - **Rendering is gated twice**: concurrent captures capped, and the callers

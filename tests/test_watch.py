@@ -1,11 +1,14 @@
 """Tests for the 0.5.0 rank watch: watch lists, rank diffing, notice text."""
 
+import asyncio
 import copy
 import logging
 import tempfile
 import unittest
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 from core.candidates import CandidateStore
 from core.models import (
@@ -22,6 +25,8 @@ from core.watch import (
     AccountSnapshot,
     BoardSnapshot,
     BoardTopRun,
+    Notice,
+    NoticeLink,
     board_snapshot_is_usable,
     board_snapshot_payload,
     build_board_snapshot,
@@ -112,6 +117,16 @@ def board(*rows: tuple[int, str, str]):
         built.append(row)
     payload["rows"] = built
     return parse_boss_ranking(payload)
+
+
+def battle_url(index: int) -> str:
+    return f"https://zmdlogs.com/battle/btl_upload_{index}"
+
+
+def link(index: int) -> "NoticeLink":
+    """The one link of a single-battle notice, numbered as its own message."""
+
+    return NoticeLink(battle_url(index), "战报 1")
 
 
 def snapshot(ranks: dict[str, int], checked_at: str | None = CHECKED):
@@ -451,13 +466,17 @@ class NoticeTests(unittest.TestCase):
             "CPU 0", (drop,), web_base_url="https://zmdlogs.com"
         )
 
-        self.assertIn("CPU 0", notice)
-        self.assertIn("第 1 → 第 2", notice)
-        self.assertIn("期间上方新增纪录：玩家-usr_new", notice)
+        text = notice.text
+        self.assertIn("CPU 0", text)
+        self.assertIn("第 1 → 第 2", text)
+        self.assertIn("期间上方新增纪录：玩家-usr_new", text)
         # The wording must never claim this record is what overtook the account.
-        self.assertNotIn("超过", notice)
-        self.assertIn("199,000 DPS", notice)
-        self.assertIn("https://zmdlogs.com/battle/btl_upload_usr_new", notice)
+        self.assertNotIn("超过", text)
+        self.assertIn("199,000 DPS", text)
+        url = "https://zmdlogs.com/battle/btl_upload_usr_new"
+        self.assertIn(url, text.splitlines())
+        # The battle the text prints is the one a button would open.
+        self.assertEqual(notice.links, (NoticeLink(url=url, label="战报 1"),))
 
     def test_notice_says_so_when_several_records_landed(self) -> None:
         ranking = board(
@@ -479,15 +498,17 @@ class NoticeTests(unittest.TestCase):
             "CPU 0", (drop,), web_base_url="https://zmdlogs.com"
         )
 
-        self.assertIn("期间上方新增 2 条纪录", notice)
+        self.assertIn("期间上方新增 2 条纪录", notice.text)
 
     def test_notice_without_an_overtaker_keeps_the_rank_line(self) -> None:
         notice = format_rank_drop_notice(
             "CPU 0", self.drops, web_base_url="https://zmdlogs.com"
         )
 
-        self.assertIn("第 1 → 第 2", notice)
-        self.assertNotIn("期间上方", notice)
+        self.assertIn("第 1 → 第 2", notice.text)
+        self.assertNotIn("期间上方", notice.text)
+        # Nothing new above, so no battle to open.
+        self.assertEqual(notice.links, ())
 
     def test_a_flood_of_drops_is_summarised(self) -> None:
         previous = snapshot({f"boss_{index}": 1 for index in range(8)})
@@ -499,19 +520,132 @@ class NoticeTests(unittest.TestCase):
             web_base_url="https://zmdlogs.com",
         )
 
-        self.assertEqual(notice.count("第 1 → 第 2"), 5)
-        self.assertIn("另有 3 个榜单也掉了名次。", notice)
+        self.assertEqual(notice.text.count("第 1 → 第 2"), 5)
+        self.assertIn("另有 3 个榜单也掉了名次。", notice.text)
 
     def test_one_cycle_sends_a_chat_a_single_merged_message(self) -> None:
-        notices = tuple(f"📉 账号{index} 被顶屁股了" for index in range(5))
+        notices = tuple(
+            Notice(f"📉 账号{index} 被顶屁股了\n{battle_url(index)}", (link(index),))
+            for index in range(5)
+        )
 
         merged = join_rank_drop_notices(notices)
 
-        self.assertEqual(merged.count("被顶屁股了"), 3)
-        self.assertIn("另有 2 个关注的账号也掉了名次。", merged)
+        self.assertEqual(merged.text.count("被顶屁股了"), 3)
+        self.assertIn("另有 2 个关注的账号也掉了名次。", merged.text)
+        # Only the battles the text shows, numbered across the message.
         self.assertEqual(
-            join_rank_drop_notices(notices[:1]), "📉 账号0 被顶屁股了"
+            merged.links,
+            tuple(
+                NoticeLink(battle_url(index), f"战报 {index + 1}")
+                for index in range(3)
+            ),
         )
+        self.assertEqual(join_rank_drop_notices(notices[:1]), notices[0])
+
+    def test_a_record_that_demoted_several_accounts_is_one_link(self) -> None:
+        # One new record pushes every watched account below it down at once.
+        shared, other = battle_url(0), battle_url(1)
+        notices = (
+            Notice(f"📉 甲 被顶屁股了\n{shared}", (NoticeLink(shared, "战报 1"),)),
+            Notice(
+                f"📉 乙 被顶屁股了\n{other}\n{shared}",
+                (NoticeLink(other, "战报 1"), NoticeLink(shared, "战报 2")),
+            ),
+        )
+
+        merged = join_rank_drop_notices(notices)
+
+        self.assertEqual(
+            merged.links,
+            (NoticeLink(shared, "战报 1"), NoticeLink(other, "战报 2")),
+        )
+
+
+class AccountCycleNoticeTests(unittest.TestCase):
+    """What one account cycle hands ``notify``, and what a refusal keeps."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        now = datetime.now(UTC).replace(microsecond=0)
+        checked = (now - timedelta(hours=1)).isoformat()
+        landed = (now - timedelta(minutes=30)).isoformat()
+        # Two boards, and on each a new record now above the account.
+        boards = {
+            "slug_a": board((1, "usr_new_a", landed), (2, "usr_watched", BEFORE)),
+            "slug_b": board(
+                (1, "usr_old", BEFORE),
+                (2, "usr_new_b", landed),
+                (3, "usr_watched", BEFORE),
+            ),
+        }
+
+        async def get_account_rankings(account_id):
+            return rankings(("slug_a", 2), ("slug_b", 3))
+
+        async def get_boss_ranking(boss_slug, **kwargs):
+            return boards[boss_slug]
+
+        self.watcher = RankWatcher(
+            client=None,
+            data=SimpleNamespace(
+                get_account_rankings=get_account_rankings,
+                get_boss_ranking=get_boss_ranking,
+            ),
+            settings=PluginSettings(),
+            data_dir=Path(directory.name),
+            board_matcher=None,
+            candidates=CandidateStore(),
+            notify=self._notify,
+            logger=logging.getLogger("t"),
+        )
+        self.watcher.watchlist, _ = WatchList.empty().with_account(
+            GROUP, account("usr_watched")
+        )
+        self.baseline = {"slug_a": 1, "slug_b": 2}
+        self.watcher.rank_snapshots = {
+            "usr_watched": snapshot(dict(self.baseline), checked_at=checked)
+        }
+        self.sent: list[tuple[str, Notice]] = []
+        self.delivered = True
+
+    async def _notify(self, origin: str, notice: Notice) -> bool:
+        self.sent.append((origin, notice))
+        return self.delivered
+
+    def test_the_notice_carries_every_battle_it_prints(self) -> None:
+        asyncio.run(self.watcher.run_account_cycle())
+
+        ((origin, notice),) = self.sent
+        self.assertEqual(origin, GROUP)
+        urls = [
+            "https://zmdlogs.com/battle/btl_upload_usr_new_a",
+            "https://zmdlogs.com/battle/btl_upload_usr_new_b",
+        ]
+        self.assertEqual([link.url for link in notice.links], urls)
+        self.assertEqual([link.label for link in notice.links], ["战报 1", "战报 2"])
+        lines = notice.text.splitlines()
+        for url in urls:
+            self.assertIn(url, lines)
+        self.assertEqual(
+            self.watcher.rank_snapshots["usr_watched"].ranks,
+            {"slug_a": 2, "slug_b": 3},
+        )
+
+    def test_a_notice_notify_refused_keeps_the_baseline(self) -> None:
+        self.delivered = False
+
+        asyncio.run(self.watcher.run_account_cycle())
+
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(
+            self.watcher.rank_snapshots["usr_watched"].ranks, self.baseline
+        )
+        # The next cycle finds the same drops and offers the same notice.
+        self.delivered = True
+        asyncio.run(self.watcher.run_account_cycle())
+        self.assertEqual(self.sent[0][1], self.sent[1][1])
 
 
 class SnapshotFreshnessTests(unittest.TestCase):
@@ -856,15 +990,23 @@ class BoardNoticeTests(unittest.TestCase):
             find_top_run_changes(previous, current), web_base_url="https://zmdlogs.com"
         )
 
-        self.assertIn("「副本 slug_a · 首领 slug_a」前三名有新纪录", notice)
-        self.assertIn("第 1 名 · 丁 · 主C 黎风 · 用时 0:09.000", notice)
-        self.assertIn("第 2 名 · 戊 · 主C 余烬 · 用时 0:09.500", notice)
-        self.assertIn("https://zmdlogs.com/battle/btl_new1", notice)
-        self.assertIn("https://zmdlogs.com/battle/btl_new2", notice)
+        text = notice.text
+        self.assertIn("「副本 slug_a · 首领 slug_a」前三名有新纪录", text)
+        self.assertIn("第 1 名 · 丁 · 主C 黎风 · 用时 0:09.000", text)
+        self.assertIn("第 2 名 · 戊 · 主C 余烬 · 用时 0:09.500", text)
         self.assertIn(
-            "跌出前三：乙（原第 2 · 主C 洛茜）、丙（原第 3 · 主C 卡缪）", notice
+            "跌出前三：乙（原第 2 · 主C 洛茜）、丙（原第 3 · 主C 卡缪）", text
         )
-        self.assertNotIn("超", notice)
+        self.assertNotIn("超", text)
+        # Each new run's battle, as the text prints it; the displaced get none.
+        urls = [
+            "https://zmdlogs.com/battle/btl_new1",
+            "https://zmdlogs.com/battle/btl_new2",
+        ]
+        self.assertEqual([link.url for link in notice.links], urls)
+        self.assertEqual([link.label for link in notice.links], ["战报 1", "战报 2"])
+        for url in urls:
+            self.assertIn(url, text.splitlines())
 
     def test_a_new_record_on_an_empty_board_has_nobody_to_displace(self) -> None:
         previous = BoardSnapshot(runs=(), checked_at=CHECKED)
@@ -873,17 +1015,23 @@ class BoardNoticeTests(unittest.TestCase):
             web_base_url="https://zmdlogs.com",
         )
 
-        self.assertIn("第 1 名 · 甲", notice)
-        self.assertNotIn("跌出前三", notice)
+        self.assertIn("第 1 名 · 甲", notice.text)
+        self.assertNotIn("跌出前三", notice.text)
 
     def test_board_notices_merge_per_chat(self) -> None:
-        notices = tuple(f"🏁 榜单{index}" for index in range(5))
+        notices = tuple(
+            Notice(f"🏁 榜单{index}\n{battle_url(index)}", (link(index),))
+            for index in range(5)
+        )
 
         merged = join_board_notices(notices)
 
-        self.assertEqual(merged.count("🏁"), 3)
-        self.assertIn("另有 2 个关注的榜单也有新纪录。", merged)
-        self.assertEqual(join_board_notices(notices[:1]), "🏁 榜单0")
+        self.assertEqual(merged.text.count("🏁"), 3)
+        self.assertIn("另有 2 个关注的榜单也有新纪录。", merged.text)
+        self.assertEqual(
+            [entry.label for entry in merged.links], ["战报 1", "战报 2", "战报 3"]
+        )
+        self.assertEqual(join_board_notices(notices[:1]), notices[0])
 
 
 class BoardSnapshotPayloadTests(unittest.TestCase):

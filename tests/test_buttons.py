@@ -15,6 +15,7 @@ from core.buttons import (
     MAX_LABEL_NAME_CHARS,
     ButtonCommand,
     escape_markdown,
+    notice_message,
     pick_command,
     pick_list_message,
     read_button_command,
@@ -41,6 +42,7 @@ from core.matcher import (
 from core.outcome import SitePage
 from core.queries import pending_from_route
 from core.routing import RouteKind, parse_zmdlog_payload
+from core.watch import Notice, NoticeLink
 from tests.helpers import make_card
 
 COMMAND = "/zmdlog"
@@ -497,6 +499,115 @@ class SitePageMessageTests(unittest.TestCase):
         self.assertIsNone(
             site_page_message("x", SitePage.BINDING, web_base_url="zmdlogs.com")
         )
+
+
+class NoticeMessageTests(unittest.TestCase):
+    """A rank notice with a jump button under it for every battle it names."""
+
+    def _notice(self, count: int, *, name: str = "新人") -> Notice:
+        blocks = []
+        urls = []
+        for index in range(count):
+            url = f"https://zmdlogs.com/battle/btl_upload_{index}"
+            blocks.append(
+                f"「榜单 {index}」第 1 → 第 2\n期间上方新增纪录：{name}\n{url}"
+            )
+            urls.append(url)
+        return Notice(
+            "\n\n".join(blocks),
+            tuple(NoticeLink(url, f"战报 {n}") for n, url in enumerate(urls, 1)),
+        )
+
+    def test_each_battle_is_a_jump_button_named_in_the_text(self) -> None:
+        notice = self._notice(2)
+
+        message = notice_message(notice)
+
+        buttons = [
+            button
+            for row in message.keyboard["content"]["rows"]
+            for button in row["buttons"]
+        ]
+        self.assertEqual(
+            [
+                (button["render_data"]["label"], button["action"]["type"])
+                for button in buttons
+            ],
+            [("战报 1", 0), ("战报 2", 0)],
+        )
+        self.assertEqual(
+            [button["action"]["data"] for button in buttons],
+            [link.url for link in notice.links],
+        )
+        self.assertEqual(
+            {button["action"]["permission"]["type"] for button in buttons}, {2}
+        )
+        # The label takes the link's place, on the line that names the record.
+        lines = unescape(message.markdown).split("\n")
+        self.assertIn("期间上方新增纪录：新人 · 战报 1", lines)
+        self.assertIn("期间上方新增纪录：新人 · 战报 2", lines)
+        self.assertNotIn("https://", message.markdown)
+        # Everything else reads as the plain notice does.
+        plain = [line for line in notice.text.split("\n") if "https://" not in line]
+        self.assertEqual(
+            [re.sub(r" · 战报 \d$", "", line) for line in lines], plain
+        )
+
+    def test_a_battle_printed_twice_is_one_button_named_twice(self) -> None:
+        url = "https://zmdlogs.com/battle/btl_upload_0"
+        notice = Notice(
+            f"📉 甲\n纪录 A\n{url}\n\n📉 乙\n纪录 A\n{url}",
+            (NoticeLink(url, "战报 1"),),
+        )
+
+        message = notice_message(notice)
+
+        self.assertEqual(len(message.keyboard["content"]["rows"]), 1)
+        self.assertEqual(unescape(message.markdown).count("纪录 A · 战报 1"), 2)
+
+    def test_a_nickname_cannot_forge_markdown(self) -> None:
+        forged = "**假** [点我](https://x.example) `#`\n# 标题"
+        message = notice_message(self._notice(1, name=forged))
+
+        for line in message.markdown.split("\n"):
+            self.assertIsNone(
+                re.search(r"(?<!\\)[*_`\[\]()#<>]", line), msg=line
+            )
+
+    def test_a_full_merge_fits_the_keyboard(self) -> None:
+        # 3 accounts × 5 boards, 3 boards × 3 runs, and a full keyboard.
+        for count in (15, 9, 5, 25):
+            with self.subTest(count=count):
+                rows = notice_message(self._notice(count)).keyboard["content"][
+                    "rows"
+                ]
+
+                self.assertLessEqual(len(rows), 5)
+                self.assertTrue(all(len(row["buttons"]) <= 5 for row in rows))
+                labels = [
+                    button["render_data"]["label"]
+                    for row in rows
+                    for button in row["buttons"]
+                ]
+                self.assertEqual(labels, [f"战报 {n}" for n in range(1, count + 1)])
+        # Few enough for a row each, each is full width.
+        rows = notice_message(self._notice(5)).keyboard["content"]["rows"]
+        self.assertEqual([len(row["buttons"]) for row in rows], [1] * 5)
+
+    def test_more_battles_than_a_keyboard_holds_go_as_plain_text(self) -> None:
+        # Past what either merge can reach: no battle may lose its link.
+        self.assertIsNone(notice_message(self._notice(26)))
+
+    def test_a_notice_without_battles_has_no_button_message(self) -> None:
+        bare = Notice("📉 甲 被顶屁股了\n\n「榜」第 1 → 第 2")
+        self.assertIsNone(notice_message(bare))
+        script = "javascript:alert(1)"
+        unsafe = Notice(f"x\n{script}", (NoticeLink(script, "战报 1"),))
+        self.assertIsNone(notice_message(unsafe))
+
+
+def unescape(markdown: str) -> str:
+    return re.sub(r"\\(.)", r"\1", markdown)
 
 
 if __name__ == "__main__":

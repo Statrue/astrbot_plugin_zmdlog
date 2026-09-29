@@ -62,6 +62,8 @@ if astrbot is not None:
     from astrbot_plugin_zmdlog.core.toolbox import ToolAnswer
     from astrbot_plugin_zmdlog.core.watch import (
         BoardSnapshot,
+        Notice,
+        NoticeLink,
         build_board_snapshot,
     )
     from astrbot_plugin_zmdlog.core.watchlist import WatchedAccount, WatchedBoard
@@ -1262,11 +1264,18 @@ class HandlerTests(unittest.TestCase):
     # --- rank notices ----------------------------------------------------------
 
     NOTICE = "【名次变化】\n*CPU* 在 罗丹 从 #3 降到 #5\n期间上方新增纪录：…"
+    BATTLE = "https://zmdlogs.com/battle/btl_upload_new000000001"
 
-    def _notify(self, origin: str) -> bool:
-        """Deliver one notice the way a watch cycle does."""
+    def _notify(self, origin: str, notice=None) -> bool:
+        """Deliver one notice the way a watch cycle does; by default one
+        that names no battle."""
 
-        return run(self.plugin.watcher.notify(origin, self.NOTICE))
+        return run(self.plugin.watcher.notify(origin, notice or Notice(self.NOTICE)))
+
+    def _notice_with_battle(self) -> "Notice":
+        return Notice(
+            f"{self.NOTICE}\n{self.BATTLE}", (NoticeLink(self.BATTLE, "战报 1"),)
+        )
 
     def _official_platform(self, api, *, scenes=None) -> None:
         self.plugin.context.platforms["default"] = platform_instance(
@@ -1350,7 +1359,88 @@ class HandlerTests(unittest.TestCase):
                 self.assertEqual(
                     [component.text for component in chain.chain], [self.NOTICE]
                 )
+                # A notice naming a battle goes the same way, text only.
+                context.pushed.clear()
+                self.assertTrue(self._notify(origin, self._notice_with_battle()))
+                (_, chain), = context.pushed
+                self.assertEqual(
+                    [component.text for component in chain.chain],
+                    [f"{self.NOTICE}\n{self.BATTLE}"],
+                )
         self.assertEqual(api.calls, [])
+
+    def test_an_official_notice_carries_a_button_per_battle(self) -> None:
+        for origin, scene in (
+            ("default:GroupMessage:G1", "group"),
+            ("default:FriendMessage:U1", "c2c"),
+        ):
+            with self.subTest(origin):
+                api = FakeBotApi()
+                self._official_platform(api)
+
+                self.assertTrue(self._notify(origin, self._notice_with_battle()))
+
+                (sent_scene, payload), = api.calls
+                self.assertEqual(sent_scene, scene)
+                self.assertNotIn("msg_id", payload)
+                self.assertEqual(payload["msg_type"], 2)
+                markdown = payload["markdown"]["content"]
+                # The nickname's * is escaped, and the label stands in for
+                # the link the plain notice prints.
+                self.assertIn(r"\*CPU\*", markdown)
+                self.assertTrue(markdown.endswith("· 战报 1"))
+                self.assertNotIn(self.BATTLE, markdown)
+                ((button,),) = [
+                    row["buttons"] for row in payload["keyboard"]["content"]["rows"]
+                ]
+                self.assertEqual(button["render_data"]["label"], "战报 1")
+                self.assertEqual(button["action"]["type"], 0)
+                self.assertEqual(button["action"]["data"], self.BATTLE)
+
+    def test_an_official_notice_whose_buttons_fail_goes_as_plain_text(self) -> None:
+        class NoMarkdownApi(FakeBotApi):
+            async def post_group_message(self, **payload):
+                self.calls.append(("group", payload))
+                if payload["msg_type"] == 2:
+                    raise RuntimeError("markdown refused")
+                return {"id": "sent"}
+
+        api = NoMarkdownApi()
+        self._official_platform(api)
+
+        notice = self._notice_with_battle()
+        self.assertTrue(self._notify("default:GroupMessage:G1", notice))
+
+        self.assertEqual([payload["msg_type"] for _, payload in api.calls], [2, 0])
+        # The plain notice, links and all.
+        self.assertEqual(api.calls[1][1]["content"], f"{self.NOTICE}\n{self.BATTLE}")
+        self.assertEqual(self.plugin.context.pushed, [])
+        with self.subTest("the plain text fails too"):
+            failing = FakeBotApi(error=RuntimeError("40034105"))
+            self._official_platform(failing)
+
+            self.assertFalse(
+                self._notify("default:GroupMessage:G1", self._notice_with_battle())
+            )
+            self.assertEqual(
+                [payload["msg_type"] for _, payload in failing.calls], [2, 0]
+            )
+
+    def test_with_buttons_disabled_an_official_notice_is_plain_text(self) -> None:
+        self.plugin.settings = dataclasses.replace(
+            self.plugin.settings, disable_qq_official_buttons=True
+        )
+        api = FakeBotApi()
+        self._official_platform(api)
+
+        notice = self._notice_with_battle()
+        self.assertTrue(self._notify("default:GroupMessage:G1", notice))
+
+        # Pushed by the plugin still, as it was before buttons: plain text.
+        (_, payload), = api.calls
+        self.assertEqual(payload["msg_type"], 0)
+        self.assertEqual(payload["content"], f"{self.NOTICE}\n{self.BATTLE}")
+        self.assertEqual(self.plugin.context.pushed, [])
 
     # --- QQ official: button callbacks -------------------------------------------
 
@@ -1635,13 +1725,13 @@ class HandlerTests(unittest.TestCase):
         (_, reply), = self._zmdlog("zmdlog 关注 榜单 三位一体")
         self.assertIn("已关注榜单", reply)
         fresh = self._hot_bosses_with_run("btl_upload_new000000001", "shiki")
-        sent: list[tuple[str, str]] = []
+        sent: list[tuple[str, Notice]] = []
 
         async def fetch():
             return fresh
 
-        async def send(origin, text):
-            sent.append((origin, text))
+        async def send(origin, notice):
+            sent.append((origin, notice))
             return True
 
         self.plugin.client.list_hot_bosses_with_payload = fetch
@@ -1650,11 +1740,13 @@ class HandlerTests(unittest.TestCase):
         run(self.plugin.watcher.run_board_cycle())
 
         self.assertEqual(len(sent), 1)
-        origin, text = sent[0]
+        origin, notice = sent[0]
         self.assertEqual(origin, GROUP)
-        self.assertIn("前三名有新纪录", text)
-        self.assertIn("第 1 名 · shiki · 主C 诀 · 用时 0:09.771", text)
-        self.assertIn("https://zmdlogs.com/battle/btl_upload_new000000001", text)
+        self.assertIn("前三名有新纪录", notice.text)
+        self.assertIn("第 1 名 · shiki · 主C 诀 · 用时 0:09.771", notice.text)
+        url = "https://zmdlogs.com/battle/btl_upload_new000000001"
+        self.assertIn(url, notice.text)
+        self.assertEqual(notice.links, (NoticeLink(url, "战报 1"),))
         self.assertEqual(
             self.plugin.watcher.board_snapshots[slug].runs[0].battle_id,
             "btl_upload_new000000001",
@@ -1684,14 +1776,14 @@ class HandlerTests(unittest.TestCase):
             slug: build_board_snapshot(seed[0], checked_at=utc_now_text())
         }
         fresh = self._hot_bosses_with_run("btl_upload_new000000009", "新人")
-        sent: list[tuple[str, str]] = []
+        sent: list[tuple[str, Notice]] = []
         delivered = [False]
 
         async def fetch():
             return fresh
 
-        async def send(origin, text):
-            sent.append((origin, text))
+        async def send(origin, notice):
+            sent.append((origin, notice))
             return delivered[0]
 
         self.plugin.client.list_hot_bosses_with_payload = fetch
@@ -1734,13 +1826,13 @@ class HandlerTests(unittest.TestCase):
             slug: BoardSnapshot(runs=(), checked_at="2020-01-01T00:00:00+00:00")
         }
         fresh = self._hot_bosses_with_run("btl_upload_new000000002", "shiki")
-        sent: list[tuple[str, str]] = []
+        sent: list[tuple[str, Notice]] = []
 
         async def fetch():
             return fresh
 
-        async def send(origin, text):
-            sent.append((origin, text))
+        async def send(origin, notice):
+            sent.append((origin, notice))
             return True
 
         self.plugin.client.list_hot_bosses_with_payload = fetch

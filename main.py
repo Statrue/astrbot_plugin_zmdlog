@@ -31,6 +31,7 @@ from .core import facts, messages
 from .core.account_binding import AccountBinding
 from .core.alias_admin import AliasAdmin
 from .core.buttons import (
+    notice_message,
     pick_list_message,
     read_button_command,
     result_image_message,
@@ -84,6 +85,7 @@ from .core.routing import (
 )
 from .core.settings import load_settings
 from .core.toolbox import ToolService
+from .core.watch import Notice
 
 _NO_RESULT = "本次查询未产生结果。"
 _UNPARSABLE = "指令参数无法解析，请检查后重试。"
@@ -745,23 +747,24 @@ class ZmdLogBotPlugin(Star):
                     return code
         return None
 
-    async def _send_notice(self, origin: str, text: str) -> bool:
+    async def _send_notice(self, origin: str, notice: Notice) -> bool:
         """Deliver one rank-watch notice; the only push path in the plugin.
 
         The caller only advances a baseline past what this reports as sent,
         so every failure path has to answer False rather than swallow.
         That is why a notice to the QQ official bot is sent by the plugin's
-        own hand, as plain text: AstrBot reports some pushes there sent that
-        it skipped (``qq_official`` says which, and until when).
+        own hand: AstrBot reports some pushes there sent that it skipped
+        (``qq_official`` says which, and until when). Everywhere else it is
+        the notice's text alone.
         """
 
         chat = qq_official.chat_to_push(self.context, origin)
         if chat is not None:
-            delivery = qq_official.send_text(
-                chat, text, logger=logger, what="rank notice"
-            )
+            delivery = self._push_official_notice(chat, notice)
         elif Plain is not None:
-            delivery = self.context.send_message(origin, MessageChain([Plain(text)]))
+            delivery = self.context.send_message(
+                origin, MessageChain([Plain(notice.text)])
+            )
         else:
             logger.warning(
                 "ZmdLogBot cannot build a rank notice on this AstrBot version."
@@ -789,6 +792,31 @@ class ZmdLogBotPlugin(Star):
             )
             return False
         return True
+
+    async def _push_official_notice(
+        self, chat: qq_official.Chat, notice: Notice
+    ) -> bool:
+        """Push ``notice`` with a jump button per battle it names.
+
+        As plain text, links and all, when it names none, when the buttons
+        are switched off, or when the message with them did not go out;
+        False only when the plain text did not go out either. A send the
+        platform took but that still raised is sent twice: told twice beats
+        never told.
+        """
+
+        message = (
+            None
+            if self.settings.disable_qq_official_buttons
+            else notice_message(notice)
+        )
+        if message is not None and await qq_official.send_markdown(
+            chat, message, logger=logger
+        ):
+            return True
+        return await qq_official.send_text(
+            chat, notice.text, logger=logger, what="rank notice"
+        )
 
     @staticmethod
     def _event_origin(event: AstrMessageEvent) -> str:

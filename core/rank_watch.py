@@ -66,6 +66,7 @@ from .watch import (
     MAX_DROPS_PER_NOTICE,
     AccountSnapshot,
     BoardSnapshot,
+    Notice,
     RankDrop,
     board_snapshot_is_usable,
     board_snapshot_payload,
@@ -98,9 +99,9 @@ BOARD_SNAPSHOT_FILE = "board-snapshot.json"
 RANK_HISTORY_FILE = "rank-history.json"
 _RANK_WATCH_CONCURRENCY = 2
 
-# Returns whether the chat actually received the text. A cycle only
+# Returns whether the chat actually received the notice. A cycle only
 # advances a baseline past what it managed to deliver.
-Notify = Callable[[str, str], Awaitable[bool]]
+Notify = Callable[[str, Notice], Awaitable[bool]]
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
 
@@ -669,7 +670,7 @@ class RankWatcher:
             return_exceptions=True,
         )
         snapshots: dict[str, AccountSnapshot] = {}
-        pending: dict[str, list[tuple[str, str]]] = {}
+        pending: dict[str, list[tuple[str, Notice]]] = {}
         live_names: dict[str, str] = {}
         history = self.rank_history
         history_changed = False
@@ -743,8 +744,8 @@ class RankWatcher:
         self,
         account_id: str,
         semaphore: asyncio.Semaphore,
-    ) -> tuple[AccountSnapshot, str | None, PublicUserRankings] | None:
-        """Fetch one account and return its ranks, notice text and the response.
+    ) -> tuple[AccountSnapshot, Notice | None, PublicUserRankings] | None:
+        """Fetch one account and return its ranks, notice and the response.
 
         Every request this account needs stays inside the semaphore, and
         sending is left to the caller so that one chat receives one merged
@@ -850,7 +851,7 @@ class RankWatcher:
         by_slug = {card.boss_slug: card for card in cards}
         checked_at = utc_now_text()
         snapshots: dict[str, BoardSnapshot] = {}
-        pending: dict[str, list[tuple[str, str]]] = {}
+        pending: dict[str, list[tuple[str, Notice]]] = {}
         for boss_slug, origins in watched.items():
             card = by_slug.get(boss_slug)
             if card is None:
@@ -891,9 +892,9 @@ class RankWatcher:
 
     async def _deliver(
         self,
-        pending: dict[str, list[tuple[str, str]]],
+        pending: dict[str, list[tuple[str, Notice]]],
         watching: dict[str, tuple[str, ...]],
-        join: Callable[[tuple[str, ...]], str],
+        join: Callable[[tuple[Notice, ...]], Notice],
     ) -> set[str]:
         """Send one merged message per chat; return the keys that did not land.
 
@@ -921,8 +922,8 @@ class RankWatcher:
             )
             if not wanted:
                 continue
-            text = join(tuple(notice for _, notice in wanted))
-            if not await self.notify(origin, text):
+            notice = join(tuple(notice for _, notice in wanted))
+            if not await self.notify(origin, notice):
                 undelivered.update(key for key, _ in wanted)
         return undelivered
 

@@ -4,6 +4,13 @@ One request to ``users/{id}/rankings`` carries the rank of that account on every
 board, so a whole account watch list costs one request per account per cycle;
 one ``hot-bosses`` read carries the top three of every board, so a whole board
 watch list costs one request per cycle. Nothing here talks to the network.
+
+A notice is a :class:`Notice`: the text every platform is sent, and the
+battles that text prints a link to, each under the label a button to it
+wears (``战报 1``, ``战报 2`` …, numbered across the message a chat
+receives). The same battle printed twice — one new record demotes every
+watched account below it — is one link. Where a message can carry buttons
+(``core/buttons``), the label stands in for the printed link.
 """
 
 from dataclasses import dataclass
@@ -20,6 +27,23 @@ BOARD_SNAPSHOT_VERSION = 1
 MAX_DROPS_PER_NOTICE = 5
 _MAX_ACCOUNTS_PER_MESSAGE = 3
 _MAX_BOARDS_PER_MESSAGE = 3
+_LINK_LABEL = "战报 {number}"
+
+
+@dataclass(frozen=True, slots=True)
+class NoticeLink:
+    """A battle a notice prints, as its own line, and what a button to it says."""
+
+    url: str
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class Notice:
+    """One notice: its text, word for word, and the battles it links."""
+
+    text: str
+    links: tuple[NoticeLink, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,13 +232,14 @@ def find_top_run_changes(
     )
 
 
-def format_board_notice(change: BoardChange, *, web_base_url: str) -> str:
+def format_board_notice(change: BoardChange, *, web_base_url: str) -> Notice:
     """One message for one board: every new top run, then who fell out."""
 
     lines = [
         f"🏁 「{board_label(change.dungeon_name, change.boss_name)}」"
         f"前三名有新纪录"
     ]
+    urls: list[str] = []
     for entry in change.new_runs:
         lines.append("")
         lines.append(
@@ -222,7 +247,9 @@ def format_board_notice(change: BoardChange, *, web_base_url: str) -> str:
             f"主C {entry.run.character_name} · "
             f"用时 {format_duration(entry.run.duration_ms)}"
         )
-        lines.append(public_url(web_base_url, "battle", entry.run.battle_id))
+        url = public_url(web_base_url, "battle", entry.run.battle_id)
+        lines.append(url)
+        urls.append(url)
     if change.dropped_runs:
         lines.append("")
         lines.append(
@@ -233,10 +260,10 @@ def format_board_notice(change: BoardChange, *, web_base_url: str) -> str:
                 for entry in change.dropped_runs
             )
         )
-    return "\n".join(lines)
+    return Notice("\n".join(lines), _numbered(urls))
 
 
-def join_board_notices(notices: tuple[str, ...]) -> str:
+def join_board_notices(notices: tuple[Notice, ...]) -> Notice:
     """One message per chat per cycle, like :func:`join_rank_drop_notices`."""
 
     return _join_notices(
@@ -406,11 +433,12 @@ def format_rank_drop_notice(
     drops: tuple[RankDrop, ...],
     *,
     web_base_url: str,
-) -> str:
+) -> Notice:
     """One message covering every board this account just dropped on."""
 
     shown = drops[:MAX_DROPS_PER_NOTICE]
     lines = [f"📉 {display_name} 被顶屁股了"]
+    urls: list[str] = []
     for drop in shown:
         lines.append("")
         lines.append(
@@ -431,15 +459,17 @@ def format_rank_drop_notice(
             )
         else:
             lines.append(f"期间上方新增纪录：{who}")
-        lines.append(public_url(web_base_url, "battle", record.battle_id))
+        url = public_url(web_base_url, "battle", record.battle_id)
+        lines.append(url)
+        urls.append(url)
     hidden = len(drops) - len(shown)
     if hidden > 0:
         lines.append("")
         lines.append(f"另有 {hidden} 个榜单也掉了名次。")
-    return "\n".join(lines)
+    return Notice("\n".join(lines), _numbered(urls))
 
 
-def join_rank_drop_notices(notices: tuple[str, ...]) -> str:
+def join_rank_drop_notices(notices: tuple[Notice, ...]) -> Notice:
     """Merge one cycle worth of notices so a chat receives a single message.
 
     One new record demotes every watched account below it, so a group watching
@@ -454,13 +484,31 @@ def join_rank_drop_notices(notices: tuple[str, ...]) -> str:
     )
 
 
-def _join_notices(notices: tuple[str, ...], *, limit: int, hidden_label: str) -> str:
+def _join_notices(
+    notices: tuple[Notice, ...], *, limit: int, hidden_label: str
+) -> Notice:
+    """The shown notices as one, their links numbered across it.
+
+    A notice left out for space takes its links with it: a button may only
+    open a battle the text shows.
+    """
+
     shown = notices[:limit]
-    text = "\n\n".join(shown)
+    text = "\n\n".join(notice.text for notice in shown)
     hidden = len(notices) - len(shown)
     if hidden > 0:
         text += "\n\n" + hidden_label.format(hidden=hidden)
-    return text
+    urls = [link.url for notice in shown for link in notice.links]
+    return Notice(text, _numbered(urls))
+
+
+def _numbered(urls: list[str]) -> tuple[NoticeLink, ...]:
+    """Each distinct link once, labelled by its first place in the text."""
+
+    return tuple(
+        NoticeLink(url, _LINK_LABEL.format(number=number))
+        for number, url in enumerate(dict.fromkeys(urls), start=1)
+    )
 
 
 def parse_snapshot_payload(payload: Any) -> dict[str, AccountSnapshot]:
