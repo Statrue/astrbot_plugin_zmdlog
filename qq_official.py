@@ -2,10 +2,11 @@
 
 AstrBot's built-in ``qq_official`` adapter (the WebSocket one) runs on botpy,
 and AstrBot 4.28.1 can send neither a keyboard nor a markdown message of the
-plugin's choosing through it, nor receive a button tap; upstream PRs for all
-three are unmerged. So the plugin calls botpy itself, and everything that
-does so lives in this one module — when AstrBot grows a public button API,
-this is the file to delete.
+plugin's choosing through it, nor receive a button tap, nor push to a group
+reliably; upstream PRs for all four are unmerged. So the plugin calls botpy
+itself, and everything that does so lives in this one module — when AstrBot
+grows a public button API and ships the push fix, this is the file to
+delete.
 
 Only ``qq_official`` counts. ``qq_official_webhook`` is treated like any other
 platform (the webhook adapter is not recommended, and gets no buttons), and
@@ -18,6 +19,13 @@ the adapter that received what is being answered. A reply answers a message
 the 1–10000 AstrBot draws its own from. Any exception is a failed send,
 reported by its type alone — the caller then answers the way it would on
 any other platform.
+
+A rank notice answers nothing, and is pushed from here as well
+(``chat_to_push``). AstrBot 4.28.1 skips a push to a group its adapter has seen
+no message from since it started, and reports it sent all the same (AstrBot
+#9831): after every restart, the notices due before anyone spoke were lost.
+Sent here, a push that fails says so. Delete this path once AstrBot ships
+PR #10152.
 
 A picture with a keyboard is a markdown image, and a markdown image needs a
 link. The one the platform gives out is the ``raw_url`` of a chunked upload's
@@ -102,16 +110,24 @@ _WRAPPER_ATTR = "_zmdlog_constructor"
 # group's session id is its openid, a private chat's the user's.
 _GROUP_ORIGIN = "{platform}:GroupMessage:{openid}"
 _PRIVATE_ORIGIN = "{platform}:FriendMessage:{openid}"
+_GROUP_MESSAGE = "GroupMessage"
+_FRIEND_MESSAGE = "FriendMessage"
+# On the adapter: the scene each session id was last seen in, forgotten on
+# restart. A guild channel's origin reads like a group's; this tells them
+# apart.
+_SCENES_ATTR = "_session_scene"
+_CHANNEL_SCENE = "channel"
 
 
 @dataclass(frozen=True, slots=True)
 class Chat:
-    """Where a reply goes, and what it answers.
+    """Where a message goes, and what it answers, if anything.
 
     ``bot`` is the adapter's botpy client; its ``api`` is read at send time,
     never kept, because the adapter owns it. One of ``group_openid`` and
     ``user_openid`` names the chat; a guild channel has neither and cannot
-    be answered here.
+    be answered here. A chat with neither ``msg_id`` nor ``event_id`` is
+    pushed to.
     """
 
     bot: Any
@@ -168,6 +184,48 @@ def chat_of(event: Any) -> Chat:
     )
 
 
+def chat_to_push(context: Any, origin: str) -> Chat | None:
+    """The chat ``origin`` names, when a push there is this module's to send.
+
+    It is when ``context`` — AstrBot's, which knows each adapter instance by
+    the id an origin starts with — has the built-in WebSocket adapter under
+    that id. None leaves the push to AstrBot: another platform, an id no
+    instance has, an instance without a botpy client, and an origin naming
+    neither a group nor a private chat, a guild channel included. The
+    adapter's memory of scenes tells a channel from a group; after a
+    restart it remembers none, and the chat is taken for a group — a
+    channel's push then fails, and is retried, until someone speaks there.
+    """
+
+    parts = origin.split(":", 2)
+    if len(parts) != 3:
+        return None
+    platform_id, message_type, openid = parts
+    if message_type == _GROUP_MESSAGE:
+        # As AstrBot's own push reads it: a group origin written under
+        # 隔离对话 before ``core/origins`` is ``<member>_<group>``.
+        openid = openid.rsplit("_", 1)[-1]
+    if not openid:
+        return None
+    lookup = getattr(context, "get_platform_inst", None)
+    try:
+        platform = lookup(platform_id) if callable(lookup) else None
+        if platform is None or platform.meta().name != PLATFORM_NAME:
+            return None
+    except Exception:
+        return None
+    bot = getattr(platform, "client", None)
+    if bot is None:
+        return None
+    scenes = getattr(platform, _SCENES_ATTR, None)
+    scene = scenes.get(openid) if isinstance(scenes, Mapping) else None
+    if message_type == _GROUP_MESSAGE and scene != _CHANNEL_SCENE:
+        return Chat(bot=bot, group_openid=openid)
+    if message_type == _FRIEND_MESSAGE:
+        return Chat(bot=bot, user_openid=openid)
+    return None
+
+
 async def send_markdown(chat: Chat, message: ButtonMessage, *, logger: LogSink) -> bool:
     """Send ``message`` into ``chat``; False when it did not go out."""
 
@@ -179,11 +237,16 @@ async def send_markdown(chat: Chat, message: ButtonMessage, *, logger: LogSink) 
     return await _post(chat, payload, what="button message", logger=logger)
 
 
-async def send_text(chat: Chat, text: str, *, logger: LogSink) -> bool:
-    """Send ``text`` into ``chat`` as plain text; False when it did not go out."""
+async def send_text(
+    chat: Chat, text: str, *, logger: LogSink, what: str = "text reply"
+) -> bool:
+    """Send ``text`` into ``chat`` as plain text; False when it did not go out.
+
+    ``what`` names it in the warning a failure logs.
+    """
 
     payload = {"msg_type": _MSG_TYPE_TEXT, "content": text}
-    return await _post(chat, payload, what="text reply", logger=logger)
+    return await _post(chat, payload, what=what, logger=logger)
 
 
 async def send_image(chat: Chat, path: str, *, logger: LogSink) -> bool:
@@ -209,7 +272,7 @@ async def _post(
     reply = dict(payload, msg_seq=next(_MSG_SEQ))
     if chat.event_id is not None:
         reply["event_id"] = chat.event_id
-    else:
+    elif chat.msg_id is not None:
         reply["msg_id"] = chat.msg_id
     try:
         api = chat.bot.api

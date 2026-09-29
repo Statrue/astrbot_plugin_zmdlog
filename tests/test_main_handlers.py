@@ -259,14 +259,39 @@ class FakeBotApi:
 
 
 class FakeContext:
+    """AstrBot's plugin context. ``platforms`` are the adapter instances by
+    id; ``pushed`` records every ``send_message``, which answers the way
+    AstrBot's does: whether an instance with the origin's id exists."""
+
     def __init__(self, stars=()) -> None:
         self.stars = list(stars)
+        self.platforms: dict = {}
+        self.pushed: list = []
 
     def get_config(self, origin):
         return {"wake_prefix": ["/"]}
 
     def get_all_stars(self):
         return self.stars
+
+    def get_platform_inst(self, platform_id: str):
+        return self.platforms.get(platform_id)
+
+    async def send_message(self, session, message_chain) -> bool:
+        self.pushed.append((str(session), message_chain))
+        return str(session).split(":", 1)[0] in self.platforms
+
+
+def platform_instance(platform_id: str, name: str, *, api=None, scenes=None):
+    """An adapter instance as AstrBot keeps it: its metadata, and on the
+    built-in QQ official one the botpy client and the scene each session was
+    last seen in (empty after a restart)."""
+
+    return SimpleNamespace(
+        meta=lambda: SimpleNamespace(id=platform_id, name=name),
+        client=SimpleNamespace(api=api),
+        _session_scene=dict(scenes or {}),
+    )
 
 
 def official_adapter_class(api: "FakeBotApi"):
@@ -1234,7 +1259,98 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(switched_api.calls, [])
         self.assertEqual(switched_api._http.paths, [])
 
-    # --- board watch ----------------------------------------------------------
+    # --- rank notices ----------------------------------------------------------
+
+    NOTICE = "【名次变化】\n*CPU* 在 罗丹 从 #3 降到 #5\n期间上方新增纪录：…"
+
+    def _notify(self, origin: str) -> bool:
+        """Deliver one notice the way a watch cycle does."""
+
+        return run(self.plugin.watcher.notify(origin, self.NOTICE))
+
+    def _official_platform(self, api, *, scenes=None) -> None:
+        self.plugin.context.platforms["default"] = platform_instance(
+            "default", "qq_official", api=api, scenes=scenes
+        )
+
+    def test_an_official_notice_is_pushed_by_the_plugin_itself(self) -> None:
+        # Right after a restart the adapter has seen no session, and AstrBot
+        # would skip the push while reporting it sent.
+        for origin, scene, key, openid in (
+            ("default:GroupMessage:G1", "group", "group_openid", "G1"),
+            ("default:FriendMessage:U1", "c2c", "openid", "U1"),
+            # A member's origin under 隔离对话, kept from before core/origins:
+            # AstrBot's own push reached the group, and so does this one.
+            ("default:GroupMessage:M1_G1", "group", "group_openid", "G1"),
+        ):
+            with self.subTest(origin):
+                api = FakeBotApi()
+                self._official_platform(api)
+                self.plugin.context.pushed.clear()
+
+                delivered = self._notify(origin)
+
+                self.assertTrue(delivered)
+                self.assertEqual(self.plugin.context.pushed, [])
+                (sent_scene, payload), = api.calls
+                self.assertEqual(sent_scene, scene)
+                self.assertEqual(payload[key], openid)
+                # Pushed, not a reply: nothing it answers.
+                self.assertNotIn("msg_id", payload)
+                self.assertNotIn("event_id", payload)
+                # Word for word, and as plain text: a nickname's * stays a *.
+                self.assertEqual(payload["msg_type"], 0)
+                self.assertEqual(payload["content"], self.NOTICE)
+
+    def test_an_official_notice_that_did_not_go_out_is_reported_undelivered(
+        self,
+    ) -> None:
+        class StalledApi(FakeBotApi):
+            async def post_group_message(self, **payload):
+                await asyncio.Event().wait()
+
+        failing = FakeBotApi(error=RuntimeError("40034105"))
+        for label, api in (("send raised", failing), ("send stalled", StalledApi())):
+            with self.subTest(label):
+                self._official_platform(api)
+                with mock.patch.object(
+                    plugin_main, "_NOTICE_SEND_TIMEOUT_SECONDS", 0.05
+                ):
+                    self.assertFalse(self._notify("default:GroupMessage:G1"))
+                # Not handed to AstrBot, which would report it sent.
+                self.assertEqual(self.plugin.context.pushed, [])
+        with self.subTest("no such platform"):
+            self.plugin.context.platforms.clear()
+            self.assertFalse(self._notify("default:GroupMessage:G1"))
+
+    def test_every_other_platform_pushes_through_astrbot(self) -> None:
+        api = FakeBotApi()
+        context = self.plugin.context
+        context.platforms["aiocqhttp"] = platform_instance("aiocqhttp", "aiocqhttp")
+        context.platforms["hook"] = platform_instance(
+            "hook", "qq_official_webhook", api=api
+        )
+        context.platforms["v2"] = platform_instance("v2", "qq_official_v2", api=api)
+        # A guild channel's origin reads like a group's; the adapter knows it
+        # by the scene it last saw the session in.
+        self._official_platform(api, scenes={"C1": "channel"})
+        for origin in (
+            GROUP,
+            "hook:GroupMessage:G1",
+            "v2:GroupMessage:G1",
+            "default:GroupMessage:C1",
+        ):
+            with self.subTest(origin):
+                context.pushed.clear()
+
+                self.assertTrue(self._notify(origin))
+
+                (session, chain), = context.pushed
+                self.assertEqual(session, origin)
+                self.assertEqual(
+                    [component.text for component in chain.chain], [self.NOTICE]
+                )
+        self.assertEqual(api.calls, [])
 
     # --- QQ official: button callbacks -------------------------------------------
 
@@ -1440,6 +1556,8 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(payload["msg_type"], 7)
         self.assertEqual(payload["media"]["file_info"], "info-1")
         self.assertEqual(payload["event_id"], "INTERACTION_CREATE:e-1")
+
+    # --- board watch ----------------------------------------------------------
 
     def _enable_watch_storage(self) -> None:
         directory = tempfile.TemporaryDirectory()

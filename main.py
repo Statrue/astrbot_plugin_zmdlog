@@ -750,9 +750,19 @@ class ZmdLogBotPlugin(Star):
 
         The caller only advances a baseline past what this reports as sent,
         so every failure path has to answer False rather than swallow.
+        That is why a notice to the QQ official bot is sent by the plugin's
+        own hand, as plain text: AstrBot reports some pushes there sent that
+        it skipped (``qq_official`` says which, and until when).
         """
 
-        if Plain is None:
+        chat = qq_official.chat_to_push(self.context, origin)
+        if chat is not None:
+            delivery = qq_official.send_text(
+                chat, text, logger=logger, what="rank notice"
+            )
+        elif Plain is not None:
+            delivery = self.context.send_message(origin, MessageChain([Plain(text)]))
+        else:
             logger.warning(
                 "ZmdLogBot cannot build a rank notice on this AstrBot version."
             )
@@ -761,8 +771,7 @@ class ZmdLogBotPlugin(Star):
             # One unresponsive adapter must not stall the whole cycle, and a
             # refused send reports itself by returning False rather than raising.
             delivered = await asyncio.wait_for(
-                self.context.send_message(origin, MessageChain([Plain(text)])),
-                timeout=_NOTICE_SEND_TIMEOUT_SECONDS,
+                delivery, timeout=_NOTICE_SEND_TIMEOUT_SECONDS
             )
         except TimeoutError:
             logger.warning("ZmdLogBot timed out delivering a rank notice.")
@@ -775,7 +784,8 @@ class ZmdLogBotPlugin(Star):
             return False
         if delivered is False:
             logger.warning(
-                "ZmdLogBot rank notice was refused; the chat may be gone."
+                "ZmdLogBot rank notice was not delivered; the chat may be gone "
+                "or closed to pushes."
             )
             return False
         return True
