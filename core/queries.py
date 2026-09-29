@@ -19,7 +19,7 @@ import asyncio
 from collections.abc import Callable
 
 from . import messages
-from .account_binding import AccountBinding
+from .account_binding import AccountBinding, to_binding_page
 from .candidates import (
     MAX_CANDIDATES,
     CandidateStore,
@@ -678,7 +678,7 @@ class QueryService:
             return Outcome(message=messages.NO_SENDER)
         mine = bindings.bindings_for(requester_key)
         if mine is None:
-            return Outcome(message=messages.NOT_BOUND.format(command=command))
+            return to_binding_page(messages.NOT_BOUND.format(command=command))
         bindings.remember_member(requester_key, origin)
         if not selector.strip():
             account = mine.primary
@@ -722,7 +722,7 @@ class QueryService:
         bindings.remember_member(requester_key, origin)
         accounts, _, _ = bindings.accounts_in(origin)
         if not accounts:
-            return Outcome(message=messages.GROUP_BOARD_EMPTY.format(command=command))
+            return to_binding_page(messages.GROUP_BOARD_EMPTY.format(command=command))
         return None
 
     async def _render_group_board(
@@ -747,7 +747,9 @@ class QueryService:
             return Outcome(message=messages.GROUP_BOARD_PRIVATE)
         accounts, account_count, member_count = bindings.accounts_in(origin)
         if not accounts:
-            return Outcome(message=messages.GROUP_BOARD_EMPTY.format(command="/zmdlog"))
+            return to_binding_page(
+                messages.GROUP_BOARD_EMPTY.format(command="/zmdlog")
+            )
         rows = group_standings(ranking, {account.account_id for account in accounts})
         if not rows:
             return Outcome(

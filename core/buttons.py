@@ -45,7 +45,7 @@ metric and would open the DPS board's first place instead.
 import re
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 
 from .candidates import (
     CandidateView,
@@ -56,7 +56,7 @@ from .candidates import (
 )
 from .matcher import MatchChoice, TargetType
 from .metrics import DEFAULT_METRIC
-from .outcome import PageSubject, PageTarget
+from .outcome import PageSubject, PageTarget, SitePage
 from .presentation import public_url, safe_http_url
 from .routing import DEFAULT_STATS_POTENTIAL, DEFAULT_STATS_RANGE, DEFAULT_TREND_RANGE
 
@@ -146,6 +146,8 @@ _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = 
     (PageSubject.ACCOUNT, CandidateView.RANKING): (CandidateView.TREND,),
     (PageSubject.ACCOUNT, CandidateView.TREND): (CandidateView.RANKING,),
 }
+# What the button to each site page says it is for.
+_SITE_PAGE_LABELS = {SitePage.BINDING: "去 ZMDLogs 生成绑定码"}
 # A board's views that list its records, and so take --top.
 _LISTING_VIEWS = frozenset(
     {CandidateView.RANKING, CandidateView.ROSTER, CandidateView.GROUP_BOARD}
@@ -292,6 +294,22 @@ def result_image_message(
     image_url = f"{raw_url}{separator}{_PNG_CONTENT_TYPE}"
     markdown = f"![img #{css_width}px #{css_height}px]({image_url})"
     return ButtonMessage(markdown=markdown, keyboard=keyboard)
+
+
+def site_page_message(
+    text: str, page: SitePage, *, web_base_url: str
+) -> ButtonMessage | None:
+    """``text`` as markdown, a button to ``page`` of the site under it.
+
+    None when the site's address makes no safe link; the plain text is all
+    there is then.
+    """
+
+    url = safe_http_url(urljoin(f"{web_base_url.rstrip('/')}/", page.value))
+    if url is None:
+        return None
+    button = jump_button("open", _SITE_PAGE_LABELS[page], url)
+    return ButtonMessage(markdown=escape_markdown(text), keyboard=keyboard([button]))
 
 
 def result_keyboard(

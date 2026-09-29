@@ -27,6 +27,7 @@ from core.client import (
     ZmdLogsClientError,
 )
 from core.models import AccountSearchHit, parse_boss_ranking
+from core.outcome import SitePage
 from core.persistence import load_json, save_json
 from core.presentation import build_group_board_page
 from core.render import TemplateRenderer
@@ -279,7 +280,7 @@ class ServiceTests(unittest.TestCase):
             logger=logging.getLogger("t"),
         )
 
-    def _handle(self, text: str, *, origin: str = GROUP, user: str = USER) -> str:
+    def _reply(self, text: str, *, origin: str = GROUP, user: str = USER):
         return run(
             self.service.handle_route(
                 parse_zmdlog_payload(text),
@@ -288,6 +289,29 @@ class ServiceTests(unittest.TestCase):
                 command="/zmdlog",
             )
         )
+
+    def _handle(self, text: str, *, origin: str = GROUP, user: str = USER) -> str:
+        return self._reply(text, origin=origin, user=user).message
+
+    def test_a_reply_that_sends_the_user_for_a_code_names_the_page(self) -> None:
+        # Where the text says "go to the site and make a code", the site's
+        # binding page can be offered one tap away; nowhere else.
+        answers = self.client.answers
+        answers["ZMD-EEEE-FFFF"] = ZmdLogsAPIError(404, "http_404", "Not Found")
+        self._handle("绑定 ZMD-7K4M-QX2E", user=OTHER_USER)
+        for text, user, sends in (
+            ("解绑", USER, True),  # not bound yet
+            ("主账号", USER, True),
+            ("绑定", USER, True),  # no code
+            ("绑定 ZMD-ZZZZ-ZZZZ", USER, True),  # no such code
+            ("绑定 ZMD-7K4M-QX2E", USER, True),  # spent by another user
+            ("绑定 ZMD-EEEE-FFFF", USER, False),  # the site has no codes
+            ("主账号", OTHER_USER, False),  # bound: a list
+        ):
+            with self.subTest(text=text, user=user):
+                reply = self._reply(text, user=user)
+
+                self.assertIs(reply.site_page, SitePage.BINDING if sends else None)
 
     def test_a_valid_code_binds_and_the_file_records_only_public_data(self) -> None:
         reply = self._handle("绑定 zmd-7k4m-qx2e")
@@ -357,7 +381,7 @@ class ServiceTests(unittest.TestCase):
                 command="/zmdlog",
             )
         )
-        self.assertEqual(reply, messages.BINDINGS_DISABLED)
+        self.assertEqual(reply.message, messages.BINDINGS_DISABLED)
         # A refused code was never spent.
         self.assertIn("已绑定", self._handle("绑定 ZMD-7K4M-QX2E"))
 
@@ -439,7 +463,7 @@ class ServiceTests(unittest.TestCase):
                 command="/zmdlog",
             )
         )
-        self.assertEqual(reply, messages.BINDINGS_WRITE_FAILED)
+        self.assertEqual(reply.message, messages.BINDINGS_WRITE_FAILED)
         self.assertIsNone(service.bindings_for(USER))
 
 

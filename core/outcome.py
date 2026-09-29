@@ -22,6 +22,16 @@ if TYPE_CHECKING:
     from .render import RenderedImage
 
 
+class SitePage(str, Enum):
+    """A page of the ZMDLogs site a text reply sends its reader to.
+
+    The value is its path under the site's address.
+    """
+
+    # Where a logged-in user makes the code 绑定 asks for.
+    BINDING = "account/binding"
+
+
 class PageSubject(str, Enum):
     """The kind of thing a result page is about."""
 
@@ -73,6 +83,10 @@ class Outcome:
     one thing it is about when there is one (``target``), so the host can
     offer that thing's ZMDLogs page with it. An image from anywhere else —
     AstrBot's fallback renderer — carries neither.
+
+    ``site_page`` is set on a text that tells its reader to go and do
+    something on the site (make a binding code), so the host can put the
+    page one tap away.
     """
 
     image_path: str | None = None
@@ -81,6 +95,7 @@ class Outcome:
     candidate_note: str | None = None
     image_scale: int | None = None
     target: PageTarget | None = None
+    site_page: SitePage | None = None
 
     @classmethod
     def image(

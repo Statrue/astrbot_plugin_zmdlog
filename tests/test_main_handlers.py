@@ -860,7 +860,6 @@ class HandlerTests(unittest.TestCase):
                 "/zmdlog 账号 x",  # a query error
                 "/zmdlog 别名",
                 "/zmdlog 关注",
-                "/zmdlog 我的",
             ):
                 with self.subTest(text=text, private=private):
                     _, results = self._official(text, api=api, private=private)
@@ -886,6 +885,56 @@ class HandlerTests(unittest.TestCase):
         (reply,) = run(collect(self.plugin.expand_battle_link(link)))
         self.assertEqual(reply[0], "plain")
         self.assertIs(reply.use_markdown_, False)
+
+    # --- QQ official: the binding page one tap away ---------------------------
+
+    def test_a_how_to_bind_reply_carries_the_binding_page(self) -> None:
+        self._enable_binding_storage()
+        for private, text in (
+            (False, "/zmdlog 我的"),
+            (False, "/zmdlog 绑定"),
+            (False, "/zmdlog 群榜 三位一体"),
+        ):
+            with self.subTest(text=text):
+                api = FakeBotApi()
+
+                event, results = self._official(text, api=api, private=private)
+
+                self.assertEqual(results, [])
+                self.assertTrue(event.stopped)
+                (_, payload), = api.calls
+                self.assertEqual(payload["msg_type"], 2)
+                self.assertIn("ZMD\\-XXXX\\-XXXX", payload["markdown"]["content"])
+                (row,) = payload["keyboard"]["content"]["rows"]
+                self.assertEqual(
+                    row["buttons"][0]["action"]["data"],
+                    "https://zmdlogs.com/account/binding",
+                )
+
+    def test_a_how_to_bind_reply_that_cannot_go_with_its_button_goes_plain(
+        self,
+    ) -> None:
+        self._enable_binding_storage()
+        api = FakeBotApi(error=RuntimeError("rejected"))
+
+        event, results = self._official("/zmdlog 我的", api=api)
+
+        (reply,) = results
+        self.assertEqual(reply[0], "plain")
+        self.assertIn("还没有绑定账号", reply[1])
+        self.assertIs(reply.use_markdown_, False)
+        self.assertFalse(event.stopped)
+
+        wild = run(collect(self.plugin.zmdlog(FakeEvent("/zmdlog 我的"))))
+        self.assertEqual(wild[0][0], "plain")
+        self.assertIsNone(wild[0].use_markdown_)
+        self.plugin.settings = dataclasses.replace(
+            self.plugin.settings, disable_qq_official_buttons=True
+        )
+        switched_api = FakeBotApi()
+        _, switched = self._official("/zmdlog 我的", api=switched_api)
+        self.assertEqual(switched[0][0], "plain")
+        self.assertEqual(switched_api.calls, [])
 
     # --- QQ official result images ----------------------------------------------
 

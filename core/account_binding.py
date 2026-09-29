@@ -31,6 +31,7 @@ from .client import ZmdLogsAPIError, ZmdLogsClient, ZmdLogsClientError
 from .logs import LogSink
 from .messages import shorten
 from .origins import is_group_origin
+from .outcome import Outcome, SitePage
 from .persistence import JsonStore
 from .routing import RouteKind, RouteRequest
 from .settings import PluginSettings
@@ -39,6 +40,12 @@ from .timestamps import utc_now_text
 BINDINGS_FILE = "bindings.json"
 BINDING_CODE_INVALID = "binding_code_invalid"
 _EVERYTHING = frozenset({"全部", "所有", "all"})
+
+
+def to_binding_page(text: str) -> Outcome:
+    """A reply that sends its reader to the site's binding page for a code."""
+
+    return Outcome(message=text, site_page=SitePage.BINDING)
 
 
 class AccountBinding:
@@ -123,39 +130,44 @@ class AccountBinding:
         origin: str,
         requester_key: str,
         command: str,
-    ) -> str:
+    ) -> Outcome:
         """Maintain one user's bindings, in text; nothing is rendered.
 
         Group chats only, like every binding command: the bot adds nobody
-        as a friend, so a private chat is not a place it is used from.
+        as a friend, so a private chat is not a place it is used from. A
+        reply that sends the user to the site for a code says so.
         """
 
         if not is_group_origin(origin):
-            return messages.BINDING_GROUP_ONLY
+            return Outcome(message=messages.BINDING_GROUP_ONLY)
         if not requester_key:
-            return messages.NO_SENDER
+            return Outcome(message=messages.NO_SENDER)
         if route.kind is RouteKind.BIND:
             return await self._bind(route.query, origin, requester_key, command)
         mine = self.book.for_user(requester_key)
         if mine is None:
-            return messages.NOT_BOUND.format(command=command)
+            return to_binding_page(messages.NOT_BOUND.format(command=command))
         if route.kind is RouteKind.UNBIND:
-            return self._unbind(route.query, requester_key, mine, command)
-        return self._set_primary(route.query, requester_key, mine, command)
+            return Outcome(
+                message=self._unbind(route.query, requester_key, mine, command)
+            )
+        return Outcome(
+            message=self._set_primary(route.query, requester_key, mine, command)
+        )
 
     async def _bind(
         self, text: str, origin: str, requester_key: str, command: str
-    ) -> str:
+    ) -> Outcome:
         if not self.enabled:
-            return messages.BINDINGS_DISABLED
+            return Outcome(message=messages.BINDINGS_DISABLED)
         code = normalize_binding_code(text)
         if code is None:
-            return messages.BIND_CODE_NEEDED.format(command=command)
+            return to_binding_page(messages.BIND_CODE_NEEDED.format(command=command))
         digest = code_digest(code)
         async with self._lock:
             now = utc_now_text()
             if self.book.code_used(digest, now=now):
-                return messages.BIND_CODE_USED
+                return to_binding_page(messages.BIND_CODE_USED)
             try:
                 hit = await self._client.get_binding_code_account(code)
             except ZmdLogsAPIError as exc:
@@ -163,16 +175,16 @@ class AccountBinding:
                 self._logger.warning("ZmdLogBot binding code refused: %s", exc.code)
                 if exc.status_code == 404:
                     if exc.code == BINDING_CODE_INVALID:
-                        return messages.BIND_CODE_INVALID
-                    return messages.BIND_UNSUPPORTED
+                        return to_binding_page(messages.BIND_CODE_INVALID)
+                    return Outcome(message=messages.BIND_UNSUPPORTED)
                 if exc.status_code == 429:
-                    return messages.RATE_LIMITED
-                return messages.UPSTREAM_UNAVAILABLE
+                    return Outcome(message=messages.RATE_LIMITED)
+                return Outcome(message=messages.UPSTREAM_UNAVAILABLE)
             except ZmdLogsClientError as exc:
                 self._logger.warning(
                     "ZmdLogBot binding code lookup failed: %s", type(exc).__name__
                 )
-                return messages.UPSTREAM_UNAVAILABLE
+                return Outcome(message=messages.UPSTREAM_UNAVAILABLE)
             updated, status = self.book.with_account(
                 requester_key,
                 BoundAccount(
@@ -186,20 +198,28 @@ class AccountBinding:
             )
             if status == "full":
                 # Nothing was bound, so the code stays usable after a 解绑.
-                return messages.BIND_LIMIT_REACHED.format(limit=MAX_ACCOUNTS_PER_USER)
+                return Outcome(
+                    message=messages.BIND_LIMIT_REACHED.format(
+                        limit=MAX_ACCOUNTS_PER_USER
+                    )
+                )
             if not self._save(updated.with_used_code(digest, now=now)):
-                return messages.BINDINGS_WRITE_FAILED
+                return Outcome(message=messages.BINDINGS_WRITE_FAILED)
         mine = self.book.for_user(requester_key)
         assert mine is not None
         if status == "refreshed":
             position = _position(mine, hit.account_id)
-            return (
-                f"{hit.account_display_name}（{hit.account_id}）已经绑定过了"
-                f"（第 {position} 位），昵称已更新。"
+            return Outcome(
+                message=(
+                    f"{hit.account_display_name}（{hit.account_id}）已经绑定过了"
+                    f"（第 {position} 位），昵称已更新。"
+                )
             )
-        return (
-            f"已绑定 {hit.account_display_name}（{hit.account_id}）。\n"
-            + format_bindings(mine, command=command)
+        return Outcome(
+            message=(
+                f"已绑定 {hit.account_display_name}（{hit.account_id}）。\n"
+                + format_bindings(mine, command=command)
+            )
         )
 
     def _unbind(

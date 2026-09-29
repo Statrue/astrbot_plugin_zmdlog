@@ -34,6 +34,7 @@ from .core.buttons import (
     pick_list_message,
     result_image_message,
     result_keyboard,
+    site_page_message,
 )
 from .core.candidates import (
     CandidateStore,
@@ -311,21 +312,21 @@ class ZmdLogBotPlugin(Star):
         ):
             # These reply in text and never reach _dispatch, so they need their
             # own guard: an unexpected error must not surface as a traceback.
-            watch_outcome: Outcome | None = None
+            reply: Outcome | None = None
             try:
                 if route.kind in _ALIAS_ROUTES:
                     message = await self.alias_admin.handle(
                         route, is_admin=self._event_is_admin(event)
                     )
                 elif route.kind in _BINDING_ROUTES:
-                    message = await self.bindings.handle_route(
+                    reply = await self.bindings.handle_route(
                         route,
                         origin=self._event_origin(event),
                         requester_key=self._event_user_key(event),
                         command=self._command_prefix(event) + "zmdlog",
                     )
                 else:
-                    watch_outcome = await self.watcher.handle_route(
+                    reply = await self.watcher.handle_route(
                         route,
                         origin=self._event_origin(event),
                         requester_key=self._event_user_key(event),
@@ -340,9 +341,10 @@ class ZmdLogBotPlugin(Star):
             except Exception:
                 logger.exception("ZmdLogBot unexpected command failure")
                 message = messages.UNEXPECTED_FAILURE
-            if watch_outcome is not None:
-                # 关注 can post a pick list, which gets buttons like any other.
-                async for result in self._reply(event, watch_outcome):
+            if reply is not None:
+                # 关注 can post a pick list, and 绑定 send the user to the
+                # site for a code: both get buttons like any other reply.
+                async for result in self._reply(event, reply):
                     yield result
                 return
             yield self._text_result(event, message)
@@ -461,12 +463,13 @@ class ZmdLogBotPlugin(Star):
         """Answer a command with ``outcome``, buttons and all where they fit.
 
         On the QQ official bot a pick list goes out as markdown with a
-        button per pick, and a picture about one thing as a markdown image
-        with a button to that thing's ZMDLogs page, both sent by the
-        plugin's own hand; the event is then stopped, so AstrBot neither
-        sends anything more nor asks the model. Everywhere else, and
-        whenever those cannot be sent, the reply is the one it has always
-        been.
+        button per pick, a picture about one thing as a markdown image
+        with a button to that thing's ZMDLogs page, and a text that sends
+        the reader to the site with a button to the page it names, all sent
+        by the plugin's own hand; the event is then stopped, so AstrBot
+        neither sends anything more nor asks the model. Everywhere else,
+        and whenever those cannot be sent, the reply is the one it has
+        always been.
         """
 
         if outcome.candidates is not None and await self._send_pick_buttons(
@@ -475,6 +478,11 @@ class ZmdLogBotPlugin(Star):
             event.stop_event()
             return
         if outcome.target is not None and await self._send_result_image(
+            event, outcome
+        ):
+            event.stop_event()
+            return
+        if outcome.site_page is not None and await self._send_site_page(
             event, outcome
         ):
             event.stop_event()
@@ -548,6 +556,20 @@ class ZmdLogBotPlugin(Star):
             return False
         return await qq_official.send_markdown(event, message, logger=logger)
 
+    async def _send_site_page(
+        self, event: AstrMessageEvent, outcome: Outcome
+    ) -> bool:
+        """Send ``outcome``'s text with a button to the site page it names."""
+
+        if not self._answers_as_official(event) or outcome.message is None:
+            return False
+        message = site_page_message(
+            outcome.message, outcome.site_page, web_base_url=self.web_base_url
+        )
+        if message is None:
+            return False
+        return await qq_official.send_markdown(event, message, logger=logger)
+
     def _outcome_result(self, event: AstrMessageEvent, outcome: Outcome):
         if outcome.image_path is not None:
             return event.image_result(outcome.image_path)
@@ -558,8 +580,8 @@ class ZmdLogBotPlugin(Star):
 
         That adapter sends markdown unless told otherwise, so a nickname's
         ``*`` or ``_`` set the reply in bold or italic. Of the replies, only
-        the pick list with buttons and the result picture are markdown; the
-        list escapes what it prints, and the picture prints no text.
+        the ones sent with buttons are markdown: they escape what they
+        print, and the picture prints no text.
         """
 
         result = event.plain_result(text)

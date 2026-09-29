@@ -10,11 +10,13 @@ it keeps working after the list expires or the bot restarts.
 import re
 import unittest
 
+from core import messages
 from core.buttons import (
     MAX_LABEL_NAME_CHARS,
     escape_markdown,
     pick_command,
     pick_list_message,
+    site_page_message,
 )
 from core.candidates import (
     CandidateStore,
@@ -34,6 +36,7 @@ from core.matcher import (
     RankingMatcher,
     TargetType,
 )
+from core.outcome import SitePage
 from core.queries import pending_from_route
 from core.routing import RouteKind, parse_zmdlog_payload
 from tests.helpers import make_card
@@ -366,6 +369,43 @@ class PickListMessageTests(unittest.TestCase):
 
         self.assertEqual(re.sub(r"\\(.)", r"\1", escaped), text)
         self.assertEqual(escape_markdown("中文 · 公开账号"), "中文 · 公开账号")
+
+
+class SitePageMessageTests(unittest.TestCase):
+    """A text that sends its reader to the site, with the page one tap away."""
+
+    def test_the_how_to_bind_text_carries_the_binding_page(self) -> None:
+        text = messages.NOT_BOUND.format(command=COMMAND)
+
+        message = site_page_message(
+            text, SitePage.BINDING, web_base_url="https://zmdlogs.com"
+        )
+
+        # The text is the plain reply, escaped: its dashes and slashes stay.
+        self.assertEqual(re.sub(r"\\(.)", r"\1", message.markdown), text)
+        (row,) = message.keyboard["content"]["rows"]
+        (button,) = row["buttons"]
+        self.assertEqual(button["render_data"]["label"], "去 ZMDLogs 生成绑定码")
+        self.assertEqual(button["action"]["type"], 0)
+        self.assertEqual(
+            button["action"]["data"], "https://zmdlogs.com/account/binding"
+        )
+
+    def test_the_page_is_on_the_configured_site(self) -> None:
+        message = site_page_message(
+            "x", SitePage.BINDING, web_base_url="https://mirror.example/logs/"
+        )
+
+        (row,) = message.keyboard["content"]["rows"]
+        self.assertEqual(
+            row["buttons"][0]["action"]["data"],
+            "https://mirror.example/logs/account/binding",
+        )
+
+    def test_a_site_address_that_is_no_web_link_gets_no_message(self) -> None:
+        self.assertIsNone(
+            site_page_message("x", SitePage.BINDING, web_base_url="zmdlogs.com")
+        )
 
 
 if __name__ == "__main__":

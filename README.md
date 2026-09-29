@@ -126,7 +126,7 @@ docker restart astrbot
 
 | 指令 | 说明 |
 |:---|:---|
-| `/zmdlog 绑定 <绑定码>` | 把自己和一个 ZMDLogs 账号对上号。绑定码在网站登录后从 账号菜单 → 机器人绑定（`/account/binding`）生成，10 分钟内有效，只能用一次；只认绑定码，不认昵称或 accountId。这一组指令都只在群聊里用，不需要加机器人好友 |
+| `/zmdlog 绑定 <绑定码>` | 把自己和一个 ZMDLogs 账号对上号。绑定码在网站登录后从 账号菜单 → 机器人绑定（`/account/binding`）生成，10 分钟内有效，只能用一次；只认绑定码，不认昵称或 accountId。这一组指令都只在群聊里用，不需要加机器人好友。在 QQ 官方机器人上，叫你去生成绑定码的提示下面直接带一个「去 ZMDLogs 生成绑定码」按钮 |
 | `/zmdlog 我的 [序号或昵称]` | 自己绑定账号的各首领最佳记录（同 `账号 <accountId>`），默认主账号 |
 | `/zmdlog 主账号 [序号或昵称]` | 列出自己的绑定；带参数则把那个号设为主账号（一人最多绑 5 个） |
 | `/zmdlog 解绑 [序号、昵称或 全部]` | 解除绑定；只绑了一个号时不用带参数 |
@@ -196,7 +196,7 @@ AstrBot 接入大模型并开启函数调用后，群友直接用自然语言问
 | `ranking_index_pace_seconds` | `30` | 索引每隔多少秒重读一个榜，最低 5 |
 | `bindings_enabled` | `true` | 账号绑定（绑定 / 我的 / 群榜）；关闭后已有绑定仍可查看和解除 |
 | `group_board_max_accounts` | `30` | 群榜最多统计多少个绑定账号，1–200 |
-| `disable_qq_official_buttons` | `false` | 关掉 QQ 官方机器人（`qq_official`）的按钮与纯文本回复：候选列表和结果图都不带按钮，文字回复回到适配器默认的 markdown |
+| `disable_qq_official_buttons` | `false` | 关掉 QQ 官方机器人（`qq_official`）的按钮与纯文本回复：候选列表、结果图和绑定提示都不带按钮，文字回复回到适配器默认的 markdown |
 
 ## 🔍 它是怎么工作的
 
