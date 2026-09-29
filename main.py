@@ -1321,7 +1321,8 @@ def _user_key(platform_name: str, sender_id: str) -> str:
     ``qq_official_v2`` is the official bot behind another adapter, with the
     same member_openid for a sender, so it keys as ``qq_official`` and
     switching adapters keeps every binding. The webhook adapter is left as it
-    is, and the wild bot's ids are a different namespace altogether."""
+    is, and the wild bot's ids are a different namespace altogether. The
+    alias goes when AstrBot handles button taps itself (see ``qq_official``)."""
 
     if not platform_name or not sender_id:
         return ""

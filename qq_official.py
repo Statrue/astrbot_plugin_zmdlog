@@ -61,6 +61,12 @@ and an unload leaves them quiet. The patch is put back on every load, so an
 AstrBot upgraded from the WebUI is patched like the one before; a switch
 change only reaches a connection opened after it.
 
+Once AstrBot handles taps itself, delete the patch, and
+``main._USER_KEY_ALIASES`` with it: the v2 adapter is what people install for
+its taps, and without that there is no third-party adapter worth keying a
+person on. Bindings made through it are already stored as ``qq_official``, so
+moving back to the built-in adapter keeps them.
+
 The protocol is from the official documentation and botpy (MIT); the
 AGPL-licensed community patches were read and not copied.
 """

@@ -8,10 +8,15 @@ AstrBot plugin (`ZmdLogBot`) that queries public ZMDLogs data (Endfield DPS
 leaderboards, account best records, battle reports) and replies with a single
 1280px-wide PNG rendered by Jinja2 + Playwright.
 
-`main.py` is the only file that touches AstrBot: the handlers, the error ladder,
-event field access, the notice sender, the four LLM tool handlers, the
-lifecycle. Every other line of logic lives in `core/`, which imports no AstrBot
-— that is what keeps the suite runnable as plain unit tests.
+`main.py` and the platform module `qq_official.py` are the only files that
+touch AstrBot. `main.py` holds the handlers, the error ladder, event field
+access, the notice sender, the four LLM tool handlers, the lifecycle;
+`qq_official.py` holds what the plugin does on the QQ official bot because
+AstrBot cannot — its own botpy sends, the notice push, the tap patch — and is
+the file to delete once AstrBot can. Every other line of logic lives in
+`core/`, which imports no AstrBot — that is what keeps the suite runnable as
+plain unit tests. What goes on a button is decided in `core/buttons.py`, not
+in the platform module.
 
 Python 3.11+ (`asyncio.timeout`, `datetime.UTC`), dependencies in
 `requirements.txt`, Chromium installed separately
@@ -21,7 +26,8 @@ Python 3.11+ (`asyncio.timeout`, `datetime.UTC`), dependencies in
 the modules that carry a design worth understanding — `ranking_index`,
 `recipes/__init__`, `rank_watch`, `watch`, `queries`, `toolbox`, `facts`,
 `contract`, `timeline`, `telemetry`, `bindings`, `origins`, `metrics`,
-`cache` — explain their economics and their reasons there. That is the module
+`cache`, `buttons` — explain their economics and their reasons there, and so
+does `qq_official.py` at the root. That is the module
 map; this file does not repeat it, and a behaviour question is answered by the
 docstring beside the code, not here.
 
@@ -76,13 +82,24 @@ never retried, every failure a `ZmdLogsClientError` subclass) →
 
 `main.py` registers three reply paths — the `zmdlog` command, the quoted
 candidate pick, and a `@filter.regex` handler that auto-expands battle links in
-group chats — plus the four LLM tools. All of them run through one error guard,
+group chats — plus the four LLM tools, and, on the QQ official bot with
+callbacks on, the button tap, hooked through `qq_official.install_callbacks`
+rather than a decorator. All of them run through one error guard,
 `main._run_guarded`, so they cannot drift apart again.
 
 ## Invariants to preserve
 
 - **`core/` imports no AstrBot.** Modules that need to log take a
   `core/logs.LogSink`, because AstrBot's plugin logger is not a `logging.Logger`.
+- **Buttons are an addition on one platform, never a replacement.** Only the
+  built-in WebSocket `qq_official` gets them (`qq_official.is_official`, asked
+  per message); `qq_official_webhook`, `qq_official_v2`, the wild bot and every
+  other platform get byte for byte the messages they got before, and so does
+  the official bot with `disable_qq_official_buttons` on (its notices are still
+  pushed by the plugin, see `qq_official`). Every button path falls
+  back to that same output when its send fails — the plain pick list, the
+  native picture, the plain notice — and reports a failure only when the
+  fallback fails too.
 - **Every board ranking is read through `core/ranking_index.RankingIndex`**,
   never from the client directly.
 - **DPS by default, rDPS on request, never mixed.** `core/metrics.py` is the one
@@ -227,7 +244,10 @@ when the user settled the question.
   关注-list-based 群榜 was judged not worth building, and was not; the 群榜 that
   shipped the same day (`d5736c5`) is drawn from the chat's *bindings* —
   `queries._group_board_gate` enrols whoever asks, and the page is one board
-  read filtered to the members' account ids.
+  read filtered to the members' account ids. 关注 is not a binding command and
+  stays open in private chats (2026-09-30, #11 withdrawn): it ties no person to
+  a group, so there was no reason to close it, and existing private entries
+  keep their notices.
 - **Cross-boss battle comparison is meaningless** and answers in text: every
   boss has its own rotation.
 - **In a comparison, A keeps the order its own 配装 page shows and B is matched
@@ -274,6 +294,39 @@ when the user settled the question.
   own instead of joining the 394 plugins under `娱乐` — the category never
   appears on a market card, only in that dropdown, which is not worth the red
   text.
+- **The QQ official bot answers a private chat as it answers a group**
+  (2026-09-28, reversing "no buttons in private chats"): pick-list buttons,
+  the markdown picture and its buttons, callbacks and notice buttons all go to
+  `post_c2c_message` as they go to `post_group_message`. The prototype tested
+  groups only; each private path was field-tested as its ticket shipped.
+- **Buttons stop at the plugin's own replies** (2026-09-28). The four LLM
+  tools' pictures stay native pictures with no keyboard, and the auto-expand
+  handler does not read links inside QQ cards. A button never uses `enter`
+  (send on tap): in a group the platform only fills the box (measured), and
+  using it in private chats alone would split the two; a one-tap page is what
+  the callback switch is for.
+- **Callbacks are the plugin's own minimal patch, not a ride on another
+  plugin** (2026-09-28). The first plan used qqoffice_expand's taps when it
+  was installed; it was dropped for the conflict `qq_official` describes, so
+  qqoffice_expand is only detected and yielded to, and README says the two are
+  incompatible. The `qq_official_v2` adapter gets no buttons. No AstrBot
+  source change and no AstrBot PR from this repository.
+- **Bindings on the wild bot and the official bot never merge** (2026-09-28),
+  and `union_openid` is not used. On the official bot one person's openid is
+  the same in every group (measured), so a binding works across groups and
+  the bind reply carries no "this group only" caveat.
+- **Field results the official-bot code relies on without a test**
+  (2026-09-27/28): zmdlogs.com links in the bot's text go out and are
+  clickable despite the platform's URL whitelist, so notices keep their
+  printed links; a markdown picture keeps showing after its `raw_url` expires
+  (the platform re-stores it). The button path costs one chunked upload,
+  1.5–3 s; a slow page is slow in fetch and render (#14), not in the buttons.
+  The prototype that measured all of this is the branch
+  `prototype/qq-official-buttons` on GitHub — a record, never to be merged.
+- **When AstrBot ships keyboards** (#9809, #7868 or #9355), check whether it
+  sends command buttons (action type 2) as well as callbacks; only then can
+  `qq_official`'s own sends go, since the pick list and the sibling views
+  depend on command buttons.
 
 ## Agent skills
 
