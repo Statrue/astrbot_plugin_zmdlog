@@ -182,11 +182,14 @@ class QueryService:
         command_prefix: str,
         origin: str = "",
         requester_key: str = "",
+        official: bool = False,
     ) -> Outcome:
         """Answer one parsed command.
 
         ``origin`` keys any pick list it posts and names the chat a 群榜
         is drawn for; ``requester_key`` is the sender, which only 我的 reads.
+        ``official`` says the chat is the QQ official bot's, which only the
+        help page reads.
         """
 
         direct = await self._dispatch_direct(
@@ -194,6 +197,7 @@ class QueryService:
             command_prefix=command_prefix,
             origin=origin,
             requester_key=requester_key,
+            official=official,
         )
         if direct is not None:
             return direct
@@ -239,13 +243,16 @@ class QueryService:
         command_prefix: str,
         origin: str,
         requester_key: str = "",
+        official: bool = False,
     ) -> Outcome | None:
         """Routes that need no board keyword; None hands over to the matcher."""
 
         renderer = self._renderer()
         if route.kind is RouteKind.HELP:
             return Outcome.image(
-                await renderer.render_help(command_prefix=command_prefix)
+                await renderer.render_help(
+                    command_prefix=command_prefix, official=official
+                )
             )
 
         if route.kind is RouteKind.MY_ACCOUNT:

@@ -159,6 +159,21 @@ class HelpTests(unittest.TestCase):
                 with self.subTest(command=command.command):
                     self.assertTrue(command.answers.endswith("？"))
 
+    def test_only_the_official_bot_page_states_its_two_preconditions(self) -> None:
+        # The official bot hears a group only when @-ed unless the group lets
+        # it read every message, and pushes a rank notice only when the group
+        # lets it speak unasked. Nowhere else does either apply.
+        plain = build_help_page("/")
+        official = build_help_page("/", official=True)
+
+        self.assertEqual(plain.notes, ())
+        mention, notice = official.notes
+        self.assertIn("获取群内全部消息", mention)
+        self.assertIn("@机器人", mention)
+        self.assertIn("群主或管理员", notice)
+        self.assertIn("机器人主动在群聊内发言", notice)
+        self.assertEqual(official.sections, plain.sections)
+
     def test_watch_help_never_claims_who_overtook_the_account(self) -> None:
         # One board read cannot prove who caused a drop, so the notice only
         # reports the new records above. The help page must promise no more.

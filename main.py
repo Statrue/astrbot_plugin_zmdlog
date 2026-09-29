@@ -380,6 +380,7 @@ class ZmdLogBotPlugin(Star):
                 command_prefix=self._command_prefix(event),
                 origin=self._event_origin(event),
                 requester_key=self._event_user_key(event),
+                official=self._answers_as_official(event),
             ),
             api_error_message=lambda exc: api_error_message(route, exc),
             failure_label="command",
@@ -653,6 +654,7 @@ class ZmdLogBotPlugin(Star):
                     requester_key=_user_key(
                         qq_official.PLATFORM_NAME, click.sender_id
                     ),
+                    official=True,
                 ),
                 api_error_message=lambda exc: api_error_message(route, exc),
                 failure_label="callback",

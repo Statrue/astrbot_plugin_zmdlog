@@ -107,6 +107,16 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertNotIn("固定口径", html)
         self.assertNotIn("影拓4", html)
 
+    def test_help_shows_the_official_notes_only_when_asked(self) -> None:
+        plain = self.renderer.render_help(command_prefix="/")
+        official = self.renderer.render_help(command_prefix="/", official=True)
+
+        self.assertNotIn('class="help-notes"', plain)
+        self.assertNotIn("获取群内全部消息", plain)
+        self.assertIn('class="help-notes"', official)
+        self.assertIn("获取群内全部消息", official)
+        self.assertIn("机器人主动在群聊内发言", official)
+
     def test_metadata_uses_current_plugin_identity(self) -> None:
         metadata = (self.root / "metadata.yaml").read_text(encoding="utf-8")
 

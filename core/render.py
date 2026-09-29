@@ -186,9 +186,10 @@ class TemplateRenderer:
         self,
         *,
         command_prefix: str,
+        official: bool = False,
         embed_fonts: bool = True,
     ) -> str:
-        page = build_help_page(command_prefix)
+        page = build_help_page(command_prefix, official=official)
         return self._render(
             "help/help.html",
             page,

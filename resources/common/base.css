@@ -497,6 +497,21 @@ body {
 
 /* ---------- help (doc list) ---------- */
 
+/* 官方机器人的前提条件：群里要开的开关，小字，不抢指令的位置 */
+.help-notes {
+  margin: 20px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 3px solid var(--notify);
+  list-style: none;
+}
+
+.help-notes li {
+  color: var(--steel);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  line-height: 1.7;
+}
+
 .help-section {
   break-inside: avoid;
 }

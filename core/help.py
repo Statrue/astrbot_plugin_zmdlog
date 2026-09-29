@@ -26,15 +26,28 @@ class HelpSection:
 class HelpPage:
     header: PageHeader
     sections: tuple[HelpSection, ...]
+    # Small print on what the chat itself must allow; empty off the QQ
+    # official bot, where nothing needs allowing.
+    notes: tuple[str, ...] = ()
 
 
-def build_help_page(command_prefix: str) -> HelpPage:
+# The official bot hears a group only when @-ed, unless the group lets it read
+# every message, and pushes nothing into a group that has not let it speak
+# unasked. Both are switches a group owner or admin sets, not the plugin.
+OFFICIAL_NOTES = (
+    "没开「获取群内全部消息」的群，指令前要先 @机器人。",
+    "名次通报要群主或管理员先开「机器人主动在群聊内发言」。",
+)
+
+
+def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
     """Build complete help data using the active AstrBot command prefix.
 
     One row per question, not per spelling: commands that take the same
     argument share a row, and a description is one line of what the syntax
     alone would not tell the reader. The page itself is the answer to
     "which commands exist", so it carries no row for the help command.
+    ``official`` adds the QQ official bot's two preconditions as small print.
     """
 
     command = f"{command_prefix}zmdlog"
@@ -210,4 +223,5 @@ def build_help_page(command_prefix: str) -> HelpPage:
                 ),
             ),
         ),
+        notes=OFFICIAL_NOTES if official else (),
     )

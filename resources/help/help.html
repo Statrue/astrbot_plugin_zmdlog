@@ -1,6 +1,11 @@
 {% extends "common/base.html" %}
 
 {% block content %}
+{% if page.notes %}
+<ul class="help-notes">
+  {% for note in page.notes %}<li>{{ note }}</li>{% endfor %}
+</ul>
+{% endif %}
 {% for section in page.sections %}
 <section class="help-section">
   <div class="section-heading">

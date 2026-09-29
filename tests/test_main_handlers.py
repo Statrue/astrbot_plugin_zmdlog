@@ -916,6 +916,39 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(api.calls, [])
         self.assertFalse(event.stopped)
 
+    def test_the_help_page_carries_the_official_notes_on_the_official_bot(
+        self,
+    ) -> None:
+        asked: list[bool] = []
+
+        async def render_help(*, command_prefix, official=False):
+            asked.append(official)
+            return capture("/tmp/help.png")
+
+        self.plugin.renderer.render_help = render_help
+
+        def notes_for(platform: str) -> list[bool]:
+            asked.clear()
+            run(collect(self.plugin.zmdlog(FakeEvent("/zmdlog", platform=platform))))
+            return list(asked)
+
+        # Only the built-in WebSocket adapter is the official bot; the webhook
+        # and v2 adapters are other platforms, whose page stays as it was.
+        for platform, expected in (
+            ("qq_official", True),
+            ("qq_official_webhook", False),
+            ("qq_official_v2", False),
+            ("aiocqhttp", False),
+        ):
+            with self.subTest(platform=platform):
+                self.assertEqual(notes_for(platform), [expected])
+
+        # With the buttons switched off the official bot answers as before.
+        self.plugin.settings = dataclasses.replace(
+            self.plugin.settings, disable_qq_official_buttons=True
+        )
+        self.assertEqual(notes_for("qq_official"), [False])
+
     def test_every_other_official_text_reply_goes_out_as_plain_text(self) -> None:
         # A nickname's * or _ would otherwise set the reply in bold or italic.
         self._enable_watch_storage()
