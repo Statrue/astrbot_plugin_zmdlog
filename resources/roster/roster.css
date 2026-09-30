@@ -185,7 +185,7 @@
 .combo-member {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 

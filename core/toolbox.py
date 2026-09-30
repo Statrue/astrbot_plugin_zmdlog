@@ -717,7 +717,11 @@ class ToolService:
         label = window_label(span)
         parts = [
             facts.format_account(
-                rankings, habits=habits, since=since, window_label=label
+                rankings,
+                habits=habits,
+                since=since,
+                window_label=label,
+                rows_by_battle=recipe.rows_by_battle,
             )
         ]
         if self._watcher is not None:

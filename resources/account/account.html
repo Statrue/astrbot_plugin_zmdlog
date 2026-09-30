@@ -1,4 +1,5 @@
 {% extends "common/base.html" %}
+{% from "common/member-face.html" import render_member_face %}
 
 {% block extra_styles %}{% include "common/standings-rows.css" %}{% include "account/account.css" %}{% endblock %}
 
@@ -57,12 +58,7 @@
       <div class="standings-team">
         {% for member in row.roster %}
         <span class="team-member{% if row.character_name and member.character_name == row.character_name %} is-lead{% endif %}">
-          <span class="avatar{% if member.element_key %} el-{{ member.element_key }}{% endif %}">
-            {{ member.character_initial }}
-            {% if member.avatar_url %}
-            <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
-            {% endif %}
-          </span>
+          {{ render_member_face(member) }}
           {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
         </span>
         {% endfor %}
@@ -72,7 +68,7 @@
     {% endfor %}
   </ol>
   <p class="board-legend">
-    阵容里加粗的是该场主 C；名次下方为 ZMDLogs 公开排名的百分位；用时为通关时间，DPS 为整队合计；已下线的榜只有阵容名单。
+    阵容里加粗的是该场主 C，头像下的数字是 潜能+精炼（? 为武器未记录）；名次下方为 ZMDLogs 公开排名的百分位；用时为通关时间，DPS 为整队合计；已下线的榜不标主 C。
     <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
   </p>
 </section>

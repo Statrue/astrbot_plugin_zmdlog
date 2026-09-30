@@ -1,4 +1,5 @@
 {% extends "common/base.html" %}
+{% from "common/member-face.html" import render_member_face %}
 
 {% block extra_styles %}
 {% include "common/standings-rows.css" %}
@@ -56,12 +57,7 @@
       <div class="standings-team">
         {% for member in row.roster %}
         <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}">
-          <span class="avatar{% if member.element_key %} el-{{ member.element_key }}{% endif %}">
-            {{ member.character_initial }}
-            {% if member.avatar_url %}
-            <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
-            {% endif %}
-          </span>
+          {{ render_member_face(member) }}
           {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
         </span>
         {% endfor %}
@@ -71,7 +67,7 @@
     {% endfor %}
   </ol>
   <p class="board-legend">
-    只显示前 {{ page.shown_count }} 名（本群共 {{ page.listed_count }} 个账号在该榜有记录）；阵容里加粗的是该场主 C；用时为通关时间，DPS 为整队合计；只有设为公开的记录才会上榜。
+    只显示前 {{ page.shown_count }} 名（本群共 {{ page.listed_count }} 个账号在该榜有记录）；阵容里加粗的是该场主 C，头像下的数字是 潜能+精炼（? 为武器未记录）；用时为通关时间，DPS 为整队合计；只有设为公开的记录才会上榜。
     <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
   </p>
 </section>

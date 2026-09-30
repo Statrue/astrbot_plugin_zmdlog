@@ -4,6 +4,7 @@ import re
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -441,6 +442,12 @@ class TemplateRendererTests(unittest.TestCase):
             "完整副本名",
             with_run=True,
         )
+        # hot-bosses runs carry 养成 now; the top-3 card lists names and
+        # times only.
+        run = replace(
+            card.top_speed_runs[0], character_potential=5, weapon_refine=6
+        )
+        card = replace(card, top_speed_runs=(run,))
         html = self.renderer.render_dungeon_top3(
             dungeon_pick("完整副本名", card), (card,), query="<副本>"
         )
@@ -450,6 +457,9 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertNotIn("secret-slug", html)
         self.assertNotIn("battle-secret-slug", html)
         self.assertIn("1:01.234", html)
+        # The bare "5+6" also occurs by chance in the embedded fonts' base64.
+        self.assertNotIn(">5+6<", html)
+        self.assertNotIn('class="investment"', html)
 
     def test_dungeon_scope_groups_cards_by_dungeon(self) -> None:
         cards = (

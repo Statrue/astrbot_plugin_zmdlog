@@ -42,12 +42,14 @@ from .models import (
     BattleExport,
     BattleRosterEntry,
     BossRanking,
+    BossRankingRosterEntry,
     BossRankingRow,
     CharacterBossStatistics,
     CharacterStatistics,
     HotBossCard,
     PublicUserRankings,
 )
+from .presentation import InvestmentView, investment_view
 from .professions import normalize_profession
 from .standings import (
     AccountTally,
@@ -72,6 +74,8 @@ _TOP_TEAMS = 5
 _NO_RECORDS_READ = "读过的榜单里没有任何公开记录。"
 # Boards named in an overview past this many print their leader only.
 _OVERVIEW_RUNS = 3
+# Said once under any list that names a 养成 after a character.
+_INVESTMENT_KEY = "角色名后的 5+6 是 养成：潜能+精炼；5+? 是武器未记录。"
 
 
 def format_board_ranking(
@@ -152,19 +156,21 @@ def format_board_ranking(
         lines.extend(_board_window_events(events))
     lines.append("")
     leader = ranking.rows[0]
-    for row in rows[: _bounded(limit)]:
-        team = "、".join(entry.character_name for entry in row.roster_entries)
+    shown = rows[: _bounded(limit)]
+    for row in shown:
         gap = ""
         if row.rank > 1 and row.duration_ms > leader.duration_ms:
             gap = f" · 落后第一 {(row.duration_ms - leader.duration_ms) / 1000:.2f} 秒"
         lines.append(
             f"#{row.rank} {_duration(row.duration_ms)} · DPS {row.dps:,.0f}"
-            f" · 主C {row.character_name} · {row.account_display_name}"
+            f" · 主C {_main_c(row)} · {row.account_display_name}"
             f" · {_date(row.battle_end_at)}{gap}"
         )
-        lines.append(f"    阵容 {team} · battleId {row.battle_id}")
+        lines.append(f"    阵容 {_team(row.roster_entries)} · battleId {row.battle_id}")
     if len(rows) > _bounded(limit):
         lines.append(f"（另有 {len(rows) - _bounded(limit)} 条未列出，图里有）")
+    if any(_any_investment(row.roster_entries) for row in shown):
+        lines.append(_INVESTMENT_KEY)
     usage = _profession_usage(ranking)
     if usage:
         lines.append("")
@@ -202,6 +208,7 @@ def format_boards_overview(
         lines.append(messages.NO_PUBLIC_BOARDS)
         return _joined(lines)
     lines.append("")
+    invested = False
     for card in cards:
         if card.dungeon_name == title or card.boss_name.startswith(
             card.dungeon_name.split(" ")[0]
@@ -216,12 +223,45 @@ def format_boards_overview(
             continue
         for position, run in enumerate(runs, start=1):
             prefix = f"{label}：" if position == 1 else "    "
+            investment = investment_view(run.character_potential, run.weapon_refine)
+            invested = invested or investment is not None
             lines.append(
                 f"{prefix}#{position} {_duration(run.duration_ms)}"
-                f" · 主C {run.character_name} · {run.uploader_nickname}"
-                f" · battleId {run.battle_id}"
+                f" · 主C {_named(run.character_name, investment)}"
+                f" · {run.uploader_nickname} · battleId {run.battle_id}"
             )
+    if invested:
+        lines.append(_INVESTMENT_KEY)
     return _joined(lines)
+
+
+def _named(name: str, investment: InvestmentView | None) -> str:
+    """``name 5+6``: a character with its 养成, or the bare name without one."""
+
+    return name if investment is None else f"{name} {investment.text}"
+
+
+def _entry_investment(entry: BossRankingRosterEntry) -> InvestmentView | None:
+    return investment_view(entry.character_potential, entry.weapon_refine)
+
+
+def _team(entries: tuple[BossRankingRosterEntry, ...]) -> str:
+    return "、".join(
+        _named(entry.character_name, _entry_investment(entry)) for entry in entries
+    )
+
+
+def _any_investment(entries: tuple[BossRankingRosterEntry, ...]) -> bool:
+    return any(_entry_investment(entry) is not None for entry in entries)
+
+
+def _main_c(row: BossRankingRow) -> str:
+    """The main C with its 养成, read off its own entry in the roster."""
+
+    for entry in row.roster_entries:
+        if entry.character_name == row.character_name:
+            return _named(entry.character_name, _entry_investment(entry))
+    return row.character_name
 
 
 def _duration_summary(rows: tuple[BossRankingRow, ...]) -> str:
@@ -897,12 +937,15 @@ def format_account(
     habits: AccountTally | None = None,
     since: datetime | None = None,
     window_label: str = "",
+    rows_by_battle: Mapping[str, BossRankingRow] | None = None,
 ) -> str:
     """One public account's best record on each board.
 
     ``since`` keeps only the best records fought inside a window — the
     endpoint carries one record per board, so this is "which of its bests
-    are recent", not every fight of the window.
+    are recent", not every fight of the window. ``rows_by_battle`` is the
+    page's fallback for a record that arrives without a roster of its own:
+    the index's row of the same battle.
     """
 
     lines = [f"公开账号 {account.account_display_name}（{account.account_id}）"]
@@ -940,8 +983,15 @@ def format_account(
         if not ordered:
             lines.append("    没有")
             return _joined(lines)
-    for row in ordered[: _bounded(limit)]:
-        team = "、".join(row.roster_summary) if row.roster_summary else "未记录"
+    held = rows_by_battle or {}
+    shown = ordered[: _bounded(limit)]
+    rosters = [
+        row.roster_entries
+        or (held[row.battle_id].roster_entries if row.battle_id in held else ())
+        for row in shown
+    ]
+    for row, roster in zip(shown, rosters):
+        team = _team(roster) or "、".join(row.roster_summary) or "未记录"
         lines.append(
             f"#{row.rank} {row.dungeon_name} · {row.boss_name}"
             f" · {_duration(row.duration_ms)} · DPS {row.total_dps:,.0f}"
@@ -950,6 +1000,8 @@ def format_account(
         lines.append(f"    阵容 {team} · battleId {row.battle_id}")
     if len(ordered) > _bounded(limit):
         lines.append(f"（另有 {len(ordered) - _bounded(limit)} 个榜未列出，图里有）")
+    if any(_any_investment(roster) for roster in rosters):
+        lines.append(_INVESTMENT_KEY)
     return _joined(lines)
 
 

@@ -15,8 +15,8 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class AccountRecipe:
     account: PublicUserRankings
-    # The index's rows of the same battles: the user endpoint names a
-    # roster but carries no avatars, professions or main C.
+    # The index's rows of the same battles: the user endpoint carries no
+    # main C, and an older response no roster beyond the names.
     rows_by_battle: Mapping[str, BossRankingRow]
     # Every board slug the index lists, None while it is incomplete; with it
     # the page tells a retired board from one not read yet.

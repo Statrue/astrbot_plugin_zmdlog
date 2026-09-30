@@ -61,11 +61,13 @@ from .charts import (
     build_dps_curve_view,
 )
 from .common import (
+    InvestmentView,
     PageHeader,
     PresentationError,
     _format_stat_value,
     format_duration,
     format_number,
+    investment_view,
     public_url,
     safe_http_url,
 )
@@ -151,6 +153,7 @@ __all__ = [
     "DpsCurveView",
     "EquipStatView",
     "EquipView",
+    "InvestmentView",
     "LoadoutPage",
     "LoadoutView",
     "MainCharacterView",
@@ -218,6 +221,7 @@ __all__ = [
     "build_character_champions_page",
     "format_duration",
     "format_number",
+    "investment_view",
     "public_url",
     "safe_http_url",
 ]

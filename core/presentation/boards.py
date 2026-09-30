@@ -23,6 +23,7 @@ from ..routing import (
 from ..standings import profession_record_counts
 from .common import (
     _CRISIS_CONTRACT_BOSS_SLUG,
+    InvestmentView,
     PageHeader,
     PresentationError,
     _bar_width,
@@ -32,6 +33,7 @@ from .common import (
     _share,
     format_duration,
     format_number,
+    investment_view,
     metric_footer,
 )
 
@@ -77,6 +79,8 @@ class RosterEntryView:
     avatar_url: str | None
     # The CSS key of the catalog element; None when the catalog lacks the name.
     element_key: str | None = None
+    # 养成, when the record names it; a roster of names only never does.
+    investment: InvestmentView | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,11 +335,13 @@ def build_ranking_page(
                     row.character_avatar_url,
                     base_url=web_base_url,
                 ),
+                # The row is about its main C: only that face gets a 养成.
                 roster=_build_roster(
                     row.roster_entries,
                     row.roster_summary,
                     web_base_url=web_base_url,
                     elements=elements,
+                    investment_of=row.character_name,
                 ),
                 dps=format_number(value(row)),
                 duration=format_duration(row.duration_ms),
@@ -567,12 +573,14 @@ def _build_roster(
     web_base_url: str | None,
     elements: Mapping[str, str] | None = None,
     icons: Mapping[str, str] | None = None,
+    investment_of: str | None = None,
 ) -> tuple[RosterEntryView, ...]:
     """The four faces of one record.
 
     A ranking row names its roster and carries a portrait for each; a
     record on a board the index does not hold arrives as names only, and
     ``icons`` (the game-data catalog) is where those faces come from.
+    Every face carries its 养成, or only the one named ``investment_of``.
     """
 
     known = elements or {}
@@ -589,6 +597,11 @@ def _build_roster(
                 character_initial=_initial(entry.character_name),
                 avatar_url=portrait(entry.character_name, entry.avatar_url),
                 element_key=element_key(known.get(entry.character_name)),
+                investment=(
+                    investment_view(entry.character_potential, entry.weapon_refine)
+                    if investment_of in (None, entry.character_name)
+                    else None
+                ),
             )
             for entry in entries
         )

@@ -549,6 +549,7 @@ def account_rankings(
                 roster_summary=best.roster_summary,
                 contract_tag_score=best.contract_tag_score,
                 contract_tags=best.contract_tags,
+                roster_entries=best.roster_entries,
             )
         )
     if not rankings:
@@ -567,10 +568,10 @@ def rows_by_battle(
     """The held ranking row of every battle id the index knows.
 
     An account's best record on a board is a row of that board's ranking,
-    so the roster avatars, professions and main C that the user endpoint
-    leaves out can be read off the index without a request. Ids the index
-    does not hold — a retired board, or a fill still in progress — are
-    simply absent from the result and the caller falls back.
+    so the main C that the user endpoint leaves out, and the roster an
+    older response lacks, can be read off the index without a request. Ids
+    the index does not hold — a retired board, or a fill still in progress —
+    are simply absent from the result and the caller falls back.
     """
 
     wanted = set(battle_ids)

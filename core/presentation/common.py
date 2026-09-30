@@ -32,6 +32,33 @@ class PageHeader:
     metric: str = "dps"
 
 
+@dataclass(frozen=True, slots=True)
+class InvestmentView:
+    """养成: one fielded character's 潜能 + 精炼, the site's ``5+6``.
+
+    Printed under an avatar on the pages that list records, and after a name
+    in the tools' text. ``5+?`` is a weapon left unrecorded, not a zero.
+    """
+
+    potential: int
+    refine: int | None
+
+    @property
+    def text(self) -> str:
+        refine = "?" if self.refine is None else str(self.refine)
+        return f"{self.potential}+{refine}"
+
+
+def investment_view(
+    potential: int | None, refine: int | None
+) -> InvestmentView | None:
+    """The pair to print, or None when the 潜能 is missing and nothing is."""
+
+    if potential is None:
+        return None
+    return InvestmentView(potential=potential, refine=refine)
+
+
 def metric_footer(metric: str, what: str = "公开榜单") -> str:
     """The footer note naming the metric a page was drawn from."""
 

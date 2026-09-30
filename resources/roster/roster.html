@@ -1,4 +1,5 @@
 {% extends "common/base.html" %}
+{% from "common/member-face.html" import render_member_face %}
 
 {% block extra_styles %}{% include "roster/roster.css" %}{% endblock %}
 
@@ -45,7 +46,7 @@
   <section class="roster-block" aria-label="常见阵容">
     <div class="section-heading">
       <h2>前 {{ page.sample_size }} 名常见阵容</h2>
-      <span class="section-note">站位顺序不计</span>
+      <span class="section-note">站位顺序不计 · 头像下的数字是 潜能+精炼，取该阵容名次最好的一场</span>
     </div>
     <ol class="combo-list">
       {% for combo in page.combos %}
@@ -57,12 +58,7 @@
         <div class="combo-members">
           {% for member in combo.members %}
           <span class="combo-member">
-            <span class="avatar avatar--small">
-              {{ member.character_initial }}
-              {% if member.avatar_url %}
-              <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
-              {% endif %}
-            </span>
+            {{ render_member_face(member, "avatar--small") }}
             <span class="combo-member-text">
               <strong>{{ member.character_name }}</strong>
               {% if member.profession %}<em>{{ member.profession }}</em>{% endif %}

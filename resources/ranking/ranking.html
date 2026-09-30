@@ -1,4 +1,5 @@
 {% extends "common/base.html" %}
+{% from "common/member-face.html" import render_member_face %}
 
 {% block extra_styles %}{% include "ranking/ranking.css" %}{% endblock %}
 
@@ -95,12 +96,7 @@
       <div class="cell-team">
         {% for member in row.roster %}
         <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}{% if page.character_filter_scope == "roster" and member.character_name in page.character_filters %} is-match{% endif %}">
-          <span class="avatar{% if member.element_key %} el-{{ member.element_key }}{% endif %}">
-            {{ member.character_initial }}
-            {% if member.avatar_url %}
-            <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
-            {% endif %}
-          </span>
+          {{ render_member_face(member) }}
           {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
         </span>
         {% endfor %}
@@ -111,7 +107,7 @@
   </ol>
 
   <p class="board-legend">
-    条形长度为该记录 DPS 相对榜首 {{ page.top_dps }} 的比例；名次下方为 ZMDLogs 公开排名的百分位；阵容里加粗的是该场主 C。
+    条形长度为该记录 DPS 相对榜首 {{ page.top_dps }} 的比例；名次下方为 ZMDLogs 公开排名的百分位；阵容里加粗的是该场主 C，主 C 头像下的数字是 潜能+精炼（? 为武器未记录）。
     <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
   </p>
   {% else %}

@@ -27,7 +27,7 @@ class AccountRankingView:
     # The record's main C when the ranking index holds its row, else "".
     character_name: str
     # False for a board the current board list no longer carries (retired
-    # content): its roster can only be names, and the page says why.
+    # content): its main C is unknown, and the page says why.
     board_listed: bool
     roster: tuple[RosterEntryView, ...]
     contract_score: str | None
@@ -57,13 +57,13 @@ def build_account_page(
 ) -> AccountPage:
     """Build one exact public account's best-record overview.
 
-    The user endpoint names each record's roster but carries no avatars,
-    professions or main C; those are read off the ranking index row of the
-    same battle when the index holds it (``rows_by_battle``), so the rows
-    draw the same roster component as every board page. A board the index
-    does not hold falls back to initials and names; when ``listed_boards``
-    (the slugs of a complete index) is given, a board outside it is marked
-    as retired rather than merely unread.
+    The user endpoint carries each record's roster, 养成 included, but no
+    main C; that is read off the ranking index row of the same battle when
+    the index holds it (``rows_by_battle``), whose roster also stands in for
+    a record that arrives without one. Either way the rows draw the same
+    roster component as every board page; with neither, initials and names.
+    When ``listed_boards`` (the slugs of a complete index) is given, a board
+    outside it is marked as retired rather than merely unread.
     """
 
     held = rows_by_battle or {}
@@ -102,7 +102,8 @@ def build_account_page(
                     listed_boards is None or row.boss_slug in listed_boards
                 ),
                 roster=_build_roster(
-                    indexed.roster_entries if indexed is not None else (),
+                    row.roster_entries
+                    or (indexed.roster_entries if indexed is not None else ()),
                     row.roster_summary,
                     web_base_url=web_base_url,
                     elements=elements,

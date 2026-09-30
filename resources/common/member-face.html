@@ -1,0 +1,13 @@
+{# One team member's face: the avatar in its element ring, and the 养成 under
+   it when the view carries one. Its styles live in base.css. #}
+{% macro render_member_face(member, avatar_class="") -%}
+<span class="member-face">
+  <span class="avatar{% if avatar_class %} {{ avatar_class }}{% endif %}{% if member.element_key %} el-{{ member.element_key }}{% endif %}">
+    {{ member.character_initial }}
+    {% if member.avatar_url %}
+    <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
+    {% endif %}
+  </span>
+  {% if member.investment %}<span class="investment">{{ member.investment.text }}</span>{% endif %}
+</span>
+{%- endmacro %}

@@ -263,7 +263,7 @@
   min-width: 0;
   grid-column: 2 / -1;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px 16px;
   padding-top: 1px;
 }

@@ -33,6 +33,10 @@ class HotBossRun:
     score_percent: int | None = None
     contract_tag_score: int | None = None
     contract_tags: tuple[ContractTag, ...] = ()
+    # The main C's 养成, both nullable upstream. The top-3 card never draws
+    # it; the board tool's overview names it.
+    character_potential: int | None = None
+    weapon_refine: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +54,11 @@ class BossRankingRosterEntry:
     profession: str
     character_key: str | None = None
     avatar_url: str | None = None
+    # 养成: the stored roster's 潜能 and 精炼, None when unrecorded or
+    # unreadable. The row carries the main C's pair a second time; only this
+    # copy is read.
+    character_potential: int | None = None
+    weapon_refine: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +125,9 @@ class PublicUserRanking:
     roster_summary: tuple[str, ...]
     contract_tag_score: int | None = None
     contract_tags: tuple[ContractTag, ...] = ()
+    # The record's roster in the board rows' shape, 养成 included; empty
+    # when the response has none or one that does not read. No main C here.
+    roster_entries: tuple[BossRankingRosterEntry, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1333,7 +1345,30 @@ def _parse_public_user_ranking(value: Any, path: str) -> PublicUserRanking:
             item.get("contractTags", []),
             f"{path}.contractTags",
         ),
+        roster_entries=_lenient_roster_entries(
+            item.get("rosterEntries"), f"{path}.rosterEntries"
+        ),
     )
+
+
+def _lenient_roster_entries(
+    value: Any, path: str
+) -> tuple[BossRankingRosterEntry, ...]:
+    """A roster the record may lack: all of it reads, or none of it is kept.
+
+    A partial roster would draw a three-man team; with none the page falls
+    back to the names ``rosterSummary`` always carries.
+    """
+
+    if not isinstance(value, list):
+        return ()
+    try:
+        return tuple(
+            _parse_roster_entry(entry, f"{path}[{index}]")
+            for index, entry in enumerate(value)
+        )
+    except ModelValidationError:
+        return ()
 
 
 def _parse_battle_participant(value: Any, path: str) -> BattleParticipant:
@@ -1457,6 +1492,8 @@ def _parse_hot_boss_run(value: Any, path: str) -> HotBossRun:
             item.get("contractTags", []),
             f"{path}.contractTags",
         ),
+        character_potential=_lenient_integer(item.get("characterPotential")),
+        weapon_refine=_lenient_integer(item.get("weaponRefine")),
     )
 
 
@@ -1558,6 +1595,8 @@ def _parse_roster_entry(value: Any, path: str) -> BossRankingRosterEntry:
             f"{path}.characterKey",
         ),
         avatar_url=_optional_string(item.get("avatarUrl"), f"{path}.avatarUrl"),
+        character_potential=_lenient_integer(item.get("characterPotential")),
+        weapon_refine=_lenient_integer(item.get("weaponRefine")),
     )
 
 
@@ -1607,6 +1646,12 @@ def _optional_boolean(value: Any, path: str) -> bool | None:
     if value is None:
         return None
     return _boolean(value, path)
+
+
+def _lenient_integer(value: Any) -> int | None:
+    """An integer when the payload carries one, None otherwise, never an error."""
+
+    return value if _is_plain_int(value) else None
 
 
 def _lenient_number(value: Any) -> float | None:
