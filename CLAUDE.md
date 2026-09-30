@@ -349,8 +349,10 @@ Single-context: `CONTEXT.md` + `docs/adr/` at the repo root, created lazily. See
 
 - AstrBot plugin dev docs: https://docs.astrbot.app/dev/star/plugin-new.html
   (and `plugin.html` for the event/config/html_render API)
-- Upstream ZMDLogs source:
-  https://github.com/medps16000/endfield-suite-open (`endfield-logs/apps/api`)
+- Upstream ZMDLogs source, as of its 2026-08-03 snapshot only:
+  https://github.com/medps16000/endfield-suite-open (`endfield-logs/apps/api`).
+  The live site has run unpublished code since; UPSTREAM.md says what still
+  matches.
 - Reference plugin for structure/visual style only:
   https://github.com/Entropy-Increase-Team/astrbot_plugin_endfield (AGPL-3.0;
   its background image was used until the Endfield restyle and is no longer present)
