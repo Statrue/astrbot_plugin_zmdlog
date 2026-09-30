@@ -16,6 +16,7 @@ ACCOUNT_REFERENCE_NEEDED = (
     "请提供公开昵称（至少 2 个字符）、accountId 或 ZMDLogs 账号主页链接。"
 )
 BOARD_NOT_FOUND = "没有找到这个榜单，可能已下线或暂未公开。"
+NO_PUBLIC_BOARDS = "目前没有公开榜单。"
 PUBLIC_DATA_NOT_FOUND = "没有找到对应的公开数据。"
 RATE_LIMITED = "ZMDLogs 请求过于频繁，请稍后再试。"
 BATTLE_NOT_FOUND = "战报不存在、未公开或已删除。"

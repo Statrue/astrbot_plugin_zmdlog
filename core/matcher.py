@@ -333,6 +333,24 @@ class RankingMatcher:
         )
         return self._resolve_ranked(stripped_query, preferred)
 
+    def dungeon_choices(self) -> tuple[MatchChoice, ...]:
+        """Every dungeon as a pick, in the board list's order.
+
+        A scope is not a dungeon: it exists only as a keyword's hit, and the
+        dungeons it spans are each listed.
+        """
+
+        return tuple(
+            MatchChoice(
+                target=target,
+                level=MatchLevel.STANDARD_EXACT,
+                score=1.0,
+                matched_text=target.name,
+            )
+            for target in self.targets
+            if target.target_type is TargetType.DUNGEON
+        )
+
     def expand_to_boards(
         self,
         choices: tuple[MatchChoice, ...],

@@ -1,4 +1,4 @@
-"""Board pages: one board's ranking, every board's leaders, one dungeon's top three."""
+"""Board pages: one board's ranking, one dungeon's top three."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -187,28 +187,6 @@ def _resolve_filter_names(
         if resolution.name not in names:
             names.append(resolution.name)
     return tuple(names)
-
-
-@dataclass(frozen=True, slots=True)
-class BoardsOverviewRecipe:
-    """榜单: every public board with its top three, from the board list itself."""
-
-    cards: tuple[HotBossCard, ...]
-    query: str
-    web_base_url: str | None
-
-    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
-        return await renderer.render_all_top3(
-            self.cards, query=self.query, web_base_url=self.web_base_url
-        )
-
-
-async def prepare_boards_overview(
-    data: "ZmdLogsDataSource", *, web_base_url: str | None, query: str = "榜单"
-) -> BoardsOverviewRecipe:
-    return BoardsOverviewRecipe(
-        cards=await data.list_hot_bosses(), query=query, web_base_url=web_base_url
-    )
 
 
 @dataclass(frozen=True, slots=True)

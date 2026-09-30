@@ -15,6 +15,7 @@ _SELECTION_RE = re.compile(
     r"^\s*(?:选|选择|第)?\s*(\d{1,2})\s*(?:号|个)?\s*[.。]?\s*$"
 )
 DEFAULT_CANDIDATE_TTL_SECONDS = 10 * 60
+# The most matches a list offers; 榜单's list of dungeons holds them all.
 MAX_CANDIDATES = 5
 QUOTE_HINT = "引用本条消息回复序号即可"
 
@@ -34,6 +35,9 @@ class CandidateView(str, Enum):
     WATCH_BOARD = "watch_board"
     TREND = "trend"
     GROUP_BOARD = "group_board"
+    # 榜单: every dungeon, not a match. A pick draws what typing its name
+    # draws — the top three of each of its boards, or its one board.
+    DUNGEONS = "dungeons"
 
 
 _VIEW_TITLES = {
@@ -49,6 +53,7 @@ _VIEW_TITLES = {
     CandidateView.WATCH_BOARD: "匹配到 {count} 个榜单，选一个关注",
     CandidateView.TREND: "匹配到 {count} 个公开账号，选一个看名次趋势",
     CandidateView.GROUP_BOARD: "的群榜查询匹配到 {count} 个榜单",
+    CandidateView.DUNGEONS: "共 {count} 个副本，选一个看它的榜单",
 }
 
 
@@ -101,15 +106,18 @@ class CandidateStore:
         compare_rank: int = 2,
         origin: str = "",
         metric: str = "dps",
+        limit: int | None = MAX_CANDIDATES,
         now: float | None = None,
     ) -> PendingCandidates:
+        """Keep ``choices`` for a quoted reply; the first ``limit``, or all on None."""
+
         timestamp = time.monotonic() if now is None else now
         self._prune(timestamp)
         code = self._new_code()
         entry = PendingCandidates(
             code=code,
             query=query,
-            choices=tuple(choices[:MAX_CANDIDATES]),
+            choices=tuple(choices[:limit]),
             ranking_top=ranking_top,
             created_at=timestamp,
             view=view,
@@ -182,12 +190,14 @@ def extract_code(text: str | None) -> str | None:
 
 
 def parse_selection(text: str) -> int | None:
+    """The number a reply picks; whether the list has that many is ``resolve``'s."""
+
     # NFKC turns ② and ２ into 2; a trailing full stop is what phones add.
     match = _SELECTION_RE.match(unicodedata.normalize("NFKC", text or ""))
     if match is None:
         return None
     value = int(match.group(1))
-    return value if 1 <= value <= MAX_CANDIDATES else None
+    return value if value >= 1 else None
 
 
 def format_candidates(

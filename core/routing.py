@@ -136,7 +136,8 @@ class RouteKind(str, Enum):
     """A route resolved before any API request or fuzzy matching happens."""
 
     HELP = "help"
-    ALL_RANKINGS = "all_rankings"
+    # 榜单 alone: every dungeon, as a pick list.
+    DUNGEON_LIST = "dungeon_list"
     RANKING_QUERY = "ranking_query"
     ACCOUNT_QUERY = "account_query"
     BATTLE_QUERY = "battle_query"
@@ -283,7 +284,7 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
     if command == "榜单":
         if not separator:
             options.reject_except()
-            return RouteRequest(RouteKind.ALL_RANKINGS)
+            return RouteRequest(RouteKind.DUNGEON_LIST)
         options.reject_except("top", "character", "element", "metric")
         return RouteRequest(
             RouteKind.RANKING_QUERY,

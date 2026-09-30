@@ -79,7 +79,11 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                     ),
                     HelpCommand(
                         command=f"{command} 榜单",
-                        answers="现在有哪些榜单，各自前三名是谁？",
+                        answers="现在有哪些副本和榜单？",
+                        description=(
+                            "列出全部副本，选一个看它各榜前三；"
+                            "只有一张榜的副本直接看榜单。"
+                        ),
                     ),
                     HelpCommand(
                         command=(

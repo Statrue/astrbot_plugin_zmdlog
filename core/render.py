@@ -43,7 +43,6 @@ from .models import (
 )
 from .presentation import (
     build_account_page,
-    build_all_top3_page,
     build_battle_page,
     build_character_boss_page,
     build_character_champions_page,
@@ -194,26 +193,6 @@ class TemplateRenderer:
             "help/help.html",
             page,
             "help",
-            embed_fonts=embed_fonts,
-        )
-
-    def render_all_top3(
-        self,
-        cards: tuple[HotBossCard, ...],
-        *,
-        query: str,
-        web_base_url: str | None = None,
-        embed_fonts: bool = True,
-    ) -> str:
-        page = build_all_top3_page(
-            cards,
-            query=query,
-            web_base_url=web_base_url,
-        )
-        return self._render(
-            "all-top3/all-top3.html",
-            page,
-            "all-top3",
             embed_fonts=embed_fonts,
         )
 
@@ -876,7 +855,6 @@ class LongImageRenderer:
     # TemplateRenderer method it runs; the page kind picks the capture scale
     # and names the output file.
     render_help = _captured("help", TemplateRenderer.render_help)
-    render_all_top3 = _captured("all-top3", TemplateRenderer.render_all_top3)
     render_dungeon_top3 = _captured(
         "dungeon-top3", TemplateRenderer.render_dungeon_top3
     )

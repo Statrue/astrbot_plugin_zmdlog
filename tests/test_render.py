@@ -39,6 +39,23 @@ from tests.helpers import (
 )
 
 
+def dungeon_pick(name: str, *cards) -> MatchChoice:
+    """``name`` as the dungeon a keyword or 榜单's list picked."""
+
+    return MatchChoice(
+        target=MatchTarget(
+            target_type=TargetType.DUNGEON,
+            key=name,
+            name=name,
+            dungeon_names=(name,),
+            boss_slugs=tuple(card.boss_slug for card in cards),
+        ),
+        level=MatchLevel.STANDARD_EXACT,
+        score=1.0,
+        matched_text=name,
+    )
+
+
 class AssetCacheTests(unittest.TestCase):
     def _put(self, cache, url, size=4, now=0.0, status=200):
         cache.put(
@@ -424,10 +441,12 @@ class TemplateRendererTests(unittest.TestCase):
             "完整副本名",
             with_run=True,
         )
-        html = self.renderer.render_all_top3((card,), query="<全部>")
+        html = self.renderer.render_dungeon_top3(
+            dungeon_pick("完整副本名", card), (card,), query="<副本>"
+        )
 
         self.assertIn("首领&lt;script&gt;", html)
-        self.assertIn("&lt;全部&gt;", html)
+        self.assertIn("&lt;副本&gt;", html)
         self.assertNotIn("secret-slug", html)
         self.assertNotIn("battle-secret-slug", html)
         self.assertIn("1:01.234", html)
@@ -542,9 +561,11 @@ class TemplateRendererTests(unittest.TestCase):
         page = build_ranking_page(ranking, query="测试")
         self.assertIsNone(page.rows[0].character_avatar_url)
 
-        html = self.renderer.render_all_top3(
-            (make_card("a", "首领", "副本", with_run=True),),
-            query="榜单",
+        card = make_card("a", "首领", "副本", with_run=True)
+        html = self.renderer.render_dungeon_top3(
+            dungeon_pick("副本", card),
+            (card,),
+            query="副本",
             web_base_url="https://zmdlogs.com",
         )
         self.assertNotIn("javascript:", html)

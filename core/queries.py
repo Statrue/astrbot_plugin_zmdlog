@@ -7,16 +7,22 @@ upload without casts, a rate limit) into the short replies the user sees.
 Unknown failures propagate; the host's error ladder turns those into the
 generic wording.
 
-Two kinds of route exist. A *direct* route names its target — help, the
-board index, an account id or link, a battle id or link — and never
-consults the board matcher. A *keyword* route goes through the matcher
+Two kinds of route exist. A *direct* route names its target — help, an
+account id or link, a battle id or link — and never consults the board
+matcher. A *keyword* route goes through the matcher
 (``_dispatch_keyword``) and, when the best board hit is weak, is weighed
 against character names and public nicknames, because the smart route
 searches boards and accounts alike.
+
+榜单 on its own is a pick list of the dungeons, not a page. It drew every
+board's top three until forty-nine cards made a page nobody scrolled, and
+the site had dropped the home page it mirrored; a dungeon picked from the
+list draws what typing its name draws.
 """
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import replace
 
 from . import messages
 from .account_binding import AccountBinding, to_binding_page
@@ -73,7 +79,6 @@ from .recipes import (
     index_snapshot,
     prepare_account,
     prepare_battle,
-    prepare_boards_overview,
     prepare_champions,
     prepare_character_boss,
     prepare_character_stats,
@@ -210,6 +215,10 @@ class QueryService:
     ) -> Outcome:
         """Draw the page a quoted pick-list reply selected."""
 
+        if entry.view is CandidateView.DUNGEONS:
+            # Drawn as its typed name is: the one board of a one-board
+            # dungeon is a ranking page, sibling buttons and all.
+            entry = replace(entry, view=CandidateView.RANKING)
         cards = await self._data.list_hot_bosses()
         return await self._render_choice(
             choice, cards, query=entry.query, pending=entry
@@ -271,11 +280,8 @@ class QueryService:
                 command=f"{command_prefix}zmdlog",
             )
 
-        if route.kind is RouteKind.ALL_RANKINGS:
-            recipe = await prepare_boards_overview(
-                self._data, web_base_url=self._web_base_url
-            )
-            return Outcome.image(await recipe.draw(renderer))
+        if route.kind is RouteKind.DUNGEON_LIST:
+            return await self._dungeon_list(origin=origin)
 
         if route.kind is RouteKind.ACCOUNT_QUERY:
             account_id = self._account_reference(route.query)
@@ -345,6 +351,22 @@ class QueryService:
             )
             return Outcome.image(await recipe.draw(renderer))
         return None
+
+    async def _dungeon_list(self, *, origin: str) -> Outcome:
+        """榜单: every dungeon to pick from, however many there are."""
+
+        cards = await self._data.list_hot_bosses()
+        choices = self._board_matcher(cards).dungeon_choices()
+        if not choices:
+            return Outcome(message=messages.NO_PUBLIC_BOARDS)
+        entry = self._candidates.remember(
+            "榜单",
+            choices,
+            origin=origin,
+            view=CandidateView.DUNGEONS,
+            limit=None,
+        )
+        return self._pick_list(entry)
 
     async def _dispatch_trend(self, route: RouteRequest, *, origin: str) -> Outcome:
         account_id = self._account_reference(route.query)
@@ -532,6 +554,11 @@ class QueryService:
             return await self._render_account(target.key, query=query)
         if target.target_type is TargetType.BOARD:
             return await self._render_board(target.key, query=query, pending=pending)
+        if len(target.boss_slugs) == 1:
+            # 危机合约 is one board; its top three would be one card.
+            return await self._render_board(
+                target.boss_slugs[0], query=query, pending=pending
+            )
 
         # A dungeon or a scope draws top-three cards, which none of the row
         # options can filter; say where the option works instead.

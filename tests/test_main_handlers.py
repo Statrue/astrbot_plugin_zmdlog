@@ -356,9 +356,6 @@ class FakeRenderer:
     async def render_ranking(self, ranking, **kwargs):
         return capture("/tmp/ranking.png")
 
-    async def render_all_top3(self, cards, **kwargs):
-        return capture("/tmp/top3.png")
-
 
 def run(coro):
     return asyncio.run(coro)
@@ -845,6 +842,31 @@ class HandlerTests(unittest.TestCase):
             commands=["/zmdlog 关注 usr_a", "/zmdlog 关注 usr_b"],
         )
 
+    def test_the_dungeon_list_buttons_each_dungeon_by_its_name(self) -> None:
+        first = hot_bosses_payload()[0]
+        contract = dict(
+            first,
+            bossSlug="indie_group_ccdg",
+            bossName="破潮之像",
+            dungeonName="危机合约",
+        )
+        self.cards = parse_hot_bosses([first, contract])
+        api = FakeBotApi()
+
+        event, results = self._official("/zmdlog 榜单", api=api)
+
+        self.assertEqual(results, [])
+        (_, payload), = api.calls
+        self.assertIn("共 2 个副本", payload["markdown"]["content"])
+        self.assertEqual(
+            [
+                row["buttons"][0]["action"]["data"]
+                for row in payload["keyboard"]["content"]["rows"]
+            ],
+            ["/zmdlog 危境再现 · 测试区", "/zmdlog 危机合约"],
+        )
+        self.assertTrue(event.stopped)
+
     def test_a_failed_button_send_falls_back_to_the_plain_list(self) -> None:
         self._two_accounts_named_cpu()
         for private in (False, True):
@@ -1258,14 +1280,14 @@ class HandlerTests(unittest.TestCase):
                 )
 
     def test_pages_about_no_one_thing_stay_native_pictures(self) -> None:
-        async def all_top3(cards, **kwargs):
+        async def render_help(*, command_prefix, official=False):
             return capture(self._png(1280, 9000), 1)
 
-        self.plugin.renderer.render_all_top3 = all_top3
+        self.plugin.renderer.render_help = render_help
         http = FakeBotHttp(raw_url=self.RAW_URL)
         api = FakeBotApi(http=http)
 
-        _, results = self._official("/zmdlog 榜单", api=api)
+        _, results = self._official("/zmdlog help", api=api)
 
         ((kind, _),) = results
         self.assertEqual(kind, "image")
@@ -1663,15 +1685,15 @@ class HandlerTests(unittest.TestCase):
     ) -> None:
         path = self._png(2560, 2000)
 
-        async def render_all_top3(cards, **kwargs):
+        async def render_help(*, command_prefix, official=False):
             return capture(path)
 
-        self.plugin.renderer.render_all_top3 = render_all_top3
+        self.plugin.renderer.render_help = render_help
         http = FakeBotHttp(raw_url=self.RAW_URL)
         api = FakeBotApi(http=http)
         adapter = self._enable_callbacks(api)
 
-        self._tap(adapter, "/zmdlog 榜单", private=True)
+        self._tap(adapter, "/zmdlog help", private=True)
 
         self.assertTrue(http.paths[0].startswith("/v2/users/U1/"))
         (scene, payload), = api.calls

@@ -31,10 +31,8 @@ from .battles import (
     prepare_compare,
 )
 from .boards import (
-    BoardsOverviewRecipe,
     DungeonOverviewRecipe,
     RankingRecipe,
-    prepare_boards_overview,
     prepare_dungeon_overview,
     prepare_ranking,
 )
@@ -58,7 +56,6 @@ __all__ = [
     "EXPORT_UNSUPPORTED",
     "AccountRecipe",
     "BattleRecipe",
-    "BoardsOverviewRecipe",
     "ChampionsRecipe",
     "CharacterBossRecipe",
     "CharacterStatsRecipe",
@@ -73,7 +70,6 @@ __all__ = [
     "index_snapshot",
     "prepare_account",
     "prepare_battle",
-    "prepare_boards_overview",
     "prepare_champions",
     "prepare_character_boss",
     "prepare_character_stats",

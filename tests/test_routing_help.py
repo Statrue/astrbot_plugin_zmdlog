@@ -15,11 +15,11 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(parse_zmdlog_payload(" HELP ").kind, RouteKind.HELP)
 
     def test_board_routes_keep_their_query(self) -> None:
-        all_boards = parse_zmdlog_payload("榜单")
+        dungeons = parse_zmdlog_payload("榜单")
         ranking = parse_zmdlog_payload(" 榜单   罗丹 ")
         shortcut = parse_zmdlog_payload(" 影拓 ")
 
-        self.assertEqual(all_boards.kind, RouteKind.ALL_RANKINGS)
+        self.assertEqual(dungeons.kind, RouteKind.DUNGEON_LIST)
         self.assertEqual(ranking.kind, RouteKind.RANKING_QUERY)
         self.assertEqual(ranking.query, "罗丹")
         self.assertEqual(shortcut.kind, RouteKind.SMART_QUERY)
@@ -158,6 +158,20 @@ class HelpTests(unittest.TestCase):
             for command in section.commands:
                 with self.subTest(command=command.command):
                     self.assertTrue(command.answers.endswith("？"))
+
+    def test_the_bare_board_command_answers_which_dungeons_exist(self) -> None:
+        # 榜单 lists the dungeons to pick from; it no longer draws every
+        # board's top three.
+        page = build_help_page("/")
+        (row,) = (
+            command
+            for section in page.sections
+            for command in section.commands
+            if command.command == "/zmdlog 榜单"
+        )
+
+        self.assertEqual(row.answers, "现在有哪些副本和榜单？")
+        self.assertNotIn("前三", row.answers)
 
     def test_only_the_official_bot_page_states_its_two_preconditions(self) -> None:
         # The official bot hears a group only when @-ed unless the group lets

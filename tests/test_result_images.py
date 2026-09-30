@@ -627,7 +627,6 @@ class OutcomeTargetTests(unittest.TestCase):
         # ZMDLogs counterpart; a comparison has two, and neither is it.
         for kind, query, options in (
             (RouteKind.HELP, "", {}),
-            (RouteKind.ALL_RANKINGS, "", {}),
             (RouteKind.CHARACTER_STATS, "", {}),
             (RouteKind.CHARACTER_STATS, "提弗洛斯", {}),
             (RouteKind.CHARACTER_STANDINGS, "", {}),

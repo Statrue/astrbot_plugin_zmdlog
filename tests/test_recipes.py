@@ -239,12 +239,6 @@ class SamePictureTests(unittest.TestCase):
         self.assertEqual(outcome.message, answer.text)
         self.assertIn("主 C 为自然属性且带「洛茜」", answer.text)
 
-    def test_every_board(self) -> None:
-        self._command(RouteKind.ALL_RANKINGS)
-        run(self.tools.board("全部"))
-
-        self._assert_same_call("all_top3")
-
     def test_a_dungeon(self) -> None:
         first = hot_bosses_payload()[0]
         second = dict(

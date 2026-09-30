@@ -5,7 +5,9 @@ have drawn for that question, and returns both: the picture carries the
 numbers, the text carries what they are. The split is deliberate — a model
 handed numbers as text restates them wrongly, and a picture cannot be
 reasoned about — so the tool descriptions tell the model the figures are in
-the image and its own job is to explain them.
+the image and its own job is to explain them. The one answer with facts and
+no picture is the board tool's 全部: there is no page of every board since
+榜单 became a pick list, and the text is one line per board.
 
 Nothing here posts a candidate list. A command can afford to ask "did you
 mean one of these five"; a tool call cannot wait for an answer, so an
@@ -64,7 +66,6 @@ from .recipes import (
     index_snapshot,
     prepare_account,
     prepare_battle,
-    prepare_boards_overview,
     prepare_champions,
     prepare_character_boss,
     prepare_character_stats,
@@ -161,7 +162,7 @@ class ToolService:
         if isinstance(role, ToolAnswer):
             return role
         if _means_every_board(keyword):
-            answer = await self._boards_overview(keyword)
+            answer = await self._boards_overview()
             return answer.noted(_overview_metric_note(wanted_metric))
         target = await self._resolve_target(keyword)
         if isinstance(target, ToolAnswer):
@@ -228,17 +229,20 @@ class ToolService:
         image = await self._render(recipe.draw)
         return ToolAnswer(text, image).noted(range_note)
 
-    async def _boards_overview(self, keyword: str) -> ToolAnswer:
-        """Every board's first place, from the board list itself."""
+    async def _boards_overview(self) -> ToolAnswer:
+        """Every board's first place, from the board list itself.
 
-        recipe = await prepare_boards_overview(
-            self._data, query=keyword, web_base_url=self._web_base_url
-        )
+        Text alone: the page of every board's top three is gone (榜单 is a
+        pick list now), and a picture of forty-nine boards was never one
+        the model could point at anyway.
+        """
+
         text = facts.format_boards_overview(
-            recipe.cards, title="全部公开榜单", runs_per_board=1
+            await self._data.list_hot_bosses(),
+            title="全部公开榜单",
+            runs_per_board=1,
         )
-        image = await self._render(recipe.draw)
-        return ToolAnswer(text, image)
+        return ToolAnswer(text)
 
     async def _dungeon_overview(
         self,

@@ -13,7 +13,15 @@ account by its accountId, a board by its slug — and repeats every option of
 the original request that is not a default, so the page it draws is the one
 the list was offering. It carries no list number: the candidate store lives
 in memory for ten minutes, and a numbered button would stop working when the
-list expired or the bot restarted.
+list expired or the bot restarted. 榜单's list of every dungeon is the one
+exception to the first rule: its button is the dungeon's name alone, as a
+user would type it, because that is the command the list stands in for.
+
+A list gets one button per row while five fit. Only 榜单's list is longer,
+and it shares the five rows as a notice does; a dungeon then shows the part
+of its name after the phase (灼痛疤痕), since half a row cuts a name before
+the part that tells the 1期 dungeons apart. Past twenty-five picks, the rest
+have no button and are picked by quoting the list.
 
 A dungeon scope has no key a user could type (its key is synthetic), so a
 scope pick gets no button at all rather than one that opens something else.
@@ -246,6 +254,10 @@ def pick_command(
     """
 
     target = choice.target
+    if entry.view is CandidateView.DUNGEONS:
+        if target.target_type is not TargetType.DUNGEON:
+            return None
+        return f"{command} {target.name}"
     if target.target_type is TargetType.ACCOUNT:
         word = _ACCOUNT_WORDS.get(entry.view)
         key = target.key
@@ -305,20 +317,23 @@ def pick_list_message(
     button that draws a page answer the tap itself.
     """
 
-    buttons = []
-    for index, choice in enumerate(entry.choices, start=1):
-        data = pick_command(entry, choice, command=command)
-        if data is not None:
-            buttons.append(
-                command_button(
-                    str(index),
-                    _label(index, choice.target.name),
-                    data,
-                    callback=callback,
-                )
-            )
-    if not buttons:
+    picks = [
+        (index, choice, data)
+        for index, choice in enumerate(entry.choices, start=1)
+        if (data := pick_command(entry, choice, command=command)) is not None
+    ][: MAX_KEYBOARD_ROWS * MAX_ROW_BUTTONS]
+    if not picks:
         return None
+    shared = len(picks) > MAX_KEYBOARD_ROWS
+    buttons = [
+        command_button(
+            str(index),
+            _label(index, _button_name(choice, shared=shared)),
+            data,
+            callback=callback,
+        )
+        for index, choice, data in picks
+    ]
     items = "\n".join(
         f"{index}. {escape_markdown(describe_choice(choice))}"
         for index, choice in enumerate(entry.choices, start=1)
@@ -329,7 +344,9 @@ def pick_list_message(
     if note:
         blocks.append(escape_markdown(note))
     blocks.append(code_line(entry, ttl_seconds=ttl_seconds))
-    return ButtonMessage(markdown="\n\n".join(blocks), keyboard=keyboard(buttons))
+    return ButtonMessage(
+        markdown="\n\n".join(blocks), keyboard=_keyboard_rows(_fill_rows(buttons))
+    )
 
 
 def result_image_message(
@@ -402,12 +419,7 @@ def notice_message(notice: Notice) -> ButtonMessage | None:
         jump_button(f"battle-{number}", link.label, link.url)
         for number, link in enumerate(links, start=1)
     ]
-    # As few to a row as fit: a button is as wide as its row allows.
-    per_row = -(-len(buttons) // MAX_KEYBOARD_ROWS)
-    rows = [
-        buttons[start : start + per_row]
-        for start in range(0, len(buttons), per_row)
-    ]
+    rows = _fill_rows(buttons)
     return ButtonMessage(markdown="\n".join(lines), keyboard=_keyboard_rows(rows))
 
 
@@ -555,6 +567,15 @@ def keyboard(buttons: list[dict[str, Any]]) -> dict[str, Any]:
     return _keyboard_rows([[button] for button in buttons])
 
 
+def _fill_rows(buttons: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """As few to a row as fit in five rows: a button is as wide as its row allows."""
+
+    per_row = -(-len(buttons) // MAX_KEYBOARD_ROWS)
+    return [
+        buttons[start : start + per_row] for start in range(0, len(buttons), per_row)
+    ]
+
+
 def _keyboard_rows(rows: list[list[dict[str, Any]]]) -> dict[str, Any]:
     return {"content": {"rows": [{"buttons": row} for row in rows]}}
 
@@ -563,6 +584,15 @@ def escape_markdown(text: str) -> str:
     """Make ``text`` read literally in markdown, whatever it contains."""
 
     return _MARKDOWN_SPECIAL_RE.sub(r"\\\1", text)
+
+
+def _button_name(choice: MatchChoice, *, shared: bool) -> str:
+    """What a pick's button calls it; a dungeon sharing a row, after its phase."""
+
+    name = choice.target.name
+    if shared and choice.target.target_type is TargetType.DUNGEON:
+        return name.rpartition(" · ")[2]
+    return name
 
 
 def _label(index: int, name: str) -> str:

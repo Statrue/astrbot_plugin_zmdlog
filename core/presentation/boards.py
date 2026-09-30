@@ -177,35 +177,6 @@ class RosterPage:
     metric_label: str = "DPS"
 
 
-def build_all_top3_page(
-    cards: tuple[HotBossCard, ...],
-    *,
-    query: str,
-    web_base_url: str | None = None,
-) -> Top3Page:
-    """Build the all-board page without exposing ranking-only fields."""
-
-    card_views = tuple(
-        _build_top_card(card, web_base_url=web_base_url) for card in cards
-    )
-    return Top3Page(
-        header=PageHeader(
-            title="全部榜单前三名",
-            subtitle="当前公开榜单与各榜最快记录",
-            query=query,
-            matched_name="全部公开榜单",
-            target_type="全部榜单",
-        ),
-        dungeon_names=_unique_dungeon_names(cards),
-        cards=card_views,
-        card_groups=_group_top_cards(card_views),
-        # Forty-nine cards in one run read as a wall; by dungeon they are
-        # ten labelled sections, and the name moves off every card onto
-        # the heading that already says it.
-        group_by_dungeon=True,
-    )
-
-
 def build_dungeon_top3_page(
     choice: MatchChoice,
     cards: tuple[HotBossCard, ...],
@@ -631,10 +602,6 @@ def _build_roster(
         )
         for name in summary
     )
-
-
-def _unique_dungeon_names(cards: tuple[HotBossCard, ...]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(card.dungeon_name for card in cards))
 
 
 def _group_top_cards(

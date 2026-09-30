@@ -23,6 +23,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from . import messages
 from .characters import CharacterFilterScope, row_fields
 from .contract import group_contract_tags
 from .events import CHAMPION_CHANGE, NEW_RECORD, BoardActivity, RecordEvent
@@ -197,7 +198,7 @@ def format_boards_overview(
 
     lines = [f"{title}：{len(cards)} 个榜单（DPS 口径，每榜最快的记录）"]
     if not cards:
-        lines.append("目前没有公开榜单。")
+        lines.append(messages.NO_PUBLIC_BOARDS)
         return _joined(lines)
     lines.append("")
     for card in cards:

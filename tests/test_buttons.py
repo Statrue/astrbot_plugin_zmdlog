@@ -73,6 +73,29 @@ def entry_for(view: CandidateView, *choices: MatchChoice, **options):
     return CandidateStore().remember("关键词", choices, view=view, **options)
 
 
+def dungeon_list(names: tuple[str, ...]) -> PendingCandidates:
+    """榜单's list of ``names``, every one of them kept."""
+
+    choices = tuple(
+        MatchChoice(
+            target=MatchTarget(
+                target_type=TargetType.DUNGEON,
+                key=name,
+                name=name,
+                dungeon_names=(name,),
+                boss_slugs=(f"{name}-slug",),
+            ),
+            level=MatchLevel.STANDARD_EXACT,
+            score=1.0,
+            matched_text=name,
+        )
+        for name in names
+    )
+    return CandidateStore().remember(
+        "榜单", choices, view=CandidateView.DUNGEONS, limit=None
+    )
+
+
 def board_choice(slug: str = SLUG) -> MatchChoice:
     card = next(card for card in CARDS if card.boss_slug == slug)
     return _choice(TargetType.BOARD, slug, card.boss_name, (card.dungeon_name,))
@@ -157,6 +180,18 @@ class RoundTripTests(unittest.TestCase):
         entry = entry_for(CandidateView.RANKING, dungeon_choice())
 
         self._assert_round_trip(entry, entry.choices[0])
+
+    def test_a_dungeon_on_the_dungeon_list_is_its_name_typed(self) -> None:
+        # 榜单's list: the button is the dungeon's name alone, as a user
+        # would type it, and draws what typing it draws.
+        entry = entry_for(CandidateView.DUNGEONS, dungeon_choice())
+
+        command = pick_command(entry, entry.choices[0], command=COMMAND)
+
+        self.assertEqual(command, f"{COMMAND} {DUNGEON}")
+        route = parse_button(command)
+        self.assertIs(route.kind, RouteKind.SMART_QUERY)
+        self._assert_same_target(route.query, entry.choices[0])
 
     def test_an_account_on_a_mixed_list_opens_the_account(self) -> None:
         entry = entry_for(
@@ -321,6 +356,49 @@ class PickListMessageTests(unittest.TestCase):
         ]
         self.assertEqual(labels[0], f"1 {name}")
         self.assertEqual(labels[1], f"2 {name[:-1]}…")
+
+    def test_a_long_list_shares_rows_and_names_each_dungeon_by_its_own_part(
+        self,
+    ) -> None:
+        names = (
+            "危境再现", "危境碎片", "危机合约",
+            "影拓丰碑1期 · 灼痛疤痕", "影拓丰碑1期 · 无机造物",
+            "影拓丰碑1期 · 大地的弃子", "影拓丰碑2期 · 浊流具现",
+            "影拓丰碑3期 · 死寂争鸣", "影拓丰碑4期 · 山中见犼", "战争回响",
+        )
+        entry = dungeon_list(names)
+
+        message = pick_list_message(entry, command=COMMAND, ttl_seconds=600)
+
+        # Five rows at most: ten buttons go two to a row, in list order.
+        rows = [row["buttons"] for row in message.keyboard["content"]["rows"]]
+        self.assertEqual([len(row) for row in rows], [2, 2, 2, 2, 2])
+        buttons = [button for row in rows for button in row]
+        self.assertEqual(
+            [button["action"]["data"] for button in buttons],
+            [f"{COMMAND} {name}" for name in names],
+        )
+        # Half a row cuts a long name before the part that tells the 1期
+        # dungeons apart, so the label is that part; the list names it whole.
+        self.assertEqual(
+            [button["render_data"]["label"] for button in buttons[2:6]],
+            ["3 危机合约", "4 灼痛疤痕", "5 无机造物", "6 大地的弃子"],
+        )
+        self.assertIn(
+            "4. 影拓丰碑1期 · 灼痛疤痕 · 副本（1 个榜单）", message.markdown
+        )
+
+    def test_a_list_longer_than_a_keyboard_buttons_what_fits(self) -> None:
+        names = tuple(f"副本{number}" for number in range(1, 28))
+        entry = dungeon_list(names)
+
+        message = pick_list_message(entry, command=COMMAND, ttl_seconds=600)
+
+        rows = [row["buttons"] for row in message.keyboard["content"]["rows"]]
+        self.assertEqual([len(row) for row in rows], [5, 5, 5, 5, 5])
+        self.assertEqual(rows[-1][-1]["action"]["data"], f"{COMMAND} 副本25")
+        # The rest are still on the list, picked by quoting it.
+        self.assertIn("27. 副本27", message.markdown)
 
     def test_nicknames_cannot_forge_the_list(self) -> None:
         forged = "**假** [点我](https://x.example) `#`\n3. 伪造的一项\n候选编号 ZZZZ"

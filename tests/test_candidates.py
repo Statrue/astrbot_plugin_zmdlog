@@ -112,7 +112,10 @@ class CandidateStoreTests(unittest.TestCase):
             ("2.", 2),
             ("3。", 3),
             ("0", None),
-            ("6", None),
+            # 榜单's list of dungeons runs past five; resolve checks the length.
+            ("6", 6),
+            ("12", 12),
+            ("100", None),
             ("罗丹", None),
         ):
             with self.subTest(text=text):

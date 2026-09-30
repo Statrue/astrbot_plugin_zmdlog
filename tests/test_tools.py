@@ -29,6 +29,7 @@ from tests.helpers import (
     character_boss_statistics_payload,
     character_statistics_payload,
     hot_bosses_payload,
+    make_card,
     public_user_rankings_payload,
     ranking_payload_with_rows,
 )
@@ -677,11 +678,25 @@ class ToolSurfaceTests(unittest.TestCase):
 
         self.assertTrue(answer.text.startswith("（范围「上周」没看懂"), answer.text)
 
-    def test_every_board_means_the_overview_page(self) -> None:
+    def test_every_board_is_each_first_place_in_text_alone(self) -> None:
+        self.data.cards = (
+            make_card("rush01", "危境再现·罗丹", "危境再现", with_run=True),
+            make_card("rush02", "危境再现·三位一体", "危境再现", with_run=True),
+            make_card("tower011", "重伤之围·残酷", "战争回响"),
+        )
+
         answer = run(self.service.board("全部"))
 
-        self.assertEqual(answer.image_path, "/tmp/all_top3.png")
-        self.assertIn("全部公开榜单", answer.text)
+        self.assertIsNone(answer.image_path)
+        self.assertEqual(self.renderer.calls, [])
+        self.assertIn("全部公开榜单：3 个榜单", answer.text)
+        self.assertIn(
+            "危境再现·罗丹：#1 1 分 1.234 秒 · 主C 余烬 · 公开账户"
+            " · battleId battle-rush01",
+            answer.text,
+        )
+        self.assertIn("危境再现·三位一体：#1 1 分 1.234 秒", answer.text)
+        self.assertIn("战争回响 · 重伤之围·残酷：暂无公开记录", answer.text)
 
     def test_a_dungeon_lists_each_of_its_boards(self) -> None:
         first = hot_bosses_payload()[0]
