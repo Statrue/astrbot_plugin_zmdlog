@@ -27,6 +27,7 @@ from markupsafe import Markup
 
 from .characters import CharacterFilterScope
 from .client import DEFAULT_USER_AGENT
+from .crit import CritExpectation
 from .events import BoardActivity, RecordEvent
 from .help import build_help_page
 from .history import AccountHistory
@@ -504,6 +505,7 @@ class TemplateRenderer:
         export: BattleExport | None = None,
         export_note: str | None = None,
         suits: dict[str, str] | None = None,
+        crit: CritExpectation | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_battle_page(
@@ -513,6 +515,7 @@ class TemplateRenderer:
             export=export,
             export_note=export_note,
             suits=suits,
+            crit=crit,
         )
         return self._render(
             "battle/battle.html",

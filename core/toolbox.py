@@ -283,7 +283,7 @@ class ToolService:
                 return ToolAnswer(messages.BATTLE_NOT_FOUND)
             raise
         text = facts.format_battle(
-            recipe.battle, export=recipe.export, suits=recipe.suits
+            recipe.battle, export=recipe.export, suits=recipe.suits, crit=recipe.crit
         )
         image = await self._render(recipe.draw)
         return ToolAnswer(text, image)

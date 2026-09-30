@@ -1,8 +1,11 @@
 """Typed adapters for the public ZMDLogs ranking responses."""
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
+
+from .crit import CritRoll
 
 
 class ModelValidationError(ValueError):
@@ -236,6 +239,9 @@ class BattleDamagePoint:
     at_ms: int
     character_name: str
     value: int
+    # The crit parameters it was rolled with; uploads before parser v57 have
+    # none, and an unreadable roll counts as none.
+    crit_roll: CritRoll | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -923,10 +929,53 @@ def _parse_damage_points(value: Any) -> tuple[BattleDamagePoint, ...]:
             continue
         points.append(
             BattleDamagePoint(
-                at_ms=at_ms, character_name=name.strip(), value=amount
+                at_ms=at_ms,
+                character_name=name.strip(),
+                value=amount,
+                crit_roll=_parse_crit_roll(item.get("hitContext")),
             )
         )
     return tuple(points)
+
+
+def _parse_crit_roll(context: Any) -> CritRoll | None:
+    """What ``hitContext.critical`` says the hit was rolled with, or None.
+
+    Read the way the site reads it: ``version`` 1, ``status`` verified, and a
+    well-typed flag, rate and bonus. Anything else — an ``unavailable`` roll,
+    a newer version, a field of the wrong type, including an optional bound
+    that is present but not a number — leaves the hit uncovered, which
+    lowers the 暴击期望 coverage instead of costing the battle card.
+    """
+
+    if not isinstance(context, dict):
+        return None
+    critical = context.get("critical")
+    if not isinstance(critical, dict) or critical.get("status") != "verified":
+        return None
+    version = critical.get("version")
+    if isinstance(version, bool) or version != 1:
+        return None
+    is_critical = critical.get("isCritical")
+    rate = _finite_number(critical.get("critRate"))
+    bonus = _finite_number(critical.get("critDamageBonus"))
+    if not isinstance(is_critical, bool) or rate is None or bonus is None:
+        return None
+    bounds: list[float | None] = []
+    for field in ("uncappedDamage", "damageCap"):
+        raw = critical.get(field)
+        bound = _finite_number(raw)
+        if raw is not None and bound is None:
+            return None
+        bounds.append(bound)
+    uncapped, cap = bounds
+    return CritRoll(
+        is_critical=is_critical,
+        rate=rate,
+        damage_bonus=bonus,
+        uncapped_damage=uncapped,
+        damage_cap=cap,
+    )
 
 
 def _parse_character_state_buffs(value: Any) -> tuple[BattleBuff, ...]:
@@ -1566,6 +1615,13 @@ def _lenient_number(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
     return float(value)
+
+
+def _finite_number(value: Any) -> float | None:
+    """A lenient number that is also finite: the JSON decoder accepts NaN."""
+
+    number = _lenient_number(value)
+    return number if number is not None and math.isfinite(number) else None
 
 
 def _lenient_boolean(value: Any) -> bool | None:

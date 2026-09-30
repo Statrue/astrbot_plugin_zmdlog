@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from .. import messages
 from ..client import ZmdLogsAPIError
+from ..crit import CritExpectation, CritHit, build_crit_expectation
 from ..messages import shorten
 from ..models import BattleDetailSummary, BattleExport
 
@@ -53,6 +54,8 @@ class BattleRecipe:
     web_base_url: str
     # The upload has no casts at all, so it has no 技能轴 either.
     casts_unsupported: bool = False
+    # 暴击期望; None unless the upload recorded the crit roll of some hit.
+    crit: CritExpectation | None = None
 
     async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_battle(
@@ -62,6 +65,7 @@ class BattleRecipe:
             export=self.export,
             export_note=self.export_note,
             suits=self.suits,
+            crit=self.crit,
         )
 
 
@@ -89,6 +93,13 @@ async def prepare_battle(
         query=query,
         web_base_url=web_base_url,
         casts_unsupported=error is not None and casts_unsupported(error),
+        crit=build_crit_expectation(
+            (
+                CritHit(point.value, point.crit_roll, point.character_name)
+                for point in battle.damage_points
+            ),
+            duration_ms=battle.duration_ms,
+        ),
     )
 
 

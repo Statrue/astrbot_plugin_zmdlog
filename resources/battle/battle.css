@@ -115,7 +115,8 @@
 
 /* ---------- participants as comparable rows ---------- */
 
-.participant-list {
+.participant-list,
+.crit-list {
   overflow: hidden;
   border: 1px solid var(--line);
   background: var(--card);
@@ -148,11 +149,13 @@
   font-size: var(--fs-16);
 }
 
-.participant-id {
+.participant-id,
+.crit-id {
   min-width: 0;
 }
 
-.participant-id strong {
+.participant-id strong,
+.crit-id strong {
   display: block;
   overflow: hidden;
   color: var(--ink);
@@ -163,7 +166,8 @@
   white-space: nowrap;
 }
 
-.participant-id span {
+.participant-id span,
+.crit-id span {
   display: block;
   overflow: hidden;
   margin-top: 2px;
@@ -181,18 +185,21 @@
   margin: 0;
 }
 
-.participant-stats > div {
+.participant-stats > div,
+.crit-stats > div {
   min-width: 0;
 }
 
-.participant-stats dt {
+.participant-stats dt,
+.crit-stats dt {
   color: var(--muted);
   font-size: var(--fs-10);
   font-weight: 700;
   letter-spacing: 0.06em;
 }
 
-.participant-stats dd {
+.participant-stats dd,
+.crit-stats dd {
   overflow: hidden;
   margin: 3px 0 0;
   color: var(--ink);
@@ -204,11 +211,44 @@
   text-overflow: ellipsis;
 }
 
-.participant-stats > div:first-child dd {
+/* The headline figure of a row: DPS per character, the team's 实际偏差. */
+.participant-stats > div:first-child dd,
+.crit-row.is-team .crit-stats > div:last-child dd {
   display: inline-block;
   padding: 0 4px;
   margin-left: -4px;
   background: linear-gradient(transparent 55%, var(--action) 55%, var(--action) 95%, transparent 95%);
+}
+
+/* ---------- 暴击期望: the participant rows' rhythm, the team last ---------- */
+
+.crit-row {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 0.9fr) minmax(0, 2fr);
+  gap: 14px;
+  align-items: center;
+  padding: 10px 16px 10px 0;
+}
+
+.crit-row + .crit-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.crit-row.is-team {
+  border-top-color: var(--line);
+  background: var(--card-soft);
+}
+
+/* Dashed, like the team line of the DPS curve: solid ink is a character's key. */
+.crit-row.is-team .participant-key {
+  background: repeating-linear-gradient(var(--ink) 0 5px, transparent 5px 9px);
+}
+
+.crit-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
 }
 
 .battle-id-row {

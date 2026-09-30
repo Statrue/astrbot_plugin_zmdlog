@@ -115,10 +115,7 @@ def build_dps_curve_view(
     axis_max = _nice_ceiling(curve.peak_dps)
     if axis_max <= 0:
         return None
-    colours = {
-        participant.character_name: index
-        for index, participant in enumerate(participants, start=1)
-    }
+    colours = colour_keys(participants)
 
     def polyline(series) -> str:
         return polyline_points(
@@ -146,6 +143,19 @@ def build_dps_curve_view(
         peak_label=format_number(round(curve.peak_dps)),
         bucket_label=f"{curve.bucket_ms // 1000} 秒",
     )
+
+
+def colour_keys(participants: tuple[BattleParticipant, ...]) -> dict[str, int]:
+    """Each character's colour key (``share-seg--N``), by the card's order.
+
+    Every section of the battle card draws a character in this one colour;
+    ``participants`` must already be in the display order, highest DPS first.
+    """
+
+    return {
+        participant.character_name: index
+        for index, participant in enumerate(participants, start=1)
+    }
 
 
 def build_buff_band_view(battle: BattleDetailSummary) -> BuffBandView | None:

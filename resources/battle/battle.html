@@ -72,7 +72,7 @@
 
 <div class="section-heading">
   <h2>本场角色</h2>
-  <span class="section-note">按 DPS 排序 · 色标与占比条一致</span>
+  <span class="section-note">按 DPS 排序 · 色标与占比条一致 · 暴击率是本场命中里实际暴击的占比</span>
 </div>
 
 <section class="participant-list" aria-label="角色战斗统计">
@@ -94,6 +94,31 @@
   </article>
   {% endfor %}
 </section>
+
+{% if page.crit %}
+<div class="section-heading">
+  <h2>暴击期望</h2>
+  <span class="section-note">固定本场技能与命中，只算暴击带来的直接伤害波动</span>
+</div>
+
+<section class="crit-list" aria-label="暴击期望">
+  {% for row in page.crit.rows %}
+  <article class="crit-row{% if row.is_team %} is-team{% endif %}">
+    <i class="participant-key{% if row.colour_index %} share-seg--{{ row.colour_index }}{% endif %}" aria-hidden="true"></i>
+    <div class="crit-id">
+      <strong>{{ row.label }}</strong>
+      {% if row.coverage_note %}<span>{{ row.coverage_note }}</span>{% endif %}
+    </div>
+    <dl class="crit-stats">
+      <div><dt>实际总伤</dt><dd>{{ row.actual_damage }}</dd></div>
+      <div><dt>期望总伤</dt><dd>{{ row.expected_damage }}</dd></div>
+      <div><dt>期望 DPS</dt><dd>{{ row.expected_dps }}</dd></div>
+      <div><dt>实际偏差</dt><dd>{{ row.deviation }}</dd></div>
+    </dl>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
 
 {% if page.dps_curve %}
 <div class="section-heading">

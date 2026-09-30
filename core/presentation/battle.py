@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from ..contract import group_contract_tags, tag_display_name, tag_short_name
+from ..crit import CritExpectation, CritTotals, coverage_percent
 from ..loadout import (
     CharacterSkillDamage,
     element_label,
@@ -17,6 +18,7 @@ from ..models import (
     BattleDetailSummary,
     BattleEquip,
     BattleExport,
+    BattleParticipant,
     BattleWeapon,
 )
 from .charts import (
@@ -24,6 +26,7 @@ from .charts import (
     DpsCurveView,
     build_buff_band_view,
     build_dps_curve_view,
+    colour_keys,
 )
 from .common import (
     _EQUIP_ICON_PATH,
@@ -197,6 +200,26 @@ class ContractGroupView:
 
 
 @dataclass(frozen=True, slots=True)
+class CritRowView:
+    label: str
+    # The character's colour key on the card; None on the team row.
+    colour_index: int | None
+    actual_damage: str
+    expected_damage: str
+    expected_dps: str
+    deviation: str
+    # Only when part of this row's skill damage carried no crit roll.
+    coverage_note: str | None
+    is_team: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CritView:
+    # The characters in the card's order, then the team.
+    rows: tuple[CritRowView, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BattlePage:
     header: PageHeader
     battle_id: str
@@ -229,6 +252,8 @@ class BattlePage:
     # description (an unexpandable template, UPSTREAM.md). Empty off the
     # contract board.
     contract_groups: tuple[ContractGroupView, ...] = ()
+    # 暴击期望; None on uploads that recorded no crit rolls.
+    crit: CritView | None = None
 
 
 def build_battle_page(
@@ -239,6 +264,7 @@ def build_battle_page(
     export: BattleExport | None = None,
     export_note: str | None = None,
     suits: dict[str, str] | None = None,
+    crit: CritExpectation | None = None,
 ) -> BattlePage:
     """Build the battle card; ``export`` adds the cast rail when available."""
 
@@ -307,6 +333,7 @@ def build_battle_page(
         timeline_note=export_note if export is None else None,
         dps_curve=build_dps_curve_view(battle, tuple(participants)),
         buff_band=build_buff_band_view(battle),
+        crit=_build_crit_view(crit, tuple(participants)),
         contract_groups=_build_contract_groups(battle, web_base_url=web_base_url),
         participants=tuple(
             BattleParticipantView(
@@ -438,6 +465,59 @@ def build_skill_page(
         has_merged_rows=any(
             row.merged_count > 1 for group in groups for row in group.rows
         ),
+    )
+
+
+def _build_crit_view(
+    crit: CritExpectation | None,
+    participants: tuple[BattleParticipant, ...],
+) -> CritView | None:
+    """``participants`` in the card's order, so each row keeps its colour."""
+
+    if crit is None:
+        return None
+    colours = colour_keys(participants)
+    # Stable: a dealer the participant list lacks keeps the heaviest-first
+    # order it came in, after the rest, in the curve's fallback colour.
+    characters = sorted(
+        crit.characters,
+        key=lambda row: colours.get(row.character, len(colours) + 1),
+    )
+    return CritView(
+        rows=(
+            *(
+                _crit_row(
+                    row,
+                    label=row.character or "",
+                    colour_index=colours.get(row.character, 6),
+                )
+                for row in characters
+            ),
+            _crit_row(crit.team, label="全队", colour_index=None, is_team=True),
+        )
+    )
+
+
+def _crit_row(
+    totals: CritTotals,
+    *,
+    label: str,
+    colour_index: int | None,
+    is_team: bool = False,
+) -> CritRowView:
+    return CritRowView(
+        label=label,
+        colour_index=colour_index,
+        actual_damage=format_number(totals.actual_damage),
+        expected_damage=format_number(round(totals.expected_damage)),
+        expected_dps=format_number(round(totals.expected_dps)),
+        deviation=f"{totals.relative_difference:+.2%}",
+        coverage_note=(
+            f"已覆盖 {format_number(coverage_percent(totals.coverage))}% 伤害"
+            if totals.coverage < 1
+            else None
+        ),
+        is_team=is_team,
     )
 
 

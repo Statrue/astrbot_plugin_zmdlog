@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 from . import messages
 from .characters import CharacterFilterScope, row_fields
 from .contract import group_contract_tags
+from .crit import CritExpectation, coverage_percent
 from .events import CHAMPION_CHANGE, NEW_RECORD, BoardActivity, RecordEvent
 from .history import AccountHistory, trend_points
 from .loadout import (
@@ -348,6 +349,7 @@ def format_battle(
     *,
     export: BattleExport | None = None,
     suits: Mapping[str, str] | None = None,
+    crit: CritExpectation | None = None,
 ) -> str:
     """Everything one public battle recorded, already reduced to facts."""
 
@@ -389,6 +391,9 @@ def format_battle(
                 f" · DPS {participant.dps:,.0f}"
                 f" · 伤害占比 {share:.1%}{extra}"
             )
+    if crit is not None:
+        lines.append("")
+        lines.append(_crit_line(crit))
     roster = _roster_lines(battle, suits)
     if roster:
         lines.append("")
@@ -1221,6 +1226,19 @@ def _damage_sources(battle: BattleDetailSummary) -> list[str]:
         if shown:
             lines.append(f"    {group.character_name}：{shown}")
     return lines
+
+
+def _crit_line(crit: CritExpectation) -> str:
+    """The team's 暴击期望 in one line; the coverage only when it is partial."""
+
+    team = crit.team
+    detail = f"偏差 {team.relative_difference:+.2%}"
+    if team.coverage < 1:
+        detail += f"，已覆盖 {coverage_percent(team.coverage):g}% 伤害"
+    return (
+        f"暴击期望：实际 {team.actual_damage:,}"
+        f" / 期望 {team.expected_damage:,.0f}（{detail}）"
+    )
 
 
 def _buff_lines(battle: BattleDetailSummary) -> list[str]:

@@ -25,9 +25,9 @@ Python 3.11+ (`asyncio.timeout`, `datetime.UTC`), dependencies in
 **Read the module docstring first.** Every `core/` module opens with one, and
 the modules that carry a design worth understanding — `ranking_index`,
 `recipes/__init__`, `rank_watch`, `watch`, `queries`, `toolbox`, `facts`,
-`contract`, `timeline`, `telemetry`, `bindings`, `origins`, `metrics`,
-`cache`, `buttons` — explain their economics and their reasons there, and so
-does `qq_official.py` at the root. That is the module
+`contract`, `timeline`, `telemetry`, `crit`, `bindings`, `origins`,
+`metrics`, `cache`, `buttons` — explain their economics and their reasons
+there, and so does `qq_official.py` at the root. That is the module
 map; this file does not repeat it, and a behaviour question is answered by the
 docstring beside the code, not here.
 
@@ -147,9 +147,12 @@ rather than a decorator. All of them run through one error guard,
   `models.py` validates every field upstream types; the lists it leaves as bare
   dicts, and `timelineEvents` / `characterStates`, are read entry by entry with
   unreadable ones dropped — one odd gear line can never fail a battle that used
-  to render, and the curve and buff band are sections the card must render
-  without. Raw item ids are never printed as names (`is_raw_item_name` →
-  名称未收录); a raw buff key prints its effect instead of the key.
+  to render, and the curve, buff band and 暴击期望 are sections the card must
+  render without. A hit's crit roll that is unreadable or self-contradictory
+  lowers 暴击期望's coverage; it never withholds the section, which is where
+  `crit` departs from the site on purpose. Raw item ids are never printed as
+  names (`is_raw_item_name` → 名称未收录); a raw buff key prints its effect
+  instead of the key.
 - **Top-3 pages must not leak ranking-only fields** (slug, percentile, DPS,
   roster, links) — enforced by
   `test_render.test_top_three_template_does_not_leak_ranking_fields`.
