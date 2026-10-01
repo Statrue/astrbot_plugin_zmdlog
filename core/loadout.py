@@ -2,12 +2,16 @@
 
 Nothing here formats or fetches: the functions turn the raw roster and
 ``roleSkillStats`` rows of a public battle into labels, categories and groups
-that the presentation layer can print. Skill naming mirrors the site's own
-``skill-display`` helper so both surfaces call the same thing by the same name.
+that the presentation layer can print. A skill is named by the game's own
+name when upstream sends one (``displayGroupName``); otherwise naming mirrors
+the site's own ``skill-display`` helper so both surfaces call the same thing
+by the same name.
 """
 
 import re
-from dataclasses import dataclass
+from collections import Counter
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
 from enum import Enum
 
 from .models import (
@@ -97,6 +101,7 @@ _SKILL_FAMILIES = (
     (("plunging", "attack"), "下落攻击"),
     (("dash", "attack"), "闪避攻击"),
 )
+_FAMILY_LABELS = frozenset(label for _, label in _SKILL_FAMILIES)
 # What the remaining segments of a key mean. The first block is upstream's
 # own table (parser_core ``_humanize_skill_suffix_text``); the second is the
 # tokens it leaves untranslated that the public boards actually show.
@@ -196,17 +201,57 @@ def skill_display_name(
     skill_name: str,
     skill_key: str | None,
     *,
+    official_name: str | None = None,
     combo_from_key: bool = True,
 ) -> str:
     """The name a reader should see for one skill-stat row.
 
-    Follows the site's rules (key override, name override, combo detection),
-    then tidies raw keys the parser could not name: the character prefix is
-    dropped and underscores become spaces. ``combo_from_key`` is the loose
-    "anything with combo_skill in the key" rule; the cast timeline turns it
-    off because mechanism entities carry such keys too.
+    The game's own name for the skill (``official_name``, upstream's
+    ``displayGroupName``) comes first. Without it the site's rules apply (key
+    override, name override, combo detection), then raw keys the parser could
+    not name are tidied: the character prefix is dropped and underscores
+    become spaces. ``combo_from_key`` is the loose "anything with combo_skill
+    in the key" rule; the cast timeline turns it off because mechanism
+    entities carry such keys too.
     """
 
+    return _with_official_name(
+        _cleaned_skill_name(skill_name, skill_key, combo_from_key=combo_from_key),
+        official_name,
+    )
+
+
+def _with_official_name(cleaned: str, official_name: str | None) -> str:
+    """Name a row by the game's name for its skill, keeping the hit it is.
+
+    The game names a skill, not one hit of it: every sub-hit row of 梨诺's
+    终结技 is 晨星的协奏曲. Where the cleaned name is a family and a hit
+    (``终结技 · 派生（左）``) the game's name takes the family's place, so
+    rows the cleaned names tell apart stay apart.
+    """
+
+    official = (official_name or "").strip()
+    if not official:
+        return cleaned
+    family, separator, hit = cleaned.partition(" · ")
+    if separator and family in _FAMILY_LABELS:
+        return f"{official} · {hit}"
+    return official
+
+
+def _agreed_name(names: Iterable[str | None]) -> str | None:
+    """The one name the rows that carry one agree on, else None."""
+
+    distinct = {name for name in names if name}
+    return next(iter(distinct)) if len(distinct) == 1 else None
+
+
+def _cleaned_skill_name(
+    skill_name: str,
+    skill_key: str | None,
+    *,
+    combo_from_key: bool,
+) -> str:
     if skill_key:
         override = _SKILL_KEY_OVERRIDES.get(skill_key.lower())
         if override:
@@ -480,6 +525,11 @@ def group_skill_damage(
     flag does. Rows that end up with the same tag and name (three "终结技"
     sub-hits, two "噪点" heavy attacks) are folded as well: a reader could not
     tell them apart on the page anyway.
+
+    The game's official name for a skill renames rows, it never regroups
+    them: rows fold under their cleaned names, then each takes the official
+    name the rows folded into it agree on. Upstream leaves it off a skill's
+    projectile and mechanism rows, which are still that skill.
     """
 
     per_character: dict[str, list[BattleSkillStat]] = {}
@@ -489,6 +539,7 @@ def group_skill_damage(
     for character_name, rows in per_character.items():
         built: list[SkillDamageRow] = []
         segments: list[BattleSkillStat] = []
+        official_names: dict[tuple[SkillCategory, str], set[str]] = {}
         for stat in rows:
             category = skill_category(stat.skill_name, stat.skill_key)
             if (
@@ -498,10 +549,15 @@ def group_skill_damage(
             ):
                 segments.append(stat)
                 continue
+            name = skill_display_name(stat.skill_name, stat.skill_key)
+            if stat.display_group_name:
+                official_names.setdefault((category, name), set()).add(
+                    stat.display_group_name
+                )
             built.append(
                 SkillDamageRow(
                     category=category,
-                    name=skill_display_name(stat.skill_name, stat.skill_key),
+                    name=name,
                     cast_count=stat.cast_count,
                     total_damage=stat.total_damage,
                     avg_damage=stat.avg_damage,
@@ -516,7 +572,8 @@ def group_skill_damage(
             existing = folded.get(key)
             folded[key] = row if existing is None else _fold_rows(existing, row)
         ordered = sorted(
-            folded.values(), key=lambda row: (-row.total_damage, row.name)
+            _with_official_names(folded, official_names),
+            key=lambda row: (-row.total_damage, row.name),
         )
         groups.append(
             CharacterSkillDamage(
@@ -527,6 +584,32 @@ def group_skill_damage(
         )
     groups.sort(key=lambda group: (-group.total_damage, group.character_name))
     return tuple(groups)
+
+
+def _with_official_names(
+    folded: dict[tuple[SkillCategory, str], SkillDamageRow],
+    official_names: dict[tuple[SkillCategory, str], set[str]],
+) -> list[SkillDamageRow]:
+    """Rename folded rows by their official names, never into another row.
+
+    A row keeps the name it had when its official name already is, or would
+    become, another row's name too: the page would show two rows under one
+    name that a reader could not tell apart, where the fold kept them apart.
+    """
+
+    renamed = {
+        key: _with_official_name(key[1], _agreed_name(official_names.get(key, ())))
+        for key in folded
+    }
+    claims = Counter((category, name) for (category, _), name in renamed.items())
+    rows: list[SkillDamageRow] = []
+    for (category, cleaned), row in folded.items():
+        name = renamed[(category, cleaned)]
+        clash = claims[(category, name)] > 1 or (category, name) in folded
+        if name != cleaned and not clash:
+            row = replace(row, name=name)
+        rows.append(row)
+    return rows
 
 
 def _fold_rows(first: SkillDamageRow, second: SkillDamageRow) -> SkillDamageRow:
@@ -546,11 +629,10 @@ def _fold_rows(first: SkillDamageRow, second: SkillDamageRow) -> SkillDamageRow:
 def _merge_normal_attacks(segments: list[BattleSkillStat]) -> SkillDamageRow:
     casts = sum(stat.cast_count for stat in segments)
     total = sum(stat.total_damage for stat in segments)
-    names = {
+    shared = _agreed_name(
         skill_display_name(stat.skill_name, stat.skill_key) for stat in segments
-    }
-    shared = next(iter(names)) if len(names) == 1 else None
-    named = (
+    )
+    named = _agreed_name(stat.display_group_name for stat in segments) or (
         shared
         if shared is not None and not _NORMAL_ATTACK_NAME_RE.match(shared)
         else None

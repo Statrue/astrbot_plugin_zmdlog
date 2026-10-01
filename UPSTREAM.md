@@ -273,6 +273,13 @@ parser version.
   秘杖·束能技艺. Both are `null` on the buff and status rows and on many
   projectile and mechanism rows (`…_projhit`, `…_abilityentity`,
   `…_abilityrange`): 22 of 48 rows on a v57 battle, 18 of 36 on a v48 one.
+  Where it is set it usually equals `skillName`. It differs where
+  `skillName` is a token join or a segment label (梨诺's
+  `ultimate / skill / 派生 / l` is 晨星的协奏曲, her `A1` 怦然星动, on v46–v48
+  uploads) and on 诀's `power_attack` (重击, in 重火力截击). The plugin reads
+  `displayGroupName` only, as a row's name (`core/loadout.py`); it does not
+  regroup rows by `displayGroupKey`, and it does not read `hitCount` or
+  `maxHit`.
 
 ### `timelineEvents[]` and `characterStates[]`
 
@@ -604,7 +611,8 @@ Paths are in the `4e65587` snapshot; the live bundle may have moved on.
   because `normal_skill` is one phrase, the 战技. `core/loadout.py` therefore
   re-humanises any name that is still upstream's token join. The battle
   response now carries the game's own name for half or more of the rows,
-  `roleSkillStats[].displayGroupName` (above).
+  `roleSkillStats[].displayGroupName` (above), and the plugin prints that
+  first; the re-humanising is the fallback for the rows without it.
 - **Cast classification**: `apps/web/lib/endaxis-project.ts` — end-anchored key
   rules. A mechanism entity such as `…_combo_skill_water_gene` must not be
   drawn as the player's 连携技 (upstream's own "汤汤 连携×3" incident).

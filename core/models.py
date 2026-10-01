@@ -242,6 +242,10 @@ class BattleSkillStat:
     avg_damage: float
     max_damage: int
     skill_key: str | None = None
+    # The game's own name for the skill this row is part of
+    # (``displayGroupName``); None on most buff, projectile and mechanism
+    # rows. Read leniently: it only renames a row that has a name already.
+    display_group_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1305,6 +1309,7 @@ def _parse_skill_stat(value: Any, path: str) -> BattleSkillStat:
         avg_damage=_number(item.get("avgDamage"), f"{path}.avgDamage"),
         max_damage=_integer(item.get("maxDamage"), f"{path}.maxDamage"),
         skill_key=_optional_string(item.get("skillKey"), f"{path}.skillKey"),
+        display_group_name=_lenient_text(item.get("displayGroupName")),
     )
 
 
@@ -1673,6 +1678,12 @@ def _lenient_boolean(value: Any) -> bool | None:
     """A boolean when the payload carries one, None otherwise, never an error."""
 
     return value if isinstance(value, bool) else None
+
+
+def _lenient_text(value: Any) -> str | None:
+    """Non-blank text when the payload carries it, None otherwise, never an error."""
+
+    return (value.strip() or None) if isinstance(value, str) else None
 
 
 def _number(value: Any, path: str) -> float:

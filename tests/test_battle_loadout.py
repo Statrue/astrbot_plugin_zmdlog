@@ -1,9 +1,11 @@
 """Tests for the 0.6.0 battle loadout (配装) and skill statistics (技能) pages."""
 
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from core.candidates import CandidateStore, CandidateView, format_candidates
+from core.facts import format_battle
 from core.loadout import (
     SkillCategory,
     battle_suit_ids,
@@ -85,6 +87,23 @@ class BattleDetailModelTests(unittest.TestCase):
         with self.assertRaises(ModelValidationError):
             parse_battle_detail(payload)
 
+    def test_the_game_skill_name_is_read_leniently(self) -> None:
+        payload = battle_detail_payload()
+        stats = payload["roleSkillStats"]
+        stats[0]["displayGroupName"] = " 狼之怒 "
+        stats[1]["displayGroupName"] = None
+        stats[2]["displayGroupName"] = 7
+        stats[3]["displayGroupName"] = "  "
+
+        battle = parse_battle_detail(payload)
+
+        # Absent (the fixture's other rows), null, wrong-typed and blank alike
+        # leave the row to the cleaned name; none of them fails the battle.
+        self.assertEqual(
+            [stat.display_group_name for stat in battle.skill_stats],
+            ["狼之怒"] + [None] * 8,
+        )
+
     def test_older_payloads_without_loadout_data_still_parse(self) -> None:
         payload = battle_detail_payload()
         del payload["roleSkillStats"]
@@ -129,6 +148,35 @@ class SkillNamingTests(unittest.TestCase):
             ),
             "终结技 · 派生",
         )
+
+    def test_the_game_name_comes_before_the_cleaned_one(self) -> None:
+        combo = ("锥心之棘", "chr_0033_camille_combo_skill")
+        # The loose combo-by-key rule no longer hides the game's name.
+        self.assertEqual(
+            skill_display_name(*combo, official_name="锥心之棘"), "锥心之棘"
+        )
+        self.assertEqual(
+            skill_display_name(
+                "重击", "chr_0032_lizhiyan_power_attack", official_name="重火力截击"
+            ),
+            "重火力截击",
+        )
+        # The game names the skill, not the sub-hit: the part that tells
+        # 梨诺's five 终结技 rows apart stays, under the skill's own name.
+        self.assertEqual(
+            skill_display_name(
+                "ultimate / skill / 派生 / l",
+                "chr_0035_liino_ultimate_skill_projhit_l",
+                official_name="晨星的协奏曲",
+            ),
+            "晨星的协奏曲 · 派生（左）",
+        )
+        for missing in (None, "", "  "):
+            with self.subTest(official_name=missing):
+                self.assertEqual(
+                    skill_display_name(*combo, official_name=missing), "连携技"
+                )
+        self.assertIs(skill_category(*combo), SkillCategory.COMBO)
 
     def test_raw_keys_read_as_the_moves_they_are(self) -> None:
         # Every shape the public boards showed with English left in it, and
@@ -335,6 +383,102 @@ class SkillNamingTests(unittest.TestCase):
         )
         self.assertEqual(group.rows[0].avg_damage, 75.0)
         self.assertEqual(group_skill_damage(()), ())
+
+    def test_game_names_relabel_rows_without_regrouping_them(self) -> None:
+        def stat(key: str, name: str, total: int, official: str | None = None):
+            row = BattleSkillStat("梨诺", name, 1, total, float(total), total, key)
+            return replace(row, display_group_name=official)
+
+        # 梨诺 as a v46 upload carries her: upstream names the skill on every
+        # row of it except the projectile and mechanism ones.
+        named = (
+            stat(
+                "chr_0035_liino_ultimate_skill_projhit",
+                "ultimate / skill / 派生",
+                900,
+                "晨星的协奏曲",
+            ),
+            stat(
+                "chr_0035_liino_ultimate_skill_projhit_l",
+                "ultimate / skill / 派生 / l",
+                800,
+                "晨星的协奏曲",
+            ),
+            stat(
+                "chr_0035_liino_ultimate_skill_projhit_r",
+                "ultimate / skill / 派生 / r",
+                700,
+                "晨星的协奏曲",
+            ),
+            stat("chr_0035_liino_combo_skill", "悦心音调", 600, "悦心音调"),
+            stat(
+                "chr_0035_liino_combo_skill_abilityrange",
+                "chr_0035_liino_combo_skill_abilityrange",
+                500,
+            ),
+            stat("chr_0035_liino_attack1", "A1", 350, "怦然星动"),
+            stat("chr_0035_liino_attack2", "A2", 250, "怦然星动"),
+            stat("chr_0035_liino_attack3_projhit", "A3 派生", 150),
+            stat("buff_common_burning_status", "burning status", 100),
+        )
+        unnamed = tuple(replace(row, display_group_name=None) for row in named)
+
+        (before,) = group_skill_damage(unnamed)
+        (after,) = group_skill_damage(named)
+
+        def shape(group):
+            return [
+                (row.category, row.cast_count, row.total_damage, row.merged_count)
+                for row in group.rows
+            ]
+
+        self.assertEqual(shape(after), shape(before))
+        self.assertEqual(
+            [row.name for row in before.rows],
+            [
+                "连携技",
+                "终结技 · 派生",
+                "终结技 · 派生（左）",
+                "普攻（各段合并）",
+                "终结技 · 派生（右）",
+                "燃烧",
+            ],
+        )
+        self.assertEqual(
+            [row.name for row in after.rows],
+            [
+                "悦心音调",
+                "晨星的协奏曲 · 派生",
+                "晨星的协奏曲 · 派生（左）",
+                "普攻 · 怦然星动",
+                "晨星的协奏曲 · 派生（右）",
+                "燃烧",
+            ],
+        )
+
+    def test_a_game_name_two_rows_would_share_leaves_both_as_they_were(self) -> None:
+        def stat(key: str, name: str, total: int):
+            row = BattleSkillStat("莱万汀", name, 1, total, float(total), total, key)
+            return replace(row, display_group_name="焚灭")
+
+        # Two rows of one skill the game calls 焚灭: under that one name they
+        # would read as one row, so each keeps the name it had.
+        (group,) = group_skill_damage(
+            (
+                stat("chr_0016_laevat_normal_skill", "焚灭", 300),
+                stat("chr_0016_laevat_normal_skill_ember", "焚灭·余烬", 100),
+                stat(
+                    "chr_0016_laevat_normal_skill_abilityentity",
+                    "chr_0016_laevat_normal_skill_abilityentity",
+                    50,
+                ),
+            )
+        )
+
+        self.assertEqual(
+            [(row.name, row.merged_count) for row in group.rows],
+            [("焚灭", 1), ("焚灭·余烬", 1), ("焚灭 · abilityentity", 1)],
+        )
 
 
 class GearHelperTests(unittest.TestCase):
@@ -588,6 +732,20 @@ class LoadoutPresentationTests(unittest.TestCase):
         )
         self.assertEqual(len(page.loadouts[0].top_skills), 3)
         self.assertEqual(page.loadouts[1].top_skills[0].name, "连携技")
+
+    def test_every_surface_prints_the_game_name(self) -> None:
+        payload = battle_detail_payload()
+        payload["roleSkillStats"][7]["displayGroupName"] = "连携·潮汐"
+        battle = parse_battle_detail(payload)
+        web = "https://zmdlogs.com"
+
+        skills = build_skill_page(battle, query="q", web_base_url=web)
+        card = build_battle_page(battle, query="q", web_base_url=web)
+
+        self.assertEqual(skills.groups[1].rows[0].name, "连携·潮汐")
+        # The card's 主要伤害来源, which the comparison page reuses.
+        self.assertEqual(card.loadouts[1].top_skills[0].name, "连携·潮汐")
+        self.assertIn("卡缪：连携·潮汐 76%", format_battle(battle))
 
     def test_stat_values_read_as_percentages_or_plain_numbers(self) -> None:
         self.assertEqual(_format_stat_value(0.15), "15%")
