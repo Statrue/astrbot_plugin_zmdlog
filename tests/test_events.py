@@ -266,6 +266,8 @@ class RecordsPageTests(unittest.TestCase):
         self.assertIn("第一名易主", html)
         self.assertIn("新人", html)
         self.assertIn("新增记录", html)
+        self.assertNotIn("数据截至", text)
+        self.assertNotIn("时效", html)
 
 
 class RecordsRouteTests(unittest.TestCase):

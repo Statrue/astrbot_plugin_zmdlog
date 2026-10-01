@@ -322,9 +322,10 @@ class RankingIndex:
         return True
 
     async def _fill(self, metric: str) -> None:
-        # The rDPS fill follows the DPS one and reuses its board list; the
-        # list is read again only when nothing has read it yet.
-        if metric == METRIC_DPS or not self._slugs:
+        # The board list is read only when nothing has read it yet: the
+        # signal keeps it current, and a page waiting on an index with one
+        # board missing would otherwise cost a hot-bosses read every time.
+        if not self._slugs:
             cards = await self._fetch_boards()
             self._set_boards(cards)
         # A board whose read just failed is left to its retry: a page waiting
@@ -671,6 +672,7 @@ class RankingIndex:
         for by_key in (self._urgent, self._retry_at, self._changed_at):
             for key in [key for key in by_key if key[0] not in listed]:
                 del by_key[key]
+        self._failing = {key for key in self._failing if key[0] in listed}
         for by_slug in (self._card_tops, self._signal_tops, self._disagreeing):
             for slug in [slug for slug in by_slug if slug not in listed]:
                 del by_slug[slug]

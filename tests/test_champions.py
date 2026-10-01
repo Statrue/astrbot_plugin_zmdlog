@@ -130,6 +130,7 @@ class ChampionsPageTests(unittest.TestCase):
         self.assertIn("角色冠军榜", html)
         self.assertIn("当主 C", html)
         self.assertIn(self.rankings[0].rows[0].character_name, html)
+        self.assertNotIn("时效", html)
 
 
 class WindowTests(unittest.TestCase):

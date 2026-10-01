@@ -475,6 +475,23 @@ class RankingIndexTests(unittest.TestCase):
         self._run_due()
         self.assertEqual(sum("again" in m for m in self.logger.messages), 2)
 
+    def test_a_board_listed_again_logs_its_next_failing_streak(self) -> None:
+        self._fill()
+        self.upstream.failing = {SLUGS[1]}
+        self.now[0] += MAX_INTERVAL_SECONDS
+        self._run_due()
+        for cards in (cards_payload()[:1], cards_payload()):
+            self.upstream.cards = parse_hot_bosses(cards)
+            self.now[0] = self.index.next_wake()
+            self._run_due()
+
+        failures = [
+            m
+            for m in self.logger.messages
+            if "could not read" in m and SLUGS[1] in m and "(rdps)" not in m
+        ]
+        self.assertEqual(len(failures), 2)
+
     # --- the top-three signal -----------------------------------------------------
 
     def _new_first_place(self, slug: str) -> None:
@@ -608,9 +625,12 @@ class RankingIndexTests(unittest.TestCase):
         self.upstream.failing = {SLUGS[1]}
         self._fill()
         self.assertEqual(self.index.missing(), 1)
-        # A page waiting on the whole index does not read it again at once.
+        # A page waiting on the whole index reads neither that board again
+        # at once nor the board list, which the signal keeps current.
+        boards = self.upstream.board_calls
         run(self.index.ensure_filled())
         self.assertEqual(self.upstream.ranking_calls.count(SLUGS[1]), 1)
+        self.assertEqual(self.upstream.board_calls, boards)
         self.upstream.failing = set()
 
         self.now[0] += 299

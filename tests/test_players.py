@@ -110,6 +110,7 @@ class PlayerPageTests(unittest.TestCase):
         self.assertIn("玩家冠军榜", html)
         self.assertIn(self.rankings[0].rows[0].account_display_name, html)
         self.assertIn("记录", html)
+        self.assertNotIn("时效", html)
 
 
 if __name__ == "__main__":
