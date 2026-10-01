@@ -212,7 +212,6 @@ AstrBot 接入大模型并开启函数调用后，群友直接用自然语言问
 | `render_timeout_ms` | `30000` | 图片渲染超时 |
 | `fallback_to_astrbot_renderer` | `true` | 内置 Chromium 不可用时改用 AstrBot 的文转图 |
 | `alias_file_path` | `aliases.json` | 别名文件，相对 `data/plugin_data/astrbot_plugin_zmdlog/` |
-| `ranking_cache_ttl_seconds` | `60` | 具体榜单查询接受多旧的数据 |
 | `auto_expand_battle_links` | `false` | 群里出现战报链接时自动回战报卡 |
 | `battle_link_dedupe_seconds` | `300` | 同群同战报自动展开的冷却 |
 | `fuzzy_match_threshold` | `0.65` | 模糊匹配最低可信阈值 |
@@ -220,8 +219,7 @@ AstrBot 接入大模型并开启函数调用后，群友直接用自然语言问
 | `rank_watch_enabled` | `true` | 名次通报（关注 / 取关 与轮询） |
 | `rank_watch_interval_seconds` | `900` | 名次检查间隔，最低 120 |
 | `rank_watch_rank_threshold` | `10` | 只通报原名次在前几名以内的下降 |
-| `ranking_index_enabled` | `true` | 后台常驻全部榜单排名（榜单索引） |
-| `ranking_index_pace_seconds` | `30` | 索引每隔多少秒重读一个榜，最低 5 |
+| `ranking_index_pace_seconds` | `30` | 每份排名每隔「榜数 × 这个值」秒重读一次，最低 5 |
 | `bindings_enabled` | `true` | 账号绑定（绑定 / 我的 / 群榜）；关闭后已有绑定仍可查看和解除 |
 | `group_board_max_accounts` | `30` | 群榜最多统计多少个绑定账号，1–200 |
 | `disable_qq_official_buttons` | `false` | 关掉 QQ 官方机器人（`qq_official`）的按钮与纯文本回复：候选列表、结果图、绑定提示和名次通报都不带按钮，文字回复回到适配器默认的 markdown |
@@ -229,7 +227,7 @@ AstrBot 接入大模型并开启函数调用后，群友直接用自然语言问
 
 ## 🔍 它是怎么工作的
 
-- **榜单索引**：启动后把全部榜的排名读进内存（约 5 MB，十几秒），之后每 30 秒重读一个榜、每分钟核对一次各榜前三，前三变了立即重读。角色排名、冠军榜、账号页、名次通报、新纪录都从索引读，不等上游；稳态下无论有没有人问，每分钟约 3 个请求。上游拒绝时按指数退避。
+- **榜单索引**：启动后把全部榜的排名读进内存（约 5 MB，十几秒），之后按节奏轮流重读，每分钟核对一次各榜前三，前三变了立即重读。所有查询都从索引读，不等上游，只有索引还没读到的榜才现读一次。查单个榜（榜单页、群榜、榜单工具）时，这个榜超过 2 分钟没核对过就在后台立刻补读，再查一次就是新的。后台重读平均每分钟最多 3 次（最多连发 4 次），有人刷屏也只改变先读哪个榜。读失败的榜照旧用手里的副本，5 分钟后再试；连续失败时整体按指数退避，最长 10 分钟一次。
 - **通报只说能证明的事**：一次榜单读取无法证明是谁把某人顶下去的，所以账号通报只列出这段时间新出现在它上方的纪录；榜单通报则能说出谁跌出了前三。
 - **绑定只认绑定码**：机器人拿着绑定码向 ZMDLogs 查一次它对应哪个账号，查到就绑；网站只把码发给登录了那个账号的人，所以不会有人冒绑。查码接口不消耗码，插件自己记住用过的码的摘要，同一个码第二个人再发就拒绝。插件不缓存绑定码，也不把它写进日志（请求日志里显示为 `ZMD-****-****`）。绑定、我的、群榜都只在群聊里响应，机器人不需要加任何人好友。绑定和关注按「平台:发送者 ID」认人：QQ 官方机器人从 `qq_official` 换到 `qq_official_v2` 适配器，发送者 ID 不变，按同一个人记，绑定照旧有效；`qq_official_webhook` 和野生机器人（如 `aiocqhttp`）各记各的。群榜从索引里的一份榜单读本群绑定账号的最好记录，不逐账号请求。
 - **本地文件**（都在插件数据目录，只含公开 accountId、公开昵称、名次和 battleId）：`watchlist.json`、`rank-snapshot.json`、`board-snapshot.json`、`rank-history.json`（90 天 / 每榜 120 个点）、`record-events.json`（30 天 / 1000 条）、`hot-bosses.json`（上游不可达时的榜单列表快照）、`aliases.json`、`bindings.json`（平台用户 ID ↔ 公开 accountId 与昵称快照、用过绑定指令的群、用过的绑定码的 SHA-256）。读不出来的文件会改名为 `.corrupt-<时间>` 并写日志，不会被静默覆盖。

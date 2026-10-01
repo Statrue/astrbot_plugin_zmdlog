@@ -4,8 +4,7 @@ Upstream has no way to ask "where does a team with X stand on each board":
 the only source is each board's full ranking, 49 reads of 0.7 s each. Read
 on demand that is a 13-second answer; read once and refreshed in a trickle
 it is an instant one. So the index holds all of them (about 5 MB parsed) and
-is the single place board rankings are read from — a caller says how old a
-ranking it can accept, and the index fetches only when its copy is older.
+is the single place board rankings are read from.
 
 Every board has two rankings, DPS and rDPS, and the index holds both: the
 DPS one is what every page reads unless asked otherwise and what the rank
@@ -14,26 +13,35 @@ upload could compute team contribution (a few percent, as of 2026-09-16),
 in the same clear-time order. The DPS boards are filled first, so a DPS
 page waits for 49 reads, not 98.
 
-Three things keep it fresh. A round-robin re-read of the oldest board of
-each metric every ``pace_seconds`` bounds the age of every board (49 boards
-at 30 s is a full pass every 25 minutes, for each ranking). The hot-bosses
-response, one request for every board's top three, is read every
-``signal_seconds`` and a board whose top three changed is re-read at once,
-rDPS board included, so the changes people care about most are never older
-than that. And a caller wanting fresher data than the index has simply gets
-a fetch, which also updates the index.
+A reader never waits for upstream once a ranking is held: the copy is served
+however long it has been held, because whether it is current depends on
+upstream, not on its age. Only a ranking not held yet — the plugin just
+loaded, or the site just listed the board — is read while the reader waits.
+A reader that says someone is waiting on that one board (a board page, the
+group board, the board tool) also has a copy last checked over two minutes
+ago re-read in the background, so asking again shows what changed.
 
-The steady-state cost is therefore five requests a minute per running bot,
-whether or not anyone asks anything; a fill that keeps failing backs off
-instead of hammering an endpoint that just refused.
+The background loop keeps the copies current. Each ranking falls due once
+per pass of ``pace_seconds`` per board, and the hot-bosses response, one
+request for every board's top three, is read every minute: a board whose
+top three changed is re-read at once, rDPS board included. Every background
+re-read — due, asked for or signalled — takes a token from a bucket of four
+that gains one every twenty seconds, so the bot never re-reads more than
+three rankings a minute on average however many boards people ask about;
+asking only changes which board goes first, and a board asked for or
+signalled goes before the ones merely due. First reads take no token: a
+reader waits for them anyway. A read that fails keeps the copy and is tried
+again five minutes later, and reads failing four times in a row are an
+outage, not a bad board: the whole schedule then backs off, doubling up to
+ten minutes.
 """
 
 import asyncio
+import math
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 
-from .client import ZmdLogsClientError
 from .logs import LogSink
 from .metrics import METRIC_DPS, METRICS
 from .models import (
@@ -48,30 +56,39 @@ from .timestamps import later_or_same
 DEFAULT_PACE_SECONDS = 30.0
 # One hot-bosses read a minute: what a single keyword query a minute would
 # cost anyway, and it keeps the query cache warm as a side effect.
-DEFAULT_SIGNAL_SECONDS = 60.0
+SIGNAL_SECONDS = 60.0
 FILL_CONCURRENCY = 4
-# A fill stops after this many board reads failed in a row: an upstream
-# that refuses one board is refusing the next forty-eight too.
-FILL_ABORT_AFTER_FAILURES = 4
-# Between fills that left the index incomplete the loop waits pace × 2ⁿ,
-# capped here, so an outage costs a handful of requests an hour, not 150.
-MAX_FILL_BACKOFF_SECONDS = 600.0
+# A board asked for is re-read only when its copy was checked longer ago
+# than this; a re-read sooner could only return the copy just served.
+ON_DEMAND_AFTER_SECONDS = 120.0
+# Every background re-read takes a token: four at once, one more every
+# twenty seconds, three a minute on average.
+TOKEN_CAPACITY = 4
+TOKEN_SECONDS = 20.0
+# A ranking whose read failed keeps its copy and is tried again this late.
+RETRY_SECONDS = 300.0
+# This many failed reads in a row is an outage: the schedule pauses for
+# base × 2ⁿ, capped, so an outage costs a handful of requests an hour.
+OUTAGE_AFTER_FAILURES = 4
+OUTAGE_BACKOFF_BASE_SECONDS = 30.0
+MAX_OUTAGE_BACKOFF_SECONDS = 600.0
 # How long a command or tool waits for a fill in progress before answering
 # that the index is still being built.
 INDEX_WAIT_SECONDS = 30.0
-# A board the index could not re-read keeps serving its last copy for this
-# long; past it a reader asking for fresh data gets the error instead of a
-# ranking that may be hours behind.
-STALE_FALLBACK_MAX_AGE_SECONDS = 30 * 60.0
 _TOP_SIGNAL_RUNS = 3
+# A run of the loop that raised is not retried sooner than this.
+_CYCLE_RETRY_SECONDS = 30.0
+_EPSILON = 1e-9
 
 FetchRanking = Callable[[str, str], Awaitable[BossRanking]]
 FetchBoards = Callable[[], Awaitable[tuple[HotBossCard, ...]]]
+# A ranking: (slug, metric).
+Key = tuple[str, str]
 
 
 @dataclass(frozen=True, slots=True)
 class IndexEntry:
-    """One board's ranking and when it was read."""
+    """One board's ranking and when it was last read."""
 
     ranking: BossRanking
     loaded_at: float
@@ -87,7 +104,6 @@ class RankingIndex:
         fetch_boards: FetchBoards,
         logger: LogSink,
         pace_seconds: float = DEFAULT_PACE_SECONDS,
-        signal_seconds: float = DEFAULT_SIGNAL_SECONDS,
         clock: Callable[[], float] = time.monotonic,
         on_refresh: Callable[[BossRanking, BossRanking], None] | None = None,
     ) -> None:
@@ -99,28 +115,38 @@ class RankingIndex:
         # that was already held: the event log reads the difference.
         self._on_refresh = on_refresh
         self._pace = pace_seconds
-        self._signal = signal_seconds
-        # The loop checks the signal clock once per pace, so a read can land
-        # this long after the previous one; a value put into a cache must
-        # stay fresh at least that long or readers see a gap.
-        self.signal_period_seconds = signal_seconds + pace_seconds
         self._clock = clock
         # One map of slug → entry per metric; the DPS one is ``_entries``.
         self._held: dict[str, dict[str, IndexEntry]] = {
             metric: {} for metric in METRICS
         }
         self._slugs: tuple[str, ...] = ()
-        self._inflight: dict[tuple[str, str], asyncio.Task[BossRanking]] = {}
-        self._failing: set[tuple[str, str]] = set()
-        # Fills in a row that left boards missing; drives the loop's backoff.
-        self._fill_failures = 0
-        self._signal_failing = False
-        self._cycle_failing = False
+        self._inflight: dict[Key, asyncio.Task[BossRanking]] = {}
+        self._failing: set[Key] = set()
+        # Rankings someone asked for or the signal saw change, in the order
+        # they came; each is re-read ahead of the ones merely due.
+        self._urgent: dict[Key, None] = {}
+        # A ranking whose last read failed is not read again before this.
+        self._retry_at: dict[Key, float] = {}
+        # The card's top runs that sent a board to be re-read, checked
+        # against the ranking that read brings back.
+        self._signal_tops: dict[str, tuple[str, ...]] = {}
         # Boards whose card and ranking disagreed even after a re-read, keyed
         # to the card's top ids: re-read again only when the card changes.
         self._disagreeing: dict[str, tuple[str, ...]] = {}
+        now = clock()
+        self._tokens = float(TOKEN_CAPACITY)
+        self._tokens_at = now
+        self._failures_in_row = 0
+        self._outage_rounds = 0
+        self._resume_at = -math.inf
+        # The loop begins with a fill, which reads the board list itself.
+        self._signal_at = now
+        self._signal_failing = False
+        self._cycle_failing = False
         self._fill_tasks: dict[str, asyncio.Task[None]] = {}
         self._loop_task: asyncio.Task[None] | None = None
+        self._wake = asyncio.Event()
 
     @property
     def _entries(self) -> dict[str, IndexEntry]:
@@ -131,33 +157,40 @@ class RankingIndex:
     # --- reading --------------------------------------------------------------
 
     async def get(
-        self, boss_slug: str, *, max_age: float | None, metric: str = METRIC_DPS
+        self,
+        boss_slug: str,
+        *,
+        metric: str = METRIC_DPS,
+        on_demand: bool = False,
     ) -> BossRanking:
-        """The board's ranking, fetched if the copy held is older than ``max_age``.
+        """The board's ranking: the copy held, or a read waited for if none is.
 
-        ``None`` accepts any copy the index has. A fetch that fails falls back
-        to the copy held when it is not too old (``STALE_FALLBACK_MAX_AGE``);
-        with no usable copy the error propagates.
+        ``on_demand`` says someone is waiting on this one board: a copy last
+        checked over ``ON_DEMAND_AFTER_SECONDS`` ago is then re-read in the
+        background, so the next reader sees what changed. With no copy the
+        read's error propagates.
         """
 
         entry = self._held[metric].get(boss_slug)
-        if entry is not None and (
-            max_age is None or self._clock() - entry.loaded_at <= max_age
-        ):
-            return entry.ranking
-        try:
+        if entry is None:
             return await self._refresh(boss_slug, metric)
-        except ZmdLogsClientError:
-            if (
-                entry is not None
-                and self._clock() - entry.loaded_at <= STALE_FALLBACK_MAX_AGE_SECONDS
-            ):
-                self._logger.warning(
-                    "ZmdLogBot is serving a board ranking from the index after "
-                    "a refresh failure."
-                )
-                return entry.ranking
-            raise
+        if on_demand:
+            self._ask((boss_slug, metric), entry)
+        return entry.ranking
+
+    def _ask(self, key: Key, entry: IndexEntry) -> None:
+        """Queue a re-read for a reader, unless one is pending or pointless."""
+
+        now = self._clock()
+        if (
+            now - entry.loaded_at < ON_DEMAND_AFTER_SECONDS
+            or now < self._retry_at.get(key, -math.inf)
+            or key in self._urgent
+            or key in self._inflight
+        ):
+            return
+        self._urgent[key] = None
+        self._wake.set()
 
     def entry(self, boss_slug: str, metric: str = METRIC_DPS) -> IndexEntry | None:
         return self._held[metric].get(boss_slug)
@@ -196,7 +229,7 @@ class RankingIndex:
 
         return self.missing(METRIC_DPS)
 
-    # --- filling and refreshing ---------------------------------------------------
+    # --- filling ----------------------------------------------------------------
 
     async def ensure_filled(self, metric: str = METRIC_DPS) -> None:
         """Fill the index for ``metric`` if incomplete, sharing a fill in progress."""
@@ -230,66 +263,41 @@ class RankingIndex:
         if metric == METRIC_DPS or not self._slugs:
             cards = await self._fetch_boards()
             self._set_boards(cards)
-        held = self._held[metric]
-        await self._refresh_many(
-            [slug for slug in self._slugs if slug not in held], metric
-        )
-        self._fill_failures = (
-            0 if self.is_complete(metric) else self._fill_failures + 1
-        )
+        # A board whose read just failed is left to its retry: a page waiting
+        # on the whole index would otherwise read it again every time.
+        await self._read_many(self._first_reads(metric))
 
-    async def _refresh_many(self, slugs: list[str], metric: str) -> None:
+    def _first_reads(self, metric: str) -> list[Key]:
+        """Listed rankings of ``metric`` not held yet, once any retry has come."""
+
+        now = self._clock()
+        held = self._held[metric]
+        return [
+            (slug, metric)
+            for slug in self._slugs
+            if slug not in held
+            and self._retry_at.get((slug, metric), -math.inf) <= now
+        ]
+
+    # --- reading upstream ---------------------------------------------------------
+
+    async def _read_many(self, keys: list[Key]) -> None:
+        """Read in the background, a few at a time, until an outage pauses it."""
+
         semaphore = asyncio.Semaphore(FILL_CONCURRENCY)
-        failures = 0
 
-        async def one(slug: str) -> None:
-            nonlocal failures
+        async def one(key: Key) -> None:
             async with semaphore:
-                if failures >= FILL_ABORT_AFTER_FAILURES:
-                    return
-                if await self._refresh_quietly(slug, metric):
-                    failures = 0
-                else:
-                    failures += 1
+                if not self._paused():
+                    await self._read_quietly(key)
 
-        await asyncio.gather(*(one(slug) for slug in slugs))
+        await asyncio.gather(*(one(key) for key in keys))
 
-    async def _refresh(self, boss_slug: str, metric: str) -> BossRanking:
-        """Read one board from upstream, merging concurrent requests for it."""
+    async def _read_quietly(self, key: Key) -> None:
+        """A background read: log the first failure of a streak, never raise."""
 
-        key = (boss_slug, metric)
-        task = self._inflight.get(key)
-        if task is None:
-            task = asyncio.create_task(self._fetch_ranking(boss_slug, metric))
-            self._inflight[key] = task
-            task.add_done_callback(
-                lambda done, key=key: self._inflight.pop(key, None)
-            )
-        ranking = await asyncio.shield(task)
-        held = self._held[metric]
-        previous = held.get(boss_slug)
-        held[boss_slug] = IndexEntry(ranking, self._clock())
-        if previous is not None and self._on_refresh is not None:
-            try:
-                self._on_refresh(previous.ranking, ranking)
-            except Exception as exc:
-                self._logger.warning(
-                    "ZmdLogBot could not record board changes: %s",
-                    type(exc).__name__,
-                )
-        if key in self._failing:
-            self._failing.discard(key)
-            self._logger.info(
-                "ZmdLogBot ranking index reads %s again.", _board_label(key)
-            )
-        return ranking
-
-    async def _refresh_quietly(self, boss_slug: str, metric: str) -> bool:
-        """A background refresh: log the first failure of a streak, never raise."""
-
-        key = (boss_slug, metric)
         try:
-            await self._refresh(boss_slug, metric)
+            await self._refresh(*key)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -300,91 +308,277 @@ class RankingIndex:
                     _board_label(key),
                     type(exc).__name__,
                 )
+
+    async def _refresh(self, boss_slug: str, metric: str) -> BossRanking:
+        """Read one ranking from upstream, merging concurrent requests for it."""
+
+        key = (boss_slug, metric)
+        task = self._inflight.get(key)
+        if task is None:
+            task = asyncio.create_task(self._fetch_and_hold(key))
+            self._inflight[key] = task
+            task.add_done_callback(lambda done, key=key: self._read_done(key, done))
+        return await asyncio.shield(task)
+
+    def _read_done(self, key: Key, task: asyncio.Task[BossRanking]) -> None:
+        self._inflight.pop(key, None)
+        if not task.cancelled():
+            # Every reader may have stopped waiting; the failure was already
+            # accounted for, so it is not left for asyncio to report.
+            task.exception()
+
+    async def _fetch_and_hold(self, key: Key) -> BossRanking:
+        """One upstream read, and what it means for the schedule, settled once."""
+
+        slug, metric = key
+        try:
+            ranking = await self._fetch_ranking(slug, metric)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self._urgent.pop(key, None)
+            self._retry_at[key] = self._clock() + RETRY_SECONDS
+            self._note_failure()
+            raise
+        self._hold(key, ranking)
+        return ranking
+
+    def _hold(self, key: Key, ranking: BossRanking) -> None:
+        slug, metric = key
+        held = self._held[metric]
+        previous = held.get(slug)
+        held[slug] = IndexEntry(ranking, self._clock())
+        self._urgent.pop(key, None)
+        self._retry_at.pop(key, None)
+        self._note_success()
+        if previous is not None and self._on_refresh is not None:
+            try:
+                self._on_refresh(previous.ranking, ranking)
+            except Exception as exc:
+                self._logger.warning(
+                    "ZmdLogBot could not record board changes: %s",
+                    type(exc).__name__,
+                )
+        if metric == METRIC_DPS:
+            self._check_signal(slug)
+        if key in self._failing:
+            self._failing.discard(key)
+            self._logger.info(
+                "ZmdLogBot ranking index reads %s again.", _board_label(key)
+            )
+
+    def _note_failure(self) -> None:
+        self._failures_in_row += 1
+        now = self._clock()
+        if self._failures_in_row >= OUTAGE_AFTER_FAILURES and now >= self._resume_at:
+            self._outage_rounds += 1
+            self._resume_at = now + min(
+                OUTAGE_BACKOFF_BASE_SECONDS * 2**self._outage_rounds,
+                MAX_OUTAGE_BACKOFF_SECONDS,
+            )
+
+    def _note_success(self) -> None:
+        self._failures_in_row = 0
+        self._outage_rounds = 0
+        self._resume_at = -math.inf
+
+    def _paused(self) -> bool:
+        return self._clock() < self._resume_at
+
+    # --- the schedule -------------------------------------------------------------
+
+    async def run_due(self) -> None:
+        """Do everything due now: the signal, first reads, and paid re-reads.
+
+        This is the step the background loop repeats whenever ``next_wake``
+        comes or a reader asks for a board.
+        """
+
+        if self._clock() >= self._signal_at + SIGNAL_SECONDS:
+            await self._read_signal()
+        for metric in METRICS:
+            if self._paused():
+                return
+            # First reads take no token: a reader would wait for them anyway.
+            await self._read_many(self._first_reads(metric))
+        if self._paused():
+            return
+        now = self._clock()
+        paid = []
+        for key in self._wanted(now):
+            if not self._take_token(now):
+                break
+            paid.append(key)
+        await self._read_many(paid)
+
+    def next_wake(self) -> float:
+        """When ``run_due`` next has something to do, on the index's clock.
+
+        The earliest of the next signal, the next first read, and the next
+        re-read due with a token there to pay for it — the last two never
+        before an outage's pause ends. A board asked for wakes the loop
+        sooner.
+        """
+
+        now = self._clock()
+        work = [
+            self._retry_at.get((slug, metric), now)
+            for metric in METRICS
+            for slug in self._slugs
+            if slug not in self._held[metric] and (slug, metric) not in self._inflight
+        ]
+        due = min((self._due_at(key) for key in self._held_keys()), default=None)
+        if due is not None:
+            work.append(max(due, self._token_ready_at(now)))
+        wake = self._signal_at + SIGNAL_SECONDS
+        if work:
+            wake = min(wake, max(min(work), self._resume_at))
+        return wake
+
+    def _held_keys(self) -> list[Key]:
+        """Every listed ranking held and not being read, DPS boards first."""
+
+        return [
+            (slug, metric)
+            for metric in METRICS
+            for slug in self._slugs
+            if slug in self._held[metric] and (slug, metric) not in self._inflight
+        ]
+
+    def _due_at(self, key: Key) -> float:
+        """When a held ranking is next to be re-read.
+
+        After a failure, at its retry; asked for or signalled, at once;
+        otherwise once per pass.
+        """
+
+        retry = self._retry_at.get(key)
+        if retry is not None:
+            return retry
+        if key in self._urgent:
+            return -math.inf
+        slug, metric = key
+        return self._held[metric][slug].loaded_at + len(self._slugs) * self._pace
+
+    def _wanted(self, now: float) -> list[Key]:
+        """Held rankings due now: asked-for ones as they came, then oldest due."""
+
+        urgent = {key: order for order, key in enumerate(self._urgent)}
+        ready = [
+            (key not in urgent, urgent.get(key, 0), due, position, key)
+            for position, key in enumerate(self._held_keys())
+            if (due := self._due_at(key)) <= now
+        ]
+        return [key for *_, key in sorted(ready)]
+
+    def _tokens_now(self, now: float) -> float:
+        return min(
+            TOKEN_CAPACITY, self._tokens + (now - self._tokens_at) / TOKEN_SECONDS
+        )
+
+    def _take_token(self, now: float) -> bool:
+        tokens = self._tokens_now(now)
+        if tokens < 1 - _EPSILON:
             return False
+        self._tokens, self._tokens_at = tokens - 1, now
         return True
 
-    async def apply_signal(self, cards: tuple[HotBossCard, ...]) -> None:
-        """Re-read every board whose top runs differ from the copy held.
+    def _token_ready_at(self, now: float) -> float:
+        tokens = self._tokens_now(now)
+        if tokens >= 1 - _EPSILON:
+            return now
+        return now + (1 - tokens) * TOKEN_SECONDS
+
+    # --- the top-three signal -----------------------------------------------------
+
+    async def _read_signal(self) -> None:
+        """One hot-bosses read; a failing streak is logged once, not per minute."""
+
+        self._signal_at = self._clock()
+        try:
+            cards = await self._fetch_boards()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if not self._signal_failing:
+                self._signal_failing = True
+                self._logger.warning(
+                    "ZmdLogBot ranking index could not read the board list: %s",
+                    type(exc).__name__,
+                )
+            return
+        if self._signal_failing:
+            self._signal_failing = False
+            self._logger.info("ZmdLogBot ranking index reads the board list again.")
+        self._apply_signal(cards)
+
+    def _apply_signal(self, cards: tuple[HotBossCard, ...]) -> None:
+        """Queue every held board whose top runs differ from its card.
 
         A new record entering the top three is what people ask about first,
-        and this catches it at the cost of the one hot-bosses request the
-        caller already made; a record landing lower waits for the round-robin.
-        The card reflects the DPS board; a changed board's rDPS ranking is
-        re-read along with it, since a new record may have entered both.
+        and this catches it at the cost of the one hot-bosses request just
+        made; a record landing lower waits for the schedule. The card reflects
+        the DPS board; a changed board's rDPS ranking is re-read along with
+        it, since a new record may have entered both. A board not held yet is
+        left to the first reads.
         """
 
         self._set_boards(cards)
-        tops = {
-            card.boss_slug: tuple(
-                run.battle_id for run in card.top_speed_runs[:_TOP_SIGNAL_RUNS]
-            )
-            for card in cards
-        }
-        changed = []
         for card in cards:
-            if not self._top_changed(card):
-                self._disagreeing.pop(card.boss_slug, None)
-            elif self._disagreeing.get(card.boss_slug) != tops[card.boss_slug]:
-                changed.append(card.boss_slug)
-        if not changed:
-            return
-        await self._refresh_many(changed, METRIC_DPS)
-        for metric in METRICS:
-            if metric == METRIC_DPS:
+            slug = card.boss_slug
+            if slug not in self._entries:
                 continue
-            held = self._held[metric]
-            await self._refresh_many(
-                [slug for slug in changed if slug in held], metric
+            top = _top_ids(card)
+            if not self._top_changed(slug, top):
+                self._disagreeing.pop(slug, None)
+                self._signal_tops.pop(slug, None)
+            elif self._disagreeing.get(slug) != top:
+                self._signal_tops[slug] = top
+                for metric in METRICS:
+                    if slug in self._held[metric]:
+                        self._urgent.setdefault((slug, metric), None)
+
+    def _check_signal(self, slug: str) -> None:
+        """After a signalled re-read, note a card the ranking still disagrees with."""
+
+        top = self._signal_tops.pop(slug, None)
+        if top is None or not self._top_changed(slug, top):
+            return
+        # Card and ranking still disagree after a fresh read (a server-side
+        # cache lag): wait for the card to change rather than re-reading this
+        # board every signal, unlogged, forever.
+        if slug not in self._disagreeing:
+            self._logger.warning(
+                "ZmdLogBot ranking index: the board list and the ranking of %s "
+                "disagree; waiting for the list to change.",
+                slug,
             )
-        by_slug = {card.boss_slug: card for card in cards}
-        for slug in changed:
-            if slug in self._entries and self._top_changed(by_slug[slug]):
-                # Card and ranking still disagree after a fresh read (a
-                # server-side cache lag): wait for the card to change rather
-                # than re-reading this board every signal, unlogged, forever.
-                if slug not in self._disagreeing:
-                    self._logger.warning(
-                        "ZmdLogBot ranking index: the board list and the "
-                        "ranking of %s disagree; waiting for the list to change.",
-                        slug,
-                    )
-                self._disagreeing[slug] = tops[slug]
-
-    async def refresh_oldest(self) -> None:
-        """Re-read the oldest board of each metric, or one not held at all."""
-
-        if not self._slugs:
-            return
-        for metric in METRICS:
-            held = self._held[metric]
-            missing = [slug for slug in self._slugs if slug not in held]
-            if missing:
-                await self._refresh_quietly(missing[0], metric)
-                continue
-            oldest = min(self._slugs, key=lambda slug: held[slug].loaded_at)
-            await self._refresh_quietly(oldest, metric)
+        self._disagreeing[slug] = top
 
     def _set_boards(self, cards: tuple[HotBossCard, ...]) -> None:
         self._slugs = tuple(card.boss_slug for card in cards)
+        listed = set(self._slugs)
         for held in self._held.values():
             for slug in list(held):
-                if slug not in self._slugs:
+                if slug not in listed:
                     # A board that left the index is not queryable any more;
                     # its ranking would only ever be memory.
                     del held[slug]
+        for pending in (self._urgent, self._retry_at):
+            for key in [key for key in pending if key[0] not in listed]:
+                del pending[key]
 
-    def _top_changed(self, card: HotBossCard) -> bool:
-        """Does the card's top three disagree with the DPS ranking held?
+    def _top_changed(self, slug: str, top: tuple[str, ...]) -> bool:
+        """Do a card's top runs disagree with the DPS ranking held?
 
         The card lists min(3, records) runs and the ranking every record, so
         the first ``len(top)`` held ids must match, and a card shorter than
         three with more rows held means records were deleted.
         """
 
-        entry = self._entries.get(card.boss_slug)
+        entry = self._entries.get(slug)
         if entry is None:
             return True
-        top = tuple(run.battle_id for run in card.top_speed_runs[:_TOP_SIGNAL_RUNS])
         held = tuple(row.battle_id for row in entry.ranking.rows[:_TOP_SIGNAL_RUNS])
         if len(top) < _TOP_SIGNAL_RUNS and len(held) > len(top):
             return True
@@ -423,16 +617,6 @@ class RankingIndex:
         self._fill_tasks.clear()
         self._inflight.clear()
 
-    def _delay(self) -> float:
-        """Seconds to the next iteration: the pace, backed off while fills fail."""
-
-        if self._all_complete() or self._fill_failures == 0:
-            return self._pace
-        return min(self._pace * 2**self._fill_failures, MAX_FILL_BACKOFF_SECONDS)
-
-    def _all_complete(self) -> bool:
-        return all(self.is_complete(metric) for metric in METRICS)
-
     async def _loop(self) -> None:
         for metric in METRICS:
             try:
@@ -441,24 +625,16 @@ class RankingIndex:
                 self._logger.warning(
                     "ZmdLogBot ranking index could not fill: %s", type(exc).__name__
                 )
-        next_signal = self._clock() + self._signal
         while True:
-            await asyncio.sleep(self._delay())
+            delay = self.next_wake() - self._clock()
+            if delay > 0:
+                try:
+                    await asyncio.wait_for(self._wake.wait(), delay)
+                except TimeoutError:
+                    pass
+            self._wake.clear()
             try:
-                # The signal and the round-robin are independent budgets:
-                # one hot-bosses read a minute, and one board read per
-                # metric per pace.
-                if self._clock() >= next_signal:
-                    next_signal = self._clock() + self._signal
-                    await self._read_signal()
-                incomplete = next(
-                    (metric for metric in METRICS if not self.is_complete(metric)),
-                    None,
-                )
-                if incomplete is not None:
-                    await self.ensure_filled(incomplete)
-                else:
-                    await self.refresh_oldest()
+                await self.run_due()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -468,30 +644,15 @@ class RankingIndex:
                         "ZmdLogBot ranking index cycle failed: %s",
                         type(exc).__name__,
                     )
+                await asyncio.sleep(_CYCLE_RETRY_SECONDS)
             else:
                 if self._cycle_failing:
                     self._cycle_failing = False
                     self._logger.info("ZmdLogBot ranking index cycles again.")
 
-    async def _read_signal(self) -> None:
-        """One hot-bosses read; a failing streak is logged once, not per minute."""
 
-        try:
-            cards = await self._fetch_boards()
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            if not self._signal_failing:
-                self._signal_failing = True
-                self._logger.warning(
-                    "ZmdLogBot ranking index could not read the board list: %s",
-                    type(exc).__name__,
-                )
-            return
-        if self._signal_failing:
-            self._signal_failing = False
-            self._logger.info("ZmdLogBot ranking index reads the board list again.")
-        await self.apply_signal(cards)
+def _top_ids(card: HotBossCard) -> tuple[str, ...]:
+    return tuple(run.battle_id for run in card.top_speed_runs[:_TOP_SIGNAL_RUNS])
 
 
 def _board_label(key: tuple[str, str]) -> str:

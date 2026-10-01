@@ -175,14 +175,28 @@ class EventLogTests(unittest.TestCase):
 
         async def fetch_boards():
             cards = hot_bosses_payload()
+            # Each card agrees with the ranking first read: the signal
+            # re-reads nothing, so the one re-read is the board asked for.
+            cards[0]["topSpeedRuns"] = [
+                {
+                    "battleId": row.battle_id,
+                    "durationMs": row.duration_ms,
+                    "uploaderNickname": row.account_display_name,
+                    "characterName": row.character_name,
+                }
+                for row in board().rows[:3]
+            ]
             second = copy.deepcopy(cards[0])
             cards[0]["bossSlug"], second["bossSlug"] = "a", "b"
             return parse_hot_bosses([cards[0], second])
 
+        now = [0.0]
         index = RankingIndex(
             fetch_ranking=fetch_ranking,
             fetch_boards=fetch_boards,
             logger=logging.getLogger("t"),
+            clock=lambda: now[0],
+            pace_seconds=600,
             on_refresh=lambda old, new: seen.append(
                 (old.rows[0].battle_id, new.rows[0].battle_id)
             ),
@@ -190,8 +204,11 @@ class EventLogTests(unittest.TestCase):
 
         async def scenario():
             await index.ensure_filled()  # first reads: nothing to compare
+            await index.ensure_filled("rdps")
             rankings["a"] = board(extra_first=True)
-            await index.get("a", max_age=0)
+            now[0] += 180
+            await index.get("a", on_demand=True)
+            await index.run_due()
 
         run(scenario())
 

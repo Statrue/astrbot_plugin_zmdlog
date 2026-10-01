@@ -48,7 +48,6 @@ class SettingsTests(unittest.TestCase):
                 "render_timeout_ms": 1_000,
                 "fallback_to_astrbot_renderer": 0,
                 "alias_file_path": "custom.json",
-                "ranking_cache_ttl_seconds": 30,
                 "battle_link_dedupe_seconds": 12.5,
                 "fuzzy_match_threshold": 1,
                 "ambiguity_score_gap": 0,
@@ -68,13 +67,12 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.render_timeout_ms, 1_000)
         self.assertFalse(settings.fallback_to_astrbot_renderer)
         self.assertEqual(settings.alias_file_path, "custom.json")
-        self.assertEqual(settings.ranking_cache_ttl_seconds, 30.0)
-        self.assertIs(type(settings.ranking_cache_ttl_seconds), float)
         self.assertEqual(settings.battle_link_dedupe_seconds, 12.5)
         self.assertEqual(settings.fuzzy_match_threshold, 1.0)
         self.assertEqual(settings.ambiguity_score_gap, 0.0)
         self.assertFalse(settings.rank_watch_enabled)
         self.assertEqual(settings.rank_watch_interval_seconds, 600.0)
+        self.assertIs(type(settings.rank_watch_interval_seconds), float)
         self.assertEqual(settings.rank_watch_rank_threshold, 3)
         self.assertTrue(settings.disable_qq_official_buttons)
         self.assertTrue(settings.qq_official_callbacks)
@@ -86,7 +84,6 @@ class SettingsTests(unittest.TestCase):
             "request_timeout_ms": "10000",
             "render_timeout_ms": 500,
             "alias_file_path": "",
-            "ranking_cache_ttl_seconds": 0,
             "battle_link_dedupe_seconds": "300",
             "fuzzy_match_threshold": 65,
             "ambiguity_score_gap": -0.1,
@@ -100,6 +97,26 @@ class SettingsTests(unittest.TestCase):
                 self.assertEqual(getattr(settings, name), getattr(defaults, name))
                 self.assertEqual(len(warnings), 1)
                 self.assertIn(name, warnings[0])
+
+    def test_keys_a_release_removed_are_ignored_without_a_word(self) -> None:
+        # An upgraded plugin keeps the old config file; what it no longer
+        # reads must neither fail the load nor warn on every start.
+        removed = {
+            "ranking_cache_ttl_seconds": 0,
+            "ranking_index_enabled": False,
+            "character_stats_cache_ttl_seconds": True,
+            "account_cache_ttl_seconds": -1,
+            "battle_cache_ttl_seconds": None,
+        }
+        warnings: list[str] = []
+
+        settings = load_settings(removed, warn=warnings.append)
+
+        self.assertEqual(settings, PluginSettings())
+        self.assertEqual(warnings, [])
+        for name in removed:
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(settings, name))
 
     def test_rank_watch_interval_is_raised_to_the_minimum(self) -> None:
         warnings: list[str] = []

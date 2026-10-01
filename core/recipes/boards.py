@@ -148,7 +148,7 @@ async def prepare_ranking(
         # sits there and who counts as its main C there. The copy the index
         # holds is enough; an unreadable one only costs the cross-reference.
         try:
-            dps = await data.get_boss_ranking(ranking.boss_slug, max_age=None)
+            dps = await data.get_boss_ranking(ranking.boss_slug)
         except ZmdLogsClientError:
             dps = None
         if dps is not None:

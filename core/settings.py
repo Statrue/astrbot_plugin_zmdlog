@@ -41,7 +41,6 @@ class PluginSettings:
     render_timeout_ms: int = 30_000
     fallback_to_astrbot_renderer: bool = True
     alias_file_path: str = "aliases.json"
-    ranking_cache_ttl_seconds: float = 60.0
     auto_expand_battle_links: bool = False
     battle_link_dedupe_seconds: float = 300.0
     fuzzy_match_threshold: float = 0.65
@@ -49,7 +48,6 @@ class PluginSettings:
     rank_watch_enabled: bool = True
     rank_watch_interval_seconds: float = 900.0
     rank_watch_rank_threshold: int = DEFAULT_RANK_THRESHOLD
-    ranking_index_enabled: bool = True
     ranking_index_pace_seconds: float = 30.0
     bindings_enabled: bool = True
     group_board_max_accounts: int = 30
@@ -103,7 +101,6 @@ def load_settings(
         ),
         fallback_to_astrbot_renderer=reader.flag("fallback_to_astrbot_renderer"),
         alias_file_path=reader.text("alias_file_path"),
-        ranking_cache_ttl_seconds=reader.positive_number("ranking_cache_ttl_seconds"),
         auto_expand_battle_links=reader.flag("auto_expand_battle_links"),
         battle_link_dedupe_seconds=reader.positive_number(
             "battle_link_dedupe_seconds"
@@ -111,7 +108,6 @@ def load_settings(
         fuzzy_match_threshold=reader.ratio("fuzzy_match_threshold"),
         ambiguity_score_gap=reader.ratio("ambiguity_score_gap"),
         rank_watch_enabled=reader.flag("rank_watch_enabled"),
-        ranking_index_enabled=reader.flag("ranking_index_enabled"),
         ranking_index_pace_seconds=pace,
         rank_watch_interval_seconds=interval,
         rank_watch_rank_threshold=max(

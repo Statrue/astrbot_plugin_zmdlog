@@ -1178,7 +1178,11 @@ class QueryService:
                 ),
             )
 
-        ranking = await self._data.get_boss_ranking(boss_slug, metric=pending.metric)
+        # Every view below is a question about this one board, so a copy
+        # held a while is re-read for whoever asks next.
+        ranking = await self._data.get_boss_ranking(
+            boss_slug, metric=pending.metric, on_demand=True
+        )
         board = PageTarget(
             PageSubject.BOARD,
             boss_slug,

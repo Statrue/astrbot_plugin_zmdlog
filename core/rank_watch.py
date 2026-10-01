@@ -807,9 +807,7 @@ class RankWatcher:
         described: list[RankDrop] = []
         for drop in drops[:MAX_DROPS_PER_NOTICE]:
             try:
-                ranking = await self._data.get_boss_ranking(
-                    drop.boss_slug, max_age=None
-                )
+                ranking = await self._data.get_boss_ranking(drop.boss_slug)
             except ZmdLogsClientError:
                 described.append(drop)
                 continue

@@ -192,7 +192,9 @@ class ToolService:
             choice, cards = target
             answer = await self._dungeon_overview(keyword, choice, cards)
             return answer.noted(_overview_metric_note(wanted_metric))
-        ranking = await self._data.get_boss_ranking(target, metric=wanted_metric)
+        ranking = await self._data.get_boss_ranking(
+            target, metric=wanted_metric, on_demand=True
+        )
         limit = max(1, min(limit, facts.MAX_ROW_LIMIT))
         recipe = await prepare_ranking(
             self._data,

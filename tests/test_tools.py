@@ -116,6 +116,8 @@ class FakeData:
         self.account = account
         self.ranking_index = FakeIndex(ranking, rdps_ranking)
         self.stats_calls: list[tuple] = []
+        # The ``on_demand`` of every board ranking read.
+        self.ranking_reads: list[bool] = []
 
     async def get_character_statistics(
         self, slug, *, time_range, potential, metric="dps"
@@ -128,7 +130,8 @@ class FakeData:
     async def list_hot_bosses(self):
         return self.cards
 
-    async def get_boss_ranking(self, slug, *, max_age=None, metric="dps"):
+    async def get_boss_ranking(self, slug, *, metric="dps", on_demand=False):
+        self.ranking_reads.append(on_demand)
         if metric == "rdps":
             if self.rdps_ranking is not None:
                 return self.rdps_ranking
@@ -262,6 +265,11 @@ class ToolServiceTests(unittest.TestCase):
         self.assertIn("battleId", answer.text)
         # Team counts ride along instead of being a tool of their own.
         self.assertIn("常见阵容", answer.text)
+
+    def test_the_board_asked_about_is_re_read_for_the_next_question(self) -> None:
+        run(self.service.board("三位一体"))
+
+        self.assertEqual(self.data.ranking_reads, [True])
 
     def test_a_character_filter_also_counts_that_characters_partners(self) -> None:
         name = self.ranking.rows[0].roster_entries[0].character_name

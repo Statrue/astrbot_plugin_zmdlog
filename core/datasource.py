@@ -33,7 +33,12 @@ from .models import (
     parse_hot_bosses,
 )
 from .persistence import JsonStore, load_json, save_json
-from .ranking_index import RankingIndex, account_rankings, rows_by_battle
+from .ranking_index import (
+    SIGNAL_SECONDS,
+    RankingIndex,
+    account_rankings,
+    rows_by_battle,
+)
 from .settings import PluginSettings
 
 HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
@@ -42,8 +47,10 @@ HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
 CHARACTER_STATS_CACHE_TTL_SECONDS = 120.0
 ACCOUNT_CACHE_TTL_SECONDS = 60.0
 BATTLE_CACHE_TTL_SECONDS = 300.0
-# ``get_boss_ranking``'s default, distinct from ``None`` (whatever is held).
-_CONFIGURED_AGE = object()
+# The board list the index's signal reads stays fresh until the next signal
+# has landed, its own latency included, so a keyword query never pays the
+# cold read while the index runs.
+HOT_BOSSES_FRESH_SECONDS = SIGNAL_SECONDS + 60.0
 RECORD_EVENTS_FILE = "record-events.json"
 _HOT_BOSSES_KEY = "all_board_top3"
 # A parsed battle carries its damage points and buff spans and measures
@@ -94,12 +101,10 @@ class ZmdLogsDataSource:
             None if data_dir is None else data_dir / HOT_BOSSES_SNAPSHOT
         )
         self._logger = logger
-        ranking_ttl = settings.ranking_cache_ttl_seconds
         self.hot_boss_cache = AsyncTTLCache[str, tuple[HotBossCard, ...]](
-            ranking_ttl,
-            stale_ttl_seconds=ranking_ttl,
+            HOT_BOSSES_FRESH_SECONDS,
+            stale_ttl_seconds=HOT_BOSSES_FRESH_SECONDS,
         )
-        self._ranking_max_age = ranking_ttl
         self.account_cache = AsyncTTLCache[str, PublicUserRankings](
             ACCOUNT_CACHE_TTL_SECONDS,
         )
@@ -160,7 +165,6 @@ class ZmdLogsDataSource:
             logger=logger,
             on_refresh=self.event_log.record,
         )
-        self._ranking_index_enabled = settings.ranking_index_enabled
         self._caches = (
             self.hot_boss_cache,
             self.account_cache,
@@ -203,17 +207,7 @@ class ZmdLogsDataSource:
         """
 
         cards = await self._fetch_hot_bosses_upstream()
-        # Fresh until the index reads again (plus a margin), whatever the query
-        # TTL is: a shorter freshness would leave a gap before the next read
-        # in which a keyword query pays the cold read after all.
-        await self.hot_boss_cache.put(
-            _HOT_BOSSES_KEY,
-            cards,
-            ttl_seconds=max(
-                self._ranking_max_age,
-                self.ranking_index.signal_period_seconds + 5.0,
-            ),
-        )
+        await self.hot_boss_cache.put(_HOT_BOSSES_KEY, cards)
         return cards
 
     async def _fetch_hot_bosses_upstream(self) -> tuple[HotBossCard, ...]:
@@ -406,19 +400,23 @@ class ZmdLogsDataSource:
         self,
         boss_slug: str,
         *,
-        max_age: float | None | object = _CONFIGURED_AGE,
         metric: str = METRIC_DPS,
+        on_demand: bool = False,
     ) -> BossRanking:
-        """One board's ranking, no older than ``max_age`` seconds.
+        """One board's ranking, the copy the index holds.
 
-        The default is the configured ranking cache TTL, which is what a
-        board page expects; ``None`` takes whatever the index holds, with no
-        request — the rank watch reads the copy its ranks came from.
-        ``metric`` picks the DPS or the rDPS board; the index holds both.
+        Upstream is asked, and waited for, only when the index holds none.
+        ``on_demand`` is for a query about this one board — the board page,
+        the group board, the board tool: a copy not checked for two minutes
+        is then re-read in the background, so asking again shows what
+        changed. Every other reader takes the copy as it is; the rank watch
+        reads the copy its ranks came from. ``metric`` picks the DPS or the
+        rDPS board; the index holds both.
         """
 
-        age = self._ranking_max_age if max_age is _CONFIGURED_AGE else max_age
-        return await self.ranking_index.get(boss_slug, max_age=age, metric=metric)
+        return await self.ranking_index.get(
+            boss_slug, metric=metric, on_demand=on_demand
+        )
 
     async def get_account_rankings(self, account_id: str) -> PublicUserRankings:
         """The account's rank on every board, from the index when it is complete.
@@ -439,10 +437,13 @@ class ZmdLogsDataSource:
         return await self.client.get_boss_rankings(boss_slug, metric=metric)
 
     def start(self) -> None:
-        """Start the background ranking index when it is enabled."""
+        """Start the background ranking index.
 
-        if self._ranking_index_enabled:
-            self.ranking_index.start()
+        Always: with every board read off the index, a copy nobody refreshed
+        would be served as it was for as long as the process runs.
+        """
+
+        self.ranking_index.start()
 
     async def get_character_statistics(
         self,

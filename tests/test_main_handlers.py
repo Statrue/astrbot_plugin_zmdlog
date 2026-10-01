@@ -2075,7 +2075,10 @@ class HandlerTests(unittest.TestCase):
             drawn.append((rows, kwargs))
             return capture("/tmp/group-board.png")
 
+        reads: list[dict] = []
+
         async def ranking_read(boss_slug, **kwargs):
+            reads.append(kwargs)
             return ranking
 
         self.plugin.client.get_binding_code_account = lookup
@@ -2107,6 +2110,9 @@ class HandlerTests(unittest.TestCase):
         self.assertIn("2. 公开账号3", reply)
         (kind, result), = self._zmdlog("zmdlog 群榜 三位一体 --top 5")
         self.assertEqual((kind, result), ("image", "/tmp/group-board.png"))
+        # A question about one board has its copy re-read for the next one.
+        self.assertTrue(reads)
+        self.assertTrue(all(read.get("on_demand") for read in reads))
         rows, kwargs = drawn[0]
         self.assertEqual([row.account_id for row in rows], [uploader.account_id])
         self.assertEqual(kwargs["display_limit"], 5)

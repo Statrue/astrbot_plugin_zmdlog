@@ -1,6 +1,7 @@
 import asyncio
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from core.models import (
     parse_hot_bosses,
 )
 from core.persistence import JsonStore, load_json
-from core.ranking_index import IndexEntry
+from core.ranking_index import SIGNAL_SECONDS, IndexEntry
 from core.settings import PluginSettings
 from tests.helpers import (
     CapturingLogger,
@@ -32,6 +33,7 @@ class FakeClient:
         self.payload = payload
         self.fail = fail
         self.calls = 0
+        self.ranking_reads = []
 
     async def list_hot_bosses_with_payload(self):
         self.calls += 1
@@ -56,6 +58,13 @@ class FakeClient:
     suit_reads = 0
     suits = ({"suitID": "suit_phy01", "name": "点剑"},)
 
+    ranking_reads: list[tuple[str, str]]
+
+    async def get_boss_rankings(self, boss_slug, *, metric="dps"):
+        self.ranking_reads.append((boss_slug, metric))
+        payload = dict(ranking_payload_with_rows(), bossSlug=boss_slug, metric=metric)
+        return parse_boss_ranking(payload, metric=metric)
+
     async def get_equip_catalog(self):
         self.suit_reads += 1
         if self.fail:
@@ -77,7 +86,7 @@ class DataSourceTests(unittest.TestCase):
     def _source(self, client, *, data_dir=None) -> ZmdLogsDataSource:
         return ZmdLogsDataSource(
             client,
-            settings=PluginSettings(ranking_cache_ttl_seconds=60),
+            settings=PluginSettings(ranking_index_pace_seconds=600),
             data_dir=self.root if data_dir is None else data_dir,
             logger=self.logger,
         )
@@ -276,19 +285,39 @@ class AccountRankingsSourceTests(DataSourceTests):
         self.assertEqual(derived.rankings[0].rank, 1)
         self.assertEqual(client.account_reads, 0)
 
-    def test_any_age_reads_the_held_copy_without_a_request(self) -> None:
+    def _holding(self, source, ranking) -> None:
+        """The index holds both of the board's rankings, read three minutes ago."""
+
+        index = source.ranking_index
+        index._slugs = (ranking.boss_slug,)
+        read_at = time.monotonic() - 180
+        index._entries[ranking.boss_slug] = IndexEntry(ranking, read_at)
+        index._held["rdps"][ranking.boss_slug] = IndexEntry(ranking, read_at)
+
+    def test_a_board_query_gets_the_held_copy_and_a_re_read_after(self) -> None:
         client = FakeClient()
         source = self._source(client)
         ranking = parse_boss_ranking(ranking_payload_with_rows())
-        index = source.ranking_index
-        index._slugs = (ranking.boss_slug,)
-        # Held for longer than the 60 s TTL: the default would refresh it.
-        index._entries[ranking.boss_slug] = IndexEntry(ranking, 0.0)
+        self._holding(source, ranking)
 
-        held = run(source.get_boss_ranking(ranking.boss_slug, max_age=None))
+        held = run(source.get_boss_ranking(ranking.boss_slug, on_demand=True))
 
         self.assertIs(held, ranking)
-        self.assertEqual(index.entry(ranking.boss_slug).loaded_at, 0.0)
+        self.assertEqual(client.ranking_reads, [])
+        run(source.ranking_index.run_due())
+        self.assertEqual(client.ranking_reads, [(ranking.boss_slug, "dps")])
+
+    def test_any_other_reader_gets_the_held_copy_and_nothing_more(self) -> None:
+        client = FakeClient()
+        source = self._source(client)
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        self._holding(source, ranking)
+
+        held = run(source.get_boss_ranking(ranking.boss_slug))
+        run(source.ranking_index.run_due())
+
+        self.assertIs(held, ranking)
+        self.assertEqual(client.ranking_reads, [])
 
     def test_an_account_absent_from_the_index_falls_back_to_the_endpoint(self) -> None:
         client = FakeClient()
@@ -309,6 +338,19 @@ class HotBossesWarmingTests(DataSourceTests):
         source = self._source(client)
 
         run(source.refresh_hot_bosses())
+        run(source.list_hot_bosses())
+
+        self.assertEqual(client.calls, 1)
+
+    def test_the_list_stays_fresh_until_the_next_signal_has_landed(self) -> None:
+        client = FakeClient(hot_bosses_payload())
+        source = self._source(client)
+        now = [100.0]
+        source.hot_boss_cache._clock = lambda: now[0]
+
+        run(source.refresh_hot_bosses())
+        # The next signal is due a period later, and its read takes a while.
+        now[0] += SIGNAL_SECONDS + 30
         run(source.list_hot_bosses())
 
         self.assertEqual(client.calls, 1)

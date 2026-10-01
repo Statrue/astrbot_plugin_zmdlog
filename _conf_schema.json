@@ -33,11 +33,6 @@
     "default": "aliases.json",
     "hint": "首次启动时会把插件自带的 aliases.json 复制到 data/plugin_data/astrbot_plugin_zmdlog/ 下；之后用 /zmdlog 别名 添加|删除 在线维护即可，无需改文件。"
   },
-  "ranking_cache_ttl_seconds": {
-    "description": "榜单缓存时间（秒）",
-    "type": "int",
-    "default": 60
-  },
   "auto_expand_battle_links": {
     "description": "在群聊中自动展开 ZMDLogs 战报链接",
     "type": "bool",
@@ -77,17 +72,11 @@
     "default": 10,
     "hint": "例如填 10 时，从第 3 掉到第 5 会通报，从第 87 掉到第 90 不会。"
   },
-  "ranking_index_enabled": {
-    "description": "后台常驻全部榜单排名（榜单索引）",
-    "type": "bool",
-    "default": true,
-    "hint": "启动后把每个榜的排名读进内存（约 5MB），之后按下面的节奏轮流重读，并每分钟核对一次各榜前三名。榜单查询、角色排名、名次通报都从索引读，几乎不再等上游。关闭后一切按需读取，角色排名会慢十几秒。"
-  },
   "ranking_index_pace_seconds": {
     "description": "榜单索引重读节奏（秒/榜）",
     "type": "int",
     "default": 30,
-    "hint": "每隔这么多秒重读一个榜，49 个榜一圈约 16 分钟；前三名有变化的榜不等轮到就重读。最低 5 秒。"
+    "hint": "每份排名（每个榜的 DPS 与 rDPS 各一份）每隔「榜数 × 这个值」秒重读一次，49 个榜、默认 30 秒时一圈约 25 分钟；后台重读平均每分钟最多 3 次，一圈实际约 33 分钟。前三名有变化的榜、有人查的榜不等轮到就重读。最低 5 秒。"
   },
   "bindings_enabled": {
     "description": "开启账号绑定（绑定 / 我的 / 群榜）",
