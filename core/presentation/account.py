@@ -26,8 +26,8 @@ class AccountRankingView:
     battle_id: str
     # The record's main C when the ranking index holds its row, else "".
     character_name: str
-    # False for a board the current board list no longer carries (retired
-    # content): its main C is unknown, and the page says why.
+    # False for a 未收录榜单, a board outside 全部榜单: the index never reads
+    # it, so its main C is unknown, and the page says why.
     board_listed: bool
     roster: tuple[RosterEntryView, ...]
     contract_score: str | None
@@ -43,6 +43,9 @@ class AccountPage:
     best_percentile: str
     average_percentile: str
     rows: tuple[AccountRankingView, ...]
+    # Some row is a 未收录榜单, which the legend then explains; only a page
+    # drawn from the endpoint has one, since the index reads 全部榜单 alone.
+    has_unlisted_boards: bool
 
 
 def build_account_page(
@@ -62,8 +65,9 @@ def build_account_page(
     the index holds it (``rows_by_battle``), whose roster also stands in for
     a record that arrives without one. Either way the rows draw the same
     roster component as every board page; with neither, initials and names.
-    When ``listed_boards`` (the slugs of a complete index) is given, a board
-    outside it is marked as retired rather than merely unread.
+    When ``listed_boards`` (全部榜单's slugs) is given, a board outside it
+    is marked 未收录榜单 rather than left with an unknown main C — never as
+    retired, which nothing upstream can tell.
     """
 
     held = rows_by_battle or {}
@@ -136,4 +140,5 @@ def build_account_page(
         best_percentile=best_percentile,
         average_percentile=average_percentile,
         rows=tuple(views),
+        has_unlisted_boards=any(not view.board_listed for view in views),
     )

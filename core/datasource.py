@@ -417,9 +417,10 @@ class ZmdLogsDataSource:
     async def get_account_rankings(self, account_id: str) -> PublicUserRankings:
         """The account's rank on every board, from the index when it is complete.
 
-        This is what the rank watch polls: a whole watch list costs nothing
-        once the index is filled. The endpoint answers when the index is not
-        complete yet or holds no row for the account.
+        This is what the rank watch polls and the account page draws: a whole
+        watch list costs nothing once the index is filled. The endpoint
+        answers when the index is not complete yet or holds no row for the
+        account.
         """
 
         if self.ranking_index.complete:
@@ -544,26 +545,38 @@ class ZmdLogsDataSource:
             name: entry.profession for name, entry in types.items() if entry.profession
         }
 
-    async def index_rows_for(
-        self, battle_ids: Iterable[str]
-    ) -> tuple[dict[str, BossRankingRow], frozenset[str] | None]:
-        """The held ranking rows of some battles, and the boards the index lists.
+    async def account_rankings_for_page(
+        self, account_id: str
+    ) -> tuple[
+        PublicUserRankings, dict[str, BossRankingRow], frozenset[str] | None
+    ]:
+        """The account page's records, the index rows of them, and 全部榜单.
 
-        Waits for a fill in progress (a cold boot), never for a failed one:
-        when the board list cannot be read the page draws names and initials
-        instead of failing. The second value is the set of board slugs the
-        index knows, ``None`` while it is still incomplete — with it a
-        caller can tell a retired board from one not read yet.
+        The records are :meth:`get_account_rankings`'s: read off the index
+        once it is complete and holds the account, which takes no request
+        where ``users/{id}/rankings`` took 0.6–5 s upstream (#27). A
+        half-filled index would drop boards without a word, so until it is
+        complete the endpoint answers, as it does for an account seen only
+        on boards outside 全部榜单, a first upload the index has not re-read
+        yet, or an id that does not exist — asked before the fill is waited
+        for, so a wrong id or an outage answers at once on a cold boot.
+
+        Then it waits for a fill in progress, never for a failed one, for the
+        index's rows of the same battles: the endpoint carries no main C.
+        The slugs, ``None`` when the board list could not be read, tell such
+        a board apart from one not read yet.
         """
 
         index = self.ranking_index
+        account = await self.get_account_rankings(account_id)
         try:
             await index.wait_filled()
         except ZmdLogsClientError:
             pass
-        rows = rows_by_battle(index.entries(), battle_ids)
-        listed = frozenset(index.slugs) if index.complete else None
-        return rows, listed
+        rows = rows_by_battle(
+            index.entries(), (row.battle_id for row in account.rankings)
+        )
+        return account, rows, frozenset(index.slugs) or None
 
     async def get_public_user_rankings(self, account_id: str) -> PublicUserRankings:
         result = await self.account_cache.get_or_load(

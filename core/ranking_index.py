@@ -515,10 +515,11 @@ def account_rankings(
 ) -> PublicUserRankings | None:
     """One account's best record on every board, read off the index.
 
-    The same answer as ``users/{id}/rankings`` — a board ranking lists every
-    record, so the account's rank there is the rank of its best row — but
-    for a whole watch list it costs no request at all. ``None`` when the
-    account has no row anywhere, which the caller answers with the endpoint.
+    The same answer as ``users/{id}/rankings`` on 全部榜单 — a board ranking
+    lists every record, so the account's rank there is the rank of its best
+    row — but it costs no request: a whole watch list, or an account page,
+    is read off boards already held. ``None`` when the account has no row
+    anywhere, which the caller answers with the endpoint.
     """
 
     rankings: list[PublicUserRanking] = []
@@ -570,8 +571,8 @@ def rows_by_battle(
     An account's best record on a board is a row of that board's ranking,
     so the main C that the user endpoint leaves out, and the roster an
     older response lacks, can be read off the index without a request. Ids
-    the index does not hold — a retired board, or a fill still in progress —
-    are simply absent from the result and the caller falls back.
+    the index does not hold — a board outside 全部榜单, or a fill still in
+    progress — are simply absent from the result and the caller falls back.
     """
 
     wanted = set(battle_ids)

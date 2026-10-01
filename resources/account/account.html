@@ -44,7 +44,7 @@
         {% if row.dungeon_name %}<span>{{ row.dungeon_name }}</span>{% endif %}
       </div>
       <div class="standings-record">
-        <strong>{% if row.character_name %}主 C {{ row.character_name }}{% elif row.board_listed %}主 C 未知{% else %}榜单已下线{% endif %}</strong>
+        <strong>{% if row.character_name %}主 C {{ row.character_name }}{% elif row.board_listed %}主 C 未知{% else %}未收录榜单{% endif %}</strong>
         <span>战斗日期 <b>{{ row.battle_date }}</b>{% if row.contract_score %} · 合约 <b>{{ row.contract_score }} 分</b>{% endif %}</span>
       </div>
       <div class="standings-time">
@@ -68,7 +68,7 @@
     {% endfor %}
   </ol>
   <p class="board-legend">
-    阵容里加粗的是该场主 C，头像下的数字是 潜能+精炼（? 为武器未记录）；名次下方为 ZMDLogs 公开排名的百分位；用时为通关时间，DPS 为整队合计；已下线的榜不标主 C。
+    阵容里加粗的是该场主 C，头像下的数字是 潜能+精炼（? 为武器未记录）；名次下方为 ZMDLogs 公开排名的百分位；用时为通关时间，DPS 为整队合计{% if page.has_unlisted_boards %}；未收录榜单（ZMDLogs 榜单列表里没有的榜）不标主 C{% endif %}。
     <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
   </p>
 </section>

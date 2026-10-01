@@ -421,15 +421,23 @@ Surveyed over the whole board, 15 records, 2026-09-19, and re-surveyed
 ## `GET /api/battles/users/{id}/rankings`
 
 Lists the account's best record on **every** board it ever uploaded to,
-including boards absent from hot-bosses (retired or non-standard content:
-`indie_hard014`, `dung01-takestwo004`, `dung01-group-gold01`,
-`dung-group-ss01`, `unknown-dungeon` …).
+including boards absent from hot-bosses (协议空间, 支线任务, finished events,
+earlier challenge rotations: `indie_hard014`, `dung01-takestwo004`,
+`dung01-group-gold01`, `dung-group-ss01`, `unknown-dungeon` …). Nothing says
+whether such a board is retired: the 25 accounts with the most records touch
+26 of them, every one still answered its ranking on 2026-10-01, and 6 of them
+(协议空间 among them) took new records in September. The plugin calls them
+未收录榜单 and never 已下线.
 
 On the boards both carry, its `rank` equals the rank of the account's best row
 in that board's ranking — verified on 8 accounts on 2026-09-06 with zero
-differences — which is what lets the rank watch read ranks off the index
-instead of requesting them. The index covers the hot-bosses boards only, the
-same universe every other feature lives in.
+differences, and again on 2026-10-01 for one account, rank and `battleId`
+36 of 36 — which is what lets the rank watch and the account page read ranks
+off the index instead of requesting them (#27). The index covers the
+hot-bosses boards only, the same universe every other feature lives in.
+
+It is computed per request and slow: ten calls in a row on 2026-10-01 took
+0.57–5.0 s, median 1.0 s, with single calls up to 12 s.
 
 Each entry of `rankings[]` now also carries `rosterEntries[]` (first recorded
 2026-09-30; when it appeared is unknown), the record's four members with their

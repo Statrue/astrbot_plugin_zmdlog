@@ -177,8 +177,8 @@ class FakeData:
             "未上榜者": CharacterType("未上榜者", "物理", "长枪", "近卫"),
         }
 
-    async def index_rows_for(self, battle_ids):
-        return {}, None
+    async def account_rankings_for_page(self, account_id):
+        return await self.get_public_user_rankings(account_id), {}, None
 
     # Like the data source's, these draw without the catalog when it is out.
     async def _types(self, names):

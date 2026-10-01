@@ -18,8 +18,8 @@ class AccountRecipe:
     # The index's rows of the same battles: the user endpoint carries no
     # main C, and an older response no roster beyond the names.
     rows_by_battle: Mapping[str, BossRankingRow]
-    # Every board slug the index lists, None while it is incomplete; with it
-    # the page tells a retired board from one not read yet.
+    # 全部榜单's slugs, None when the board list could not be read; with them
+    # the page tells a 未收录榜单 from a board the index has not read yet.
     listed_boards: frozenset[str] | None
     elements: Mapping[str, str]
     icons: Mapping[str, str]
@@ -41,12 +41,13 @@ class AccountRecipe:
 async def prepare_account(
     data: "ZmdLogsDataSource", account_id: str, *, query: str, web_base_url: str
 ) -> AccountRecipe:
-    """The account page's reads; an unknown or private account raises."""
+    """The account page's reads; an unknown or private account raises.
 
-    account = await data.get_public_user_rankings(account_id)
-    rows, listed = await data.index_rows_for(
-        row.battle_id for row in account.rankings
-    )
+    Off the ranking index when it holds the account, else from the endpoint;
+    see :meth:`ZmdLogsDataSource.account_rankings_for_page`.
+    """
+
+    account, rows, listed = await data.account_rankings_for_page(account_id)
     names = account_roster_names(account)
     return AccountRecipe(
         account=account,

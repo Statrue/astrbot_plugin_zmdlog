@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from core import messages
 from core.candidates import CandidateStore
 from core.client import ZmdLogsAPIError, ZmdLogsClientError
+from core.datasource import ZmdLogsDataSource
 from core.matcher import AliasConfig, MatcherCache
 from core.models import (
     parse_battle_detail,
@@ -23,12 +24,16 @@ from core.models import (
     parse_public_user_rankings,
 )
 from core.queries import QueryService
+from core.ranking_index import IndexEntry
+from core.recipes import prepare_account
 from core.routing import RouteKind, RouteRequest
 from core.settings import PluginSettings
 from core.toolbox import ToolService
 from tests.helpers import (
+    CapturingLogger,
     battle_detail_payload,
     hot_bosses_payload,
+    named_ranking,
     public_user_rankings_payload,
     ranking_payload_with_rows,
 )
@@ -371,3 +376,138 @@ class SamePictureTests(unittest.TestCase):
         self.assertIsNone(answer.image_path)
         self.assertIn("不是可用的口径", answer.text)
         self.assertEqual(self.tool_renderer.calls, [])
+
+
+class AccountEndpoint:
+    """``users/{id}/rankings``, counted; the game-data catalog is an outage."""
+
+    def __init__(self, answer=None) -> None:
+        self.answer = answer
+        self.reads = 0
+
+    async def get_public_user_rankings(self, account_id):
+        self.reads += 1
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        if self.answer is None:
+            raise AssertionError("the endpoint was asked for an indexed account")
+        return self.answer
+
+    async def get_character_types(self):
+        raise ZmdLogsClientError("offline")
+
+    # A fill reads the board list and then fails on every board.
+    async def list_hot_bosses_with_payload(self):
+        payload = hot_bosses_payload()
+        return parse_hot_bosses(payload), payload
+
+    async def get_boss_rankings(self, boss_slug, *, metric):
+        raise ZmdLogsClientError("offline")
+
+
+class StillFilling(AccountEndpoint):
+    """A cold boot whose first fill has not read the board list yet."""
+
+    async def list_hot_bosses_with_payload(self):
+        await asyncio.Event().wait()
+
+
+class AccountRecipeTests(unittest.TestCase):
+    """The account page is read off the index; the endpoint answers the rest."""
+
+    def _data(self, endpoint, *held) -> ZmdLogsDataSource:
+        data = ZmdLogsDataSource(
+            endpoint,
+            settings=PluginSettings(web_base_url=WEB),
+            data_dir=None,
+            logger=CapturingLogger(),
+        )
+        index = data.ranking_index
+        index._slugs = tuple(ranking.boss_slug for ranking in held)
+        for ranking in held:
+            index._entries[ranking.boss_slug] = IndexEntry(ranking, 0.0)
+        return data
+
+    def _prepare(self, data, account_id: str):
+        return run(
+            prepare_account(data, account_id, query=account_id, web_base_url=WEB)
+        )
+
+    def test_an_account_the_index_holds_is_drawn_without_the_endpoint(self) -> None:
+        endpoint = AccountEndpoint()
+        trio = parse_boss_ranking(ranking_payload_with_rows())
+        rodan = named_ranking("dung01_group_bossrush01", "“碾骨之拳”罗丹", rows=3)
+        uploader = trio.rows[2]
+
+        recipe = self._prepare(self._data(endpoint, trio, rodan), uploader.account_id)
+
+        self.assertEqual(endpoint.reads, 0)
+        self.assertEqual(recipe.account.account_display_name, "公开账号3")
+        self.assertEqual(
+            {(row.boss_name, row.rank) for row in recipe.account.rankings},
+            {("危境再现·三位一体", 3), ("“碾骨之拳”罗丹", 3)},
+        )
+        # Every drawn row is an index row, so every one has its main C.
+        self.assertEqual(
+            {recipe.rows_by_battle[row.battle_id].character_name
+             for row in recipe.account.rankings},
+            {"洛茜"},
+        )
+
+    def test_an_account_the_index_lacks_is_read_from_the_endpoint(self) -> None:
+        # Only on a board outside 全部榜单, or a first upload not re-read yet:
+        # the index holds no row of it, and the page is the endpoint's.
+        account = parse_public_user_rankings(public_user_rankings_payload())
+        endpoint = AccountEndpoint(account)
+        trio = parse_boss_ranking(ranking_payload_with_rows())
+
+        recipe = self._prepare(self._data(endpoint, trio), account.account_id)
+
+        self.assertEqual(endpoint.reads, 1)
+        self.assertIs(recipe.account, account)
+        self.assertEqual(recipe.listed_boards, frozenset({trio.boss_slug}))
+
+    def test_an_id_upstream_does_not_know_is_its_404(self) -> None:
+        endpoint = AccountEndpoint(ZmdLogsAPIError(404, "account_not_found", "x"))
+        trio = parse_boss_ranking(ranking_payload_with_rows())
+
+        with self.assertRaises(ZmdLogsAPIError) as raised:
+            self._prepare(self._data(endpoint, trio), "usr_nobody")
+
+        self.assertEqual(raised.exception.status_code, 404)
+        self.assertEqual(endpoint.reads, 1)
+
+    def test_an_index_that_did_not_fill_leaves_the_page_to_the_endpoint(
+        self,
+    ) -> None:
+        # A cold boot whose board reads fail: the index never completes, and
+        # the account is drawn as it was before the index was read at all.
+        account = parse_public_user_rankings(public_user_rankings_payload())
+        endpoint = AccountEndpoint(account)
+
+        recipe = self._prepare(self._data(endpoint), account.account_id)
+
+        self.assertEqual(endpoint.reads, 1)
+        self.assertIs(recipe.account, account)
+        self.assertEqual(recipe.rows_by_battle, {})
+        # The board list was read, so a board outside it is still told apart.
+        self.assertEqual(
+            recipe.listed_boards, frozenset({"dung01_group_bossrush02"})
+        )
+
+    def test_a_wrong_id_is_answered_without_waiting_for_a_fill(self) -> None:
+        # The endpoint is asked first, as before the index was read: a cold
+        # boot must not hold 未找到账号 back for the fill's 30 seconds.
+        endpoint = StillFilling(ZmdLogsAPIError(404, "account_not_found", "x"))
+        data = self._data(endpoint)
+
+        async def prepared():
+            return await asyncio.wait_for(
+                prepare_account(
+                    data, "usr_nobody", query="usr_nobody", web_base_url=WEB
+                ),
+                timeout=1.0,
+            )
+
+        with self.assertRaises(ZmdLogsAPIError):
+            run(prepared())

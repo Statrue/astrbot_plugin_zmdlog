@@ -164,6 +164,31 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("DPS 为整队合计", html)
         self.assertIn("95%", html)
 
+    def test_a_board_outside_the_board_list_is_unlisted_never_retired(self) -> None:
+        # Upstream cannot tell whether a board it no longer lists is retired:
+        # every such board measured on 2026-10-01 still served its ranking.
+        account = parse_public_user_rankings(public_user_rankings_payload())
+        (record,) = account.rankings
+
+        def drawn(*listed: str) -> str:
+            return self.renderer.render_account(
+                account,
+                query=account.account_id,
+                web_base_url="https://zmdlogs.com",
+                listed_boards=frozenset(listed),
+            )
+
+        unlisted = drawn("dung01_group_bossrush02")
+        listed = drawn("dung01_group_bossrush02", record.boss_slug)
+
+        self.assertIn("<strong>未收录榜单</strong>", unlisted)
+        self.assertNotIn("下线", unlisted)
+        # The legend explains the term only on a page that prints it.
+        self.assertIn("不标主 C", unlisted)
+        self.assertNotIn("未收录榜单", listed)
+        self.assertNotIn("不标主 C", listed)
+        self.assertIn("<strong>主 C 未知</strong>", listed)
+
     def test_battle_page_uses_compact_detail_fields_and_resolves_avatar(self) -> None:
         battle = parse_battle_detail(battle_detail_payload())
 
