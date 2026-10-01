@@ -167,7 +167,7 @@ class FakeData:
     async def get_public_user_rankings(self, account_id):
         return self.account
 
-    async def get_character_types(self):
+    async def get_character_types(self, *, names=()):
         from core.models import CharacterType
 
         lead = self.ranking.rows[0].character_name if self.ranking else "洛茜"
@@ -180,16 +180,25 @@ class FakeData:
     async def index_rows_for(self, battle_ids):
         return {}, None
 
+    # Like the data source's, these draw without the catalog when it is out.
+    async def _types(self, names):
+        from core.client import ZmdLogsClientError
+
+        try:
+            return await self.get_character_types(names=names)
+        except ZmdLogsClientError:
+            return {}
+
     async def character_elements(self, *, names=()):
-        types = await self.get_character_types()
+        types = await self._types(names)
         return {name: entry.element for name, entry in types.items()}
 
     async def character_professions(self, *, names=()):
-        types = await self.get_character_types()
+        types = await self._types(names)
         return {name: entry.profession for name, entry in types.items()}
 
     async def character_icons(self, *, names=()):
-        types = await self.get_character_types()
+        types = await self._types(names)
         return {
             name: entry.icon_path for name, entry in types.items() if entry.icon_path
         }

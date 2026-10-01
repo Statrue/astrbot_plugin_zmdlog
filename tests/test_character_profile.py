@@ -7,13 +7,14 @@ rank on every board. These tests follow it from the payload to the page.
 
 import asyncio
 import logging
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
 
-from core import messages
+from core import facts, messages
 from core.buttons import pick_list_message, result_keyboard
 from core.candidates import CandidateStore, CandidateView
 from core.client import (
@@ -43,6 +44,7 @@ from core.routing import (
     parse_zmdlog_payload,
 )
 from core.settings import PluginSettings
+from core.toolbox import ToolService
 from tests.helpers import (
     character_profile_payload,
     make_card,
@@ -693,6 +695,341 @@ class ProfileQueryTests(unittest.TestCase):
 
         self.assertEqual(outcome.message, "近 7 天该榜没有带「秋栗」的公开通关记录。")
         self.assertEqual(self.renderer.calls, [])
+
+
+def summary_lines(text: str, name: str) -> list[str]:
+    return [line for line in text.splitlines() if line.startswith(f"「{name}」最常见")]
+
+
+class ProfileToolTests(unittest.TestCase):
+    """The character tool: its two-line build summary, and its 档案 view."""
+
+    def setUp(self) -> None:
+        self.data = ProfileData()
+        self.renderer = FakeRenderer()
+        matchers = MatcherCache()
+        self.tools = ToolService(
+            client=None,
+            data=self.data,
+            renderer=lambda: self.renderer,
+            board_matcher=lambda cards: matchers.matcher_for(
+                cards, AliasConfig.empty()
+            ),
+            settings=PluginSettings(web_base_url=WEB),
+            logger=logging.getLogger("test"),
+        )
+
+    def _character(self, name: str, **options):
+        return asyncio.run(self.tools.character(name, **options))
+
+    def test_one_character_is_headed_by_its_commonest_build(self) -> None:
+        # Asked where 卡缪's teams rank, the answer still says how the
+        # records build it: the commonest 养成 and weapon, out of the whole.
+        answer = self._character("卡缪")
+
+        self.assertEqual(answer.image_path, "/tmp/character_standings.png")
+        self.assertEqual(self.data.profile_reads, [("chr_0033_camille", "all", None)])
+        combination, weapon = summary_lines(answer.text, "卡缪")
+        self.assertIn("养成组合", combination)
+        self.assertIn("2+1", combination)
+        self.assertIn("33.3%", combination)
+        self.assertIn("5/15", combination)
+        self.assertIn("全部榜单 · 全部时间", combination)
+        self.assertIn("熔铸火焰", weapon)
+        self.assertIn("86.7%", weapon)
+        self.assertIn("13/15", weapon)
+        # On top: a reply too long for the model is cut from the end.
+        self.assertTrue(answer.text.startswith(f"{combination}\n{weapon}\n\n"))
+        self.assertIn("最好名次", answer.text)
+        self.assertTrue(answer.text.endswith(facts.SOURCE_NOTE))
+
+    def _bare(self) -> tuple[str, str]:
+        """The answer about 卡缪 without its build lines, and its picture."""
+
+        full = self._character("卡缪")
+        combination, weapon = summary_lines(full.text, "卡缪")
+        self.setUp()
+        return full.text.replace(f"{combination}\n{weapon}\n\n", ""), full.image_path
+
+    def test_a_summary_that_cannot_be_read_leaves_the_answer_as_it_was(self) -> None:
+        bare, picture = self._bare()
+
+        async def unreachable(*, names=()):
+            raise ZmdLogsClientError("down")
+
+        for failure, fail in (
+            ("profile refused", lambda: setattr(
+                self.data, "profile_error", ZmdLogsAPIError(503, "http_503", "x")
+            )),
+            ("profile off contract", lambda: setattr(
+                self.data, "profile_error", ZmdLogsProtocolError("x")
+            )),
+            ("catalog unreachable", lambda: setattr(
+                self.data, "get_character_types", unreachable
+            )),
+        ):
+            with self.subTest(failure=failure):
+                self.setUp()
+                fail()
+
+                answer = self._character("卡缪")
+
+                self.assertEqual(answer.text, bare)
+                self.assertEqual(answer.image_path, picture)
+
+    def test_a_fault_in_the_summary_costs_the_summary_alone(self) -> None:
+        bare, picture = self._bare()
+        self.data.profile_error = RuntimeError("bug")
+
+        with self.assertLogs("test", level="WARNING") as logged:
+            answer = self._character("卡缪")
+
+        self.assertEqual((answer.text, answer.image_path), (bare, picture))
+        # The type is logged, never the message.
+        self.assertIn("RuntimeError", logged.output[0])
+        self.assertNotIn("bug", logged.output[0])
+
+    def test_a_slow_summary_does_not_hold_the_answer(self) -> None:
+        bare, picture = self._bare()
+        self.tools = ToolService(
+            client=None,
+            data=self.data,
+            renderer=lambda: self.renderer,
+            board_matcher=lambda cards: MatcherCache().matcher_for(
+                cards, AliasConfig.empty()
+            ),
+            settings=PluginSettings(web_base_url=WEB),
+            logger=logging.getLogger("test"),
+            summary_grace_seconds=0.01,
+        )
+        read = self.data.get_character_profile
+
+        async def slow(*args, **kwargs):
+            await asyncio.sleep(5)
+            return await read(*args, **kwargs)
+
+        self.data.get_character_profile = slow
+
+        started = time.monotonic()
+        answer = self._character("卡缪")
+
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertEqual((answer.text, answer.image_path), (bare, picture))
+
+    def test_a_refusal_carries_no_summary(self) -> None:
+        # Builds under "no such board" would be answered instead.
+        answer = self._character("莱万汀", board="不存在的榜")
+
+        self.assertIn("没有找到与「不存在的榜」匹配", answer.text)
+        self.assertIsNone(answer.image_path)
+        self.assertEqual(summary_lines(answer.text, "莱万汀"), [])
+
+    def test_the_summary_follows_any_question_about_one_character(self) -> None:
+        # On a board too, and over the window asked for; the summary keeps
+        # to every board, and says so, whatever board the question names.
+        answer = self._character("卡缪", board="白刃穿水", time_range="7d")
+
+        self.assertEqual(answer.image_path, "/tmp/ranking.png")
+        self.assertEqual(self.data.profile_reads, [("chr_0033_camille", "7d", None)])
+        combination, _weapon = summary_lines(answer.text, "卡缪")
+        self.assertIn("全部榜单 · 近 7 天", combination)
+
+    def test_the_commonest_build_is_the_commonest_recorded_one(self) -> None:
+        # Old uploads left 养成 and weapons unrecorded; "most records do not
+        # say" is no build, so the line names the commonest that is known,
+        # its share still out of every record.
+        def payload(**options):
+            changed = character_profile_payload(**options)
+            changed["combinations"].insert(
+                0, {"key": "(None, 6)", "name": "未知 + 6", "count": 7,
+                    "percent": 46.67, "iconUrl": None},
+            )
+            changed["weapons"][1]["count"] = 14
+            return changed
+
+        self.data.payload = payload
+
+        combination, weapon = summary_lines(self._character("卡缪").text, "卡缪")
+
+        self.assertIn(
+            "（潜能+精炼，不计未记录）：2+1，占 33.3%（5/15 条，", combination
+        )
+        self.assertIn("（不计未记录）：熔铸火焰，占 86.7%（13/15 条）", weapon)
+
+    def test_a_list_with_nothing_recorded_drops_its_line(self) -> None:
+        def payload(**options):
+            changed = character_profile_payload(**options)
+            changed["weapons"] = [
+                {"key": "unknown", "name": "未知", "count": 15, "percent": 100.0,
+                 "iconUrl": None},
+            ]
+            return changed
+
+        self.data.payload = payload
+
+        (combination,) = summary_lines(self._character("卡缪").text, "卡缪")
+
+        self.assertIn("2+1", combination)
+
+        # Neither list knowing anything leaves no section at all.
+        def nothing(**options):
+            changed = payload(**options)
+            changed["combinations"] = [
+                {"key": "(None, None)", "name": "未知 + 未知", "count": 15,
+                 "percent": 100.0, "iconUrl": None},
+            ]
+            return changed
+
+        self.data.payload = nothing
+
+        text = self._character("卡缪").text
+
+        self.assertEqual(summary_lines(text, "卡缪"), [])
+        self.assertNotIn("\n\n\n", text)
+        self.assertTrue(text.endswith(f"不代表这些角色或组合更强。\n\n{facts.SOURCE_NOTE}"))
+
+    def test_the_profile_view_draws_the_page_the_command_draws(self) -> None:
+        for command, options in (
+            ("角色档案 莱万汀 --范围 7d", {"time_range": "7d"}),
+            ("角色档案 莱万汀 --榜单 白刃穿水", {"board": "白刃穿水"}),
+        ):
+            with self.subTest(command=command):
+                self.setUp()
+                by_command = FakeRenderer()
+                queries = QueryService(
+                    client=OfflineClient(),
+                    data=self.data,
+                    renderer=lambda by_command=by_command: by_command,
+                    candidates=CandidateStore(),
+                    board_matcher=lambda cards: MatcherCache().matcher_for(
+                        cards, AliasConfig.empty()
+                    ),
+                    watcher=SimpleNamespace(history_for=lambda account_id: None),
+                    settings=PluginSettings(web_base_url=WEB),
+                    logger=logging.getLogger("test"),
+                )
+                asyncio.run(
+                    queries.dispatch(
+                        parse_zmdlog_payload(command), command_prefix="/", origin=GROUP
+                    )
+                )
+                drawn_reads = list(self.data.profile_reads)
+                self.data.profile_reads.clear()
+
+                answer = self._character("莱万汀", view="档案", **options)
+
+                self.assertEqual(answer.image_path, "/tmp/character_profile.png")
+                self.assertEqual(self.data.profile_reads, drawn_reads)
+                self.assertEqual(by_command.calls, self.renderer.calls)
+                self.assertEqual(
+                    by_command.args["character_profile"],
+                    self.renderer.args["character_profile"],
+                )
+                self.assertEqual(
+                    by_command.kwargs["character_profile"],
+                    self.renderer.kwargs["character_profile"],
+                )
+
+    def test_the_profile_view_says_what_the_page_draws(self) -> None:
+        text = self._character("莱万汀", view="档案", time_range="7d").text
+
+        self.assertIn("「莱万汀」角色档案（全部榜单 · 近 7 天）", text)
+        self.assertIn("15 条通关记录", text)
+        self.assertIn("9 个账号", text)
+        self.assertIn("同一账号在同一榜单只留最快一场", text)
+        # The two lines every single-character answer carries head it.
+        self.assertEqual(len(summary_lines(text, "莱万汀")), 2)
+        # The four shares, labelled as the page labels them.
+        self.assertIn(
+            "养成组合（潜能+精炼）：2+1 33.3%、0+1 26.7%、3+6 26.7%、5+? 6.7%、"
+            "养成未记录 6.7%",
+            text,
+        )
+        self.assertIn("武器：熔铸火焰 86.7%、武器未记录 13.3%", text)
+        self.assertIn("动火用手甲 100%、生物辅助护板 53.3%", text)
+        self.assertIn("常见队友：卡缪 100%、诀 86.7%、狼卫 40%", text)
+        # Its 通关名次 on every board, fastest-clearing first.
+        boards = [line for line in text.splitlines() if line.startswith("#")]
+        self.assertEqual(len(boards), 3)
+        self.assertTrue(boards[0].startswith("#1/15 白刃穿水·残酷"), boards[0])
+        self.assertIn("45.517 秒", boards[0])
+        self.assertIn("百合末莉", boards[0])
+        self.assertTrue(boards[1].startswith("#1/11 危境再现·阿莱克琉斯"), boards[1])
+        self.assertTrue(boards[2].startswith("#10/13 无机狂热·残酷"), boards[2])
+
+    def test_the_profile_view_on_one_board_lists_its_records(self) -> None:
+        text = self._character("莱万汀", view="档案", board="白刃穿水").text
+
+        self.assertIn("「莱万汀」角色档案（白刃穿水·残酷 · 战争回响 · 全部时间）", text)
+        self.assertIn("该榜通关名次 #1/15", text)
+        fastest, second = (
+            line for line in text.splitlines() if line.startswith(("#1 ", "#2 "))
+        )
+        for part in ("百合末莉", "45.517 秒", "2026-09-24", "5+6",
+                     "btl_upload_cad50c180d36"):
+            self.assertIn(part, fastest)
+        self.assertIn("镜花水月", second)
+        self.assertIn("2+1", second)
+        # Eight records, two listed: upstream lists twenty at most.
+        self.assertIn("另有 6 条", text)
+        self.assertNotIn("无机狂热", text)
+
+    def test_the_profile_view_answers_in_text_what_it_cannot_draw(self) -> None:
+        for name, options, expected in (
+            ("莱万汀 卡缪", {}, "角色档案需要且只能填一个角色名"),
+            ("", {}, "角色档案需要且只能填一个角色名"),
+            ("不存在的人", {}, "不存在的人"),
+            # No pick list on a tool call: the model asks which board.
+            ("莱万汀", {"board": "战争回响"},
+             "「战争回响」是副本，角色档案要按具体榜单看"),
+            ("莱万汀", {"board": "危机合约"}, messages.BOARD_HAS_NO_PROFILE),
+            ("莱万汀", {"board": "不存在的榜"}, "没有找到与「不存在的榜」匹配"),
+            ("莱万汀", {"view": "装备"}, "「装备」不是可用的 view"),
+        ):
+            with self.subTest(name=name, **options):
+                self.setUp()
+                options.setdefault("view", "档案")
+
+                answer = self._character(name, **options)
+
+                self.assertIn(expected, answer.text)
+                self.assertIsNone(answer.image_path)
+                self.assertEqual(self.renderer.calls, [])
+
+    def test_the_profile_view_over_every_board_is_the_whole_profile(self) -> None:
+        answer = self._character("莱万汀", view="档案", board="全部")
+
+        self.assertEqual(answer.image_path, "/tmp/character_profile.png")
+        self.assertEqual(self.data.profile_reads, [("chr_0016_laevat", "all", None)])
+
+    def test_the_profile_view_says_which_options_it_has_no_use_for(self) -> None:
+        # The profile counts clears, by time: upstream ignores both.
+        answer = self._character("莱万汀", view="档案", metric="rdps", potential="0")
+
+        self.assertEqual(answer.image_path, "/tmp/character_profile.png")
+        first = answer.text.splitlines()[0]
+        self.assertIn("metric", first)
+        self.assertIn("potential", first)
+        self.assertIn("「莱万汀」角色档案", answer.text)
+        # Neither said, or only the defaults, nothing to say.
+        for options in ({}, {"metric": "dps", "potential": "all"}):
+            with self.subTest(**options):
+                text = self._character("莱万汀", view="档案", **options).text
+                self.assertTrue(text.startswith("「莱万汀」角色档案"), text[:40])
+
+    def test_no_summary_without_exactly_one_character(self) -> None:
+        for name, options in (
+            ("黎风 卡缪", {}),
+            ("", {}),
+            ("", {"board": "白刃穿水"}),
+        ):
+            with self.subTest(name=name, **options):
+                self.setUp()
+
+                answer = self._character(name, **options)
+
+                self.assertNotIn("最常见的养成组合", answer.text)
+                self.assertEqual(self.data.profile_reads, [])
 
 
 class ProfileTemplateTests(unittest.TestCase):

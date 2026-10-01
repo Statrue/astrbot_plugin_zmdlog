@@ -7,7 +7,10 @@ handed numbers as text restates them wrongly, and a picture cannot be
 reasoned about — so the tool descriptions tell the model the figures are in
 the image and its own job is to explain them. The one answer with facts and
 no picture is the board tool's 全部: there is no page of every board since
-榜单 became a pick list, and the text is one line per board.
+榜单 became a pick list, and the text is one line per board. The one set of
+figures in text alone is the character tool's two build lines, which head
+every answer about one character: they come from its 角色档案, a page that
+answer did not draw.
 
 Nothing here posts a candidate list. A command can afford to ask "did you
 mean one of these five"; a tool call cannot wait for an answer, so an
@@ -20,7 +23,7 @@ one; a new view of a subject is a parameter or extra lines in its text.
 """
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -63,11 +66,13 @@ from .professions import PROFESSIONS, normalize_profession
 from .rank_watch import RankWatcher
 from .recipes import (
     IndexSnapshot,
+    find_profile_character,
     index_snapshot,
     prepare_account,
     prepare_battle,
     prepare_champions,
     prepare_character_boss,
+    prepare_character_profile,
     prepare_character_stats,
     prepare_compare,
     prepare_dungeon_overview,
@@ -90,6 +95,13 @@ _EVERY_BOARD = frozenset(
         "所有首领", "全部首领", "all",
     }
 )
+# What the model may write for the character tool's 角色档案 view.
+_PROFILE_VIEW = frozenset({"档案", "角色档案", "profile"})
+# How long an answer about one character waits for its build lines once it is
+# otherwise ready. A cold all-time profile takes 2–5 s and overlaps the
+# answer's own reads; one slower than this goes without, and its read still
+# fills the cache for the next question.
+SUMMARY_GRACE_SECONDS = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +123,13 @@ class ToolAnswer:
             return self
         return ToolAnswer(note + "\n" + self.text, self.image_path)
 
+    def led_by(self, section: str) -> "ToolAnswer":
+        """The same answer with one more section on top, when there is one."""
+
+        if not section:
+            return self
+        return ToolAnswer(facts.join_sections(section, self.text), self.image_path)
+
 
 class ToolService:
     """Answer the questions the LLM tools accept."""
@@ -125,6 +144,7 @@ class ToolService:
         settings: PluginSettings,
         logger: LogSink,
         watcher: RankWatcher | None = None,
+        summary_grace_seconds: float = SUMMARY_GRACE_SECONDS,
     ) -> None:
         self._client = client
         self._data = data
@@ -135,6 +155,7 @@ class ToolService:
         # The rank watch's trace is the only rank history there is; the
         # account tool reads it when it has one.
         self._watcher = watcher
+        self._summary_grace_seconds = summary_grace_seconds
 
     # --- boards -----------------------------------------------------------------
 
@@ -330,24 +351,85 @@ class ToolService:
         profession: str = "",
         potential: str = "",
         metric: str = "",
+        view: str = "",
     ) -> ToolAnswer:
         span, range_note = _time_range(time_range)
+        wanted_view = self._view(view)
+        if isinstance(wanted_view, ToolAnswer):
+            return wanted_view
+        if wanted_view:
+            answer = await self._character_profile(name, board, span)
+            return answer.noted(_profile_options_note(potential, metric)).noted(
+                range_note
+            )
         wanted_potential = self._potential(potential)
         if isinstance(wanted_potential, ToolAnswer):
             return wanted_potential
         wanted_metric = self._metric(metric)
         if isinstance(wanted_metric, ToolAnswer):
             return wanted_metric
+        question = self._character_question(
+            name,
+            board,
+            element=element,
+            span=span,
+            profession=profession,
+            potential=wanted_potential,
+            metric=wanted_metric,
+        )
+        if len(split_character_names(name)) != 1:
+            return (await question).noted(range_note)
+        answer = await self._with_summary(question, name, span)
+        return answer.noted(range_note)
+
+    async def _with_summary(
+        self, question: Awaitable[ToolAnswer], name: str, span: str
+    ) -> ToolAnswer:
+        """``question``'s answer headed by the two build lines of ``name``.
+
+        On top because a long reply is cut from the end. The profile read
+        starts with the question and overlaps it; once the answer is in, the
+        read gets ``summary_grace_seconds`` more, so a slow or unreachable
+        profile delays an answer by that much at most. An answer that drew no
+        page goes without: it is a refusal (a board that matched nothing, an
+        ambiguous name), and two lines of builds under "which board did you
+        mean" would be answered instead of the question. A page that failed
+        to draw loses them too; they are never a condition of the answer.
+        """
+
+        summary = asyncio.ensure_future(self._profile_summary(name, span))
+        try:
+            answer = await question
+        except BaseException:
+            summary.cancel()
+            raise
+        if answer.image_path is None:
+            summary.cancel()
+            return answer
+        try:
+            lines = await asyncio.wait_for(summary, self._summary_grace_seconds)
+        except TimeoutError:
+            # The data source shields its read, so it still fills the cache.
+            return answer
+        return answer.led_by(lines)
+
+    async def _character_question(
+        self,
+        name: str,
+        board: str,
+        *,
+        element: str,
+        span: str,
+        profession: str,
+        potential: str,
+        metric: str,
+    ) -> ToolAnswer:
+        """Every question the character tool takes but its build summary."""
+
         if board.strip():
             if not name.strip():
-                answer = await self._board_statistics(
-                    board, span, wanted_potential, wanted_metric
-                )
-            else:
-                answer = await self._character_on_board(
-                    name, board, span, wanted_potential, wanted_metric
-                )
-            return answer.noted(range_note)
+                return await self._board_statistics(board, span, potential, metric)
+            return await self._character_on_board(name, board, span, potential, metric)
         if not name.strip():
             wanted = self._element(element)
             if isinstance(wanted, ToolAnswer):
@@ -355,33 +437,30 @@ class ToolService:
             role = self._profession(profession)
             if isinstance(role, ToolAnswer):
                 return role
-            answer = await self._champions(
+            return await self._champions(
                 wanted or None,
                 profession=role or None,
                 span=span,
-                metric=wanted_metric,
+                metric=metric,
             )
-            return answer.noted(range_note)
         # Standings come from the ranking index and cover every rarity; the
         # DPS distribution needs a six-star key and is added when there is one.
-        snapshot = await self._index(wanted_metric)
+        snapshot = await self._index(metric)
         if isinstance(snapshot, ToolAnswer):
             return snapshot
         if len(split_character_names(name)) > 1:
             # Several names: the teams fielding all of them, standings only —
             # a team has no DPS distribution and no single set of partners.
-            answer = await self._team_standings(name, snapshot)
-            return answer.noted(range_note)
+            return await self._team_standings(name, snapshot)
         resolution = resolve_character_name(name, snapshot.fielded)
         if resolution.status is CharacterResolutionStatus.AMBIGUOUS:
             return ToolAnswer(
                 messages.ambiguous_character(name, resolution.candidates)
             )
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
-            answer = await self._character_distribution_only(
-                name, span, wanted_potential, wanted_metric
+            return await self._character_distribution_only(
+                name, span, potential, metric
             )
-            return answer.noted(range_note)
         recipe = await prepare_standings(
             self._data,
             snapshot,
@@ -395,7 +474,7 @@ class ToolService:
         # The distribution is an upstream read of several seconds and the
         # render about one; they need nothing from each other, so they overlap.
         stats, image = await asyncio.gather(
-            self._boss_statistics(key, span, wanted_potential, wanted_metric),
+            self._boss_statistics(key, span, potential, metric),
             self._render(recipe.draw),
         )
         parts = [
@@ -406,10 +485,8 @@ class ToolService:
         ]
         if stats is not None:
             parts.append(facts.format_character_boards(stats))
-        return (
-            ToolAnswer(facts.join_sections(*parts), image)
-            .noted(_index_note(recipe.missing_count))
-            .noted(range_note)
+        return ToolAnswer(facts.join_sections(*parts), image).noted(
+            _index_note(recipe.missing_count)
         )
 
     async def _team_standings(
@@ -522,6 +599,19 @@ class ToolService:
         return value
 
     @staticmethod
+    def _view(text: str) -> str | ToolAnswer:
+        """``档案`` for the 角色档案 view; "" for the default answer."""
+
+        if not text.strip():
+            return ""
+        if "".join(text.split()).casefold() in _PROFILE_VIEW:
+            return "档案"
+        return ToolAnswer(
+            f"「{shorten(text)}」不是可用的 view：只有 档案（角色档案：养成、武器、"
+            "装备、队友占比和各榜通关名次）；不填就是默认的名次与分布。"
+        )
+
+    @staticmethod
     def _potential(text: str) -> str | ToolAnswer:
         """``0`` / ``1-5`` / ``all`` for what the model typed; "" means all."""
 
@@ -558,12 +648,9 @@ class ToolService:
             slug: str | None = None
             query = "角色统计"
         else:
-            target = await self._resolve_target(board)
+            target = await self._board_slug(board, "角色统计")
             if isinstance(target, ToolAnswer):
                 return target
-            if not isinstance(target, str):
-                choice, _cards = target
-                return _dungeon_statistics_refusal(board, choice)
             slug, query = target, board
         recipe = await prepare_character_stats(
             self._data,
@@ -593,12 +680,9 @@ class ToolService:
             # Not a six-star, so there is no distribution; the records
             # fielding it on that board are what the question is about.
             return await self.board(board, character=name, metric=metric)
-        target = await self._resolve_target(board)
+        target = await self._board_slug(board, "角色统计")
         if isinstance(target, ToolAnswer):
             return target
-        if not isinstance(target, str):
-            choice, _cards = target
-            return _dungeon_statistics_refusal(board, choice)
         recipe = await prepare_character_stats(
             self._data,
             target,
@@ -681,6 +765,64 @@ class ToolService:
         if resolution.status is CharacterResolutionStatus.NOT_FOUND:
             return None
         return resolution.name
+
+    async def _character_profile(self, name: str, board: str, span: str) -> ToolAnswer:
+        """角色档案: the page the command draws, with its shares and 通关名次 as text.
+
+        ``board`` cuts it to one board, as ``--榜单`` does; a dungeon is
+        refused rather than listed, since a tool call cannot wait for a pick.
+        """
+
+        if len(split_character_names(name)) != 1:
+            return ToolAnswer("角色档案需要且只能填一个角色名。")
+        character = await find_profile_character(self._data, name)
+        if isinstance(character, str):
+            return ToolAnswer(character)
+        boss_slug = None
+        if board.strip() and not _means_every_board(board):
+            boss_slug = await self._board_slug(board, "角色档案")
+            if isinstance(boss_slug, ToolAnswer):
+                return boss_slug
+        recipe = await prepare_character_profile(
+            self._data,
+            character,
+            time_range=span,
+            query=name,
+            web_base_url=self._web_base_url,
+            boss_slug=boss_slug,
+        )
+        if isinstance(recipe, str):
+            return ToolAnswer(recipe)
+        text = facts.format_character_profile(recipe.profile, character=character.name)
+        image = await self._render(recipe.draw)
+        return ToolAnswer(text, image)
+
+    async def _profile_summary(self, name: str, span: str) -> str:
+        """The two build lines of the character ``name``; "" when there are none.
+
+        An addition to the answer, never a condition of it: a name the
+        game-data catalog cannot settle, a profile that cannot be read and a
+        window without records all leave the answer as it would have been.
+        The profile is the one 角色档案 draws, so it is read through the
+        same cache.
+        """
+
+        try:
+            character = await find_profile_character(self._data, name)
+            if isinstance(character, str):
+                return ""
+            profile = await self._data.get_character_profile(
+                character.key, time_range=span
+            )
+            return facts.format_profile_summary(profile, character=character.name)
+        except ZmdLogsClientError:
+            return ""
+        except Exception as exc:
+            self._logger.warning(
+                "ZmdLogBot tool could not add the build summary: %s",
+                type(exc).__name__,
+            )
+            return ""
 
     async def _catalog_key(self, name: str) -> str | None:
         entries = await self._data.get_character_catalog()
@@ -850,6 +992,22 @@ class ToolService:
             return boards[0].target.key
         return choice, cards
 
+    async def _board_slug(self, board: str, page: str) -> str | ToolAnswer:
+        """The one board ``board`` names, or the reply saying why it names none.
+
+        ``page`` exists per board, so a dungeon is refused with its name for
+        the model to ask about: a tool call cannot wait for a pick.
+        """
+
+        target = await self._resolve_target(board)
+        if isinstance(target, (str, ToolAnswer)):
+            return target
+        choice, _cards = target
+        return ToolAnswer(
+            f"「{shorten(board)}」是副本，{page}要按具体榜单看：请指明"
+            f"「{choice.target.name}」下的一个榜单。"
+        )
+
     def _battle_reference(self, value: str) -> str | None:
         try:
             return parse_battle_reference(value, web_base_url=self._web_base_url)
@@ -882,12 +1040,23 @@ def _index_note(missing: int) -> str:
     return f"（榜单索引有 {missing} 个榜没读到，以下未计入它们。）"
 
 
-def _dungeon_statistics_refusal(board: str, choice: MatchChoice) -> ToolAnswer:
-    """Statistics exist per board; a dungeon keyword has to be narrowed."""
+def _profile_options_note(potential: str, metric: str) -> str:
+    """角色档案 counts clears by time; a metric or a 潜能 tier given it goes unused.
 
-    return ToolAnswer(
-        f"「{shorten(board)}」是副本，角色统计要按具体榜单看：请指明"
-        f"「{choice.target.name}」下的一个榜单。"
+    Only one that would have changed another answer is named: a model that
+    writes the default ``dps`` has asked for nothing.
+    """
+
+    unused = []
+    if metric.strip() and parse_metric_text(metric) != METRIC_DPS:
+        unused.append("metric")
+    if potential.strip() and parse_potential_text(potential) != "all":
+        unused.append("potential")
+    if not unused:
+        return ""
+    return (
+        "（角色档案按通关用时统计，不分口径也不按潜能档筛选，"
+        f"{'、'.join(unused)} 没有用上。）"
     )
 
 

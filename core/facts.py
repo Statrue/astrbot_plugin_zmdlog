@@ -19,7 +19,7 @@ names, skill names) is data written by other people. It is quoted, never
 obeyed; the tool docstrings tell the model the same.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -28,7 +28,7 @@ from .characters import CharacterFilterScope, row_fields
 from .contract import group_contract_tags
 from .crit import CritExpectation, coverage_percent
 from .events import CHAMPION_CHANGE, NEW_RECORD, BoardActivity, RecordEvent
-from .history import AccountHistory, trend_points
+from .history import AccountHistory, trend_points, window_label
 from .loadout import (
     group_skill_damage,
     is_raw_item_name,
@@ -45,11 +45,26 @@ from .models import (
     BossRankingRosterEntry,
     BossRankingRow,
     CharacterBossStatistics,
+    CharacterProfile,
     CharacterStatistics,
     HotBossCard,
+    ProfileBoard,
+    ProfileShare,
     PublicUserRankings,
 )
-from .presentation import InvestmentView, investment_view
+from .presentation import (
+    SAMPLE_RULE,
+    InvestmentView,
+    combination_label,
+    cut_board,
+    equipment_label,
+    investment_view,
+    is_recorded,
+    listed_shares,
+    profile_board_label,
+    share_percent,
+    weapon_label,
+)
 from .professions import normalize_profession
 from .standings import (
     AccountTally,
@@ -605,6 +620,145 @@ def format_character_boards(
     if len(ordered) > len(shown):
         lines.append(f"（另有 {len(ordered) - len(shown)} 个榜未列出，图里有）")
     return _joined(lines)
+
+
+def format_profile_summary(profile: CharacterProfile, *, character: str) -> str:
+    """Two lines on how ``character`` is built: its commonest 养成 and weapon.
+
+    Every answer about one character carries them, whatever it asked,
+    because a rank or a distribution never says what the records field.
+    A fragment that heads another answer, so it carries no source line;
+    empty when the window holds no record of the character.
+    """
+
+    if not profile.sample_count:
+        return ""
+    total = profile.sample_count
+    lines = []
+    combination = _commonest(profile.combinations)
+    if combination is not None:
+        lines.append(
+            f"「{character}」最常见的养成组合（潜能+精炼，不计未记录）："
+            f"{combination_label(combination)}，"
+            f"{_profile_share(combination, total, _profile_scope(profile))}"
+        )
+    weapon = _commonest(profile.weapons)
+    if weapon is not None:
+        lines.append(
+            f"「{character}」最常见的武器（不计未记录）："
+            f"{weapon_label(weapon)}，{_profile_share(weapon, total)}"
+        )
+    return "\n".join(lines)
+
+
+def _commonest(shares: tuple[ProfileShare, ...]) -> ProfileShare | None:
+    """The most counted share whose value is known; ties keep upstream's order.
+
+    "Most records do not say" is no build, so an unrecorded bucket is passed
+    over; the share named is still out of every record.
+    """
+
+    known = [share for share in shares if share.count > 0 and is_recorded(share)]
+    return max(known, key=lambda share: share.count, default=None)
+
+
+def _profile_share(share: ProfileShare, total: int, scope: str = "") -> str:
+    """占 33.3%（5/15 条）, the scope after the count when it is given."""
+
+    where = f"，{scope}" if scope else ""
+    return f"占 {share_percent(share)}（{share.count}/{total} 条{where}）"
+
+
+def _profile_scope(profile: CharacterProfile) -> str:
+    """白刃穿水·残酷 · 战争回响 · 全部时间, or 全部榜单 · 近 7 天."""
+
+    board = cut_board(profile)
+    where = "全部榜单" if board is None else profile_board_label(board)
+    return f"{where} · {window_label(profile.range) or '全部时间'}"
+
+
+_CLEAR_RANK_RULE = "所有角色按所在队伍的最快通关排，并列同名次；名次/上榜角色数"
+
+
+def format_character_profile(profile: CharacterProfile, *, character: str) -> str:
+    """角色档案 in text: its build lines, its four shares and its 通关名次.
+
+    The shares are labelled and cut as the page cuts them. Every board is
+    listed, because "where does it rank on X" is answerable only from a
+    board that is named; a profile cut to one board lists that board's
+    records in their place, as the page does.
+    """
+
+    summary = format_profile_summary(profile, character=character)
+    lines = [
+        f"「{character}」角色档案（{_profile_scope(profile)}）",
+        f"样本 {profile.sample_count} 条通关记录，{profile.account_count} 个账号，"
+        f"{profile.boss_count} 个榜；{SAMPLE_RULE}，占比都以样本为分母。",
+        *([summary] if summary else []),
+        "",
+        _share_line("养成组合（潜能+精炼）", profile.combinations, combination_label),
+        _share_line("武器", profile.weapons, weapon_label),
+        _share_line("装备（一条记录不止一件）", profile.equipment, equipment_label),
+        _share_line("常见队友", profile.teammates, lambda share: share.name),
+        "",
+    ]
+    board = cut_board(profile)
+    if board is None:
+        lines.extend(_profile_board_lines(profile.bosses))
+    else:
+        lines.extend(_profile_record_lines(board, character))
+    return _joined(lines)
+
+
+def _share_line(
+    title: str,
+    shares: tuple[ProfileShare, ...],
+    label: Callable[[ProfileShare], str],
+) -> str:
+    head, hidden_count = listed_shares(shares)
+    listed = "、".join(f"{label(share)} {share_percent(share)}" for share in head)
+    line = f"{title}：{listed or '无记录'}"
+    if hidden_count:
+        line += f"（另有 {hidden_count} 种未列出，图里有）"
+    return line
+
+
+def _profile_board_lines(bosses: tuple[ProfileBoard, ...]) -> list[str]:
+    """Each board's 通关名次, where the character clears fastest first."""
+
+    lines = [f"各榜通关名次（{_CLEAR_RANK_RULE}）："]
+    for board in sorted(bosses, key=lambda board: board.character_rank):
+        who = f"（{board.rows[0].account_display_name}）" if board.rows else ""
+        lines.append(
+            f"#{board.character_rank}/{board.ranked_character_count}"
+            f" {profile_board_label(board)}"
+            f" · 最快 {_duration(board.best_duration_ms)}{who}"
+            f" · 样本 {board.sample_count} 条"
+        )
+    return lines
+
+
+def _profile_record_lines(board: ProfileBoard, character: str) -> list[str]:
+    """The board's 通关名次, then its records with the character, fastest first."""
+
+    lines = [
+        f"该榜通关名次 #{board.character_rank}/{board.ranked_character_count}"
+        f"（{_CLEAR_RANK_RULE}），最快 {_duration(board.best_duration_ms)}。",
+        f"该榜带「{character}」的记录（每个账号只留最快一场，按用时；"
+        "养成是潜能+精炼，5+? 是武器未记录）：",
+    ]
+    for record in board.rows:
+        investment = investment_view(record.potential, record.refinement)
+        lines.append(
+            f"#{record.rank} {record.account_display_name}"
+            f" · {_duration(record.duration_ms)} · {_date(record.battle_end_at)}"
+            + ("" if investment is None else f" · 养成 {investment.text}")
+            + f" · battleId {record.battle_id}"
+        )
+    if board.sample_count > len(board.rows):
+        # Upstream lists twenty at most.
+        lines.append(f"（另有 {board.sample_count - len(board.rows)} 条未列出）")
+    return lines
 
 
 # Absent boards are named up to this many; past it the page carries the list.

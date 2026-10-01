@@ -179,7 +179,7 @@ def build_character_profile_page(
                 "潜能+精炼，占全部样本的比例",
                 "investment",
                 profile.combinations,
-                lambda share: _share_row(share, _combination_label(share)),
+                lambda share: _share_row(share, combination_label(share)),
             ),
             _block(
                 "武器",
@@ -188,7 +188,7 @@ def build_character_profile_page(
                 profile.weapons,
                 lambda share: _share_row(
                     share,
-                    _gear_label(share, unknown="武器未记录"),
+                    weapon_label(share),
                     icon_url=_gear_icon(share, _WEAPON_ICON_PATH, web_base_url),
                 ),
             ),
@@ -199,7 +199,7 @@ def build_character_profile_page(
                 profile.equipment,
                 lambda share: _share_row(
                     share,
-                    _gear_label(share, unknown="装备未记录"),
+                    equipment_label(share),
                     icon_url=_gear_icon(share, _EQUIP_ICON_PATH, web_base_url),
                 ),
             ),
@@ -224,20 +224,24 @@ def build_character_profile_page(
     )
 
 
-def _cut_view(profile: CharacterProfile) -> ProfileCutView | None:
+def cut_board(profile: CharacterProfile) -> ProfileBoard | None:
     """The board the profile was cut to; None when it covers every board."""
 
     if profile.boss_slug is None:
         return None
-    board = next(
+    return next(
         (board for board in profile.bosses if board.boss_slug == profile.boss_slug),
         None,
     )
+
+
+def _cut_view(profile: CharacterProfile) -> ProfileCutView | None:
+    board = cut_board(profile)
     if board is None:
         return None
     return ProfileCutView(
         board=_board_row(board),
-        label=_board_label(board),
+        label=profile_board_label(board),
         records=tuple(_record_row(row) for row in board.rows),
         hidden_record_count=max(0, board.sample_count - len(board.rows)),
     )
@@ -257,7 +261,7 @@ def _board_row(board: ProfileBoard) -> ProfileBoardRowView:
     )
 
 
-def _board_label(board: ProfileBoard) -> str:
+def profile_board_label(board: ProfileBoard) -> str:
     """危境再现·罗丹 alone, 白刃穿水·残酷 · 战争回响: as a pick list names a board."""
 
     dungeon = board.dungeon_name
@@ -284,16 +288,23 @@ def _block(
     shares: tuple[ProfileShare, ...],
     row: Callable[[ProfileShare], ShareRowView],
 ) -> ShareBlockView:
-    """The first ``SHARE_ROWS`` entries with a record, and how many are not shown."""
-
-    listed = [share for share in shares if share.count > 0]
+    head, hidden_count = listed_shares(shares)
     return ShareBlockView(
         title=title,
         note=note,
         kind=kind,
-        rows=tuple(row(share) for share in listed[:SHARE_ROWS]),
-        hidden_count=max(0, len(listed) - SHARE_ROWS),
+        rows=tuple(row(share) for share in head),
+        hidden_count=hidden_count,
     )
+
+
+def listed_shares(
+    shares: tuple[ProfileShare, ...],
+) -> tuple[tuple[ProfileShare, ...], int]:
+    """The first ``SHARE_ROWS`` entries with a record, and how many are not shown."""
+
+    listed = [share for share in shares if share.count > 0]
+    return tuple(listed[:SHARE_ROWS]), max(0, len(listed) - SHARE_ROWS)
 
 
 def _share_row(
@@ -307,7 +318,7 @@ def _share_row(
     return ShareRowView(
         label=label,
         count=share.count,
-        share_label=f"{format_number(round(share.percent, 1))}%",
+        share_label=share_percent(share),
         bar_width=round(min(100.0, share.percent), 2),
         icon_url=icon_url,
         initial=initial,
@@ -315,21 +326,59 @@ def _share_row(
     )
 
 
-def _combination_label(share: ProfileShare) -> str:
+def is_recorded(share: ProfileShare) -> bool:
+    """False for upstream's bucket of records that lack the value.
+
+    A weapon or piece keyed ``unknown``, and a combination whose 潜能 is
+    unknown, which the page writes 养成未记录; ``5+?`` keeps its 潜能 and
+    counts as recorded.
+    """
+
+    if share.key == _UNKNOWN_KEY:
+        return False
+    pair = _combination_pair(share)
+    return pair is None or pair[0] is not None
+
+
+def share_percent(share: ProfileShare) -> str:
+    """``33.3%``: a share as the page prints it, and the tools' text with it."""
+
+    return f"{format_number(round(share.percent, 1))}%"
+
+
+def combination_label(share: ProfileShare) -> str:
     """``5+6`` as under every avatar, ``5+?`` for an unrecorded weapon.
 
     The key is read rather than upstream's name (``5 + 未知``), so the pair is
-    written the way every other page writes it.
+    written the way every other page writes it. The tools' text writes it
+    so too.
     """
+
+    pair = _combination_pair(share)
+    if pair is None:
+        return share.name
+    view = investment_view(*pair)
+    return "养成未记录" if view is None else view.text
+
+
+def _combination_pair(share: ProfileShare) -> tuple[int | None, int | None] | None:
+    """The 潜能 and 精炼 a combination's key names; None for any other key."""
 
     match = _COMBINATION_KEY.match(share.key)
     if match is None:
-        return share.name
+        return None
     potential, refine = (
         None if value == "None" else int(value) for value in match.groups()
     )
-    view = investment_view(potential, refine)
-    return "养成未记录" if view is None else view.text
+    return potential, refine
+
+
+def weapon_label(share: ProfileShare) -> str:
+    return _gear_label(share, unknown="武器未记录")
+
+
+def equipment_label(share: ProfileShare) -> str:
+    return _gear_label(share, unknown="装备未记录")
 
 
 def _gear_label(share: ProfileShare, *, unknown: str) -> str:
