@@ -104,7 +104,7 @@ class StandingsTests(unittest.TestCase):
     def test_the_text_states_rank_out_of_total_and_the_disclaimer(self) -> None:
         standings = character_standings(self.rankings, self.name)
 
-        text = facts.format_character_standings(standings, age_seconds=185)
+        text = facts.format_character_standings(standings)
 
         self.assertIn(f"#1/{len(self.first.rows)} 三位一体", text)
         # The count a model is asked for is stated, not left to be counted.
@@ -112,7 +112,7 @@ class StandingsTests(unittest.TestCase):
         self.assertIn("前三 2 个榜", text)
         # Every first-place board is named, whatever the row limit.
         self.assertIn("第一名的榜：三位一体、罗丹", text)
-        self.assertIn("数据截至 3 分钟前", text)
+        self.assertNotIn("数据截至", text)
         self.assertIn("battleId", text)
         self.assertIn("不是角色本身的强度", text)
 
@@ -154,11 +154,11 @@ class StandingsPageTests(unittest.TestCase):
         )
         self.name = self.rankings[0].rows[0].roster_entries[0].character_name
 
-    def test_the_page_carries_one_row_per_board_and_the_index_age(self) -> None:
+    def test_the_page_carries_one_row_per_board(self) -> None:
         standings = character_standings(self.rankings, self.name)
 
         page = build_character_standings_page(
-            standings, query=self.name, web_base_url=WEB, age_seconds=4_000
+            standings, query=self.name, web_base_url=WEB
         )
 
         self.assertEqual(page.header.target_type, "角色排名")
@@ -168,7 +168,6 @@ class StandingsPageTests(unittest.TestCase):
         self.assertEqual(page.first_places, 2)
         self.assertEqual(page.rows[0].total_rows, len(self.rankings[0].rows))
         self.assertEqual(len(page.rows[0].roster), 4)
-        self.assertEqual(page.as_of_label, "数据截至 1 小时 6 分钟前")
         self.assertEqual(page.absent, ())
 
     def test_the_template_renders_the_rows_and_the_folded_boards(self) -> None:
@@ -177,7 +176,7 @@ class StandingsPageTests(unittest.TestCase):
         renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
 
         html = renderer.render_character_standings(
-            standings, query=self.name, web_base_url=WEB, age_seconds=30
+            standings, query=self.name, web_base_url=WEB
         )
         empty = renderer.render_character_standings(
             standings_absent, query="没有这个人", web_base_url=WEB
@@ -185,7 +184,7 @@ class StandingsPageTests(unittest.TestCase):
 
         self.assertIn("各榜单最好名次", html)
         self.assertIn("三位一体", html)
-        self.assertIn("数据刚刚更新", html)
+        self.assertNotIn("时效", html)
         self.assertIn("没有出场", empty)
         self.assertIn("罗丹", empty)
 

@@ -84,13 +84,14 @@ class TalliesTests(unittest.TestCase):
     def test_the_text_states_the_counting_rule_and_the_leader(self) -> None:
         tallies = character_tallies(self.rankings)
 
-        text = facts.format_character_tallies(tallies, board_count=2, age_seconds=30)
+        text = facts.format_character_tallies(tallies, board_count=2)
 
         self.assertIn("全部 2 个榜", text)
         self.assertIn("四名角色各算一个", text)
         self.assertIn(f"冠军最多：{self.leader.character_name} 2 个榜", text)
         self.assertIn(f"{self.leader.character_name} · 冠军 2（当主C 2）", text)
         self.assertIn("不代表哪个角色更强", text)
+        self.assertNotIn("数据截至", text)
 
 
 class ChampionsPageTests(unittest.TestCase):
@@ -107,7 +108,6 @@ class ChampionsPageTests(unittest.TestCase):
             board_count=2,
             query="角色排名",
             web_base_url=WEB,
-            age_seconds=90,
         )
 
         self.assertEqual(page.header.target_type, "角色排名")
@@ -119,7 +119,6 @@ class ChampionsPageTests(unittest.TestCase):
         self.assertEqual(
             len(page.rows) + len(page.others), len(self.tallies)
         )
-        self.assertEqual(page.as_of_label, "数据截至 1 分钟前")
 
     def test_the_template_renders(self) -> None:
         renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])

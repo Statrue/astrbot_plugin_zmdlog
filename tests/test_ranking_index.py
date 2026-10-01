@@ -96,7 +96,6 @@ class RankingIndexTests(unittest.TestCase):
         self.assertTrue(self.index.complete)
         self.assertEqual(sorted(self.upstream.ranking_calls), sorted(SLUGS))
         self.assertEqual(len(self.index.entries()), 2)
-        self.assertEqual(self.index.oldest_age_seconds(), 0.0)
 
     def test_a_reader_accepting_any_age_never_fetches(self) -> None:
         run(self.index.ensure_filled())

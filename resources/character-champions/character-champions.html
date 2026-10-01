@@ -13,9 +13,6 @@
   <div class="hero-fact"><span>当主 C 的冠军最多</span><strong>{{ page.top_main.name }}</strong><em>{{ page.top_main.first_places_as_main }} 个榜</em></div>
   {% endif %}
   <div class="hero-fact"><span>榜单</span><strong>{{ page.board_count }}</strong><em>{% if page.profession %}{{ page.profession }}角色 {{ page.rows|length }}{% else %}进过前三的角色 {{ page.rows|length }}{% endif %}</em></div>
-  {% if page.as_of_label %}
-  <div class="hero-fact"><span>时效</span><strong class="champ-asof">{{ page.as_of_label }}</strong></div>
-  {% endif %}
 </div>
 {% endblock %}
 

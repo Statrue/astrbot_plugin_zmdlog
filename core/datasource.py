@@ -37,6 +37,11 @@ from .ranking_index import RankingIndex, account_rankings, rows_by_battle
 from .settings import PluginSettings
 
 HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
+# How long each endpoint family's answer is reused; fixed since #28, so a
+# deployer cannot tune one into something broken.
+CHARACTER_STATS_CACHE_TTL_SECONDS = 120.0
+ACCOUNT_CACHE_TTL_SECONDS = 60.0
+BATTLE_CACHE_TTL_SECONDS = 300.0
 # ``get_boss_ranking``'s default, distinct from ``None`` (whatever is held).
 _CONFIGURED_AGE = object()
 RECORD_EVENTS_FILE = "record-events.json"
@@ -90,34 +95,35 @@ class ZmdLogsDataSource:
         )
         self._logger = logger
         ranking_ttl = settings.ranking_cache_ttl_seconds
-        stats_ttl = settings.character_stats_cache_ttl_seconds
-        battle_ttl = settings.battle_cache_ttl_seconds
         self.hot_boss_cache = AsyncTTLCache[str, tuple[HotBossCard, ...]](
             ranking_ttl,
             stale_ttl_seconds=ranking_ttl,
         )
         self._ranking_max_age = ranking_ttl
         self.account_cache = AsyncTTLCache[str, PublicUserRankings](
-            settings.account_cache_ttl_seconds,
+            ACCOUNT_CACHE_TTL_SECONDS,
         )
         self.character_stats_cache = AsyncTTLCache[
             tuple[str, str, str],
             CharacterStatistics,
-        ](stats_ttl)
+        ](CHARACTER_STATS_CACHE_TTL_SECONDS)
         self.character_boss_cache = AsyncTTLCache[
             tuple[str, str, str],
             CharacterBossStatistics,
-        ](stats_ttl)
+        ](CHARACTER_STATS_CACHE_TTL_SECONDS)
         self.character_profile_cache = AsyncTTLCache[
             tuple[str, str, str],
             CharacterProfile,
-        ](stats_ttl, max_entries=PROFILE_CACHE_MAX_ENTRIES)
+        ](
+            CHARACTER_STATS_CACHE_TTL_SECONDS,
+            max_entries=PROFILE_CACHE_MAX_ENTRIES,
+        )
         self.battle_cache = AsyncTTLCache[str, BattleDetailSummary](
-            battle_ttl,
+            BATTLE_CACHE_TTL_SECONDS,
             max_entries=BATTLE_CACHE_MAX_ENTRIES,
         )
         self.battle_export_cache = AsyncTTLCache[str, BattleExport](
-            battle_ttl,
+            BATTLE_CACHE_TTL_SECONDS,
             max_entries=BATTLE_CACHE_MAX_ENTRIES,
         )
         self.equip_catalog_cache = AsyncTTLCache[str, dict[str, str]](

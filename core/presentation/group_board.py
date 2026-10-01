@@ -7,7 +7,6 @@ from ..models import BossRanking, BossRankingRow
 from .boards import RosterEntryView, _build_roster
 from .common import (
     PageHeader,
-    _as_of_label,
     _format_date,
     format_duration,
     format_number,
@@ -45,7 +44,6 @@ class GroupBoardPage:
     shown_count: int
     # True when the chat has more bound accounts than the board reads.
     truncated: bool
-    as_of_label: str
     rows: tuple[GroupRowView, ...]
 
 
@@ -60,7 +58,6 @@ def build_group_board_page(
     display_limit: int,
     truncated: bool = False,
     elements: Mapping[str, str] | None = None,
-    age_seconds: float | None = None,
 ) -> GroupBoardPage:
     """The chat's members in board order; ``rows`` come from ``group_standings``.
 
@@ -113,6 +110,5 @@ def build_group_board_page(
         listed_count=len(rows),
         shown_count=len(views),
         truncated=truncated,
-        as_of_label=_as_of_label(age_seconds),
         rows=views,
     )

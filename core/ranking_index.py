@@ -196,14 +196,6 @@ class RankingIndex:
 
         return self.missing(METRIC_DPS)
 
-    def oldest_age_seconds(self, metric: str = METRIC_DPS) -> float | None:
-        """How far behind the oldest ranking held is; None with nothing held."""
-
-        held = self.entries(metric)
-        if not held:
-            return None
-        return self._clock() - min(entry.loaded_at for entry in held)
-
     # --- filling and refreshing ---------------------------------------------------
 
     async def ensure_filled(self, metric: str = METRIC_DPS) -> None:

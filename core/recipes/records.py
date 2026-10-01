@@ -18,7 +18,6 @@ class RecordsRecipe:
     events: tuple[RecordEvent, ...]
     activity: tuple[BoardActivity, ...]
     window_label: str
-    age_seconds: float | None
     missing_count: int
     # When the event log started; None while it has seen nothing yet.
     log_since: str | None
@@ -31,7 +30,6 @@ class RecordsRecipe:
             self.activity,
             query=self.query,
             window_label=self.window_label,
-            age_seconds=self.age_seconds,
             log_since=self.log_since,
             metric=self.metric,
         )
@@ -48,7 +46,6 @@ def prepare_records(
         events=log.recent(since=since, metric=snapshot.metric),
         activity=board_activity(snapshot.rankings, since=since),
         window_label=window_label(span),
-        age_seconds=snapshot.age_seconds,
         missing_count=snapshot.missing_count,
         log_since=log.oldest_seen_at(),
         metric=snapshot.metric,

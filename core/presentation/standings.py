@@ -7,7 +7,6 @@ from ..standings import CharacterStandings
 from .boards import RosterEntryView, _build_roster
 from .common import (
     PageHeader,
-    _as_of_label,
     _initial,
     format_duration,
     format_number,
@@ -49,7 +48,6 @@ class CharacterStandingsPage:
     first_places_as_main: int
     board_count: int
     absent_count: int
-    as_of_label: str
     rows: tuple[StandingRowView, ...]
     absent: tuple[str, ...]
 
@@ -59,7 +57,6 @@ def build_character_standings_page(
     *,
     query: str,
     web_base_url: str | None = None,
-    age_seconds: float | None = None,
     elements: Mapping[str, str] | None = None,
     metric: str = "dps",
 ) -> CharacterStandingsPage:
@@ -136,7 +133,6 @@ def build_character_standings_page(
         first_places_as_main=standings.first_places_as_main,
         board_count=len(standings.boards),
         absent_count=len(standings.absent),
-        as_of_label=_as_of_label(age_seconds),
         rows=tuple(rows),
         absent=tuple(board.boss_name for board in standings.absent),
     )

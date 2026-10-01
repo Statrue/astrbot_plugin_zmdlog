@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from ..events import CHAMPION_CHANGE, NEW_RECORD, BoardActivity, RecordEvent
 from .common import (
     PageHeader,
-    _as_of_label,
     _bar_width,
     _format_datetime,
     format_duration,
@@ -58,7 +57,6 @@ class ActivityView:
 class RecordsPage:
     header: PageHeader
     window_label: str
-    as_of_label: str
     # When the log started, so an empty stream reads as "nothing yet", not
     # "nothing happened".
     log_since_label: str
@@ -76,7 +74,6 @@ def build_records_page(
     *,
     query: str,
     window_label: str,
-    age_seconds: float | None = None,
     log_since: str | None = None,
     metric: str = "dps",
 ) -> RecordsPage:
@@ -102,7 +99,6 @@ def build_records_page(
             metric=metric,
         ),
         window_label=window_label,
-        as_of_label=_as_of_label(age_seconds),
         log_since_label=_format_datetime(log_since) if log_since else "",
         changes=tuple(
             ChampionChangeView(

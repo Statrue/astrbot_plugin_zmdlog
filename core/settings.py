@@ -42,9 +42,6 @@ class PluginSettings:
     fallback_to_astrbot_renderer: bool = True
     alias_file_path: str = "aliases.json"
     ranking_cache_ttl_seconds: float = 60.0
-    character_stats_cache_ttl_seconds: float = 120.0
-    account_cache_ttl_seconds: float = 60.0
-    battle_cache_ttl_seconds: float = 300.0
     auto_expand_battle_links: bool = False
     battle_link_dedupe_seconds: float = 300.0
     fuzzy_match_threshold: float = 0.65
@@ -107,11 +104,6 @@ def load_settings(
         fallback_to_astrbot_renderer=reader.flag("fallback_to_astrbot_renderer"),
         alias_file_path=reader.text("alias_file_path"),
         ranking_cache_ttl_seconds=reader.positive_number("ranking_cache_ttl_seconds"),
-        character_stats_cache_ttl_seconds=reader.positive_number(
-            "character_stats_cache_ttl_seconds"
-        ),
-        account_cache_ttl_seconds=reader.positive_number("account_cache_ttl_seconds"),
-        battle_cache_ttl_seconds=reader.positive_number("battle_cache_ttl_seconds"),
         auto_expand_battle_links=reader.flag("auto_expand_battle_links"),
         battle_link_dedupe_seconds=reader.positive_number(
             "battle_link_dedupe_seconds"

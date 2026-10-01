@@ -11,9 +11,6 @@
   <div class="hero-fact hero-fact--key"><span>冠军最多</span><strong>{{ page.top.display_name }}</strong><em>{{ page.top.first_places }} / {{ page.board_count }} 个榜</em></div>
   {% endif %}
   <div class="hero-fact"><span>榜单</span><strong>{{ page.board_count }}</strong><em>进过前三的玩家 {{ page.rows|length }}</em></div>
-  {% if page.as_of_label %}
-  <div class="hero-fact"><span>时效</span><strong class="champ-asof">{{ page.as_of_label }}</strong></div>
-  {% endif %}
 </div>
 {% endblock %}
 

@@ -815,7 +815,6 @@ class QueryService:
                     "上都没有公开记录。"
                 )
             )
-        index = self._data.ranking_index
         rendered = await self._renderer().render_group_board(
             ranking,
             rows,
@@ -827,11 +826,6 @@ class QueryService:
             web_base_url=self._web_base_url,
             elements=await self._data.character_elements(
                 names=ranking_character_names(ranking)
-            ),
-            age_seconds=(
-                index.oldest_age_seconds(ranking.metric)
-                if index.is_complete(ranking.metric)
-                else None
             ),
         )
         return Outcome.image(rendered, target=target)

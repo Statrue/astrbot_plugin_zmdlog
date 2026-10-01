@@ -9,9 +9,6 @@
   <div class="hero-fact hero-fact--key"><span>第一名易主</span><strong>{{ page.change_count }}</strong><em>{{ page.window_label }}</em></div>
   <div class="hero-fact"><span>新上传的记录</span><strong>{{ page.record_count }}</strong><em>索引发现的</em></div>
   <div class="hero-fact"><span>{{ page.window_label }}打出的记录</span><strong>{{ page.active_total }}</strong><em>按战斗时间</em></div>
-  {% if page.as_of_label %}
-  <div class="hero-fact"><span>时效</span><strong class="rec-asof">{{ page.as_of_label }}</strong></div>
-  {% endif %}
 </div>
 {% endblock %}
 

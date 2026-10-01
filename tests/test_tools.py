@@ -104,9 +104,6 @@ class FakeIndex:
     def entries(self, metric="dps"):
         return self._held[metric]
 
-    def oldest_age_seconds(self, metric="dps"):
-        return 42.0 if self._held[metric] else None
-
 
 class FakeData:
     def __init__(
@@ -467,6 +464,21 @@ class ToolServiceTests(unittest.TestCase):
         self.assertEqual(answer.image_path, "/tmp/records.png")
         self.assertIn("新纪录", answer.text)
         self.assertIn("第一名易主", answer.text)
+
+    def test_answers_read_off_the_index_state_no_data_age(self) -> None:
+        # How long the oldest copy was held says nothing about whether
+        # upstream changed since (#28); a model would only repeat it.
+        name = self.ranking.rows[0].roster_entries[0].character_name
+        answers = {
+            "standings": run(self.service.character(name)),
+            "champions": run(self.service.character("")),
+            "players": run(self.service.account("")),
+            "records": run(self.service.board("")),
+        }
+
+        for kind, answer in answers.items():
+            with self.subTest(kind=kind):
+                self.assertNotIn("数据截至", answer.text)
 
     def test_a_page_that_will_not_draw_still_answers_in_text(self) -> None:
         self.renderer.fail = True

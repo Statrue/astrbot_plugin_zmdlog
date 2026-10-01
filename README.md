@@ -213,9 +213,6 @@ AstrBot 接入大模型并开启函数调用后，群友直接用自然语言问
 | `fallback_to_astrbot_renderer` | `true` | 内置 Chromium 不可用时改用 AstrBot 的文转图 |
 | `alias_file_path` | `aliases.json` | 别名文件，相对 `data/plugin_data/astrbot_plugin_zmdlog/` |
 | `ranking_cache_ttl_seconds` | `60` | 具体榜单查询接受多旧的数据 |
-| `account_cache_ttl_seconds` | `60` | 账号成绩缓存 |
-| `character_stats_cache_ttl_seconds` | `120` | 角色统计、角色档案缓存 |
-| `battle_cache_ttl_seconds` | `300` | 战报缓存 |
 | `auto_expand_battle_links` | `false` | 群里出现战报链接时自动回战报卡 |
 | `battle_link_dedupe_seconds` | `300` | 同群同战报自动展开的冷却 |
 | `fuzzy_match_threshold` | `0.65` | 模糊匹配最低可信阈值 |

@@ -554,7 +554,6 @@ class GroupBoardTests(unittest.TestCase):
             account_count=4,
             display_limit=2,
             truncated=True,
-            age_seconds=30,
         )
         html = renderer.render_group_board(
             self.ranking,
@@ -565,7 +564,6 @@ class GroupBoardTests(unittest.TestCase):
             display_limit=2,
             truncated=True,
             web_base_url=WEB,
-            age_seconds=30,
         )
 
         self.assertEqual(page.header.target_type, "群榜")
@@ -579,7 +577,7 @@ class GroupBoardTests(unittest.TestCase):
         self.assertIn("公开账号2", html)
         self.assertIn("#2 / 5", html)
         self.assertIn("超过统计上限", html)
-        self.assertIn("数据刚刚更新", html)
+        self.assertNotIn("时效", html)
         self.assertNotIn(USER, html)
         empty = renderer.render_group_board(
             self.ranking, (), query="q", member_count=1, account_count=1

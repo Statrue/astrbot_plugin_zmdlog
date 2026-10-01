@@ -8,7 +8,6 @@ from ..standings import CharacterTally, ProfessionUsage, TeamTally
 from .boards import RosterEntryView, _build_roster
 from .common import (
     PageHeader,
-    _as_of_label,
     _bar_width,
     _initial,
     _safe_asset_url,
@@ -60,7 +59,6 @@ class TallyRowView:
 class CharacterChampionsPage:
     header: PageHeader
     board_count: int
-    as_of_label: str
     # The headline answer (most first places) and its side note (most first
     # places as main C). Both are None with no records.
     top_team: TallyRowView | None
@@ -88,7 +86,6 @@ def build_character_champions_page(
     board_count: int,
     query: str,
     web_base_url: str | None = None,
-    age_seconds: float | None = None,
     element: str | None = None,
     elements: Mapping[str, str] | None = None,
     profession: str | None = None,
@@ -182,7 +179,6 @@ def build_character_champions_page(
             ),
         ),
         board_count=board_count,
-        as_of_label=_as_of_label(age_seconds),
         top_main=top_main,
         top_team=top_team,
         profession=profession,

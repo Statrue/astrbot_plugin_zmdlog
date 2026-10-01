@@ -33,7 +33,6 @@ class StandingsRecipe:
     standings: CharacterStandings
     query: str
     web_base_url: str | None
-    age_seconds: float | None
     missing_count: int
     elements: Mapping[str, str]
     metric: str = "dps"
@@ -43,7 +42,6 @@ class StandingsRecipe:
             self.standings,
             query=self.query,
             web_base_url=self.web_base_url,
-            age_seconds=self.age_seconds,
             elements=self.elements,
             metric=self.metric,
         )
@@ -71,7 +69,6 @@ async def prepare_standings(
         standings=standings,
         query=query,
         web_base_url=web_base_url,
-        age_seconds=snapshot.age_seconds,
         missing_count=snapshot.missing_count,
         elements=await data.character_elements(names=snapshot.fielded),
         metric=snapshot.metric,
@@ -86,7 +83,6 @@ class ChampionsRecipe:
     board_count: int
     query: str
     web_base_url: str | None
-    age_seconds: float | None
     missing_count: int
     # The element the board was cut to, if any; ``elements`` is the catalog
     # map every row's ring is drawn from.
@@ -107,7 +103,6 @@ class ChampionsRecipe:
             board_count=self.board_count,
             query=self.query,
             web_base_url=self.web_base_url,
-            age_seconds=self.age_seconds,
             element=self.element,
             elements=self.elements,
             profession=self.profession,
@@ -154,7 +149,6 @@ async def prepare_champions(
         board_count=snapshot.board_count,
         query=query,
         web_base_url=web_base_url,
-        age_seconds=snapshot.age_seconds,
         missing_count=snapshot.missing_count,
         element=element,
         elements=elements,

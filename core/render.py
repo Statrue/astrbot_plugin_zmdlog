@@ -311,7 +311,6 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str | None = None,
-        age_seconds: float | None = None,
         elements: Mapping[str, str] | None = None,
         metric: str = "dps",
         embed_fonts: bool = True,
@@ -320,7 +319,6 @@ class TemplateRenderer:
             standings,
             query=query,
             web_base_url=web_base_url,
-            age_seconds=age_seconds,
             elements=elements,
             metric=metric,
         )
@@ -338,7 +336,6 @@ class TemplateRenderer:
         board_count: int,
         query: str,
         web_base_url: str | None = None,
-        age_seconds: float | None = None,
         element: str | None = None,
         elements: Mapping[str, str] | None = None,
         profession: str | None = None,
@@ -354,7 +351,6 @@ class TemplateRenderer:
             board_count=board_count,
             query=query,
             web_base_url=web_base_url,
-            age_seconds=age_seconds,
             element=element,
             elements=elements,
             teams=teams,
@@ -377,7 +373,6 @@ class TemplateRenderer:
         *,
         board_count: int,
         query: str,
-        age_seconds: float | None = None,
         window_label: str = "",
         metric: str = "dps",
         embed_fonts: bool = True,
@@ -386,7 +381,6 @@ class TemplateRenderer:
             tallies,
             board_count=board_count,
             query=query,
-            age_seconds=age_seconds,
             window_label=window_label,
             metric=metric,
         )
@@ -409,7 +403,6 @@ class TemplateRenderer:
         truncated: bool = False,
         web_base_url: str | None = None,
         elements: Mapping[str, str] | None = None,
-        age_seconds: float | None = None,
         embed_fonts: bool = True,
     ) -> str:
         page = build_group_board_page(
@@ -422,7 +415,6 @@ class TemplateRenderer:
             display_limit=display_limit,
             truncated=truncated,
             elements=elements,
-            age_seconds=age_seconds,
         )
         return self._render(
             "group-board/group-board.html",
@@ -438,7 +430,6 @@ class TemplateRenderer:
         *,
         query: str,
         window_label: str,
-        age_seconds: float | None = None,
         log_since: str | None = None,
         metric: str = "dps",
         embed_fonts: bool = True,
@@ -448,7 +439,6 @@ class TemplateRenderer:
             activity,
             query=query,
             window_label=window_label,
-            age_seconds=age_seconds,
             log_since=log_since,
             metric=metric,
         )

@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 class PlayerChampionsRecipe:
     tallies: tuple[AccountTally, ...]
     board_count: int
-    age_seconds: float | None
     missing_count: int
     window_label: str
     query: str = "玩家排名"
@@ -27,7 +26,6 @@ class PlayerChampionsRecipe:
             self.tallies,
             board_count=self.board_count,
             query=self.query,
-            age_seconds=self.age_seconds,
             window_label=self.window_label,
             metric=self.metric,
         )
@@ -40,7 +38,6 @@ def prepare_player_champions(
     return PlayerChampionsRecipe(
         tallies=account_tallies(snapshot.rankings, since=since),
         board_count=snapshot.board_count,
-        age_seconds=snapshot.age_seconds,
         missing_count=snapshot.missing_count,
         window_label=window_label(time_range),
         metric=snapshot.metric,

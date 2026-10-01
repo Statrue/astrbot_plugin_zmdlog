@@ -243,7 +243,6 @@ class ToolService:
             recipe.events,
             recipe.activity,
             window_label=recipe.window_label,
-            age_seconds=recipe.age_seconds,
             log_since=recipe.log_since,
             metric=recipe.metric,
         )
@@ -479,7 +478,7 @@ class ToolService:
         )
         parts = [
             facts.format_character_standings(
-                recipe.standings, age_seconds=recipe.age_seconds, metric=recipe.metric
+                recipe.standings, metric=recipe.metric
             ),
             facts.format_character_partners(snapshot.rankings, resolution.name),
         ]
@@ -508,7 +507,7 @@ class ToolService:
             return ToolAnswer(recipe)
         image = await self._render(recipe.draw)
         text = facts.format_character_standings(
-            recipe.standings, age_seconds=recipe.age_seconds, metric=recipe.metric
+            recipe.standings, metric=recipe.metric
         )
         return ToolAnswer(text, image).noted(_index_note(recipe.missing_count))
 
@@ -545,7 +544,6 @@ class ToolService:
             recipe.tallies,
             board_count=recipe.board_count,
             limit=15,
-            age_seconds=recipe.age_seconds,
             element=recipe.element,
             profession=recipe.profession,
             teams=recipe.teams,
@@ -924,7 +922,6 @@ class ToolService:
             recipe.tallies,
             board_count=recipe.board_count,
             limit=15,
-            age_seconds=recipe.age_seconds,
             window_label=recipe.window_label,
         )
         image = await self._render(recipe.draw)

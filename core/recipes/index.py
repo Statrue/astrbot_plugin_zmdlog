@@ -16,17 +16,16 @@ class IndexSnapshot:
     """What the ranking index held when a page asked for it.
 
     A page drawn from memory reads the index exactly once, so the rows it
-    counts, the age it prints and the boards it admits to missing all
-    describe the same moment — and the same ranking: ``metric`` says which
-    of every board's two rankings the snapshot holds.
+    counts and the boards it admits to missing describe the same moment —
+    and the same ranking: ``metric`` says which of every board's two
+    rankings the snapshot holds. It carries no age: how long a copy was
+    held says nothing about whether upstream changed since (#28).
     """
 
     rankings: tuple[BossRanking, ...]
     # Every character any roster fields, four-stars included: what a typed
     # name is resolved against, and the names the catalogs are asked about.
     fielded: tuple[str, ...]
-    # How far behind the oldest board held is; the page's 数据截至 label.
-    age_seconds: float | None
     # Boards the board list names that the index has not read yet.
     missing_count: int
     metric: str = METRIC_DPS
@@ -52,7 +51,6 @@ async def index_snapshot(
     return IndexSnapshot(
         rankings=rankings,
         fielded=roster_character_names(rankings),
-        age_seconds=index.oldest_age_seconds(metric),
         missing_count=index.missing(metric),
         metric=metric,
     )

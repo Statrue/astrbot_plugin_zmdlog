@@ -38,21 +38,6 @@
     "type": "int",
     "default": 60
   },
-  "character_stats_cache_ttl_seconds": {
-    "description": "角色统计与角色档案缓存时间（秒）",
-    "type": "int",
-    "default": 120
-  },
-  "account_cache_ttl_seconds": {
-    "description": "公开账号成绩缓存时间（秒）",
-    "type": "int",
-    "default": 60
-  },
-  "battle_cache_ttl_seconds": {
-    "description": "公开战报摘要缓存时间（秒）",
-    "type": "int",
-    "default": 300
-  },
   "auto_expand_battle_links": {
     "description": "在群聊中自动展开 ZMDLogs 战报链接",
     "type": "bool",

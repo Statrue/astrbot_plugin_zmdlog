@@ -769,7 +769,6 @@ def format_character_standings(
     standings: CharacterStandings,
     *,
     limit: int = DEFAULT_ROW_LIMIT,
-    age_seconds: float | None = None,
     metric: str = "dps",
 ) -> str:
     """The best record fielding one character on each board, best rank first.
@@ -781,11 +780,7 @@ def format_character_standings(
 
     name = "」「".join(standings.characters)
     team = f"同时带「{name}」" if standings.is_team else f"带「{name}」"
-    as_of = ""
-    if age_seconds is not None:
-        minutes = int(age_seconds // 60)
-        as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
-    lines = [f"{team}的队伍在各榜单的最好名次{as_of}", *_metric_note(metric)]
+    lines = [f"{team}的队伍在各榜单的最好名次", *_metric_note(metric)]
     if not standings.boards:
         lines.append(
             f"读过的 {len(standings.absent)} 个榜里没有{team}的队伍。"
@@ -867,7 +862,6 @@ def format_character_tallies(
     *,
     board_count: int,
     limit: int = DEFAULT_ROW_LIMIT,
-    age_seconds: float | None = None,
     element: str | None = None,
     profession: str | None = None,
     teams: tuple[TeamTally, ...] = (),
@@ -883,10 +877,6 @@ def format_character_tallies(
     characters (of that class) no public record fields.
     """
 
-    as_of = ""
-    if age_seconds is not None:
-        minutes = int(age_seconds // 60)
-        as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
     who = _who(element, profession)
     noun = "角色" if element is None and profession is None else who
     scope = (
@@ -895,7 +885,7 @@ def format_character_tallies(
         else f"{window_label}各榜最快记录（{board_count} 个榜）"
     )
     lines = [
-        f"{scope}里{who}各占几个{as_of}",
+        f"{scope}里{who}各占几个",
         *_metric_note(metric),
         "「冠军」= 该榜第一名记录的队伍里带这个角色，四名角色各算一个；"
         "「当主C」= 其中该角色是主C的。",
@@ -972,20 +962,15 @@ def format_records(
     activity: tuple[BoardActivity, ...],
     *,
     window_label: str,
-    age_seconds: float | None = None,
     log_since: str | None = None,
     limit: int = DEFAULT_ROW_LIMIT,
     metric: str = "dps",
 ) -> str:
     """Champion changes, new records and per-board activity in a window."""
 
-    as_of = ""
-    if age_seconds is not None:
-        minutes = int(age_seconds // 60)
-        as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
     changes = [event for event in events if event.kind == CHAMPION_CHANGE]
     records = [event for event in events if event.kind == NEW_RECORD]
-    lines = [f"{window_label}的新纪录{as_of}", *_metric_note(metric)]
+    lines = [f"{window_label}的新纪录", *_metric_note(metric)]
     if log_since:
         lines.append(f"新纪录流从 {_when(log_since)} 起记录，之前的变化没有。")
     else:
@@ -1025,23 +1010,18 @@ def format_account_tallies(
     *,
     board_count: int,
     limit: int = DEFAULT_ROW_LIMIT,
-    age_seconds: float | None = None,
     window_label: str = "",
     metric: str = "dps",
 ) -> str:
     """Every uploading account's first places, podiums and top tens."""
 
-    as_of = ""
-    if age_seconds is not None:
-        minutes = int(age_seconds // 60)
-        as_of = "（数据截至刚才）" if minutes < 1 else f"（数据截至 {minutes} 分钟前）"
     scope = (
         f"全部 {board_count} 个榜的第一名记录"
         if not window_label
         else f"{window_label}各榜最快记录（{board_count} 个榜）"
     )
     lines = [
-        f"{scope}里各玩家各占几个{as_of}",
+        f"{scope}里各玩家各占几个",
         *_metric_note(metric),
         "「冠军」= 该榜第一名记录的上传者；前三、前十按该账号在该榜的最好名次算；"
         "只统计设为公开的账号。",

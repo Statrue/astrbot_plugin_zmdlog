@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from ..standings import AccountTally
-from .common import PageHeader, _as_of_label, _bar_width, metric_footer
+from .common import PageHeader, _bar_width, metric_footer
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +26,6 @@ class PlayerRowView:
 class PlayerChampionsPage:
     header: PageHeader
     board_count: int
-    as_of_label: str
     top: PlayerRowView | None
     rows: tuple[PlayerRowView, ...]
     # Accounts with records but no top-three finish, folded into chips.
@@ -39,7 +38,6 @@ def build_player_champions_page(
     *,
     board_count: int,
     query: str,
-    age_seconds: float | None = None,
     window_label: str = "",
     limit: int = 40,
     metric: str = "dps",
@@ -83,7 +81,6 @@ def build_player_champions_page(
             metric=metric,
         ),
         board_count=board_count,
-        as_of_label=_as_of_label(age_seconds),
         top=rows[0] if rows else None,
         rows=rows,
         others=tuple(tally.display_name for tally in tallies if not tally.podiums)[

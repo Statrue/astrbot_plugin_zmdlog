@@ -68,13 +68,14 @@ class AccountTalliesTests(unittest.TestCase):
     def test_the_text_leads_with_the_champion_and_states_the_rule(self) -> None:
         tallies = account_tallies(self.rankings)
 
-        text = facts.format_account_tallies(tallies, board_count=2, age_seconds=30)
+        text = facts.format_account_tallies(tallies, board_count=2)
 
         self.assertIn("全部 2 个榜", text)
         self.assertIn("第一名记录的上传者", text)
         self.assertIn(f"冠军最多：{self.leader.account_display_name} 2 个榜", text)
         self.assertIn("常用主C", text)
         self.assertIn("ZMDLogs", text)
+        self.assertNotIn("数据截至", text)
 
 
 class PlayerPageTests(unittest.TestCase):

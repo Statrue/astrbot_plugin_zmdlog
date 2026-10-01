@@ -10,9 +10,6 @@
   <div class="hero-fact hero-fact--key"><span>群内上榜</span><strong>{{ page.listed_count }}</strong><em>绑定账号 {{ page.account_count }}</em></div>
   <div class="hero-fact"><span>本群成员</span><strong>{{ page.member_count }}</strong><em>用过绑定指令的人</em></div>
   <div class="hero-fact"><span>全榜记录</span><strong>{{ page.total_rows }}</strong><em>{{ page.dungeon_name }}</em></div>
-  {% if page.as_of_label %}
-  <div class="hero-fact"><span>时效</span><strong class="standings-asof">{{ page.as_of_label }}</strong></div>
-  {% endif %}
 </div>
 {% endblock %}
 
