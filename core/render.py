@@ -82,32 +82,12 @@ _OUTPUT_FILE_GLOB = "zmd-*.png"
 # they weigh 3.7 MB base64, and pushing that through set_content plus
 # decoding it cost a third of every capture.
 FONT_ORIGIN = "https://fonts.zmdlog.invalid"
-# Short pages are captured at 2x for legibility on phones; the potentially very
-# long top-3 pages stay at 1x to remain well below Chromium's 16384px limit.
-_HIGH_DPI_PAGE_KINDS = frozenset(
-    {
-        "help",
-        "ranking",
-        "account",
-        "battle",
-        "character-stats",
-        "character-boss",
-        "character-profile",
-        "character-standings",
-        "character-champions",
-        "player-champions",
-        "group-board",
-        "records",
-        "roster",
-        "loadout",
-        "skills",
-        "trend",
-        "timeline",
-        "compare",
-        "warmup",
-    }
-)
-_MAX_CAPTURE_HEIGHT_PX = 15_000
+# Every page is captured at 1x (#26, 2026-10-01). Most used to be 2x for
+# phones, which tripled the capture and made the PNG 2.5 times larger — the
+# account page took 2.4 s and 4.8 MB — and paid off only when a reader zoomed
+# in. A page that must be zoomed to be read is a layout problem, not a
+# resolution one.
+_CAPTURE_SCALE = 1
 _BROWSER_CLOSE_TIMEOUT_SECONDS = 10.0
 DEFAULT_MAX_CONCURRENT_RENDERS = 2
 # The semaphore bounds how many captures run at once, not how many callers
@@ -123,9 +103,9 @@ DEFAULT_MAX_OUTPUT_FILES = 50
 class RenderedImage:
     """One captured page: the PNG, and the device pixels per CSS pixel.
 
-    The scale is the one the capture actually used. It follows the page kind
-    (``_HIGH_DPI_PAGE_KINDS``), except that a page too long for 2x falls
-    back to 1x, so no caller can work it out from the kind alone.
+    The scale is the one the capture used, ``_CAPTURE_SCALE``. Callers read
+    it from here rather than assume it, so a picture's declared size stays
+    right if the scale ever changes again.
     """
 
     path: str
@@ -992,18 +972,11 @@ class LongImageRenderer:
     async def _capture_once(self, html: str, page_kind: str) -> RenderedImage:
         browser = await self._ensure_browser()
         output_path = await self._reserve_output_path(page_kind)
-        scale = 2 if page_kind in _HIGH_DPI_PAGE_KINDS else 1
+        scale = _CAPTURE_SCALE
         context = None
         page = None
         try:
             context, page, metrics = await self._load_page(browser, html, scale)
-            if scale > 1 and metrics["height"] * scale > _MAX_CAPTURE_HEIGHT_PX:
-                # Very long pages fall back to 1x to stay inside Chromium's
-                # texture limit instead of failing.
-                await page.close()
-                await context.close()
-                scale = 1
-                context, page, metrics = await self._load_page(browser, html, scale)
             await page.screenshot(
                 path=str(output_path),
                 full_page=True,
