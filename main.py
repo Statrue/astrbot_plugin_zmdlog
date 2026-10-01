@@ -168,7 +168,6 @@ class ZmdLogBotPlugin(Star):
         )
         self.data = ZmdLogsDataSource(
             self.client,
-            settings=settings,
             data_dir=self.data_dir,
             logger=logger,
         )

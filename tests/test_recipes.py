@@ -418,7 +418,6 @@ class AccountRecipeTests(unittest.TestCase):
     def _data(self, endpoint, *held) -> ZmdLogsDataSource:
         data = ZmdLogsDataSource(
             endpoint,
-            settings=PluginSettings(web_base_url=WEB),
             data_dir=None,
             logger=CapturingLogger(),
         )

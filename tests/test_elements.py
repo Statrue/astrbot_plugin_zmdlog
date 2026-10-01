@@ -13,7 +13,6 @@ from core.elements import ELEMENTS, element_key, normalize_element
 from core.models import parse_boss_ranking, parse_character_types
 from core.presentation import build_character_champions_page, build_ranking_page
 from core.routing import RouteKind, RouteParseError, parse_zmdlog_payload
-from core.settings import PluginSettings
 from core.standings import character_tallies
 from tests.helpers import ranking_payload_with_rows
 
@@ -100,7 +99,6 @@ class DataSourceTests(unittest.TestCase):
     def _source(self, client) -> ZmdLogsDataSource:
         return ZmdLogsDataSource(
             client,
-            settings=PluginSettings(),
             data_dir=None,
             logger=logging.getLogger("t"),
         )

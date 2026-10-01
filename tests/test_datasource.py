@@ -18,8 +18,7 @@ from core.models import (
     parse_hot_bosses,
 )
 from core.persistence import JsonStore, load_json
-from core.ranking_index import SIGNAL_SECONDS, IndexEntry
-from core.settings import PluginSettings
+from core.ranking_index import SLOW_SIGNAL_SECONDS, IndexEntry
 from tests.helpers import (
     CapturingLogger,
     character_statistics_payload,
@@ -86,7 +85,6 @@ class DataSourceTests(unittest.TestCase):
     def _source(self, client, *, data_dir=None) -> ZmdLogsDataSource:
         return ZmdLogsDataSource(
             client,
-            settings=PluginSettings(ranking_index_pace_seconds=600),
             data_dir=self.root if data_dir is None else data_dir,
             logger=self.logger,
         )
@@ -159,7 +157,6 @@ class DataSourceTests(unittest.TestCase):
     def test_without_a_data_dir_nothing_is_written_or_read(self) -> None:
         source = ZmdLogsDataSource(
             FakeClient(fail=True),
-            settings=PluginSettings(),
             data_dir=None,
             logger=self.logger,
         )
@@ -349,8 +346,9 @@ class HotBossesWarmingTests(DataSourceTests):
         source.hot_boss_cache._clock = lambda: now[0]
 
         run(source.refresh_hot_bosses())
-        # The next signal is due a period later, and its read takes a while.
-        now[0] += SIGNAL_SECONDS + 30
+        # A quiet index reads the list every five minutes, and the read
+        # itself takes a while.
+        now[0] += SLOW_SIGNAL_SECONDS + 30
         run(source.list_hot_bosses())
 
         self.assertEqual(client.calls, 1)

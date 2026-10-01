@@ -140,6 +140,21 @@ gaps:
 Neither carries `bossKey`, and neither lists the crisis-contract board, which
 statistics exclude. Nothing uses them as an index; this records the risk only.
 
+## `GET /api/bosses/{slug}/rankings`
+
+One response is the whole ranking, every public record: 215 KB for the busiest
+board on 2026-10-01. Measured that day, so that nobody tries again:
+
+- the response carries no `ETag`, `Last-Modified` or `Cache-Control`, so there
+  is no conditional request to make;
+- `limit`, `pageSize`, `page`, `top` and `since` are all ignored: the response
+  bytes are identical with and without each;
+- `HEAD` answers 405.
+
+Every re-read therefore downloads the full ranking, which is why
+`core/ranking_index` re-reads a ranking less often the longer it has gone
+unchanged.
+
 ## `metric=dps|rdps`
 
 Verified live 2026-09-16; anything else → 422 `literal_error`.

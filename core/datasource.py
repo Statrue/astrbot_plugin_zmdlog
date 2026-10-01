@@ -34,12 +34,11 @@ from .models import (
 )
 from .persistence import JsonStore, load_json, save_json
 from .ranking_index import (
-    SIGNAL_SECONDS,
+    SLOW_SIGNAL_SECONDS,
     RankingIndex,
     account_rankings,
     rows_by_battle,
 )
-from .settings import PluginSettings
 
 HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
 # How long each endpoint family's answer is reused; fixed since #28, so a
@@ -48,9 +47,9 @@ CHARACTER_STATS_CACHE_TTL_SECONDS = 120.0
 ACCOUNT_CACHE_TTL_SECONDS = 60.0
 BATTLE_CACHE_TTL_SECONDS = 300.0
 # The board list the index's signal reads stays fresh until the next signal
-# has landed, its own latency included, so a keyword query never pays the
-# cold read while the index runs.
-HOT_BOSSES_FRESH_SECONDS = SIGNAL_SECONDS + 60.0
+# has landed, at its slower pace and with that read's own latency, so a
+# keyword query never pays the cold read while the index runs.
+HOT_BOSSES_FRESH_SECONDS = SLOW_SIGNAL_SECONDS + 60.0
 RECORD_EVENTS_FILE = "record-events.json"
 _HOT_BOSSES_KEY = "all_board_top3"
 # A parsed battle carries its damage points and buff spans and measures
@@ -92,7 +91,6 @@ class ZmdLogsDataSource:
         self,
         client: ZmdLogsClient,
         *,
-        settings: PluginSettings,
         data_dir: Path | None,
         logger: LogSink,
     ) -> None:
@@ -161,7 +159,6 @@ class ZmdLogsDataSource:
         self.ranking_index = RankingIndex(
             fetch_ranking=self._fetch_boss_ranking,
             fetch_boards=self.refresh_hot_bosses,
-            pace_seconds=settings.ranking_index_pace_seconds,
             logger=logger,
             on_refresh=self.event_log.record,
         )

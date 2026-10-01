@@ -13,27 +13,77 @@ upload could compute team contribution (a few percent, as of 2026-09-16),
 in the same clear-time order. The DPS boards are filled first, so a DPS
 page waits for 49 reads, not 98.
 
-A reader never waits for upstream once a ranking is held: the copy is served
-however long it has been held, because whether it is current depends on
-upstream, not on its age. Only a ranking not held yet — the plugin just
+**Readers never wait for upstream once a ranking is held.** The copy is
+served however long it has been held, because whether it is current depends
+on upstream, not on its age. Only a ranking not held yet — the plugin just
 loaded, or the site just listed the board — is read while the reader waits.
 A reader that says someone is waiting on that one board (a board page, the
 group board, the board tool) also has a copy last checked over two minutes
-ago re-read in the background, so asking again shows what changed.
+ago re-read in the background: a player who just uploaded asks for that
+board, and asking again shows the new rank.
 
-The background loop keeps the copies current. Each ranking falls due once
-per pass of ``pace_seconds`` per board, and the hot-bosses response, one
-request for every board's top three, is read every minute: a board whose
-top three changed is re-read at once, rDPS board included. Every background
-re-read — due, asked for or signalled — takes a token from a bucket of four
-that gains one every twenty seconds, so the bot never re-reads more than
-three rankings a minute on average however many boards people ask about;
-asking only changes which board goes first, and a board asked for or
-signalled goes before the ones merely due. First reads take no token: a
-reader waits for them anyway. A read that fails keeps the copy and is tried
-again five minutes later, and reads failing four times in a row are an
-outage, not a bad board: the whole schedule then backs off, doubling up to
-ten minutes.
+**A ranking is re-read about as often as it changes.** Its next re-read comes
+``CHANGE_FACTOR`` × (time since it last changed) after its last check,
+between five minutes and six hours. A change is a re-read whose battle ids
+differ from the copy's, in content or order: a new record, a record moving,
+a record deleted. A busy tower is read every few minutes on a launch day,
+and every board drifts to one read in six hours at the end of a version,
+under one rule. A ranking read for the first time — at load, or on a newly
+listed board — last changed when its newest record was fought (a date in the
+future, from a device clock running fast, counts as now), so a reload starts
+every board at its real pace instead of taking all of them for boards that
+just changed. An empty ranking counts as unchanged for the longest interval:
+most rDPS rankings hold no record, and their first one, if it reaches the
+DPS top three, is caught by the signal anyway.
+
+**The top-three signal.** One hot-bosses request lists every board's top
+three; a board whose top three differ from the copy is re-read at once, its
+rDPS ranking with it. It is read every minute, and every five once the top
+threes have not changed for two hours; a change brings it straight back to
+every minute. A card that still disagrees after the re-read (a server-side
+cache lag) is waited out until it changes again.
+
+**The budget.** Every background re-read — due, asked for or signalled —
+takes a token from a bucket of four that gains one every twenty seconds:
+three a minute on average, whatever people ask about. Asking only changes
+which board goes first: rankings asked for or signalled go first, in the
+order they came, then the ones due, most overdue first. Neither a first
+read, which a reader waits for anyway, nor the signal's own request takes a
+token. A read that fails keeps the copy and is due again after the shortest
+interval; four failures in a row are an outage, not a bad board, and the
+whole schedule then backs off, doubling up to ten minutes.
+
+**What it costs**, simulated on the server's record-event log (its last
+1000 new records, 2026-09-08 to 10-01; 13 full days, all at the end of a
+version): about 1268 re-reads a day, 34% fewer than the server's 1931 at
+its configured pace of 90 seconds and 78% fewer than the 5760 at the old
+default of 30; the quietest day costs about 392. A new record below the
+top three is found in about 6 minutes at the median, against 34 before
+(p90 2.6 hours, never more than six); one in the top three, within five
+minutes, by the signal.
+
+**What was rejected, and why.**
+
+- Fixed polling: 98% of its re-reads found nothing. Upstream offers no
+  conditional request and no paging (UPSTREAM.md), so each of them was the
+  whole ranking, 215 KB for the busiest board.
+- AIMD (halve the interval on a change, grow it otherwise): records arrive
+  in bursts, and halving step by step reached a burst late — a median of
+  63 minutes to find a record, against 6 for this rule.
+- Waiting a bounded time for a fresh read: every query still downloads the
+  whole ranking, and waits up to a second more.
+- A 60-second expiry: it measures how long a copy was held, not whether
+  upstream changed. It is what this replaced.
+- Keeping the index on disk: a reload only happens at a deploy, and the
+  first-read rule above already restarts every board at its pace.
+
+``CHANGE_FACTOR`` is provisional. The data held no launch day, when uploads
+peak. Once the next version has been live through its first busy days,
+replay that period's ``record-events.json`` (in the plugin data directory)
+through the refresh simulation, compare reads a day and the time to find a
+record for factors around 0.1, and only then change it. The simulation is
+a local script, ``docs/debug/simulate_refresh.py``, kept out of the
+repository.
 """
 
 import asyncio
@@ -51,12 +101,19 @@ from .models import (
     PublicUserRanking,
     PublicUserRankings,
 )
-from .timestamps import later_or_same
+from .timestamps import later_or_same, parse_timestamp
 
-DEFAULT_PACE_SECONDS = 30.0
-# One hot-bosses read a minute: what a single keyword query a minute would
-# cost anyway, and it keeps the query cache warm as a side effect.
+# A ranking's next re-read comes this share of the time since it last
+# changed after its last check, within the two bounds. Provisional: the
+# module docstring says how to check it.
+CHANGE_FACTOR = 0.1
+MIN_INTERVAL_SECONDS = 5 * 60.0
+MAX_INTERVAL_SECONDS = 6 * 3600.0
+# The top-three signal: every minute, and every five once no board's top
+# three has changed for two hours.
 SIGNAL_SECONDS = 60.0
+SLOW_SIGNAL_SECONDS = 5 * 60.0
+SIGNAL_QUIET_SECONDS = 2 * 3600.0
 FILL_CONCURRENCY = 4
 # A board asked for is re-read only when its copy was checked longer ago
 # than this; a re-read sooner could only return the copy just served.
@@ -66,7 +123,7 @@ ON_DEMAND_AFTER_SECONDS = 120.0
 TOKEN_CAPACITY = 4
 TOKEN_SECONDS = 20.0
 # A ranking whose read failed keeps its copy and is tried again this late.
-RETRY_SECONDS = 300.0
+RETRY_SECONDS = MIN_INTERVAL_SECONDS
 # This many failed reads in a row is an outage: the schedule pauses for
 # base × 2ⁿ, capped, so an outage costs a handful of requests an hour.
 OUTAGE_AFTER_FAILURES = 4
@@ -103,8 +160,8 @@ class RankingIndex:
         fetch_ranking: FetchRanking,
         fetch_boards: FetchBoards,
         logger: LogSink,
-        pace_seconds: float = DEFAULT_PACE_SECONDS,
         clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
         on_refresh: Callable[[BossRanking, BossRanking], None] | None = None,
     ) -> None:
         # Called with (slug, metric); the ranking it returns carries the metric.
@@ -114,8 +171,9 @@ class RankingIndex:
         # Called with (copy held, copy fetched) after every re-read of a board
         # that was already held: the event log reads the difference.
         self._on_refresh = on_refresh
-        self._pace = pace_seconds
         self._clock = clock
+        # Epoch seconds: what a record's battle end is compared with.
+        self._wall_clock = wall_clock
         # One map of slug → entry per metric; the DPS one is ``_entries``.
         self._held: dict[str, dict[str, IndexEntry]] = {
             metric: {} for metric in METRICS
@@ -128,12 +186,17 @@ class RankingIndex:
         self._urgent: dict[Key, None] = {}
         # A ranking whose last read failed is not read again before this.
         self._retry_at: dict[Key, float] = {}
+        # When each ranking last changed, on ``clock``.
+        self._changed_at: dict[Key, float] = {}
         # The card's top runs that sent a board to be re-read, checked
         # against the ranking that read brings back.
         self._signal_tops: dict[str, tuple[str, ...]] = {}
         # Boards whose card and ranking disagreed even after a re-read, keyed
         # to the card's top ids: re-read again only when the card changes.
         self._disagreeing: dict[str, tuple[str, ...]] = {}
+        # Each board's top runs as the last signal listed them; the signal
+        # slows down once none has changed for SIGNAL_QUIET_SECONDS.
+        self._card_tops: dict[str, tuple[str, ...]] = {}
         now = clock()
         self._tokens = float(TOKEN_CAPACITY)
         self._tokens_at = now
@@ -141,7 +204,8 @@ class RankingIndex:
         self._outage_rounds = 0
         self._resume_at = -math.inf
         # The loop begins with a fill, which reads the board list itself.
-        self._signal_at = now
+        self._next_signal = now + SIGNAL_SECONDS
+        self._signal_changed_at = now
         self._signal_failing = False
         self._cycle_failing = False
         self._fill_tasks: dict[str, asyncio.Task[None]] = {}
@@ -347,7 +411,12 @@ class RankingIndex:
         slug, metric = key
         held = self._held[metric]
         previous = held.get(slug)
-        held[slug] = IndexEntry(ranking, self._clock())
+        now = self._clock()
+        held[slug] = IndexEntry(ranking, now)
+        if previous is None:
+            self._changed_at[key] = self._first_change(ranking, now)
+        elif _battle_ids(previous.ranking) != _battle_ids(ranking):
+            self._changed_at[key] = now
         self._urgent.pop(key, None)
         self._retry_at.pop(key, None)
         self._note_success()
@@ -366,6 +435,24 @@ class RankingIndex:
             self._logger.info(
                 "ZmdLogBot ranking index reads %s again.", _board_label(key)
             )
+
+    def _first_change(self, ranking: BossRanking, now: float) -> float:
+        """When a ranking read for the first time last changed, on ``clock``.
+
+        When its newest record was fought, never later than now; an empty
+        ranking has not changed for as long as the schedule cares about.
+        """
+
+        if not ranking.rows:
+            return -math.inf
+        fought = [
+            stamp.timestamp()
+            for row in ranking.rows
+            if (stamp := parse_timestamp(row.battle_end_at)) is not None
+        ]
+        if not fought:
+            return now
+        return now - max(self._wall_clock() - max(fought), 0.0)
 
     def _note_failure(self) -> None:
         self._failures_in_row += 1
@@ -394,7 +481,7 @@ class RankingIndex:
         comes or a reader asks for a board.
         """
 
-        if self._clock() >= self._signal_at + SIGNAL_SECONDS:
+        if self._clock() >= self._next_signal:
             await self._read_signal()
         for metric in METRICS:
             if self._paused():
@@ -430,7 +517,7 @@ class RankingIndex:
         due = min((self._due_at(key) for key in self._held_keys()), default=None)
         if due is not None:
             work.append(max(due, self._token_ready_at(now)))
-        wake = self._signal_at + SIGNAL_SECONDS
+        wake = self._next_signal
         if work:
             wake = min(wake, max(min(work), self._resume_at))
         return wake
@@ -449,7 +536,8 @@ class RankingIndex:
         """When a held ranking is next to be re-read.
 
         After a failure, at its retry; asked for or signalled, at once;
-        otherwise once per pass.
+        otherwise ``CHANGE_FACTOR`` of the time it had gone unchanged when
+        last checked, after that check, within the bounds.
         """
 
         retry = self._retry_at.get(key)
@@ -458,7 +546,12 @@ class RankingIndex:
         if key in self._urgent:
             return -math.inf
         slug, metric = key
-        return self._held[metric][slug].loaded_at + len(self._slugs) * self._pace
+        checked = self._held[metric][slug].loaded_at
+        unchanged = checked - self._changed_at.get(key, checked)
+        return checked + min(
+            max(CHANGE_FACTOR * unchanged, MIN_INTERVAL_SECONDS),
+            MAX_INTERVAL_SECONDS,
+        )
 
     def _wanted(self, now: float) -> list[Key]:
         """Held rankings due now: asked-for ones as they came, then oldest due."""
@@ -492,9 +585,10 @@ class RankingIndex:
     # --- the top-three signal -----------------------------------------------------
 
     async def _read_signal(self) -> None:
-        """One hot-bosses read; a failing streak is logged once, not per minute."""
+        """One hot-bosses read; a failing streak is logged once, not per read."""
 
-        self._signal_at = self._clock()
+        started = self._clock()
+        self._next_signal = started + self._signal_period(started)
         try:
             cards = await self._fetch_boards()
         except asyncio.CancelledError:
@@ -511,6 +605,12 @@ class RankingIndex:
             self._signal_failing = False
             self._logger.info("ZmdLogBot ranking index reads the board list again.")
         self._apply_signal(cards)
+        self._next_signal = started + self._signal_period(started)
+
+    def _signal_period(self, at: float) -> float:
+        if at - self._signal_changed_at >= SIGNAL_QUIET_SECONDS:
+            return SLOW_SIGNAL_SECONDS
+        return SIGNAL_SECONDS
 
     def _apply_signal(self, cards: tuple[HotBossCard, ...]) -> None:
         """Queue every held board whose top runs differ from its card.
@@ -526,9 +626,13 @@ class RankingIndex:
         self._set_boards(cards)
         for card in cards:
             slug = card.boss_slug
+            top = _top_ids(card)
+            listed = self._card_tops.get(slug)
+            self._card_tops[slug] = top
+            if listed is not None and listed != top:
+                self._signal_changed_at = self._clock()
             if slug not in self._entries:
                 continue
-            top = _top_ids(card)
             if not self._top_changed(slug, top):
                 self._disagreeing.pop(slug, None)
                 self._signal_tops.pop(slug, None)
@@ -564,9 +668,12 @@ class RankingIndex:
                     # A board that left the index is not queryable any more;
                     # its ranking would only ever be memory.
                     del held[slug]
-        for pending in (self._urgent, self._retry_at):
-            for key in [key for key in pending if key[0] not in listed]:
-                del pending[key]
+        for by_key in (self._urgent, self._retry_at, self._changed_at):
+            for key in [key for key in by_key if key[0] not in listed]:
+                del by_key[key]
+        for by_slug in (self._card_tops, self._signal_tops, self._disagreeing):
+            for slug in [slug for slug in by_slug if slug not in listed]:
+                del by_slug[slug]
 
     def _top_changed(self, slug: str, top: tuple[str, ...]) -> bool:
         """Do a card's top runs disagree with the DPS ranking held?
@@ -653,6 +760,12 @@ class RankingIndex:
 
 def _top_ids(card: HotBossCard) -> tuple[str, ...]:
     return tuple(run.battle_id for run in card.top_speed_runs[:_TOP_SIGNAL_RUNS])
+
+
+def _battle_ids(ranking: BossRanking) -> tuple[str, ...]:
+    """A ranking's records in order: what a change is measured on."""
+
+    return tuple(row.battle_id for row in ranking.rows)
 
 
 def _board_label(key: tuple[str, str]) -> str:

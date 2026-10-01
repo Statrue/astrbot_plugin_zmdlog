@@ -16,8 +16,6 @@ from .client import DEFAULT_API_BASE_URL, DEFAULT_REQUEST_TIMEOUT_MS
 from .watch import DEFAULT_RANK_THRESHOLD
 
 MIN_RANK_WATCH_INTERVAL_SECONDS = 120.0
-# One board re-read per pace; faster than this is a crawl of a public site.
-MIN_RANKING_INDEX_PACE_SECONDS = 5.0
 # A rank baseline older than this many polling intervals (never less than an
 # hour) is re-seeded silently instead of replaying everything that moved.
 SNAPSHOT_MAX_AGE_INTERVALS = 3
@@ -48,7 +46,6 @@ class PluginSettings:
     rank_watch_enabled: bool = True
     rank_watch_interval_seconds: float = 900.0
     rank_watch_rank_threshold: int = DEFAULT_RANK_THRESHOLD
-    ranking_index_pace_seconds: float = 30.0
     bindings_enabled: bool = True
     group_board_max_accounts: int = 30
     # The safety switch for everything the QQ official bot gets on top of
@@ -83,13 +80,6 @@ def load_settings(
             f"{MIN_RANK_WATCH_INTERVAL_SECONDS:g}; using that."
         )
         interval = MIN_RANK_WATCH_INTERVAL_SECONDS
-    pace = reader.positive_number("ranking_index_pace_seconds")
-    if pace < MIN_RANKING_INDEX_PACE_SECONDS:
-        warn(
-            "ZmdLogBot config ranking_index_pace_seconds must be at least "
-            f"{MIN_RANKING_INDEX_PACE_SECONDS:g}; using that."
-        )
-        pace = MIN_RANKING_INDEX_PACE_SECONDS
     return PluginSettings(
         api_base_url=reader.http_url("api_base_url"),
         web_base_url=reader.http_url("web_base_url"),
@@ -108,7 +98,6 @@ def load_settings(
         fuzzy_match_threshold=reader.ratio("fuzzy_match_threshold"),
         ambiguity_score_gap=reader.ratio("ambiguity_score_gap"),
         rank_watch_enabled=reader.flag("rank_watch_enabled"),
-        ranking_index_pace_seconds=pace,
         rank_watch_interval_seconds=interval,
         rank_watch_rank_threshold=max(
             1, int(reader.positive_number("rank_watch_rank_threshold"))

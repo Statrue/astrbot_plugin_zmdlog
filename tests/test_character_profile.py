@@ -308,7 +308,6 @@ class ProfileCacheTests(unittest.IsolatedAsyncioTestCase):
 
         data = ZmdLogsDataSource(
             Client(),
-            settings=PluginSettings(),
             data_dir=None,
             logger=logging.getLogger("test"),
         )

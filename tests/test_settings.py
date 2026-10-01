@@ -104,6 +104,7 @@ class SettingsTests(unittest.TestCase):
         removed = {
             "ranking_cache_ttl_seconds": 0,
             "ranking_index_enabled": False,
+            "ranking_index_pace_seconds": 1,
             "character_stats_cache_ttl_seconds": True,
             "account_cache_ttl_seconds": -1,
             "battle_cache_ttl_seconds": None,

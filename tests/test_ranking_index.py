@@ -9,18 +9,27 @@ what a reader got back.
 import asyncio
 import copy
 import unittest
+from datetime import UTC, datetime
 
 from core.client import ZmdLogsClientError
 from core.models import parse_boss_ranking, parse_hot_bosses
-from core.ranking_index import IndexEntry, RankingIndex, account_rankings
+from core.ranking_index import (
+    MAX_INTERVAL_SECONDS,
+    MIN_INTERVAL_SECONDS,
+    IndexEntry,
+    RankingIndex,
+    account_rankings,
+)
 from tests.helpers import CapturingLogger, hot_bosses_payload, ranking_payload_with_rows
 
 SLUGS = ("dung01_group_bossrush02", "dung01_group_bossrush03")
 FIVE = tuple(f"dung01_group_bossrush{n:02d}" for n in range(10, 15))
 # The fixture ranking's first three battle ids, as hot-bosses would list them.
 TOP3 = [f"btl_upload_{rank:012d}" for rank in (1, 2, 3)]
-# Long enough that no ranking falls due by schedule while a test asks for one.
-PACE = 600.0
+# When the fixture's records were fought, on the wall clock.
+FOUGHT = datetime.fromisoformat("2026-07-13T22:00:32+08:00").timestamp()
+HOUR = 3_600.0
+DAY = 24 * HOUR
 
 
 def run(coro):
@@ -55,12 +64,33 @@ def cards_payload(
     return cards
 
 
-def ranking_for(slug: str, *, first_id: str | None = None, metric: str = "dps"):
+def ranking_for(
+    slug: str,
+    *,
+    first_id: str | None = None,
+    metric: str = "dps",
+    fought: float | None = None,
+    last_id: str | None = None,
+    empty: bool = False,
+):
+    """The fixture ranking for ``slug``.
+
+    ``fought`` dates its newest record on the wall clock, ``last_id`` adds a
+    record at the bottom, where the top-three signal cannot see it.
+    """
+
     payload = ranking_payload_with_rows()
     payload["bossSlug"] = slug
     payload["metric"] = metric
+    rows = payload["rows"]
     if first_id is not None:
-        payload["rows"][0]["battleId"] = first_id
+        rows[0]["battleId"] = first_id
+    if fought is not None:
+        rows[0]["battleEndAt"] = datetime.fromtimestamp(fought, UTC).isoformat()
+    if last_id is not None:
+        rows.append(dict(rows[-1], battleId=last_id, rank=len(rows) + 1))
+    if empty:
+        payload["rows"] = []
     return parse_boss_ranking(payload, metric=metric)
 
 
@@ -78,16 +108,31 @@ class FakeUpstream:
         self.fail = False
         self.failing: set[str] = set()
         self.first_ids: dict[str, str] = {}
+        self.last_ids: dict[str, str] = {}
+        # When a board's newest record was fought, by slug; the fixture's
+        # own date otherwise. Boards in ``empty`` have no record at all.
+        self.fought: dict[str, float] = {}
+        self.empty: set[str] = set()
+        # When each hot-bosses read was asked for.
+        self.board_times: list[float] = []
 
     async def fetch_ranking(self, slug: str, metric: str):
         (self.ranking_calls if metric == "dps" else self.rdps_calls).append(slug)
         self.read_times.append(self._clock())
         if self.fail or slug in self.failing:
             raise ZmdLogsClientError("offline")
-        return ranking_for(slug, first_id=self.first_ids.get(slug), metric=metric)
+        return ranking_for(
+            slug,
+            first_id=self.first_ids.get(slug),
+            metric=metric,
+            fought=self.fought.get(slug),
+            last_id=self.last_ids.get(slug),
+            empty=slug in self.empty,
+        )
 
     async def fetch_boards(self):
         self.board_calls += 1
+        self.board_times.append(self._clock())
         if self.fail:
             raise ZmdLogsClientError("offline")
         return self.cards
@@ -100,6 +145,10 @@ class FakeUpstream:
 class RankingIndexTests(unittest.TestCase):
     def setUp(self) -> None:
         self.now = [1_000.0]
+        # The wall clock moves with the index's clock. At the start the
+        # fixture's records are a month old, so a ranking that does not
+        # change is not due again for six hours.
+        self.wall = FOUGHT + 30 * DAY - self.now[0]
         self.logger = CapturingLogger()
         self.upstream = FakeUpstream(lambda: self.now[0])
         self.index = self._index(self.upstream)
@@ -110,9 +159,14 @@ class RankingIndexTests(unittest.TestCase):
             fetch_boards=upstream.fetch_boards,
             logger=self.logger,
             clock=lambda: self.now[0],
-            pace_seconds=PACE,
+            wall_clock=lambda: self.now[0] + self.wall,
             **kwargs,
         )
+
+    def _ago(self, seconds: float) -> float:
+        """The wall-clock time ``seconds`` before now."""
+
+        return self.now[0] + self.wall - seconds
 
     def _five_boards(self) -> tuple[FakeUpstream, RankingIndex]:
         upstream = FakeUpstream(lambda: self.now[0], slugs=FIVE)
@@ -245,8 +299,8 @@ class RankingIndexTests(unittest.TestCase):
 
     def test_a_board_asked_for_goes_before_the_ones_due(self) -> None:
         upstream, index = self._five_boards()
-        # Every ranking is due: one pass is five boards at the pace.
-        self.now[0] += 5 * PACE
+        # Every ranking is due: none has changed for a month.
+        self.now[0] += MAX_INTERVAL_SECONDS
         before = len(upstream.ranking_calls)
 
         run(index.get(FIVE[-1], on_demand=True))
@@ -256,17 +310,85 @@ class RankingIndexTests(unittest.TestCase):
 
     # --- the schedule -------------------------------------------------------------
 
-    def test_each_ranking_is_re_read_once_per_pass(self) -> None:
+    def _dps_reads(self, slug: str, until: float) -> list[float]:
+        """Step the loop up to ``until``; when ``slug``'s DPS ranking was read."""
+
+        times = []
+        while (wake := self.index.next_wake()) <= until:
+            self.now[0] = max(self.now[0], wake)
+            calls = len(self.upstream.ranking_calls)
+            self._run_due()
+            if slug in self.upstream.ranking_calls[calls:]:
+                times.append(self.now[0])
+        return times
+
+    def test_the_interval_is_a_tenth_of_how_long_the_ranking_went_unchanged(
+        self,
+    ) -> None:
+        # The newest record was fought an hour before the fill: the first
+        # re-read comes six minutes later, and as nothing changes the next
+        # comes a tenth of the 66 minutes since, and so on.
+        self.upstream.fought = {slug: self._ago(HOUR) for slug in SLUGS}
         self._fill()
-        reads = self.upstream.reads
+        start = self.now[0]
 
-        self.now[0] += len(SLUGS) * PACE - 1
-        self._run_due()
-        self.assertEqual(self.upstream.reads, reads)
-        self.now[0] += 1
-        self._run_due()
+        reads = self._dps_reads(SLUGS[0], until=start + 1_000)
 
-        self.assertEqual(self.upstream.reads, reads + 2 * len(SLUGS))
+        first = start + 0.1 * HOUR
+        self.assertEqual(reads, [first, first + 0.1 * (HOUR + 0.1 * HOUR)])
+
+    def test_the_interval_is_at_least_five_minutes_and_at_most_six_hours(
+        self,
+    ) -> None:
+        self.upstream.fought = {SLUGS[0]: self._ago(60), SLUGS[1]: self._ago(90 * DAY)}
+        self._fill()
+        start = self.now[0]
+
+        busy = self._dps_reads(SLUGS[0], until=start + MIN_INTERVAL_SECONDS)
+        quiet = self._dps_reads(SLUGS[1], until=start + MAX_INTERVAL_SECONDS)
+
+        self.assertEqual(busy, [start + MIN_INTERVAL_SECONDS])
+        self.assertEqual(quiet, [start + MAX_INTERVAL_SECONDS])
+
+    def test_a_change_brings_the_interval_back_to_five_minutes(self) -> None:
+        self.upstream.fought = {slug: self._ago(10 * HOUR) for slug in SLUGS}
+        self._fill()
+        start = self.now[0]
+        # A record lands at the bottom, out of the signal's sight: the
+        # re-read an hour later (a tenth of ten hours) finds it.
+        self.upstream.last_ids[SLUGS[0]] = "btl_upload_lower0000001"
+
+        reads = self._dps_reads(SLUGS[0], until=start + HOUR + 2 * MIN_INTERVAL_SECONDS)
+
+        changed = start + HOUR
+        self.assertEqual(
+            reads, [changed + n * MIN_INTERVAL_SECONDS for n in range(3)]
+        )
+
+    def test_a_first_read_dated_in_the_future_counts_as_a_change_just_now(
+        self,
+    ) -> None:
+        # A device clock running fast dated the record an hour ahead.
+        self.upstream.fought = {SLUGS[0]: self._ago(-HOUR)}
+        self._fill()
+        start = self.now[0]
+
+        reads = self._dps_reads(SLUGS[0], until=start + MIN_INTERVAL_SECONDS)
+
+        self.assertEqual(reads, [start + MIN_INTERVAL_SECONDS])
+
+    def test_an_empty_ranking_counts_as_long_unchanged(self) -> None:
+        # Most rDPS rankings hold no record; a reload must not take them all
+        # for rankings that just changed. A first record that reaches the
+        # top three is caught by the signal anyway.
+        self.upstream.empty = {SLUGS[0]}
+        self.upstream.cards = parse_hot_bosses(cards_payload({SLUGS[0]: []}))
+        self._fill()
+        start = self.now[0]
+
+        reads = self._dps_reads(SLUGS[0], until=start + MAX_INTERVAL_SECONDS)
+
+        self.assertEqual(reads, [start + MAX_INTERVAL_SECONDS])
 
     def test_a_newly_listed_board_is_read_without_a_token(self) -> None:
         self._fill()
@@ -318,7 +440,7 @@ class RankingIndexTests(unittest.TestCase):
         upstream = FakeUpstream(lambda: self.now[0], slugs=slugs)
         index = self._index(upstream)
         self._fill(index)
-        self.now[0] += len(slugs) * PACE
+        self.now[0] += MAX_INTERVAL_SECONDS
         upstream.fail = True
         upstream.read_times.clear()
 
@@ -338,7 +460,7 @@ class RankingIndexTests(unittest.TestCase):
         self._fill()
         self.upstream.failing = {SLUGS[0]}
 
-        self.now[0] += len(SLUGS) * PACE
+        self.now[0] += MAX_INTERVAL_SECONDS
         self._run_due()
         self.now[0] += 300
         self._run_due()
@@ -397,6 +519,29 @@ class RankingIndexTests(unittest.TestCase):
         self._run_due()
         self.assertEqual(self.upstream.board_calls, boards + 1)
         self.assertEqual(self.index.next_wake(), self.now[0] + 60)
+
+    def test_the_signal_slows_after_two_quiet_hours_and_recovers_on_a_change(
+        self,
+    ) -> None:
+        self._fill()
+        quiet_from = self.now[0] + 2 * HOUR
+
+        while (wake := self.index.next_wake()) <= quiet_from + 900:
+            self.now[0] = wake
+            self._run_due()
+        self._new_first_place(SLUGS[1])
+        for _ in range(2):
+            self.now[0] = self.index.next_wake()
+            self._run_due()
+
+        times = self.upstream.board_times[1:]  # after the fill's own read
+        gaps = {at: later - at for at, later in zip(times, times[1:])}
+        self.assertEqual({gap for at, gap in gaps.items() if at < quiet_from}, {60})
+        # Five minutes apart once quiet, until the read that saw the change.
+        self.assertEqual(
+            [gap for at, gap in gaps.items() if at >= quiet_from],
+            [300, 300, 300, 300, 60],
+        )
 
     def test_a_shorter_top_list_means_a_record_was_deleted(self) -> None:
         self._fill()
