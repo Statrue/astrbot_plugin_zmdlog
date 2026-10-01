@@ -522,8 +522,9 @@ class ZmdLogBotPlugin(Star):
 
         A pick list goes out as markdown with a button per pick, a picture
         about one thing as a markdown image with a button to that thing's
-        ZMDLogs page, and a text that sends the reader to the site with a
-        button to the page it names. Where the chat's connection takes taps,
+        ZMDLogs page (a dungeon's podiums, to each of its boards' rankings),
+        and a text that sends the reader to the site with a button to the
+        page it names. Where the chat's connection takes taps,
         a button that draws a page answers the tap itself. False when
         ``outcome`` has no buttons or they could not be sent. ``command`` is
         the prefixed command name the buttons write.
@@ -574,8 +575,8 @@ class ZmdLogBotPlugin(Star):
         """Send ``outcome``'s picture as markdown with its buttons under it.
 
         False when it did not go out, and the native picture is due: the
-        page carries no scale, its target no safe link, or the upload or
-        the send failed.
+        page carries no scale, its target no keyboard (no safe link, or a
+        dungeon no board), or the upload or the send failed.
         """
 
         if outcome.image_scale is None:

@@ -49,6 +49,16 @@ an old upload's loadout, an unwatched account's trend — gets no button, and
 neither does a board's battle under a non-DPS board, since 战报 takes no
 metric and would open the DPS board's first place instead.
 
+A dungeon's podiums are the one picture with no page on the site, so no
+jump button; under it instead is a command button per board of the dungeon
+(or the phase), the board's slug as a user would type it, in the board
+list's order, with the metric the request asked for. They share the five
+rows past five boards, and a board on a shared row drops the part of its
+name every board shares — 危境再现's boards differ only after the dungeon's
+name, 战争回响's only before their common difficulty. Past twenty-five, the
+rest have no button and are typed. A ranking page offers no other board of
+its dungeon: those would crowd out its own views.
+
 A rank notice carries a jump button for every battle it prints a link to,
 under the label ``core/watch`` gave it (``战报 1``). In the markdown the
 label takes the printed link's place, at the end of the line above it —
@@ -155,7 +165,8 @@ _BATTLE_VIEWS = frozenset(
 # What each page with a target offers besides its jump button: the other
 # views of the same thing, at most three, settled per page. The four
 # battle pages are one family, the board's pages another, an account and
-# its trend a third. A page about no one thing has no entry, and no button.
+# its trend a third. A page about no one thing has no entry, and no button;
+# nor does a dungeon's, whose buttons are its boards.
 _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = {
     (PageSubject.BATTLE, CandidateView.BATTLE): (
         CandidateView.LOADOUT,
@@ -448,10 +459,13 @@ def result_keyboard(
 
     The jump button fills the first row; the page's other views of the same
     target (``_SIBLINGS``) share the second, as command buttons — callback
-    buttons with ``callback``. ``command`` is the prefixed command name
-    (``/zmdlog``).
+    buttons with ``callback``. A dungeon's podiums have no link and a button
+    per board instead, and no keyboard only without boards. ``command`` is
+    the prefixed command name (``/zmdlog``).
     """
 
+    if target.subject is PageSubject.DUNGEON:
+        return _board_keyboard(target, command=command, callback=callback)
     url = _jump_url(target, web_base_url=web_base_url)
     if url is None:
         return None
@@ -465,6 +479,49 @@ def result_keyboard(
     if siblings:
         rows.append(siblings)
     return _keyboard_rows(rows)
+
+
+def _board_keyboard(
+    target: PageTarget, *, command: str, callback: bool
+) -> dict[str, Any] | None:
+    """A dungeon's boards, a command each in the board list's order; None if none."""
+
+    boards = target.boards[: MAX_KEYBOARD_ROWS * MAX_ROW_BUTTONS]
+    if not boards:
+        return None
+    names = [name for _, name in boards]
+    if len(boards) > MAX_KEYBOARD_ROWS:
+        names = _drop_shared_parts(names)
+    options = []
+    if target.metric != DEFAULT_METRIC:
+        options += ["--口径", target.metric]
+    buttons = [
+        command_button(
+            f"board-{number}",
+            _fit_label(name),
+            " ".join([command, slug, *options]),
+            callback=callback,
+        )
+        for number, ((slug, _), name) in enumerate(zip(boards, names), start=1)
+    ]
+    return _keyboard_rows(_fill_rows(buttons))
+
+
+def _drop_shared_parts(names: list[str]) -> list[str]:
+    """Each name less the ``·`` part every one of them begins or ends with.
+
+    The boards of a dungeon share its name (危境再现·罗丹) or a difficulty
+    (白刃穿水·残酷); neither tells two of them apart. A name keeps at least
+    one part.
+    """
+
+    parts = [[part.strip() for part in name.split("·")] for name in names]
+    for end in (0, -1):
+        if all(len(split) > 1 for split in parts) and (
+            len({split[end] for split in parts}) == 1
+        ):
+            parts = [split[1:] if end == 0 else split[:-1] for split in parts]
+    return ["·".join(split) for split in parts]
 
 
 def _sibling_commands(
@@ -623,7 +680,11 @@ def _button_name(choice: MatchChoice, *, shared: bool) -> str:
 
 
 def _label(index: int, name: str) -> str:
+    return f"{index} {_fit_label(name)}"
+
+
+def _fit_label(name: str) -> str:
     shown = " ".join(name.split())
     if len(shown) > MAX_LABEL_NAME_CHARS:
         shown = shown[: MAX_LABEL_NAME_CHARS - 1] + "…"
-    return f"{index} {shown}"
+    return shown

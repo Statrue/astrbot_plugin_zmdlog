@@ -580,7 +580,15 @@ class QueryService:
         recipe = prepare_dungeon_overview(
             choice, cards, query=query, web_base_url=self._web_base_url
         )
-        return Outcome.image(await recipe.draw(self._renderer()))
+        return Outcome.image(
+            await recipe.draw(self._renderer()),
+            target=PageTarget(
+                PageSubject.DUNGEON,
+                target.name,
+                metric=pending.metric,
+                boards=tuple((card.boss_slug, card.boss_name) for card in recipe.cards),
+            ),
+        )
 
     # --- accounts --------------------------------------------------------------------
 

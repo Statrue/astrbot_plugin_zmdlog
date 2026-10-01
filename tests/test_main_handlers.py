@@ -1279,6 +1279,58 @@ class HandlerTests(unittest.TestCase):
                     siblings,
                 )
 
+    def _dungeon_page(self) -> str:
+        """A dungeon of two boards, its podiums drawn as a capture."""
+
+        first = hot_bosses_payload()[0]
+        second = dict(
+            first, bossSlug="dung01_group_bossrush03", bossName="危境再现·白垩界卫"
+        )
+        self.cards = parse_hot_bosses([first, second])
+        path = self._png(2560, 3000)
+
+        async def render_dungeon_top3(choice, cards, **kwargs):
+            return capture(path)
+
+        self.plugin.renderer.render_dungeon_top3 = render_dungeon_top3
+        return path
+
+    def test_a_dungeons_podiums_carry_a_button_per_board(self) -> None:
+        self._dungeon_page()
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+
+        event, results = self._official("/zmdlog 测试区", api=api)
+
+        self.assertEqual(results, [])
+        self.assertTrue(event.stopped)
+        (_, payload), = api.calls
+        self.assertTrue(
+            payload["markdown"]["content"].startswith("![img #1280px #1500px](")
+        )
+        # Each board's ranking, one tap away; no link, the site has no
+        # page of a dungeon.
+        self.assertEqual(
+            [
+                [button["action"]["data"] for button in row["buttons"]]
+                for row in payload["keyboard"]["content"]["rows"]
+            ],
+            [["/zmdlog dung01_group_bossrush02"], ["/zmdlog dung01_group_bossrush03"]],
+        )
+
+    def test_podiums_that_cannot_go_as_markdown_go_as_themselves(self) -> None:
+        path = self._dungeon_page()
+        api = FakeBotApi(
+            http=FakeBotHttp(raw_url=self.RAW_URL), error=RuntimeError("rejected")
+        )
+
+        event, results = self._official("/zmdlog 测试区", api=api)
+
+        self.assertEqual(results, [("image", path)])
+        self.assertFalse(event.stopped)
+        # And everywhere else as they always went.
+        wild = run(collect(self.plugin.zmdlog(FakeEvent("/zmdlog 测试区"))))
+        self.assertEqual(wild, [("image", path)])
+
     def test_pages_about_no_one_thing_stay_native_pictures(self) -> None:
         async def render_help(*, command_prefix, official=False):
             return capture(self._png(1280, 9000), 1)

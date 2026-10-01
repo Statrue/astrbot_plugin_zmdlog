@@ -11,15 +11,17 @@ import logging
 import unittest
 
 from core import messages
+from core.buttons import result_keyboard
 from core.candidates import CandidateStore, CandidateView, format_candidates
 from core.matcher import AliasConfig, MatcherCache, TargetType
 from core.models import parse_boss_ranking
 from core.outcome import PageSubject, PageTarget
 from core.queries import QueryService
-from core.routing import RouteKind, RouteRequest
+from core.routing import RouteKind, RouteRequest, parse_zmdlog_payload
 from core.settings import PluginSettings
 from tests.helpers import make_card, ranking_payload_with_rows
 from tests.test_recipes import OfflineClient
+from tests.test_result_images import buttons_of
 from tests.test_tools import WEB, FakeData, FakeRenderer
 
 GROUP = "aiocqhttp:GroupMessage:100"
@@ -137,6 +139,63 @@ class DungeonListTests(unittest.TestCase):
             ],
         )
         self.assertIsNotNone(outcome.image_path)
+        # Its boards go under the picture, in the board list's order too.
+        self.assertEqual(
+            outcome.target,
+            PageTarget(
+                PageSubject.DUNGEON,
+                "危境再现",
+                boards=(
+                    ("dung01_group_bossrush01", "危境再现·罗丹"),
+                    ("dung01_group_bossrush02", "危境再现·三位一体"),
+                    ("dung01_group_bossrush03", "危境再现·白垩界卫"),
+                ),
+            ),
+        )
+
+    def test_a_board_button_opens_the_ranking_page_and_its_keyboard_as_ever(
+        self,
+    ) -> None:
+        podiums = self._dispatch(RouteKind.SMART_QUERY, "战争回响")
+        buttons = buttons_of(
+            result_keyboard(podiums.target, web_base_url=WEB, command="/zmdlog")
+        )
+        self.assertEqual(
+            [button["action"]["data"] for button in buttons],
+            ["/zmdlog echo_blade", "/zmdlog echo_beast"],
+        )
+
+        route = parse_zmdlog_payload(
+            buttons[0]["action"]["data"].removeprefix("/zmdlog ")
+        )
+        board = run(self.service.dispatch(route, command_prefix="/", origin=GROUP))
+
+        self.assertEqual(self.renderer.calls[-1], "ranking")
+        self.assertEqual(board.target, PageTarget(PageSubject.BOARD, "echo_blade"))
+        # The ranking page offers its own views and no other board of the
+        # dungeon: those would push 阵容 / 角色统计 / 第 1 名战报 off.
+        keyboard = result_keyboard(board.target, web_base_url=WEB, command="/zmdlog")
+        self.assertEqual(
+            [
+                [
+                    (
+                        button["render_data"]["label"],
+                        button["action"]["type"],
+                        button["action"]["data"],
+                    )
+                    for button in row["buttons"]
+                ]
+                for row in keyboard["content"]["rows"]
+            ],
+            [
+                [("在 ZMDLogs 打开", 0, f"{WEB}/boss/echo_blade")],
+                [
+                    ("阵容", 2, "/zmdlog 阵容 echo_blade"),
+                    ("角色统计", 2, "/zmdlog 角色统计 echo_blade"),
+                    ("第 1 名战报", 2, "/zmdlog 战报 echo_blade"),
+                ],
+            ],
+        )
 
     def test_picking_a_one_board_dungeon_draws_that_board(self) -> None:
         outcome = self._pick("2")

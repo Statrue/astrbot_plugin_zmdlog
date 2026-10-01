@@ -5,9 +5,9 @@ shape: ``queries`` imports ``rank_watch``, so the type cannot live in either.
 
 ``PageTarget`` travels with it: what a picture is about is known where the
 page is chosen, in ``queries``, and used where the reply is sent, in the
-host, which offers that thing's ZMDLogs page with the picture. Neither end
-knows about the other's platform; ``core/buttons`` turns a target into a
-link.
+host, which offers that thing's ZMDLogs page with the picture — or, for a
+dungeon, which has none, each of its boards. Neither end knows about the
+other's platform; ``core/buttons`` turns a target into buttons.
 """
 
 from dataclasses import dataclass
@@ -39,6 +39,7 @@ class PageSubject(str, Enum):
     BATTLE = "battle"
     BOARD = "board"
     CHARACTER = "character"
+    DUNGEON = "dungeon"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,13 +54,19 @@ class PageTarget:
     ranking); the options are the ones it was drawn with that its ZMDLogs
     counterpart or its other views read too (``ranking_top`` is the rows a
     board page listed, None for its default). A page about no one thing —
-    help, the statistics of every board, a dungeon's podiums, a comparison
-    of two battles — has no target.
+    help, the statistics of every board, a comparison of two battles — has
+    no target.
 
     ``unavailable`` names the views of this target that drawing it showed
     cannot be drawn — an older upload without loadout, skill statistics or
     casts, an account the rank watch never polled — so the host offers no
     way to one of them.
+
+    A dungeon's podiums are about the dungeon (or the phase) its ``key``
+    names, a page the site does not have; what it offers instead is each
+    of its ``boards``, ``(slug, name)`` in the board list's order, and the
+    ``metric`` the request asked for, which the podiums cannot show but a
+    board can.
     """
 
     subject: PageSubject
@@ -71,6 +78,7 @@ class PageTarget:
     ranking_top: int | None = None
     unavailable: frozenset[CandidateView] = frozenset()
     name: str = ""
+    boards: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +93,8 @@ class Outcome:
 
     An image the plugin's renderer drew carries its capture scale, and the
     one thing it is about when there is one (``target``), so the host can
-    offer that thing's ZMDLogs page with it. An image from anywhere else —
+    offer that thing's ZMDLogs page with it (a dungeon's boards, for its
+    podiums). An image from anywhere else —
     AstrBot's fallback renderer — carries neither.
 
     ``site_page`` is set on a text that tells its reader to go and do

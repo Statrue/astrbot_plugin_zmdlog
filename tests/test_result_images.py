@@ -477,6 +477,134 @@ class SiblingButtonTests(unittest.TestCase):
                 self.assertEqual(len(ids), len(set(ids)))
 
 
+# 战争回响's boards as the live board list orders them (2026-10-01).
+ECHO = (
+    ("indie_battletower001_ex", "白刃穿水·残酷"),
+    ("indie_battletower002_ex", "野性旧事·残酷"),
+    ("indie_battletower003_ex", "弓弩表象·残酷"),
+    ("indie_battletower004_ex", "斧柄纪年·残酷"),
+    ("indie_battletower005_ex", "铳弹砺石·残酷"),
+    ("indie_battletower006_ex", "裂地旧创·残酷"),
+    ("indie_battletower007_ex", "死兽鸣吼·残酷"),
+    ("indie_battletower008_ex", "战争简史·残酷"),
+    ("indie_battletower009_ex", "掩埋阵线·残酷"),
+    ("indie_battletower010_ex", "方阵庇护·残酷"),
+    ("indie_battletower011_ex", "重伤之围·残酷"),
+    ("indie_battletower012_ex", "无机狂热·残酷"),
+    ("indie_battletower013_ex", "斩首蓄势·残酷"),
+    ("indie_battletower014_ex", "野兽诡计·残酷"),
+)
+
+
+def dungeon_page(boards, **options) -> PageTarget:
+    return PageTarget(PageSubject.DUNGEON, "战争回响", boards=boards, **options)
+
+
+def board_buttons(target: PageTarget, **options) -> list[dict]:
+    return buttons_of(
+        result_keyboard(target, web_base_url=WEB, command=COMMAND, **options)
+    )
+
+
+class DungeonBoardButtonTests(unittest.TestCase):
+    """A dungeon's podiums: a command button per board, and nothing else."""
+
+    def test_each_board_is_one_command_in_board_list_order(self) -> None:
+        buttons = board_buttons(dungeon_page(ECHO))
+
+        self.assertEqual(
+            [button["action"]["data"] for button in buttons],
+            [f"{COMMAND} {slug}" for slug, _ in ECHO],
+        )
+        # Fill-in commands only: the site has no page of a dungeon to open.
+        self.assertEqual({button["action"]["type"] for button in buttons}, {2})
+
+    def test_past_twenty_five_boards_the_rest_have_no_button(self) -> None:
+        # A phase spans several dungeons; 影拓丰碑 alone is 25 boards today.
+        boards = tuple((f"indie_hard{n:03d}_s", f"榜{n}·苦难") for n in range(1, 28))
+
+        keyboard = result_keyboard(
+            dungeon_page(boards), web_base_url=WEB, command=COMMAND
+        )
+
+        rows = keyboard["content"]["rows"]
+        self.assertEqual([len(row["buttons"]) for row in rows], [5] * 5)
+        self.assertEqual(
+            [button["action"]["data"] for button in buttons_of(keyboard)],
+            [f"{COMMAND} indie_hard{n:03d}_s" for n in range(1, 26)],
+        )
+        ids = [button["id"] for button in buttons_of(keyboard)]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_boards_sharing_a_row_drop_what_every_name_shares(self) -> None:
+        # Six boards or more share their rows, and a shared row shows only
+        # the start of a label: 危境再现's boards differ after the dungeon's
+        # name, 战争回响's before the difficulty they all share.
+        rescue = tuple(
+            (f"rescue_{n}", f"危境再现·{name}")
+            for n, name in enumerate(
+                ("罗丹", "三位一体", "白垩界卫", "阮一", "聂菲斯", "阿莱克琉斯")
+            )
+        )
+        scar = (
+            ("indie_hard008_s", "怨憎雾海·苦难"),
+            ("indie_hard009_s", "血肉熔点·苦难"),
+            ("indie_hard007_s", "呼吼炽焰·苦难"),
+        )
+        shards = (
+            ("dung02_group_minibossrush01", "巨山犼兽"),
+            ("dung02_group_minibossrush02", "蚀影噪雷"),
+            ("dung02_group_minibossrush03", "幽林之怒"),
+        )
+        for boards, labels in (
+            (ECHO[:7], ["白刃穿水", "野性旧事", "弓弩表象", "斧柄纪年",
+                        "铳弹砺石", "裂地旧创", "死兽鸣吼"]),
+            (rescue, ["罗丹", "三位一体", "白垩界卫", "阮一", "聂菲斯", "阿莱克琉斯"]),
+            # One to a row, a label is the board's name as its card prints it.
+            (scar, ["怨憎雾海·苦难", "血肉熔点·苦难", "呼吼炽焰·苦难"]),
+            (shards, ["巨山犼兽", "蚀影噪雷", "幽林之怒"]),
+        ):
+            with self.subTest(board=boards[0][1]):
+                buttons = board_buttons(dungeon_page(boards))
+
+                self.assertEqual(
+                    [button["render_data"]["label"] for button in buttons], labels
+                )
+
+    def test_every_command_parses_back_to_its_board_under_the_metric_asked(
+        self,
+    ) -> None:
+        # The podiums show no metric, but `战争回响 --口径 rdps` asked for
+        # one: the board it leads to is the rDPS board.
+        for metric in ("dps", "rdps"):
+            for (slug, _), button in zip(
+                ECHO, board_buttons(dungeon_page(ECHO, metric=metric))
+            ):
+                with self.subTest(metric=metric, slug=slug):
+                    command = button["action"]["data"]
+                    route = parse_zmdlog_payload(command.removeprefix(f"{COMMAND} "))
+
+                    self.assertEqual(route.query, slug)
+                    self.assertEqual(route.metric, metric)
+                    if metric == "dps":
+                        self.assertEqual(command, f"{COMMAND} {slug}")
+
+    def test_with_callbacks_every_board_answers_the_tap(self) -> None:
+        filled = board_buttons(dungeon_page(ECHO))
+        tapped = board_buttons(dungeon_page(ECHO), callback=True)
+
+        self.assertEqual(
+            [button["action"]["data"] for button in tapped],
+            [button["action"]["data"] for button in filled],
+        )
+        self.assertEqual({button["action"]["type"] for button in tapped}, {1})
+
+    def test_a_dungeon_without_boards_has_no_keyboard(self) -> None:
+        self.assertIsNone(
+            result_keyboard(dungeon_page(()), web_base_url=WEB, command=COMMAND)
+        )
+
+
 class FakeWatcher:
     """The rank watch as the account page asks it: whose trend is on record."""
 
@@ -656,17 +784,36 @@ class OutcomeTargetTests(unittest.TestCase):
                 self.assertEqual(outcome.image_scale, 2)
                 self.assertIsNone(outcome.target)
 
-    def test_a_dungeon_has_no_page_of_its_own(self) -> None:
+    def test_a_dungeon_carries_its_boards_and_the_metric_asked(self) -> None:
+        # No page of its own on the site; what it offers is its boards.
         first = hot_bosses_payload()[0]
         second = dict(
             first, bossSlug="dung01_group_bossrush03", bossName="危境再现·白垩界卫"
         )
         self.data.cards = parse_hot_bosses([first, second])
+        boards = (
+            ("dung01_group_bossrush02", "危境再现·三位一体"),
+            ("dung01_group_bossrush03", "危境再现·白垩界卫"),
+        )
+        for options, metric in (({}, "dps"), ({"metric": "rdps"}, "rdps")):
+            with self.subTest(metric=metric):
+                self.renderer.calls.clear()
 
-        outcome = self._command(RouteKind.RANKING_QUERY, query="测试区")
+                outcome = self._command(
+                    RouteKind.RANKING_QUERY, query="测试区", **options
+                )
 
-        self.assertEqual(self.renderer.calls, ["dungeon_top3"])
-        self.assertIsNone(outcome.target)
+                self.assertEqual(self.renderer.calls, ["dungeon_top3"])
+                self.assertEqual(outcome.image_scale, 2)
+                self.assertEqual(
+                    outcome.target,
+                    PageTarget(
+                        PageSubject.DUNGEON,
+                        "危境再现 · 测试区",
+                        metric=metric,
+                        boards=boards,
+                    ),
+                )
 
 
 if __name__ == "__main__":
