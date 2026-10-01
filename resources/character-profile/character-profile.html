@@ -26,10 +26,17 @@
     <div class="hero-fact hero-fact--key"><span>范围</span><strong>{{ page.range_label }}</strong></div>
     <div class="hero-fact"><span>样本</span><strong>{{ page.sample_count }}</strong><em>条通关记录</em></div>
     <div class="hero-fact"><span>公开账号</span><strong>{{ page.account_count }}</strong></div>
+    {% if page.cut %}
+    <div class="hero-fact"><span>通关名次</span><strong>{{ page.cut.board.character_rank }}</strong><em>上榜角色 {{ page.cut.board.ranked_character_count }}</em></div>
+    {% else %}
     <div class="hero-fact"><span>上榜榜单</span><strong>{{ page.boss_count }}</strong></div>
+    {% endif %}
   </div>
 </div>
 <section class="profile-rule" aria-label="样本口径">
+  {% if page.cut %}
+  <div><span>榜单</span><strong>{{ page.cut.label }}</strong></div>
+  {% endif %}
   <div><span>样本口径</span><strong>{{ page.sample_rule }}</strong></div>
 </section>
 {% endblock %}
@@ -76,6 +83,46 @@
   {% endfor %}
 </div>
 
+{% if page.cut %}
+<div class="section-heading">
+  <h2>该榜记录</h2>
+  <span class="section-note">该榜带该角色的公开有效通关，同一账号只留最快一场，按用时排{% if page.cut.hidden_record_count %} · 只列最快 {{ page.cut.records | length }} 条，共 {{ page.cut.board.sample_count }} 条{% endif %} · 养成 = 该角色的潜能+精炼，? 为武器未记录</span>
+</div>
+<section class="standings profile-records">
+  <div class="standings-head" aria-hidden="true">
+    <span class="standings-head-rank">#</span>
+    <span class="standings-head-board">账号 · battleId</span>
+    <span class="profile-head-fact">养成</span>
+    <span class="profile-head-fact">战斗日期</span>
+    <span class="standings-head-time">用时</span>
+  </div>
+  <ol class="standings-rows">
+    {% for row in page.cut.records %}
+    <li class="standings-row rank-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
+      <div class="standings-rank">
+        <b>{{ row.rank }}</b>
+      </div>
+      <div class="standings-board">
+        <strong>{{ row.account_display_name }}</strong>
+        <span>{{ row.battle_id }}</span>
+      </div>
+      <div class="profile-record-fact">
+        <span>养成</span>
+        <b class="investment-text">{{ row.investment.text if row.investment else "—" }}</b>
+      </div>
+      <div class="profile-record-fact">
+        <span>战斗日期</span>
+        <b>{{ row.battle_date }}</b>
+      </div>
+      <div class="standings-time">
+        <span>用时</span>
+        <b>{{ row.duration }}</b>
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% else %}
 <div class="section-heading">
   <h2>各榜通关名次</h2>
   <span class="section-note">通关名次 = 该榜全部角色按所在队伍的最快通关时间排名，同队四人同名次 · / 后是该榜上榜角色数 · 这是队伍的成绩，不是角色的强度，也不是 DPS 名次</span>
@@ -110,4 +157,5 @@
     {% endfor %}
   </ol>
 </section>
+{% endif %}
 {% endblock %}

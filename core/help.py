@@ -143,11 +143,14 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
-                        command=f"{command} 角色档案 <角色名> [--范围 7d|14d|30d|all]",
+                        command=(
+                            f"{command} 角色档案 <角色名> [--榜单 榜单关键词] "
+                            "[--范围 7d|14d|30d|all]"
+                        ),
                         answers="这个角色大家怎么养、配什么、带谁？在哪些榜跑得快？",
                         description=(
                             "养成组合、武器、装备、队友各占多少，加它在各榜的通关名次；"
-                            "四星五星也有。"
+                            "加 --榜单 只看那一个榜，列出该榜带它的记录。四星五星也有。"
                         ),
                     ),
                 ),

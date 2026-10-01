@@ -454,7 +454,10 @@ by the page (`cache: "no-store"`) when the reader switches board.
 
 - `range=7d|14d|30d|all`, default `all`; anything else → 422 `literal_error`.
 - `boss={slug}` narrows the response to one board: `bossSlug` echoes it,
-  `bosses[]` holds that board only and `sampleCount` counts its records. An
+  `bosses[]` holds that board only and `sampleCount` counts its records,
+  which are one per account, so `accountCount` equals it; the shares are
+  out of it too. Its `rows[]` still stops at 20: 莱万汀 on
+  `indie_battletower001_ex` answered 28 records and 20 rows (2026-10-01). An
   unknown slug and the crisis contract `indie_group_ccdg` both → 404
   `boss_not_found`.
 - Unknown key → 404 `character_not_found`.

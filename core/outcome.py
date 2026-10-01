@@ -67,6 +67,9 @@ class PageTarget:
     of its ``boards``, ``(slug, name)`` in the board list's order, and the
     ``metric`` the request asked for, which the podiums cannot show but a
     board can.
+
+    A character page cut to one board (角色档案 ``--榜单``) names the board
+    in ``boss_slug``; the site's character page reads it too.
     """
 
     subject: PageSubject
@@ -79,6 +82,7 @@ class PageTarget:
     unavailable: frozenset[CandidateView] = frozenset()
     name: str = ""
     boards: tuple[tuple[str, str], ...] = ()
+    boss_slug: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

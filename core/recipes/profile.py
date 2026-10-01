@@ -87,7 +87,8 @@ async def prepare_character_profile(
     keeps no profile of, a board it keeps none for (the crisis contract —
     asked for a board the index lists, ``boss_not_found`` can mean nothing
     else), and a window with no record of the character in it, which would
-    draw a page of empty sections.
+    draw a page of empty sections. Cut to a board, that last one says the
+    board: the character may well have records elsewhere.
     """
 
     try:
@@ -103,9 +104,12 @@ async def prepare_character_profile(
             return messages.BOARD_HAS_NO_PROFILE
         raise
     if profile.sample_count == 0:
-        return messages.NO_PROFILE_RECORDS.format(
-            window=window_label(time_range), name=character.name
+        refusal = (
+            messages.NO_PROFILE_RECORDS
+            if boss_slug is None
+            else messages.NO_BOARD_PROFILE_RECORDS
         )
+        return refusal.format(window=window_label(time_range), name=character.name)
     names = (character.name, *(entry.name for entry in profile.teammates))
     return CharacterProfileRecipe(
         profile=profile,

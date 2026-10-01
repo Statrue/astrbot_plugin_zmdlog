@@ -30,6 +30,7 @@ NO_TEAM_FIELDING = "公开记录里没有同时带「{names}」的队伍。"
 CHARACTER_PROFILE_MISSING = "ZMDLogs 还没有这个角色的档案。"
 BOARD_HAS_NO_PROFILE = "该榜不提供角色档案。"
 NO_PROFILE_RECORDS = "{window}没有带「{name}」的公开通关记录。"
+NO_BOARD_PROFILE_RECORDS = "{window}该榜没有带「{name}」的公开通关记录。"
 
 # Battle pages that an older upload cannot fill.
 NO_LOADOUT = "这份战报没有记录阵容配装。"

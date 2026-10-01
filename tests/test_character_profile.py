@@ -14,12 +14,13 @@ from types import SimpleNamespace
 import httpx
 
 from core import messages
-from core.buttons import result_keyboard
+from core.buttons import pick_list_message, result_keyboard
 from core.candidates import CandidateStore, CandidateView
 from core.client import (
     InvalidBossSlugError,
     ZmdLogsAPIError,
     ZmdLogsClient,
+    ZmdLogsClientError,
     ZmdLogsProtocolError,
 )
 from core.datasource import ZmdLogsDataSource
@@ -42,11 +43,16 @@ from core.routing import (
     parse_zmdlog_payload,
 )
 from core.settings import PluginSettings
-from tests.helpers import character_profile_payload, ranking_payload_with_rows
+from tests.helpers import (
+    character_profile_payload,
+    make_card,
+    ranking_payload_with_rows,
+)
 from tests.test_recipes import OfflineClient
 from tests.test_tools import WEB, FakeData, FakeRenderer
 
 ROOT = Path(__file__).resolve().parents[1]
+GROUP = "aiocqhttp:GroupMessage:100"
 
 
 class CatalogKeyTests(unittest.TestCase):
@@ -343,11 +349,26 @@ CATALOG = (
 )
 
 
+CONTRACT = "indie_group_ccdg"
+# The board list as the fakes serve it: the fixture's three boards, two of
+# them one dungeon; a phase of two dungeons the character has no record in;
+# and the crisis contract, which keeps no profile.
+BOARDS = (
+    make_card("indie_battletower001_ex", "白刃穿水·残酷", "战争回响"),
+    make_card("indie_battletower012_ex", "无机狂热·残酷", "战争回响"),
+    make_card("dung02_group_bossrush03", "危境再现·阿莱克琉斯", "危境再现"),
+    make_card("tower04_fire", "撼山雾火·苦难", "影拓丰碑4期 · 山中见犼"),
+    make_card("tower04_frost", "霜原残响·苦难", "影拓丰碑4期 · 霜原"),
+    make_card(CONTRACT, "破潮之像", "危机合约"),
+)
+
+
 class ProfileData(FakeData):
     """The tools' fake data source, plus the catalog keys and the profile."""
 
     def __init__(self) -> None:
         super().__init__(ranking=parse_boss_ranking(ranking_payload_with_rows()))
+        self.cards = BOARDS
         self.catalog = CATALOG
         # A character the catalog only learns on a re-read: new content.
         self.added_on_refresh: tuple[CharacterType, ...] = ()
@@ -365,6 +386,8 @@ class ProfileData(FakeData):
         self.profile_reads.append((character_key, time_range, boss_slug))
         if self.profile_error is not None:
             raise self.profile_error
+        if boss_slug == CONTRACT:
+            raise ZmdLogsAPIError(404, "boss_not_found", "x")
         payload = self.payload(time_range=time_range, boss_slug=boss_slug)
         payload["characterKey"] = character_key
         return parse_character_profile(payload)
@@ -374,12 +397,13 @@ class ProfileQueryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.data = ProfileData()
         self.renderer = FakeRenderer()
+        self.store = CandidateStore()
         matchers = MatcherCache()
         self.queries = QueryService(
             client=OfflineClient(),
             data=self.data,
             renderer=lambda: self.renderer,
-            candidates=CandidateStore(),
+            candidates=self.store,
             board_matcher=lambda cards: matchers.matcher_for(
                 cards, AliasConfig.empty()
             ),
@@ -390,7 +414,15 @@ class ProfileQueryTests(unittest.TestCase):
 
     def _ask(self, payload: str):
         route = parse_zmdlog_payload(payload)
-        return asyncio.run(self.queries.dispatch(route, command_prefix="/"))
+        return asyncio.run(
+            self.queries.dispatch(route, command_prefix="/", origin=GROUP)
+        )
+
+    def _pick(self, listed, number: str):
+        entry, choice = self.store.resolve(
+            listed.candidates.code, number, origin=GROUP
+        )
+        return asyncio.run(self.queries.render_pick(entry, choice))
 
     def test_a_name_draws_its_profile_over_the_window_asked_for(self) -> None:
         outcome = self._ask("角色档案 莱万汀 --范围 7d")
@@ -512,6 +544,155 @@ class ProfileQueryTests(unittest.TestCase):
         self.assertEqual(
             self.data.profile_reads, [("chr_0016_laevat", "all", "indie_group_ccdg")]
         )
+
+    # --- --榜单: the profile cut to one board ------------------------------------
+
+    def test_a_keyword_naming_one_board_cuts_the_profile_to_it(self) -> None:
+        outcome = self._ask("角色档案 莱万汀 --榜单 白刃穿水 --范围 7d")
+
+        self.assertEqual(outcome.image_path, "/tmp/character_profile.png")
+        self.assertEqual(
+            self.data.profile_reads,
+            [("chr_0016_laevat", "7d", "indie_battletower001_ex")],
+        )
+        (profile,) = self.renderer.args["character_profile"]
+        self.assertEqual(profile.boss_slug, "indie_battletower001_ex")
+        self.assertEqual(self.renderer.kwargs["character_profile"]["query"], "莱万汀")
+        # The site's character page reads the board too.
+        self.assertEqual(
+            outcome.target,
+            PageTarget(
+                PageSubject.CHARACTER,
+                "chr_0016_laevat",
+                CandidateView.CHARACTER_PROFILE,
+                stats_range="7d",
+                name="莱万汀",
+                boss_slug="indie_battletower001_ex",
+            ),
+        )
+
+    def test_a_keyword_naming_a_dungeon_lists_its_boards(self) -> None:
+        outcome = self._ask("角色档案 莱万汀 --榜单 战争回响 --范围 7d")
+
+        entry = outcome.candidates
+        self.assertIsNone(outcome.image_path)
+        self.assertEqual(self.data.profile_reads, [])
+        self.assertIs(entry.view, CandidateView.CHARACTER_PROFILE)
+        self.assertEqual(
+            [choice.target.key for choice in entry.choices],
+            ["indie_battletower001_ex", "indie_battletower012_ex"],
+        )
+        self.assertEqual((entry.profile_character, entry.stats_range), ("莱万汀", "7d"))
+        # The list says whose profile a pick draws.
+        self.assertTrue(
+            outcome.message.startswith(
+                "「战争回响」匹配到 2 个榜单，选一个看莱万汀的角色档案，"
+            ),
+            outcome.message,
+        )
+
+    def test_a_keyword_naming_a_phase_lists_the_boards_of_its_dungeons(
+        self,
+    ) -> None:
+        outcome = self._ask("角色档案 莱万汀 --榜单 影拓丰碑4期")
+
+        self.assertEqual(
+            [choice.target.key for choice in outcome.candidates.choices],
+            ["tower04_fire", "tower04_frost"],
+        )
+        self.assertEqual(self.data.profile_reads, [])
+
+    def test_a_pick_draws_the_profile_on_the_board_picked(self) -> None:
+        listed = self._ask("角色档案 lwt --榜单 战争回响 --范围 7d")
+
+        outcome = self._pick(listed, "2")
+
+        self.assertEqual(outcome.image_path, "/tmp/character_profile.png")
+        self.assertEqual(
+            self.data.profile_reads,
+            [("chr_0016_laevat", "7d", "indie_battletower012_ex")],
+        )
+        self.assertEqual(outcome.target.boss_slug, "indie_battletower012_ex")
+        self.assertEqual(outcome.target.stats_range, "7d")
+        # The list keeps the catalog's name, not what was typed.
+        self.assertEqual(self.renderer.kwargs["character_profile"]["query"], "莱万汀")
+
+    def test_a_pick_lists_buttons_name_the_character_and_the_board(self) -> None:
+        listed = self._ask("角色档案 莱万汀 --榜单 战争回响 --范围 7d")
+
+        message = pick_list_message(
+            listed.candidates, command="/zmdlog", ttl_seconds=600
+        )
+
+        commands = [
+            button["action"]["data"]
+            for row in message.keyboard["content"]["rows"]
+            for button in row["buttons"]
+        ]
+        self.assertEqual(
+            commands,
+            [
+                "/zmdlog 角色档案 莱万汀 --榜单 indie_battletower001_ex --范围 7d",
+                "/zmdlog 角色档案 莱万汀 --榜单 indie_battletower012_ex --范围 7d",
+            ],
+        )
+        # Each draws the page its pick does.
+        for command, choice in zip(commands, listed.candidates.choices):
+            with self.subTest(command=command):
+                self.data.profile_reads.clear()
+
+                outcome = self._ask(command.removeprefix("/zmdlog "))
+
+                self.assertEqual(outcome.target.boss_slug, choice.target.key)
+                self.assertEqual(
+                    self.data.profile_reads,
+                    [("chr_0016_laevat", "7d", choice.target.key)],
+                )
+
+    def test_the_crisis_contract_is_refused(self) -> None:
+        # One board, so no list: upstream is asked, and refuses.
+        outcome = self._ask("角色档案 莱万汀 --榜单 危机合约")
+
+        self.assertEqual(outcome.message, "该榜不提供角色档案。")
+        self.assertEqual(
+            self.data.profile_reads, [("chr_0016_laevat", "all", CONTRACT)]
+        )
+        self.assertEqual(self.renderer.calls, [])
+
+    def test_a_keyword_naming_no_board_is_answered_in_text(self) -> None:
+        outcome = self._ask("角色档案 莱万汀 --榜单 不存在的榜")
+
+        # Worded as every page that exists per board words it.
+        self.assertEqual(outcome.message, "没有找到与「不存在的榜」匹配的榜单。")
+        self.assertEqual(self.data.profile_reads, [])
+
+    def test_a_slug_still_draws_while_the_board_list_is_unreachable(self) -> None:
+        # The pick list's buttons name a board by its slug; without the
+        # board list there is nothing to match a plain keyword against.
+        async def unreachable():
+            raise ZmdLogsClientError("down")
+
+        self.data.list_hot_bosses = unreachable
+
+        outcome = self._ask("角色档案 莱万汀 --榜单 indie_battletower012_ex")
+
+        self.assertEqual(outcome.target.boss_slug, "indie_battletower012_ex")
+        with self.assertRaises(ZmdLogsClientError):
+            self._ask("角色档案 莱万汀 --榜单 战争回响")
+
+    def test_the_character_is_resolved_before_the_board(self) -> None:
+        outcome = self._ask("角色档案 不存在的人 --榜单 战争回响")
+
+        self.assertIn("不存在的人", outcome.message)
+        self.assertIsNone(outcome.candidates)
+
+    def test_a_board_without_the_character_says_so_of_the_board(self) -> None:
+        # The character has records, only not on this board: the whole
+        # profile's wording would say it has none at all.
+        outcome = self._ask("角色档案 秋栗 --榜单 撼山雾火 --范围 7d")
+
+        self.assertEqual(outcome.message, "近 7 天该榜没有带「秋栗」的公开通关记录。")
+        self.assertEqual(self.renderer.calls, [])
 
 
 class ProfileTemplateTests(unittest.TestCase):
@@ -653,6 +834,90 @@ class ProfileTemplateTests(unittest.TestCase):
         for sentinel in ("只在角色行里", "只在榜单选项里", "只在潜能分布里"):
             self.assertNotIn(sentinel, html)
 
+    # --- cut to one board ----------------------------------------------------------
+
+    def _board_html(self, payload=None) -> str:
+        return self._html(
+            payload or character_profile_payload(boss_slug="indie_battletower001_ex")
+        )
+
+    def test_a_board_page_lists_that_boards_records_for_the_boards(self) -> None:
+        html = self._board_html()
+
+        self.assertIn("<h2>该榜记录</h2>", html)
+        self.assertNotIn("<h2>各榜通关名次</h2>", html)
+        self.assertNotIn('class="standings profile-boards"', html)
+        # The four share blocks stay, ahead of the records.
+        headings = [
+            html.index(f"<h2>{title}</h2>")
+            for title in ("养成组合", "武器", "装备", "常见队友", "该榜记录")
+        ]
+        self.assertEqual(headings, sorted(headings))
+
+    def test_a_record_row_is_its_account_time_date_and_investment(self) -> None:
+        html = self._board_html()
+
+        first, second = (
+            html.index(f"<strong>{name}</strong>") for name in ("百合末莉", "镜花水月")
+        )
+        self.assertLess(first, second)
+        self.assertRegex(html, r'<div class="standings-rank">\s*<b>1</b>')
+        self.assertIn("btl_upload_cad50c180d36", html)
+        self.assertIn("<b>0:45.517</b>", html)
+        self.assertIn("<b>0:58.871</b>", html)
+        # The date under the word the account and 群榜 pages print it under.
+        self.assertRegex(html, r"<span>战斗日期</span>\s*<b>2026-09-24</b>")
+        # 养成 written as under every avatar.
+        self.assertIn('<b class="investment-text">5+6</b>', html)
+        self.assertIn('<b class="investment-text">2+1</b>', html)
+
+    def test_an_unrecorded_weapon_or_potential_is_written_as_elsewhere(self) -> None:
+        payload = character_profile_payload(boss_slug="indie_battletower001_ex")
+        rows = payload["bosses"][0]["rows"]
+        rows[0].update(potential=3, refinement=None)
+        rows[1].update(potential=None, refinement=None)
+
+        html = self._board_html(payload)
+
+        self.assertIn('<b class="investment-text">3+?</b>', html)
+        self.assertIn('<b class="investment-text">—</b>', html)
+
+    def test_a_date_is_the_servers_day(self) -> None:
+        # Upstream stamps each record in its uploader's offset.
+        payload = character_profile_payload(boss_slug="indie_battletower001_ex")
+        payload["bosses"][0]["rows"][0]["battleEndAt"] = "2026-07-23T10:29:31-04:00"
+
+        html = self._board_html(payload)
+
+        self.assertIn("<b>2026-07-23</b>", html)
+        payload["bosses"][0]["rows"][0]["battleEndAt"] = "2026-07-23T13:29:31-04:00"
+        self.assertIn("<b>2026-07-24</b>", self._board_html(payload))
+
+    def test_a_board_page_names_its_board_and_its_clear_rank(self) -> None:
+        html = self._board_html()
+
+        self.assertIn(
+            "<span>榜单</span><strong>白刃穿水·残酷 · 战争回响</strong>", html
+        )
+        self.assertIn(
+            "<span>通关名次</span><strong>1</strong><em>上榜角色 15</em>", html
+        )
+        self.assertNotIn("上榜榜单", html)
+        self.assertIn("莱万汀 · 角色档案 · 白刃穿水·残酷", html)
+        # Its sample is the board's.
+        self.assertIn("<span>样本</span><strong>8</strong>", html)
+
+    def test_records_past_the_ones_listed_are_counted(self) -> None:
+        # Upstream lists twenty records at most, one per account; the board's
+        # sample counts them all.
+        html = self._board_html()
+
+        self.assertIn("只列最快 2 条，共 8 条", html)
+
+        payload = character_profile_payload(boss_slug="indie_battletower001_ex")
+        payload["bosses"][0]["sampleCount"] = 2
+        self.assertNotIn("只列最快", self._board_html(payload))
+
 
 def profile_page(**options) -> PageTarget:
     return PageTarget(
@@ -731,6 +996,37 @@ class ProfileButtonTests(unittest.TestCase):
                     if route.kind is RouteKind.CHARACTER_STATS:
                         self.assertEqual(route.stats_range, stats_range)
 
+    def test_a_board_page_opens_the_site_on_that_board(self) -> None:
+        # The site's page reads both, in this order; the other pages of the
+        # character have no board to keep.
+        self.assertEqual(
+            keyboard_buttons(
+                profile_page(stats_range="7d", boss_slug="indie_battletower001_ex")
+            ),
+            [
+                (
+                    0,
+                    "在 ZMDLogs 打开",
+                    f"{WEB}/character/chr_0016_laevat"
+                    "?range=7d&boss=indie_battletower001_ex",
+                ),
+                (2, "角色统计", "/zmdlog 角色统计 莱万汀 --范围 7d"),
+                (2, "角色排名", "/zmdlog 角色排名 莱万汀"),
+            ],
+        )
+        self.assertEqual(
+            keyboard_buttons(profile_page(boss_slug="indie_group_x"))[0][2],
+            f"{WEB}/character/chr_0016_laevat?boss=indie_group_x",
+        )
+
+    def test_a_board_cannot_leave_its_parameter(self) -> None:
+        target = profile_page(boss_slug="a&range=30d#x")
+
+        self.assertEqual(
+            keyboard_buttons(target)[0][2],
+            f"{WEB}/character/chr_0016_laevat?boss=a%26range%3D30d%23x",
+        )
+
     def test_a_key_cannot_leave_its_path(self) -> None:
         target = PageTarget(
             PageSubject.CHARACTER,
@@ -768,9 +1064,36 @@ class ProfileRouteTests(unittest.TestCase):
 
                 self.assertEqual(str(caught.exception), OPTION_USAGE[option])
 
-    def test_one_board_is_not_offered_yet(self) -> None:
-        with self.assertRaises(RouteParseError):
-            parse_zmdlog_payload("角色档案 莱万汀 --榜单 罗丹")
+    def test_one_board_is_named_by_a_keyword(self) -> None:
+        # A board keyword can run to several words, as typed after zmdlog:
+        # everything up to the next option is the keyword.
+        for payload, keyword in (
+            ("角色档案 莱万汀 --榜单 罗丹", "罗丹"),
+            ("角色档案 莱万汀 --榜单 白刃穿水 残酷 --范围 7d", "白刃穿水 残酷"),
+            ("角色档案 莱万汀 --board indie_group_ccdg", "indie_group_ccdg"),
+        ):
+            with self.subTest(payload=payload):
+                route = parse_zmdlog_payload(payload)
+
+                self.assertEqual(route.kind, RouteKind.CHARACTER_PROFILE)
+                self.assertEqual((route.query, route.board_query), ("莱万汀", keyword))
+        self.assertIsNone(parse_zmdlog_payload("角色档案 莱万汀").board_query)
+
+    def test_the_board_option_belongs_to_the_profile_alone(self) -> None:
+        for payload in (
+            "罗丹 --榜单 罗丹",
+            "角色统计 莱万汀 --榜单 罗丹",
+            "角色排名 莱万汀 --榜单 罗丹",
+            "榜单 --榜单 罗丹",
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(RouteParseError) as caught:
+                    parse_zmdlog_payload(payload)
+
+                self.assertEqual(str(caught.exception), OPTION_USAGE["board"])
+        self.assertIn("角色档案", OPTION_USAGE["board"])
+        with self.assertRaisesRegex(RouteParseError, "--榜单 后需要填写取值"):
+            parse_zmdlog_payload("角色档案 莱万汀 --榜单")
 
     def test_the_window_option_names_the_profile_where_it_works(self) -> None:
         self.assertIn("角色档案", OPTION_USAGE["range"])

@@ -1,8 +1,11 @@
 /* 角色档案 — 四块占比两两并排，每块一行一项、单系列黄条；
-   各榜通关名次复用 common/standings-rows.css，一榜一行。 */
+   各榜通关名次复用 common/standings-rows.css，一榜一行；
+   切到一个榜时换成该榜记录，同样一条一行。 */
 
-/* 样本口径：hero 下的一条身份条，样式在 base.css 的 identity strip 里 */
+/* 样本口径（切榜时上面多一条榜单）：hero 下的身份条，样式在 base.css 的 identity strip 里 */
 .profile-rule {
+  display: grid;
+  gap: 8px;
   margin-top: 18px;
 }
 
@@ -132,6 +135,47 @@
   --standings-cols: 92px minmax(0, 1fr) 300px 168px;
 }
 
-.profile-boards .standings-row {
+/* 一条一行：两张表都没有阵容行 */
+.profile-boards .standings-row,
+.profile-records .standings-row {
   grid-template-rows: auto;
+}
+
+/* ---------- 该榜记录：名次、账号、养成、日期、用时五列 ---------- */
+
+.profile-records {
+  --standings-cols: 92px minmax(0, 1fr) 120px 150px 168px;
+}
+
+.profile-head-fact {
+  text-align: right;
+}
+
+.profile-record-fact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.profile-record-fact span {
+  color: var(--muted);
+  font-size: var(--fs-11);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.profile-record-fact b {
+  color: var(--steel);
+  font-family: var(--font-num);
+  font-size: var(--fs-20);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* 养成是这张表除用时外要看的那一列 */
+.profile-record-fact .investment-text {
+  color: var(--ink);
 }

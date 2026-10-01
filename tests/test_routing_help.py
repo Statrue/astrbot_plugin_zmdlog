@@ -119,7 +119,10 @@ class HelpTests(unittest.TestCase):
                     "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all] [--口径 rdps]"
                 ),
                 "!zmdlog 角色排名 [角色名… | --属性 属性 | --职业 职业] [--口径 rdps]",
-                "!zmdlog 角色档案 <角色名> [--范围 7d|14d|30d|all]",
+                (
+                    "!zmdlog 角色档案 <角色名> [--榜单 榜单关键词] "
+                    "[--范围 7d|14d|30d|all]"
+                ),
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 (
                     "!zmdlog 战报 | 配装 | 技能 | 技能轴 "

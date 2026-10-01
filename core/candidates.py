@@ -38,8 +38,9 @@ class CandidateView(str, Enum):
     # 榜单: every dungeon, not a match. A pick draws what typing its name
     # draws — the top three of each of its boards, or its one board.
     DUNGEONS = "dungeons"
-    # A character's pages. No list offers them yet; a character page names
-    # them as the views of the same character its buttons open.
+    # A character's pages; a character page names them as the views of the
+    # same character its buttons open. 角色档案's list is of the boards its
+    # ``--榜单`` keyword matched; no list offers 角色排名.
     CHARACTER_PROFILE = "character_profile"
     CHARACTER_STANDINGS = "character_standings"
 
@@ -58,6 +59,9 @@ _VIEW_TITLES = {
     CandidateView.TREND: "匹配到 {count} 个公开账号，选一个看名次趋势",
     CandidateView.GROUP_BOARD: "的群榜查询匹配到 {count} 个榜单",
     CandidateView.DUNGEONS: "共 {count} 个副本，选一个看它的榜单",
+    CandidateView.CHARACTER_PROFILE: (
+        "匹配到 {count} 个榜单，选一个看{character}的角色档案"
+    ),
 }
 
 
@@ -80,6 +84,9 @@ class PendingCandidates:
     compare_rank: int = 2
     # Which of the board's two rankings a pick draws; ``rdps`` only on request.
     metric: str = "dps"
+    # 角色档案's character, by its catalog name: whose profile a pick draws,
+    # cut to the board picked.
+    profile_character: str = ""
 
 
 class CandidateStore:
@@ -110,6 +117,7 @@ class CandidateStore:
         compare_rank: int = 2,
         origin: str = "",
         metric: str = "dps",
+        profile_character: str = "",
         limit: int | None = MAX_CANDIDATES,
         now: float | None = None,
     ) -> PendingCandidates:
@@ -133,6 +141,7 @@ class CandidateStore:
             compare_rank=compare_rank,
             origin=origin,
             metric=metric,
+            profile_character=profile_character,
         )
         self._entries[code] = entry
         return entry
@@ -224,7 +233,9 @@ def format_candidates(
 def list_heading(entry: PendingCandidates, *, hint: str) -> str:
     """The first line of a pick list: what matched, then how to pick."""
 
-    title = _VIEW_TITLES[entry.view].format(count=len(entry.choices))
+    title = _VIEW_TITLES[entry.view].format(
+        count=len(entry.choices), character=entry.profile_character
+    )
     return f"「{entry.query}」{title}，{hint}："
 
 

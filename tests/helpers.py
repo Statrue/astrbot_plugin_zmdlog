@@ -824,6 +824,10 @@ def character_profile_payload(
     record has its weapon unrecorded. ``potentials``, ``refinements``,
     ``characterRows`` and ``bossOptions`` keep their shape although the
     plugin reads none of them.
+
+    With ``boss_slug``, ``bosses[]`` and the counts are cut to that board as
+    upstream cuts them — one record per account, so its sample is its
+    accounts — while the shares stay the trimmed whole's.
     """
 
     def share(key, name, count, percent, icon_url=None) -> dict:
@@ -875,7 +879,7 @@ def character_profile_payload(
     equip_icon = "/images/equip/iconbig/{}.png"
     lily = "usr_1010c26ea9a3d7692b41df1b9dd83f33"
     mirror = "usr_588c42ca41d04e90f1fece196983738e"
-    return {
+    payload = {
         "characterKey": "chr_0016_laevat",
         "range": time_range,
         "bossSlug": boss_slug,
@@ -963,3 +967,15 @@ def character_profile_payload(
             }
         ],
     }
+    if boss_slug is not None:
+        boards = [
+            entry for entry in payload["bosses"] if entry["bossSlug"] == boss_slug
+        ]
+        samples = sum(entry["sampleCount"] for entry in boards)
+        payload.update(
+            bosses=boards,
+            sampleCount=samples,
+            accountCount=samples,
+            bossCount=len(boards),
+        )
+    return payload

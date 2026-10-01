@@ -83,6 +83,7 @@ _OPTION_SPELLINGS: dict[str, tuple[str, ...]] = {
     "element": ("--属性", "--element"),
     "profession": ("--职业", "--profession"),
     "metric": ("--口径", "--metric"),
+    "board": ("--榜单", "--board"),
 }
 _OPTION_BY_SPELLING = {
     spelling.casefold(): name
@@ -97,6 +98,7 @@ _OPTION_LABEL = {
     "element": "--属性",
     "profession": "--职业",
     "metric": "--口径",
+    "board": "--榜单",
 }
 # Rejection text names where the option DOES work, not the current route —
 # "--潜能 不适用于榜单查询" reads like the option belongs somewhere unknown.
@@ -120,6 +122,7 @@ OPTION_USAGE = {
         "--口径 仅适用于具体榜单、阵容、群榜、角色统计、角色排名、玩家排名和新纪录，"
         "例如：罗丹 --口径 rdps。"
     ),
+    "board": "--榜单 仅适用于角色档案，例如：角色档案 莱万汀 --榜单 罗丹。",
 }
 
 
@@ -223,6 +226,7 @@ class RouteOptions:
     stats_range: str = DEFAULT_STATS_RANGE
     stats_potential: str = DEFAULT_STATS_POTENTIAL
     metric: str = DEFAULT_METRIC
+    board_query: str | None = None
     present: frozenset[str] = frozenset()
 
     def reject_except(self, *allowed: str) -> None:
@@ -230,7 +234,7 @@ class RouteOptions:
 
         for name in (
             "top", "character", "range", "potential", "element", "profession",
-            "metric",
+            "metric", "board",
         ):
             if name in self.present and name not in allowed:
                 raise RouteParseError(OPTION_USAGE[name])
@@ -257,6 +261,8 @@ class RouteRequest:
     # board when the query is a board keyword.
     compare_target: str | None = None
     compare_rank: int | None = None
+    # 角色档案 only: the board keyword ``--榜单`` cut the profile to.
+    board_query: str | None = None
 
     @property
     def ranking_limit(self) -> int:
@@ -405,11 +411,14 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
     if command == "角色档案":
         # Upstream ignores metric and potential here, so neither is passed
         # on as if it did something.
-        options.reject_except("range")
+        options.reject_except("range", "board")
         if not remainder:
             raise RouteParseError("请提供角色名，例如：角色档案 莱万汀。")
         return RouteRequest(
-            RouteKind.CHARACTER_PROFILE, remainder, stats_range=options.stats_range
+            RouteKind.CHARACTER_PROFILE,
+            remainder,
+            stats_range=options.stats_range,
+            board_query=options.board_query,
         )
 
     if command == "阵容":
@@ -532,18 +541,21 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
             raise RouteParseError(f"{label} 参数只能填写一次。")
         if index + 1 >= len(tokens) or tokens[index + 1].startswith("--"):
             raise RouteParseError(f"{label} 后需要填写取值。")
-        if name == "character":
-            # --角色 takes every name up to the next option: ``--角色 黎风 洛茜``
-            # asks for teams fielding both.
+        if name in ("character", "board"):
+            # Both take every word up to the next option: ``--角色 黎风 洛茜``
+            # asks for teams fielding both, and a board keyword is as many
+            # words as one typed after zmdlog (``--榜单 白刃穿水 残酷``).
             end = index + 1
             while end < len(tokens) and not tokens[end].startswith("--"):
                 end += 1
-            names = tuple(dict.fromkeys(tokens[index + 1 : end]))
-            if len(names) > MAX_CHARACTER_FILTERS:
-                raise RouteParseError(
-                    f"--角色 最多写 {MAX_CHARACTER_FILTERS} 个角色。"
-                )
-            values[name] = " ".join(names)
+            words = tokens[index + 1 : end]
+            if name == "character":
+                words = list(dict.fromkeys(words))
+                if len(words) > MAX_CHARACTER_FILTERS:
+                    raise RouteParseError(
+                        f"--角色 最多写 {MAX_CHARACTER_FILTERS} 个角色。"
+                    )
+            values[name] = " ".join(words)
             index = end
             continue
         values[name] = tokens[index + 1]
@@ -574,6 +586,7 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
         element_filter=element_filter,
         profession_filter=profession_filter,
         metric=metric,
+        board_query=values.get("board"),
         stats_range=(
             _parse_range(values["range"])
             if "range" in values

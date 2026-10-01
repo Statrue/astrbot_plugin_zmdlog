@@ -67,6 +67,7 @@ from .messages import shorten
 from .metrics import METRIC_DPS
 from .models import (
     BattleDetailSummary,
+    CharacterType,
     HotBossCard,
 )
 from .origins import is_group_origin
@@ -115,9 +116,11 @@ _BATTLE_VIEWS = frozenset(
     }
 )
 # Pages that exist per board only: a dungeon or scope hit is flattened to a
-# pick list of its boards for these.
+# pick list of its boards for these. 角色档案 is one when ``--榜单`` names a
+# board, and draws its list itself (``_render_character_profile``).
 _BOARD_ONLY_VIEWS = (
     CandidateView.CHARACTER_STATS,
+    CandidateView.CHARACTER_PROFILE,
     CandidateView.ROSTER,
     CandidateView.BATTLE,
     CandidateView.LOADOUT,
@@ -345,7 +348,10 @@ class QueryService:
 
         if route.kind is RouteKind.CHARACTER_PROFILE:
             return await self._render_character_profile(
-                route.query, time_range=route.stats_range
+                route.query,
+                time_range=route.stats_range,
+                board_query=route.board_query,
+                origin=origin,
             )
 
         if route.kind is RouteKind.CHARACTER_STATS and not route.query.strip():
@@ -927,24 +933,92 @@ class QueryService:
         return Outcome.image(await recipe.draw(self._renderer()))
 
     async def _render_character_profile(
-        self, query: str, *, time_range: str
+        self,
+        query: str,
+        *,
+        time_range: str,
+        board_query: str | None,
+        origin: str,
     ) -> Outcome:
         """角色档案: the site's character page for the character ``query`` names.
+
+        ``board_query`` (``--榜单``) cuts it to one board. The character is
+        resolved first, so a misspelt name is answered before any board
+        lookup; then a keyword naming one board draws the page there, and
+        one naming a dungeon or a scope lists its boards to pick from, as
+        every page that exists per board does.
+        """
+
+        character = await find_profile_character(self._data, query)
+        if isinstance(character, str):
+            return Outcome(message=character)
+        if board_query is None:
+            return await self._draw_character_profile(
+                character, query=query, time_range=time_range
+            )
+        try:
+            cards = await self._data.list_hot_bosses()
+        except ZmdLogsClientError:
+            # As with every board keyword, a slug names its board without
+            # the list; it is what a pick list's button sends.
+            if looks_like_direct_slug(board_query):
+                return await self._draw_character_profile(
+                    character,
+                    query=query,
+                    time_range=time_range,
+                    boss_slug=board_query,
+                )
+            raise
+        matcher = self._board_matcher(cards)
+        match = matcher.match(board_query, allowed_types=BOARD_QUERY_TARGETS)
+        boards: tuple[MatchChoice, ...] = ()
+        if match.status is MatchStatus.AMBIGUOUS:
+            boards = matcher.expand_to_boards(match.candidates)
+        elif match.selected is not None:
+            boards = matcher.expand_to_boards((match.selected,))
+        if not boards:
+            return Outcome(
+                message=_not_found_message(board_query, CandidateView.CHARACTER_PROFILE)
+            )
+        if len(boards) == 1:
+            return await self._draw_character_profile(
+                character,
+                query=query,
+                time_range=time_range,
+                boss_slug=boards[0].target.key,
+            )
+        entry = self._candidates.remember(
+            board_query,
+            boards,
+            origin=origin,
+            view=CandidateView.CHARACTER_PROFILE,
+            stats_range=time_range,
+            profile_character=character.name,
+        )
+        return self._pick_list(entry)
+
+    async def _draw_character_profile(
+        self,
+        character: CharacterType,
+        *,
+        query: str,
+        time_range: str,
+        boss_slug: str | None = None,
+    ) -> Outcome:
+        """The 角色档案 page of ``character``, on ``boss_slug`` alone if given.
 
         Its buttons open the character's other pages, so the target carries
         its name too; 角色统计 covers six-stars only and is not offered for
         the rest.
         """
 
-        character = await find_profile_character(self._data, query)
-        if isinstance(character, str):
-            return Outcome(message=character)
         recipe = await prepare_character_profile(
             self._data,
             character,
             time_range=time_range,
             query=query,
             web_base_url=self._web_base_url,
+            boss_slug=boss_slug,
         )
         if isinstance(recipe, str):
             return Outcome(message=recipe)
@@ -961,6 +1035,7 @@ class QueryService:
                     if character.rarity == SIX_STAR
                     else frozenset({CandidateView.CHARACTER_STATS})
                 ),
+                boss_slug=boss_slug,
             ),
         )
 
@@ -1073,6 +1148,20 @@ class QueryService:
             if pending.ranking_top is not None
             else DEFAULT_RANKING_TOP
         )
+        if pending.view is CandidateView.CHARACTER_PROFILE:
+            # A pick off 角色档案's list of boards; the list kept the
+            # catalog's name, which resolves to the same character again.
+            character = await find_profile_character(
+                self._data, pending.profile_character
+            )
+            if isinstance(character, str):
+                return Outcome(message=character)
+            return await self._draw_character_profile(
+                character,
+                query=pending.profile_character,
+                time_range=pending.stats_range,
+                boss_slug=boss_slug,
+            )
         if pending.view is CandidateView.CHARACTER_STATS:
             recipe = await prepare_character_stats(
                 self._data,

@@ -16,6 +16,8 @@ in memory for ten minutes, and a numbered button would stop working when the
 list expired or the bot restarted. 榜单's list of every dungeon is the one
 exception to the first rule: its button is the dungeon's name alone, as a
 user would type it, because that is the command the list stands in for.
+A 角色档案 pick names the character by its name, as its sibling buttons
+do, and the board by its slug after ``--榜单``.
 
 A list gets one button per row while five fit. Only 榜单's list is longer,
 and it shares the five rows as a notice does; a dungeon then shows the part
@@ -283,6 +285,13 @@ def pick_command(
         if target.target_type is not TargetType.DUNGEON:
             return None
         return f"{command} {target.name}"
+    if entry.view is CandidateView.CHARACTER_PROFILE:
+        if target.target_type is not TargetType.BOARD or not entry.profile_character:
+            return None
+        parts = [command, "角色档案", entry.profile_character, "--榜单", target.key]
+        if entry.stats_range != DEFAULT_STATS_RANGE:
+            parts += ["--范围", entry.stats_range]
+        return " ".join(parts)
     if target.target_type is TargetType.ACCOUNT:
         word = _ACCOUNT_WORDS.get(entry.view)
         key = target.key
@@ -569,8 +578,8 @@ def _jump_url(target: PageTarget, *, web_base_url: str) -> str | None:
 
     The site's options are written only off their defaults, which are ours:
     a board page reads ``metric``, its statistics also ``range`` and
-    ``potential``, a character page ``range``. A battle page is the same
-    whichever metric found it.
+    ``potential``, a character page ``range`` and ``boss``. A battle page is
+    the same whichever metric found it.
     """
 
     query: dict[str, str] = {}
@@ -580,6 +589,8 @@ def _jump_url(target: PageTarget, *, web_base_url: str) -> str | None:
         url = public_url(web_base_url, "character", target.key)
         if target.stats_range != DEFAULT_STATS_RANGE:
             query["range"] = target.stats_range
+        if target.boss_slug:
+            query["boss"] = target.boss_slug
     elif target.subject is PageSubject.BATTLE:
         resource = "axis" if target.view is CandidateView.TIMELINE else "battle"
         url = public_url(web_base_url, resource, target.key)

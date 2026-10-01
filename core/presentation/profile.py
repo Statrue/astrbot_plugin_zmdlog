@@ -1,4 +1,9 @@
-"""角色档案: one character's shares and its 通关名次 on every board."""
+"""角色档案: one character's shares and its 通关名次 on every board.
+
+Cut to one board (``--榜单``), the shares are that board's, the hero gives
+its 通关名次, and the board's records — one per account, the fastest — take
+the place of the list of boards.
+"""
 
 import re
 from collections.abc import Callable, Mapping
@@ -6,7 +11,13 @@ from dataclasses import dataclass
 
 from ..elements import element_key
 from ..loadout import is_raw_item_name
-from ..models import CharacterProfile, CharacterType, ProfileShare
+from ..models import (
+    CharacterProfile,
+    CharacterType,
+    ProfileBoard,
+    ProfileRecord,
+    ProfileShare,
+)
 from ..professions import normalize_profession
 from .common import (
     _ASSET_ID_RE,
@@ -14,8 +25,10 @@ from .common import (
     _EQUIP_ICON_PATH,
     _RANGE_LABELS,
     _WEAPON_ICON_PATH,
+    InvestmentView,
     PageHeader,
     _derived_asset_url,
+    _format_date,
     _initial,
     _safe_asset_url,
     format_duration,
@@ -71,6 +84,31 @@ class ProfileBoardRowView:
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileRecordRowView:
+    """One record on the board the page is cut to, by clear time."""
+
+    rank: int
+    account_display_name: str
+    battle_id: str
+    duration: str
+    battle_date: str
+    # The character's 养成 in that record; None when its 潜能 is unrecorded.
+    investment: InvestmentView | None
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileCutView:
+    """The one board a page is cut to, and the records it lists there."""
+
+    board: ProfileBoardRowView
+    # The board's name, with its dungeon's unless the name already says it.
+    label: str
+    records: tuple[ProfileRecordRowView, ...]
+    # The board's records past the ones upstream lists (twenty at most).
+    hidden_record_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class CharacterProfilePage:
     header: PageHeader
     character_initial: str
@@ -83,6 +121,9 @@ class CharacterProfilePage:
     sample_rule: str
     shares: tuple[ShareBlockView, ...]
     boards: tuple[ProfileBoardRowView, ...]
+    # The board the page is cut to, None for every board; its records then
+    # stand where ``boards`` would, and ``boards`` is empty.
+    cut: ProfileCutView | None = None
 
 
 def build_character_profile_page(
@@ -97,19 +138,28 @@ def build_character_profile_page(
     """The four share blocks in the site's order, then the boards, best first.
 
     Upstream sends the boards most sampled first; the page leads with where
-    the character clears fastest, equal ranks keeping upstream's order.
+    the character clears fastest, equal ranks keeping upstream's order. A
+    profile cut to one board lists that board's records instead.
     """
 
     known = elements or {}
     faces = icons or {}
-    boards = sorted(profile.bosses, key=lambda board: board.character_rank)
+    cut = _cut_view(profile)
+    boards = (
+        ()
+        if cut is not None
+        else sorted(profile.bosses, key=lambda board: board.character_rank)
+    )
+    matched_name = f"{character.name} · 角色档案"
+    if cut is not None:
+        matched_name += f" · {cut.board.boss_name}"
     return CharacterProfilePage(
         header=PageHeader(
             title=character.name,
             subtitle=normalize_profession(character.profession)
             or character.profession,
             query=query,
-            matched_name=f"{character.name} · 角色档案",
+            matched_name=matched_name,
             target_type="角色档案",
             footer_note="公开通关记录 · 角色档案",
         ),
@@ -169,20 +219,61 @@ def build_character_profile_page(
                 ),
             ),
         ),
-        boards=tuple(
-            ProfileBoardRowView(
-                character_rank=board.character_rank,
-                ranked_character_count=board.ranked_character_count,
-                boss_name=board.boss_name,
-                dungeon_name=board.dungeon_name,
-                sample_count=board.sample_count,
-                best_duration=format_duration(board.best_duration_ms),
-                account_display_name=(
-                    board.rows[0].account_display_name if board.rows else ""
-                ),
-            )
-            for board in boards
+        boards=tuple(_board_row(board) for board in boards),
+        cut=cut,
+    )
+
+
+def _cut_view(profile: CharacterProfile) -> ProfileCutView | None:
+    """The board the profile was cut to; None when it covers every board."""
+
+    if profile.boss_slug is None:
+        return None
+    board = next(
+        (board for board in profile.bosses if board.boss_slug == profile.boss_slug),
+        None,
+    )
+    if board is None:
+        return None
+    return ProfileCutView(
+        board=_board_row(board),
+        label=_board_label(board),
+        records=tuple(_record_row(row) for row in board.rows),
+        hidden_record_count=max(0, board.sample_count - len(board.rows)),
+    )
+
+
+def _board_row(board: ProfileBoard) -> ProfileBoardRowView:
+    return ProfileBoardRowView(
+        character_rank=board.character_rank,
+        ranked_character_count=board.ranked_character_count,
+        boss_name=board.boss_name,
+        dungeon_name=board.dungeon_name,
+        sample_count=board.sample_count,
+        best_duration=format_duration(board.best_duration_ms),
+        account_display_name=(
+            board.rows[0].account_display_name if board.rows else ""
         ),
+    )
+
+
+def _board_label(board: ProfileBoard) -> str:
+    """危境再现·罗丹 alone, 白刃穿水·残酷 · 战争回响: as a pick list names a board."""
+
+    dungeon = board.dungeon_name
+    if dungeon and dungeon not in board.boss_name:
+        return f"{board.boss_name} · {dungeon}"
+    return board.boss_name
+
+
+def _record_row(record: ProfileRecord) -> ProfileRecordRowView:
+    return ProfileRecordRowView(
+        rank=record.rank,
+        account_display_name=record.account_display_name,
+        battle_id=record.battle_id,
+        duration=format_duration(record.duration_ms),
+        battle_date=_format_date(record.battle_end_at),
+        investment=investment_view(record.potential, record.refinement),
     )
 
 
