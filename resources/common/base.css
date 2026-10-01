@@ -1057,6 +1057,7 @@ body {
 
 .battle-identity > div,
 .account-identity > div,
+.profile-rule > div,
 .battle-id-row {
   display: flex;
   min-width: 0;
@@ -1069,6 +1070,7 @@ body {
 
 .battle-identity span,
 .account-identity span,
+.profile-rule span,
 .battle-id-row span {
   flex: 0 0 auto;
   padding: 8px 9px 8px 11px;
@@ -1083,6 +1085,7 @@ body {
 .battle-identity strong,
 .battle-identity code,
 .account-identity code,
+.profile-rule strong,
 .battle-id-row code {
   overflow: hidden;
   color: var(--on-dark);

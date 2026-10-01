@@ -19,6 +19,7 @@ from .models import (
     BattleExport,
     BossRanking,
     CharacterBossStatistics,
+    CharacterProfile,
     CharacterStatistics,
     CharacterType,
     EquipSuit,
@@ -31,6 +32,7 @@ from .models import (
     parse_binding_code_account,
     parse_boss_ranking,
     parse_character_boss_statistics,
+    parse_character_profile,
     parse_character_statistics,
     parse_character_types,
     parse_equip_catalog,
@@ -347,6 +349,40 @@ class ZmdLogsClient:
         except ModelValidationError as exc:
             raise ZmdLogsProtocolError(
                 "character boss statistics response is invalid"
+            ) from exc
+
+    async def get_character_profile(
+        self,
+        character_key: str,
+        *,
+        time_range: str = "all",
+        boss_slug: str | None = None,
+    ) -> CharacterProfile:
+        """Return one character's 角色档案, over every board or one.
+
+        Upstream ignores ``metric`` and ``potential`` here, so neither is
+        sent. A board it keeps no profile of — the crisis contract — answers
+        404 ``boss_not_found``, the same as a board that does not exist.
+        """
+
+        if time_range not in _STATS_RANGES:
+            raise ValueError("invalid profile range")
+        if not _CHARACTER_KEY_PATTERN.match(character_key):
+            raise InvalidBossSlugError("invalid character key")
+        params = {"range": time_range}
+        if boss_slug is not None:
+            if not is_valid_boss_slug(boss_slug):
+                raise InvalidBossSlugError("invalid boss slug")
+            params["boss"] = boss_slug
+
+        payload = await self._get_json(
+            f"api/characters/{character_key}/profile", params=params
+        )
+        try:
+            return parse_character_profile(payload)
+        except ModelValidationError as exc:
+            raise ZmdLogsProtocolError(
+                "character profile response is invalid"
             ) from exc
 
     async def get_public_user_rankings(

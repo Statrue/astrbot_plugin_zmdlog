@@ -38,7 +38,9 @@ from .models import (
     BossRanking,
     BossRankingRow,
     CharacterBossStatistics,
+    CharacterProfile,
     CharacterStatistics,
+    CharacterType,
     HotBossCard,
     PublicUserRankings,
 )
@@ -47,6 +49,7 @@ from .presentation import (
     build_battle_page,
     build_character_boss_page,
     build_character_champions_page,
+    build_character_profile_page,
     build_character_standings_page,
     build_character_stats_page,
     build_compare_page,
@@ -89,6 +92,7 @@ _HIGH_DPI_PAGE_KINDS = frozenset(
         "battle",
         "character-stats",
         "character-boss",
+        "character-profile",
         "character-standings",
         "character-champions",
         "player-champions",
@@ -292,6 +296,32 @@ class TemplateRenderer:
             "character-boss/character-boss.html",
             page,
             "character-boss",
+            embed_fonts=embed_fonts,
+        )
+
+    def render_character_profile(
+        self,
+        profile: CharacterProfile,
+        *,
+        character: CharacterType,
+        query: str,
+        web_base_url: str | None = None,
+        elements: Mapping[str, str] | None = None,
+        icons: Mapping[str, str] | None = None,
+        embed_fonts: bool = True,
+    ) -> str:
+        page = build_character_profile_page(
+            profile,
+            character=character,
+            query=query,
+            web_base_url=web_base_url,
+            elements=elements,
+            icons=icons,
+        )
+        return self._render(
+            "character-profile/character-profile.html",
+            page,
+            "character-profile",
             embed_fonts=embed_fonts,
         )
 
@@ -867,6 +897,9 @@ class LongImageRenderer:
     )
     render_character_boss = _captured(
         "character-boss", TemplateRenderer.render_character_boss
+    )
+    render_character_profile = _captured(
+        "character-profile", TemplateRenderer.render_character_profile
     )
     render_character_standings = _captured(
         "character-standings", TemplateRenderer.render_character_standings

@@ -112,13 +112,14 @@ class HelpTests(unittest.TestCase):
                 ),
                 "!zmdlog 榜单",
                 "!zmdlog 阵容 <榜单关键词> [--top 数量] [--口径 rdps]",
+                "!zmdlog 新纪录 [--范围 7d|14d|30d] [--口径 rdps]",
+                "!zmdlog 玩家排名 [--范围 7d|14d|30d] [--口径 rdps]",
                 (
                     "!zmdlog 角色统计 [榜单关键词或角色名] "
                     "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all] [--口径 rdps]"
                 ),
                 "!zmdlog 角色排名 [角色名… | --属性 属性 | --职业 职业] [--口径 rdps]",
-                "!zmdlog 新纪录 [--范围 7d|14d|30d] [--口径 rdps]",
-                "!zmdlog 玩家排名 [--范围 7d|14d|30d] [--口径 rdps]",
+                "!zmdlog 角色档案 <角色名> [--范围 7d|14d|30d|all]",
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 (
                     "!zmdlog 战报 | 配装 | 技能 | 技能轴 "
@@ -135,7 +136,7 @@ class HelpTests(unittest.TestCase):
         )
         self.assertEqual(
             [section.title for section in page.sections],
-            ["榜单", "战报", "关注", "绑定", "管理"],
+            ["榜单", "角色", "战报", "关注", "绑定", "管理"],
         )
         # Every description stays a single line of what the syntax cannot say.
         for section in page.sections:
@@ -172,6 +173,21 @@ class HelpTests(unittest.TestCase):
 
         self.assertEqual(row.answers, "现在有哪些副本和榜单？")
         self.assertNotIn("前三", row.answers)
+
+    def test_the_three_character_verbs_share_a_section(self) -> None:
+        # 角色统计, 角色排名 and 角色档案 all take a character name and
+        # answer different questions about it; side by side, the answers
+        # are what tells them apart.
+        page = build_help_page("/")
+        (section,) = (entry for entry in page.sections if entry.title == "角色")
+
+        self.assertEqual(
+            [command.command.split()[1] for command in section.commands],
+            ["角色统计", "角色排名", "角色档案"],
+        )
+        self.assertEqual(
+            len({command.answers for command in section.commands}), 3
+        )
 
     def test_only_the_official_bot_page_states_its_two_preconditions(self) -> None:
         # The official bot hears a group only when @-ed unless the group lets

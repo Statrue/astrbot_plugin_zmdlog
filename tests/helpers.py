@@ -811,3 +811,155 @@ def character_boss_statistics_payload(*, metric: str = "dps") -> dict:
                 rank=None, ranked_total=0, samples=0, median=None),
         ],
     }
+
+
+def character_profile_payload(
+    *, time_range: str = "7d", boss_slug: str | None = None
+) -> dict:
+    """莱万汀's 角色档案 as ``/api/characters/{key}/profile`` sends it.
+
+    Trimmed from the live ``range=7d`` response of 2026-10-01 (15 records,
+    6 boards) to three boards, with the shares as they were. ``bosses[]``
+    comes most samples first, as upstream orders it; the one-sample board's
+    record has its weapon unrecorded. ``potentials``, ``refinements``,
+    ``characterRows`` and ``bossOptions`` keep their shape although the
+    plugin reads none of them.
+    """
+
+    def share(key, name, count, percent, icon_url=None) -> dict:
+        return {
+            "key": key,
+            "name": name,
+            "count": count,
+            "percent": percent,
+            "iconUrl": icon_url,
+        }
+
+    def record(rank, battle, account, nickname, duration_ms, end_at, potential,
+               refinement) -> dict:
+        return {
+            "rank": rank,
+            "battleId": battle,
+            "accountId": account,
+            "accountDisplayName": nickname,
+            "durationMs": duration_ms,
+            "battleEndAt": end_at,
+            "potential": potential,
+            "refinement": refinement,
+        }
+
+    def board(slug, name, dungeon, samples, rank, best_ms, ranked, rows) -> dict:
+        return {
+            "bossSlug": slug,
+            "bossName": name,
+            "dungeonName": dungeon,
+            "sampleCount": samples,
+            "characterRank": rank,
+            "bestDurationMs": best_ms,
+            "rankedCharacterCount": ranked,
+            "characterRows": [
+                {
+                    "rank": 1,
+                    "characterKey": "chr_0032_lizhiyan",
+                    "characterName": "诀",
+                    "sampleCount": 16,
+                    "bestDurationMs": best_ms,
+                    "battleId": rows[0]["battleId"],
+                    "accountDisplayName": rows[0]["accountDisplayName"],
+                }
+            ],
+            "rows": rows,
+        }
+
+    weapon_icon = "/images/weapon/icon/{}.png"
+    equip_icon = "/images/equip/iconbig/{}.png"
+    lily = "usr_1010c26ea9a3d7692b41df1b9dd83f33"
+    mirror = "usr_588c42ca41d04e90f1fece196983738e"
+    return {
+        "characterKey": "chr_0016_laevat",
+        "range": time_range,
+        "bossSlug": boss_slug,
+        "generatedAt": "2026-10-01T04:06:41.909442+00:00",
+        "latestBattleAt": "2026-10-01T09:52:05+08:00",
+        "sampleCount": 15,
+        "accountCount": 9,
+        "bossCount": 3,
+        "potentials": [
+            share("0", "0 潜", 5, 33.33),
+            share("2", "2 潜", 5, 33.33),
+            share("unknown", "未知", 0, 0.0),
+        ],
+        "refinements": [share("1", "精炼 1", 9, 60.0)],
+        "combinations": [
+            share("(2, 1)", "2 + 1", 5, 33.33),
+            share("(0, 1)", "0 + 1", 4, 26.67),
+            share("(3, 6)", "3 + 6", 4, 26.67),
+            share("(5, None)", "5 + 未知", 1, 6.67),
+            share("(None, None)", "未知 + 未知", 1, 6.67),
+        ],
+        "teammates": [
+            share("chr_0033_camille", "卡缪", 15, 100.0),
+            share("chr_0032_lizhiyan", "诀", 13, 86.67),
+            share("chr_0006_wolfgd", "狼卫", 6, 40.0),
+        ],
+        "weapons": [
+            share(
+                "wpn_sword_0006", "熔铸火焰", 13, 86.67,
+                weapon_icon.format("wpn_sword_0006"),
+            ),
+            share("unknown", "未知", 2, 13.33),
+        ],
+        "equipment": [
+            share(
+                "item_equip_t4_suit_fire_natr01_hand_02", "动火用手甲", 15, 100.0,
+                equip_icon.format("item_equip_t4_suit_fire_natr01_hand_02"),
+            ),
+            share(
+                "item_equip_t4_suit_heal01_edc_03", "生物辅助护板", 8, 53.33,
+                equip_icon.format("item_equip_t4_suit_heal01_edc_03"),
+            ),
+        ],
+        "equipmentUnknownSamples": 0,
+        "bosses": [
+            board(
+                "indie_battletower001_ex", "白刃穿水·残酷", "战争回响", 8, 1,
+                45_517, 15,
+                [
+                    record(1, "btl_upload_cad50c180d36", lily, "百合末莉", 45_517,
+                           "2026-09-24T14:29:34+08:00", 5, 6),
+                    record(2, "btl_upload_d89a0a2d305c", mirror, "镜花水月", 58_871,
+                           "2026-09-25T13:07:47+08:00", 2, 1),
+                ],
+            ),
+            board(
+                "indie_battletower012_ex", "无机狂热·残酷", "战争回响", 2, 10,
+                57_168, 13,
+                [
+                    record(1, "btl_upload_f6db0e45723d", mirror, "镜花水月", 57_168,
+                           "2026-09-25T12:49:56+08:00", 2, 1),
+                ],
+            ),
+            board(
+                "dung02_group_bossrush03", "危境再现·阿莱克琉斯", "危境再现", 1, 1,
+                130_488, 11,
+                [
+                    record(1, "btl_upload_f239236b857f",
+                           "usr_1fe810649e3e8859f876bf324b1c8c14", "hahahazhenhao",
+                           130_488, "2026-09-28T20:38:55+08:00", 2, None),
+                ],
+            ),
+        ],
+        "bossOptions": [
+            {
+                "bossSlug": "indie_battletower001_ex",
+                "bossName": "白刃穿水·残酷",
+                "dungeonName": "战争回响",
+                "sampleCount": 0,
+                "characterRank": None,
+                "bestDurationMs": None,
+                "rankedCharacterCount": 0,
+                "characterRows": [],
+                "rows": [],
+            }
+        ],
+    }

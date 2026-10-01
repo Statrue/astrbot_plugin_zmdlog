@@ -107,8 +107,8 @@ OPTION_USAGE = {
         "或 罗丹 --角色 黎风 洛茜（同时带上两人的队伍）。"
     ),
     "range": (
-        "--范围 仅适用于角色统计、名次趋势、新纪录和不带名字的角色排名、玩家排名，"
-        "例如：角色统计 罗丹 --范围 7d。"
+        "--范围 仅适用于角色统计、角色档案、名次趋势、新纪录和不带名字的角色排名、"
+        "玩家排名，例如：角色统计 罗丹 --范围 7d。"
     ),
     "potential": "--潜能 仅适用于角色统计，例如：角色统计 罗丹 --潜能 0。",
     "element": (
@@ -150,6 +150,8 @@ class RouteKind(str, Enum):
     CHARACTER_STATS = "character_stats"
     # Where the teams fielding one character stand on every board.
     CHARACTER_STANDINGS = "character_standings"
+    # 角色档案: how one character is built and how fast it clears.
+    CHARACTER_PROFILE = "character_profile"
     # Which public accounts uploaded the most first places.
     PLAYER_CHAMPIONS = "player_champions"
     # New records and first places changing hands, from the index's re-reads.
@@ -398,6 +400,16 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
             stats_range=options.stats_range,
             stats_potential=options.stats_potential,
             metric=options.metric,
+        )
+
+    if command == "角色档案":
+        # Upstream ignores metric and potential here, so neither is passed
+        # on as if it did something.
+        options.reject_except("range")
+        if not remainder:
+            raise RouteParseError("请提供角色名，例如：角色档案 莱万汀。")
+        return RouteRequest(
+            RouteKind.CHARACTER_PROFILE, remainder, stats_range=options.stats_range
         )
 
     if command == "阵容":

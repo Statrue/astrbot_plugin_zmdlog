@@ -23,7 +23,13 @@ BATTLE_NOT_FOUND = "战报不存在、未公开或已删除。"
 BATTLE_LINK_NOT_FOUND = "链接对应的公开战报不存在、未公开或已删除。"
 CRISIS_CONTRACT_NO_STATISTICS = "危机合约不提供角色统计。"
 CHARACTER_NOT_IN_RECORDS = "公开记录里没有这个角色出场，可能是名字不对。"
+CHARACTER_UNKNOWN = "没有找到名为「{name}」的角色，请检查名字。"
 NO_TEAM_FIELDING = "公开记录里没有同时带「{names}」的队伍。"
+
+# 角色档案
+CHARACTER_PROFILE_MISSING = "ZMDLogs 还没有这个角色的档案。"
+BOARD_HAS_NO_PROFILE = "该榜不提供角色档案。"
+NO_PROFILE_RECORDS = "{window}没有带「{name}」的公开通关记录。"
 
 # Battle pages that an older upload cannot fill.
 NO_LOADOUT = "这份战报没有记录阵容配装。"

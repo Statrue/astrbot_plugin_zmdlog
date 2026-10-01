@@ -91,6 +91,13 @@ from .players import (
     PlayerRowView,
     build_player_champions_page,
 )
+from .profile import (
+    CharacterProfilePage,
+    ProfileBoardRowView,
+    ShareBlockView,
+    ShareRowView,
+    build_character_profile_page,
+)
 from .rail import (
     RailEventView,
     RailLaneView,
@@ -139,6 +146,7 @@ __all__ = [
     "CharacterBossChipView",
     "CharacterBossPage",
     "CharacterBossRowView",
+    "CharacterProfilePage",
     "CharacterStatChipView",
     "CharacterStatRowView",
     "CharacterStatsPage",
@@ -159,6 +167,7 @@ __all__ = [
     "MainCharacterView",
     "PageHeader",
     "PresentationError",
+    "ProfileBoardRowView",
     "ProfessionUsageView",
     "RailEventView",
     "RailLaneView",
@@ -169,6 +178,8 @@ __all__ = [
     "RosterComboView",
     "RosterEntryView",
     "RosterPage",
+    "ShareBlockView",
+    "ShareRowView",
     "SkillGroupView",
     "SkillLevelView",
     "SkillPage",
@@ -203,6 +214,7 @@ __all__ = [
     "build_battle_page",
     "build_buff_band_view",
     "build_character_boss_page",
+    "build_character_profile_page",
     "build_character_stats_page",
     "build_compare_page",
     "build_dps_curve_view",

@@ -93,6 +93,31 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                         description="职业位出场率按全榜统计，常见组合按前 N 名统计。",
                     ),
                     HelpCommand(
+                        command=f"{command} 新纪录 [--范围 7d|14d|30d] [--口径 rdps]",
+                        answers="最近谁刷新了第一名？新上传了哪些记录？哪个榜最活跃？",
+                        description=(
+                            "索引每次重读发现的第一名易主和新记录，"
+                            "加各榜这段时间打出的记录数；默认近 7 天。"
+                        ),
+                    ),
+                    HelpCommand(
+                        command=f"{command} 玩家排名 [--范围 7d|14d|30d] [--口径 rdps]",
+                        answers="哪个玩家的冠军最多？",
+                        description=(
+                            "各公开账号上传的第一名、前三、前十各几个，"
+                            "附常用主C 和常用阵容；写昵称则是那个人的成绩，"
+                            "与 角色排名 同形。"
+                        ),
+                    ),
+                ),
+            ),
+            # Three commands that take a character name: the questions they
+            # answer are what tells them apart.
+            HelpSection(
+                title="角色",
+                summary="一个角色强不强、怎么养、跑得多快",
+                commands=(
+                    HelpCommand(
                         command=(
                             f"{command} 角色统计 [榜单关键词或角色名] "
                             "[--范围 7d|14d|30d|all] [--潜能 0|1-5|all] [--口径 rdps]"
@@ -118,20 +143,11 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                         ),
                     ),
                     HelpCommand(
-                        command=f"{command} 新纪录 [--范围 7d|14d|30d] [--口径 rdps]",
-                        answers="最近谁刷新了第一名？新上传了哪些记录？哪个榜最活跃？",
+                        command=f"{command} 角色档案 <角色名> [--范围 7d|14d|30d|all]",
+                        answers="这个角色大家怎么养、配什么、带谁？在哪些榜跑得快？",
                         description=(
-                            "索引每次重读发现的第一名易主和新记录，"
-                            "加各榜这段时间打出的记录数；默认近 7 天。"
-                        ),
-                    ),
-                    HelpCommand(
-                        command=f"{command} 玩家排名 [--范围 7d|14d|30d] [--口径 rdps]",
-                        answers="哪个玩家的冠军最多？",
-                        description=(
-                            "各公开账号上传的第一名、前三、前十各几个，"
-                            "附常用主C 和常用阵容；写昵称则是那个人的成绩，"
-                            "与 角色排名 同形。"
+                            "养成组合、武器、装备、队友各占多少，加它在各榜的通关名次；"
+                            "四星五星也有。"
                         ),
                     ),
                 ),

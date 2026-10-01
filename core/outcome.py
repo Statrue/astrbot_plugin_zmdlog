@@ -38,6 +38,7 @@ class PageSubject(str, Enum):
     ACCOUNT = "account"
     BATTLE = "battle"
     BOARD = "board"
+    CHARACTER = "character"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +46,9 @@ class PageTarget:
     """The one thing a result page is about, and which of its pages it is.
 
     ``key`` names it the way a command and a ZMDLogs link both can: an
-    accountId, a battleId or a board slug. ``view`` is the page drawn of it,
+    accountId, a battleId or a board slug. A character is the exception: a
+    link names it by its key and a command by its name, so its ``name``
+    carries the second. ``view`` is the page drawn of it,
     ``RANKING`` being a target's own page (an account's records, a board's
     ranking); the options are the ones it was drawn with that its ZMDLogs
     counterpart or its other views read too (``ranking_top`` is the rows a
@@ -67,6 +70,7 @@ class PageTarget:
     stats_potential: str = DEFAULT_STATS_POTENTIAL
     ranking_top: int | None = None
     unavailable: frozenset[CandidateView] = frozenset()
+    name: str = ""
 
 
 @dataclass(frozen=True, slots=True)

@@ -38,6 +38,11 @@ from .boards import (
 )
 from .index import IndexSnapshot, index_snapshot
 from .players import PlayerChampionsRecipe, prepare_player_champions
+from .profile import (
+    CharacterProfileRecipe,
+    find_profile_character,
+    prepare_character_profile,
+)
 from .records import RecordsRecipe, prepare_records
 from .standings import (
     ChampionsRecipe,
@@ -58,6 +63,7 @@ __all__ = [
     "BattleRecipe",
     "ChampionsRecipe",
     "CharacterBossRecipe",
+    "CharacterProfileRecipe",
     "CharacterStatsRecipe",
     "CompareRecipe",
     "DungeonOverviewRecipe",
@@ -67,11 +73,13 @@ __all__ = [
     "RecordsRecipe",
     "StandingsRecipe",
     "export_refusal",
+    "find_profile_character",
     "index_snapshot",
     "prepare_account",
     "prepare_battle",
     "prepare_champions",
     "prepare_character_boss",
+    "prepare_character_profile",
     "prepare_character_stats",
     "prepare_compare",
     "prepare_dungeon_overview",

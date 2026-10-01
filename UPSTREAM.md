@@ -458,6 +458,15 @@ by the page (`cache: "no-store"`) when the reader switches board.
   unknown slug and the crisis contract `indie_group_ccdg` both → 404
   `boss_not_found`.
 - Unknown key → 404 `character_not_found`.
+- **Every rarity has one** (2026-10-01): 狼卫 (5★, `chr_0006_wolfgd`) and
+  秋栗 (4★, `chr_0019_karin`) answer 200 with samples, unlike the six-star
+  statistics. The plugin therefore resolves a 角色档案 name against the
+  game-data catalog (below), not the statistics catalog.
+- **The admin is one character here too**: `chr_0002_endminm` answers with
+  `characterKey: chr_9000_endmin`, so the key in the answer is not always
+  the key asked for.
+- A `range` outside the four is FastAPI's own 422 `{detail: [...]}` with no
+  `error` object, which the client reads as `http_422`.
 - `metric` and `potential` are ignored: `?metric=rdps` and `?potential=5`
   return bytes identical to `range=all`.
 - No `Cache-Control`; `cf-cache-status: DYNAMIC`. For 莱万汀 (270 records):
@@ -562,6 +571,12 @@ to. `suit_none` carries its own id as its `name` and is skipped.
 `weaponTypeName` and `professionName` — ranking rows carry no element, and
 battle rosters carry it per battle only, so this is the only source of a
 character's element and profession. Its 术师 disagrees with the rosters' 术士.
+
+Its `id` (equal to `charId`) is the key the character endpoints take,
+`chr_0016_laevat`, for all 33 entries of every rarity, and `rarity` is an
+int 4–6 (2026-10-01); the plugin reads both, for 角色档案's names and for
+whether a character has 角色统计. Three entries are named 管理员
+(`chr_0002_endminm`, `chr_0003_endminf`, `chr_9000_endmin`).
 
 Sibling modules: `character` (33), `weapon` (79), `enemy` (92), `dungeon` (94),
 `buff`, `skill`, `attribute_type`. The detail routes

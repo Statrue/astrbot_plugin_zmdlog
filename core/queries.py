@@ -76,11 +76,13 @@ from .recipes import (
     BattleRecipe,
     IndexSnapshot,
     export_refusal,
+    find_profile_character,
     index_snapshot,
     prepare_account,
     prepare_battle,
     prepare_champions,
     prepare_character_boss,
+    prepare_character_profile,
     prepare_character_stats,
     prepare_compare,
     prepare_dungeon_overview,
@@ -146,6 +148,8 @@ _BOARD_ROUTES = frozenset(
 )
 _ACCOUNT_ROUTES = frozenset({RouteKind.ACCOUNT_QUERY, RouteKind.TREND_QUERY})
 CHARACTER_STATS_UNAVAILABLE = "character_statistics_not_available"
+# The only rarity 角色统计 has statistics for.
+SIX_STAR = 6
 
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
@@ -337,6 +341,11 @@ class QueryService:
                 profession_filter=route.profession_filter,
                 time_range=route.stats_range,
                 metric=route.metric,
+            )
+
+        if route.kind is RouteKind.CHARACTER_PROFILE:
+            return await self._render_character_profile(
+                route.query, time_range=route.stats_range
             )
 
         if route.kind is RouteKind.CHARACTER_STATS and not route.query.strip():
@@ -908,6 +917,44 @@ class QueryService:
         if isinstance(recipe, str):
             return Outcome(message=recipe)
         return Outcome.image(await recipe.draw(self._renderer()))
+
+    async def _render_character_profile(
+        self, query: str, *, time_range: str
+    ) -> Outcome:
+        """角色档案: the site's character page for the character ``query`` names.
+
+        Its buttons open the character's other pages, so the target carries
+        its name too; 角色统计 covers six-stars only and is not offered for
+        the rest.
+        """
+
+        character = await find_profile_character(self._data, query)
+        if isinstance(character, str):
+            return Outcome(message=character)
+        recipe = await prepare_character_profile(
+            self._data,
+            character,
+            time_range=time_range,
+            query=query,
+            web_base_url=self._web_base_url,
+        )
+        if isinstance(recipe, str):
+            return Outcome(message=recipe)
+        return Outcome.image(
+            await recipe.draw(self._renderer()),
+            target=PageTarget(
+                PageSubject.CHARACTER,
+                recipe.profile.character_key,
+                CandidateView.CHARACTER_PROFILE,
+                stats_range=time_range,
+                name=character.name,
+                unavailable=(
+                    frozenset()
+                    if character.rarity == SIX_STAR
+                    else frozenset({CandidateView.CHARACTER_STATS})
+                ),
+            ),
+        )
 
     async def _resolve_catalog_character(
         self,

@@ -25,6 +25,7 @@ from .models import (
     BossRanking,
     BossRankingRow,
     CharacterBossStatistics,
+    CharacterProfile,
     CharacterStatistics,
     CharacterType,
     HotBossCard,
@@ -44,6 +45,9 @@ _HOT_BOSSES_KEY = "all_board_top3"
 # 50-130 KB, an order of magnitude more than any other cached value, so the
 # two battle caches get a tighter cap than the shared default.
 BATTLE_CACHE_MAX_ENTRIES = 64
+# A whole-history 角色档案 parses to about 130 KB (46 boards, 255 records on
+# 2026-10-01), the battles' order of size, so it gets their cap.
+PROFILE_CACHE_MAX_ENTRIES = 64
 # Static game data: suits and characters change when the game adds content,
 # which is months apart, never when someone uploads a run. The three catalogs
 # are therefore kept for as long as the process runs in practice, and each is
@@ -104,6 +108,10 @@ class ZmdLogsDataSource:
             tuple[str, str, str],
             CharacterBossStatistics,
         ](stats_ttl)
+        self.character_profile_cache = AsyncTTLCache[
+            tuple[str, str, str],
+            CharacterProfile,
+        ](stats_ttl, max_entries=PROFILE_CACHE_MAX_ENTRIES)
         self.battle_cache = AsyncTTLCache[str, BattleDetailSummary](
             battle_ttl,
             max_entries=BATTLE_CACHE_MAX_ENTRIES,
@@ -152,6 +160,7 @@ class ZmdLogsDataSource:
             self.account_cache,
             self.character_stats_cache,
             self.character_boss_cache,
+            self.character_profile_cache,
             self.battle_cache,
             self.battle_export_cache,
             self.equip_catalog_cache,
@@ -464,6 +473,24 @@ class ZmdLogsDataSource:
                 time_range=time_range,
                 potential=potential,
                 metric=metric,
+            ),
+        )
+        return result.value
+
+    async def get_character_profile(
+        self,
+        character_key: str,
+        *,
+        time_range: str,
+        boss_slug: str | None = None,
+    ) -> CharacterProfile:
+        """One character's 角色档案, kept as long as the statistics are."""
+
+        key = (character_key, time_range, boss_slug or "")
+        result = await self.character_profile_cache.get_or_load(
+            key,
+            lambda: self.client.get_character_profile(
+                character_key, time_range=time_range, boss_slug=boss_slug
             ),
         )
         return result.value

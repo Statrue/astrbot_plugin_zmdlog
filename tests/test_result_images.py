@@ -251,11 +251,19 @@ EVERY_PAGE = (
     (PageSubject.BOARD, V.ROSTER),
     (PageSubject.BOARD, V.CHARACTER_STATS),
     (PageSubject.BOARD, V.GROUP_BOARD),
+    (PageSubject.CHARACTER, V.CHARACTER_PROFILE),
 )
-_KEYS = {PageSubject.ACCOUNT: ACCOUNT, PageSubject.BATTLE: BATTLE}
+_KEYS = {
+    PageSubject.ACCOUNT: ACCOUNT,
+    PageSubject.BATTLE: BATTLE,
+    PageSubject.CHARACTER: "chr_0016_laevat",
+}
 
 
 def page(subject: PageSubject, view: CandidateView, **options) -> PageTarget:
+    # A command names a character by its name; the others by their key.
+    if subject is PageSubject.CHARACTER:
+        options.setdefault("name", "莱万汀")
     return PageTarget(subject, _KEYS.get(subject, SLUG), view, **options)
 
 
@@ -271,6 +279,7 @@ LABELS = {
     "第 1 名战报": V.BATTLE,
     "账号": V.RANKING,
     "名次趋势": V.TREND,
+    "角色排名": V.CHARACTER_STANDINGS,
 }
 ROUTE_OF = {
     (PageSubject.ACCOUNT, V.RANKING): RouteKind.ACCOUNT_QUERY,
@@ -283,6 +292,8 @@ ROUTE_OF = {
     (PageSubject.BOARD, V.ROSTER): RouteKind.ROSTER_QUERY,
     (PageSubject.BOARD, V.CHARACTER_STATS): RouteKind.CHARACTER_STATS,
     (PageSubject.BOARD, V.BATTLE): RouteKind.BATTLE_QUERY,
+    (PageSubject.CHARACTER, V.CHARACTER_STATS): RouteKind.CHARACTER_STATS,
+    (PageSubject.CHARACTER, V.CHARACTER_STANDINGS): RouteKind.CHARACTER_STANDINGS,
 }
 
 
@@ -393,7 +404,7 @@ class SiblingButtonTests(unittest.TestCase):
                             drawn = LABELS[label]
 
                             self.assertIs(route.kind, ROUTE_OF[subject, drawn])
-                            self.assertEqual(route.query, target.key)
+                            self.assertEqual(route.query, target.name or target.key)
                             self.assertEqual(route.metric, metric)
                             self.assertEqual(route.battle_rank, 1)
                             if drawn in (V.RANKING, V.ROSTER) and board:

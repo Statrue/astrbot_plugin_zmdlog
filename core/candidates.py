@@ -38,6 +38,10 @@ class CandidateView(str, Enum):
     # 榜单: every dungeon, not a match. A pick draws what typing its name
     # draws — the top three of each of its boards, or its one board.
     DUNGEONS = "dungeons"
+    # A character's pages. No list offers them yet; a character page names
+    # them as the views of the same character its buttons open.
+    CHARACTER_PROFILE = "character_profile"
+    CHARACTER_STANDINGS = "character_standings"
 
 
 _VIEW_TITLES = {

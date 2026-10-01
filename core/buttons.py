@@ -134,6 +134,16 @@ _ACCOUNT_WORDS = {
     CandidateView.TREND: "趋势",
     CandidateView.WATCH: "关注",
 }
+# ... and for a character, whom a command names by its name, not its key.
+_CHARACTER_WORDS = {
+    CandidateView.CHARACTER_PROFILE: "角色档案",
+    CandidateView.CHARACTER_STATS: "角色统计",
+    CandidateView.CHARACTER_STANDINGS: "角色排名",
+}
+_SUBJECT_WORDS = {
+    PageSubject.ACCOUNT: _ACCOUNT_WORDS,
+    PageSubject.CHARACTER: _CHARACTER_WORDS,
+}
 _BATTLE_VIEWS = frozenset(
     {
         CandidateView.BATTLE,
@@ -187,6 +197,10 @@ _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = 
     ),
     (PageSubject.ACCOUNT, CandidateView.RANKING): (CandidateView.TREND,),
     (PageSubject.ACCOUNT, CandidateView.TREND): (CandidateView.RANKING,),
+    (PageSubject.CHARACTER, CandidateView.CHARACTER_PROFILE): (
+        CandidateView.CHARACTER_STATS,
+        CandidateView.CHARACTER_STANDINGS,
+    ),
 }
 # What the button to each site page says it is for.
 _SITE_PAGE_LABELS = {SitePage.BINDING: "去 ZMDLogs 生成绑定码"}
@@ -462,12 +476,18 @@ def _sibling_commands(
     views, and one that takes no metric (战报) is left off rather than open
     the DPS board's battle. Its length (``--top``) goes wherever it means the
     same, the board's lists; its statistics window and potential belong to
-    the statistics page. A battle or an account command takes no option.
+    the statistics page. A character is named by its name, and its window
+    goes to its 角色统计, which reads the same one. A battle or an account
+    command takes no option.
     """
 
-    words = _ACCOUNT_WORDS if target.subject is PageSubject.ACCOUNT else _BOARD_WORDS
+    words = _SUBJECT_WORDS.get(target.subject, _BOARD_WORDS)
     other_metric = (
         target.subject is PageSubject.BOARD and target.metric != DEFAULT_METRIC
+    )
+    windowed = (
+        target.subject is PageSubject.CHARACTER
+        and target.stats_range != DEFAULT_STATS_RANGE
     )
     offered = []
     for view in _SIBLINGS.get((target.subject, target.view), ()):
@@ -475,11 +495,13 @@ def _sibling_commands(
             continue
         if other_metric and view in _BATTLE_VIEWS:
             continue
-        parts = [command, words[view], target.key]
+        parts = [command, words[view], target.name or target.key]
         if target.ranking_top is not None and view in _LISTING_VIEWS:
             parts += ["--top", str(target.ranking_top)]
         if other_metric:
             parts += ["--口径", target.metric]
+        if windowed and view is CandidateView.CHARACTER_STATS:
+            parts += ["--范围", target.stats_range]
         label = _SIBLING_LABELS.get((target.subject, view), words[view])
         offered.append((view, label, " ".join(parts)))
     return offered
@@ -490,12 +512,17 @@ def _jump_url(target: PageTarget, *, web_base_url: str) -> str | None:
 
     The site's options are written only off their defaults, which are ours:
     a board page reads ``metric``, its statistics also ``range`` and
-    ``potential``. A battle page is the same whichever metric found it.
+    ``potential``, a character page ``range``. A battle page is the same
+    whichever metric found it.
     """
 
     query: dict[str, str] = {}
     if target.subject is PageSubject.ACCOUNT:
         url = public_url(web_base_url, "records", target.key)
+    elif target.subject is PageSubject.CHARACTER:
+        url = public_url(web_base_url, "character", target.key)
+        if target.stats_range != DEFAULT_STATS_RANGE:
+            query["range"] = target.stats_range
     elif target.subject is PageSubject.BATTLE:
         resource = "axis" if target.view is CandidateView.TIMELINE else "battle"
         url = public_url(web_base_url, resource, target.key)

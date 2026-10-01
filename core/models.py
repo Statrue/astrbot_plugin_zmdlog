@@ -7,6 +7,9 @@ from typing import Any, Literal
 
 from .crit import CritRoll
 
+# The windows every statistics response, and the profile, may answer for.
+_STATS_RANGES = ("7d", "14d", "30d", "all")
+
 
 class ModelValidationError(ValueError):
     """Raised when an upstream response does not match the public contract."""
@@ -377,6 +380,12 @@ class CharacterType:
     # roster entry, but a record on a board the index does not hold arrives
     # as names alone, and this is where its face comes from.
     icon_path: str = ""
+    # ``id``: the key the character endpoints take (``chr_0016_laevat``),
+    # for every rarity; "" when the entry has none. 角色档案 resolves names
+    # here, because the statistics catalog lists six-stars only.
+    key: str = ""
+    # ``rarity``, 4–6; None when the entry has none.
+    rarity: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -456,6 +465,75 @@ class CharacterStatistics:
     metric: str = "dps"
 
 
+@dataclass(frozen=True, slots=True)
+class ProfileShare:
+    """One entry of a 角色档案 share list: a combination, weapon, piece or teammate.
+
+    ``key`` is upstream's own: a Python tuple repr for a 养成 combination
+    (``(5, 6)``, ``(5, None)``), ``unknown`` for an unrecorded value.
+    ``percent`` is out of the profile's ``sample_count``.
+    """
+
+    key: str
+    name: str
+    count: int
+    percent: float
+    icon_url: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileRecord:
+    """One record on a board with the character in it, by clear time."""
+
+    rank: int
+    battle_id: str
+    account_id: str
+    account_display_name: str
+    duration_ms: int
+    battle_end_at: str
+    # The character's 潜能 and its weapon's 精炼 in that record.
+    potential: int | None
+    refinement: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileBoard:
+    """The character on one board: its 通关名次 and its records there."""
+
+    boss_slug: str
+    boss_name: str
+    dungeon_name: str
+    sample_count: int
+    # 通关名次: every character ordered by the fastest clear it is in, ties
+    # sharing a rank; out of ``ranked_character_count``.
+    character_rank: int
+    best_duration_ms: int
+    ranked_character_count: int
+    rows: tuple[ProfileRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterProfile:
+    """``GET /api/characters/{key}/profile``: the site's 角色档案.
+
+    Counted over the public clears that field the character, one per
+    account per board — the account's fastest. ``boss_slug`` is the board
+    the profile was cut to, None for every board.
+    """
+
+    character_key: str
+    range: Literal["7d", "14d", "30d", "all"]
+    boss_slug: str | None
+    sample_count: int
+    account_count: int
+    boss_count: int
+    combinations: tuple[ProfileShare, ...]
+    weapons: tuple[ProfileShare, ...]
+    equipment: tuple[ProfileShare, ...]
+    teammates: tuple[ProfileShare, ...]
+    bosses: tuple[ProfileBoard, ...]
+
+
 def parse_equip_catalog(payload: Any) -> tuple[EquipSuit, ...]:
     """Read the suit names out of ``GET /api/game-data/equip``.
 
@@ -501,6 +579,7 @@ def parse_character_types(payload: Any) -> tuple[CharacterType, ...]:
         weapon = value.get("weaponTypeName")
         profession = value.get("professionName")
         icon = value.get("icon")
+        key = value.get("id")
         if not isinstance(name, str) or not isinstance(element, str):
             continue
         name, element = name.strip(), element.strip()
@@ -513,6 +592,8 @@ def parse_character_types(payload: Any) -> tuple[CharacterType, ...]:
                 weapon_type=weapon.strip() if isinstance(weapon, str) else "",
                 profession=profession.strip() if isinstance(profession, str) else "",
                 icon_path=icon.strip() if isinstance(icon, str) else "",
+                key=key.strip() if isinstance(key, str) else "",
+                rarity=_lenient_integer(value.get("rarity")),
             )
         )
     return tuple(types)
@@ -587,7 +668,7 @@ def _parse_statistics_envelope(
     if answered != metric:
         raise ModelValidationError(f"{path}.metric must be '{metric}'")
     time_range = _string(item.get("range"), f"{path}.range")
-    if time_range not in ("7d", "14d", "30d", "all"):
+    if time_range not in _STATS_RANGES:
         raise ModelValidationError(f"{path}.range is not a known range")
     potential = _string(item.get("potential"), f"{path}.potential")
     if potential not in ("0", "1-5", "all"):
@@ -713,6 +794,109 @@ def _parse_character_statistics_row(value: Any, path: str) -> CharacterStatistic
             item.get("characterAvatarUrl"), f"{path}.characterAvatarUrl"
         ),
         **_parse_statistics_row(item, path),
+    )
+
+
+def parse_character_profile(payload: Any) -> CharacterProfile:
+    """Adapt ``GET /api/characters/{key}/profile``.
+
+    Strict for the counts, the four share lists, and every board with its
+    records — the records in full, because a board cut lists them. The rest
+    is not read at all, so a change in it cannot fail a profile:
+    ``characterRows`` (every character on a board), ``bossOptions`` (every
+    statistics board), the separate potential and refinement shares, which
+    the combinations already hold, and the unknown-gear count. The key is
+    not checked against the one asked for: upstream answers the admin's
+    three keys with one.
+    """
+
+    path = "character-profile"
+    item = _mapping(payload, path)
+    time_range = _string(item.get("range"), f"{path}.range")
+    if time_range not in _STATS_RANGES:
+        raise ModelValidationError(f"{path}.range is not a known range")
+    bosses = _list(item.get("bosses"), f"{path}.bosses")
+    return CharacterProfile(
+        character_key=_string(item.get("characterKey"), f"{path}.characterKey"),
+        range=time_range,
+        boss_slug=_optional_string(item.get("bossSlug"), f"{path}.bossSlug"),
+        sample_count=_non_negative(item.get("sampleCount"), f"{path}.sampleCount"),
+        account_count=_non_negative(
+            item.get("accountCount"), f"{path}.accountCount"
+        ),
+        boss_count=_non_negative(item.get("bossCount"), f"{path}.bossCount"),
+        combinations=_parse_profile_shares(item, "combinations", path),
+        weapons=_parse_profile_shares(item, "weapons", path),
+        equipment=_parse_profile_shares(item, "equipment", path),
+        teammates=_parse_profile_shares(item, "teammates", path),
+        bosses=tuple(
+            _parse_profile_board(board, f"{path}.bosses[{index}]")
+            for index, board in enumerate(bosses)
+        ),
+    )
+
+
+def _parse_profile_shares(
+    item: Mapping[str, Any], field: str, path: str
+) -> tuple[ProfileShare, ...]:
+    shares = []
+    for index, value in enumerate(_list(item.get(field), f"{path}.{field}")):
+        entry_path = f"{path}.{field}[{index}]"
+        entry = _mapping(value, entry_path)
+        shares.append(
+            ProfileShare(
+                key=_string(entry.get("key"), f"{entry_path}.key"),
+                name=_string(entry.get("name"), f"{entry_path}.name"),
+                count=_non_negative(entry.get("count"), f"{entry_path}.count"),
+                percent=_non_negative_number(
+                    entry.get("percent"), f"{entry_path}.percent"
+                ),
+                icon_url=_optional_string(
+                    entry.get("iconUrl"), f"{entry_path}.iconUrl"
+                ),
+            )
+        )
+    return tuple(shares)
+
+
+def _parse_profile_board(value: Any, path: str) -> ProfileBoard:
+    item = _mapping(value, path)
+    character_rank = _integer(item.get("characterRank"), f"{path}.characterRank")
+    if character_rank < 1:
+        raise ModelValidationError(f"{path}.characterRank must be positive")
+    rows = _list(item.get("rows"), f"{path}.rows")
+    return ProfileBoard(
+        boss_slug=_string(item.get("bossSlug"), f"{path}.bossSlug"),
+        boss_name=_string(item.get("bossName"), f"{path}.bossName"),
+        dungeon_name=_string(item.get("dungeonName"), f"{path}.dungeonName"),
+        sample_count=_non_negative(item.get("sampleCount"), f"{path}.sampleCount"),
+        character_rank=character_rank,
+        best_duration_ms=_non_negative(
+            item.get("bestDurationMs"), f"{path}.bestDurationMs"
+        ),
+        ranked_character_count=_non_negative(
+            item.get("rankedCharacterCount"), f"{path}.rankedCharacterCount"
+        ),
+        rows=tuple(
+            _parse_profile_record(row, f"{path}.rows[{index}]")
+            for index, row in enumerate(rows)
+        ),
+    )
+
+
+def _parse_profile_record(value: Any, path: str) -> ProfileRecord:
+    item = _mapping(value, path)
+    return ProfileRecord(
+        rank=_integer(item.get("rank"), f"{path}.rank"),
+        battle_id=_string(item.get("battleId"), f"{path}.battleId"),
+        account_id=_string(item.get("accountId"), f"{path}.accountId"),
+        account_display_name=_string(
+            item.get("accountDisplayName"), f"{path}.accountDisplayName"
+        ),
+        duration_ms=_non_negative(item.get("durationMs"), f"{path}.durationMs"),
+        battle_end_at=_string(item.get("battleEndAt"), f"{path}.battleEndAt"),
+        potential=_optional_integer(item.get("potential"), f"{path}.potential"),
+        refinement=_optional_integer(item.get("refinement"), f"{path}.refinement"),
     )
 
 

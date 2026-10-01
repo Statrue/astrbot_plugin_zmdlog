@@ -39,7 +39,7 @@
     "default": 60
   },
   "character_stats_cache_ttl_seconds": {
-    "description": "角色统计缓存时间（秒）",
+    "description": "角色统计与角色档案缓存时间（秒）",
     "type": "int",
     "default": 120
   },
