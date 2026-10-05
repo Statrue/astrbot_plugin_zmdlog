@@ -1,4 +1,4 @@
-"""The 绑定 / 解绑 / 主账号 commands, and the book behind 我的 and 群榜.
+"""The 绑定 / 解绑 / 主账号 commands, and the book behind 我的.
 
 One :class:`AccountBinding` per plugin owns ``bindings.json`` and the lock
 that makes redeeming a code atomic: two messages carrying the same code
@@ -62,7 +62,6 @@ class AccountBinding:
         self._client = client
         self._logger = logger
         self.enabled = settings.bindings_enabled
-        self.group_board_max_accounts = settings.group_board_max_accounts
         self.store = JsonStore(
             None if data_dir is None else data_dir / BINDINGS_FILE,
             label="account bindings",
@@ -70,56 +69,13 @@ class AccountBinding:
         )
         self.book: BindingBook = parse_bindings(self.store.load())
         self._lock = asyncio.Lock()
-        self._file_chats_under_groups()
 
-    def _file_chats_under_groups(self) -> None:
-        """Once per load: chats recorded under 隔离对话 count as their groups.
-
-        The moved book is used even if the write fails; the move is repeated
-        on the next load, so nothing is lost by it.
-        """
-
-        book, moved = self.book.with_group_origins()
-        if not moved:
-            return
-        self.book = book
-        if self.store.save(book.to_payload()):
-            self._logger.info(
-                "ZmdLogBot bindings: moved %s member chats to their groups.",
-                moved,
-            )
-
-    # --- reads for 我的 / 群榜 -----------------------------------------------------
+    # --- reads for 我的 ------------------------------------------------------------
 
     def bindings_for(self, requester_key: str) -> UserBindings | None:
         if not requester_key:
             return None
         return self.book.for_user(requester_key)
-
-    def accounts_in(self, origin: str) -> tuple[tuple[BoundAccount, ...], int, int]:
-        """The bound accounts of a chat's members: the ones the board reads,
-        how many accounts there were, how many members.
-
-        Capped at ``group_board_max_accounts``, newest member first, so the
-        board's one ranking read stays one whatever the chat's size.
-        """
-
-        members = self.book.members_of(origin)
-        accounts = self.book.accounts_in(origin)
-        return accounts[: self.group_board_max_accounts], len(accounts), len(members)
-
-    def remember_member(self, requester_key: str, origin: str) -> None:
-        """A bound user used 我的 or 群榜 here: they are on this chat's board now.
-
-        The callers already refuse a private chat; checked again here so a
-        new caller cannot record one as a group by mistake.
-        """
-
-        if not requester_key or not is_group_origin(origin):
-            return
-        updated = self.book.with_group(requester_key, origin, now=utc_now_text())
-        if updated is not self.book:
-            self._save(updated)
 
     # --- 绑定 / 解绑 / 主账号 ---------------------------------------------------
 
@@ -143,7 +99,7 @@ class AccountBinding:
         if not requester_key:
             return Outcome(message=messages.NO_SENDER)
         if route.kind is RouteKind.BIND:
-            return await self._bind(route.query, origin, requester_key, command)
+            return await self._bind(route.query, requester_key, command)
         mine = self.book.for_user(requester_key)
         if mine is None:
             return to_binding_page(messages.NOT_BOUND.format(command=command))
@@ -155,9 +111,7 @@ class AccountBinding:
             message=self._set_primary(route.query, requester_key, mine, command)
         )
 
-    async def _bind(
-        self, text: str, origin: str, requester_key: str, command: str
-    ) -> Outcome:
+    async def _bind(self, text: str, requester_key: str, command: str) -> Outcome:
         if not self.enabled:
             return Outcome(message=messages.BINDINGS_DISABLED)
         code = normalize_binding_code(text)
@@ -192,8 +146,6 @@ class AccountBinding:
                     display_name=hit.account_display_name,
                     bound_at=now,
                 ),
-                # Binding here joins this group's board.
-                origin=origin,
                 now=now,
             )
             if status == "full":

@@ -18,9 +18,9 @@ served however long it has been held, because whether it is current depends
 on upstream, not on its age. Only a ranking not held yet — the plugin just
 loaded, or the site just listed the board — is read while the reader waits.
 A reader that says someone is waiting on that one board (a board page, the
-group board, the board tool) also has a copy last checked over two minutes
-ago re-read in the background: a player who just uploaded asks for that
-board, and asking again shows the new rank.
+board tool) also has a copy last checked over two minutes ago re-read in the
+background: a player who just uploaded asks for that board, and asking
+again shows the new rank.
 
 **A ranking is re-read about as often as it changes.** Its next re-read comes
 ``CHANGE_FACTOR`` × (time since it last changed) after its last check,

@@ -133,7 +133,6 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog 趋势 <账号> [--范围 7d|14d|30d|all]",
                 "!zmdlog 绑定 <绑定码>",
                 "!zmdlog 我的 [序号或昵称]",
-                "!zmdlog 群榜 <榜单关键词> [--top 数量] [--口径 rdps]",
                 "!zmdlog 别名 [添加 <榜单或副本> <别名…> | 删除 <别名>]",
             ),
         )
@@ -225,7 +224,7 @@ class HelpTests(unittest.TestCase):
             for command in section.commands
         ]
         with_option = [c for c in commands if "--口径 rdps" in c]
-        self.assertEqual(len(with_option), 7)
+        self.assertEqual(len(with_option), 6)
         self.assertTrue(all("--口径 rdps" not in c for c in commands if "账号" in c))
 
 
@@ -246,7 +245,6 @@ class MetricOptionTests(unittest.TestCase):
         for payload, kind in (
             ("榜单 罗丹 --口径 rdps", RouteKind.RANKING_QUERY),
             ("阵容 罗丹 --口径 rdps", RouteKind.ROSTER_QUERY),
-            ("群榜 罗丹 --口径 rdps", RouteKind.GROUP_BOARD),
             ("角色统计 --口径 rdps", RouteKind.CHARACTER_STATS),
             ("角色统计 罗丹 --口径 rdps", RouteKind.CHARACTER_STATS),
             ("角色排名 --口径 rdps", RouteKind.CHARACTER_STANDINGS),
@@ -358,17 +356,20 @@ class BindingRouteTests(unittest.TestCase):
         self.assertEqual(mine.kind, RouteKind.MY_ACCOUNT)
         self.assertEqual(mine.query, "")
         self.assertEqual(parse_zmdlog_payload("我的 2").query, "2")
-        group = parse_zmdlog_payload("群榜 罗丹 --top 5")
-        self.assertEqual(group.kind, RouteKind.GROUP_BOARD)
-        self.assertEqual(group.query, "罗丹")
-        self.assertEqual(group.ranking_top, 5)
-        alias = parse_zmdlog_payload("群排名 罗丹")
-        self.assertEqual(alias.kind, RouteKind.GROUP_BOARD)
-        refused = ("群榜", "群榜 罗丹 --角色 黎风", "我的 --top 3", "绑定 x --top 3")
+        refused = ("我的 --top 3", "绑定 x --top 3")
         for payload in refused:
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
+
+    def test_the_dropped_group_board_words_are_plain_keywords(self) -> None:
+        # 群榜 was removed in 1.3.0: its words are now whatever any unknown
+        # text is, a keyword for the smart query.
+        for payload in ("群榜", "群榜 罗丹", "群排名 罗丹"):
+            with self.subTest(payload=payload):
+                route = parse_zmdlog_payload(payload)
+                self.assertEqual(route.kind, RouteKind.SMART_QUERY)
+                self.assertEqual(route.query, payload)
 
 
 class CharacterStandingsRouteTests(unittest.TestCase):

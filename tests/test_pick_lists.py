@@ -69,14 +69,6 @@ class TwoHistories:
         )
 
 
-class BoundGroup:
-    def remember_member(self, requester_key, origin):
-        pass
-
-    def accounts_in(self, origin):
-        return ("usr_a",), (), ()
-
-
 def board_matcher_factory():
     matchers = MatcherCache()
 
@@ -100,7 +92,6 @@ class QueryPickListTests(unittest.TestCase):
             watcher=watcher or NoHistory(),
             settings=PluginSettings(),
             logger=logging.getLogger("test"),
-            bindings=BoundGroup(),
         )
 
     def _dispatch(self, kind: RouteKind, query: str, *, watcher=None, **options):
@@ -135,7 +126,6 @@ class QueryPickListTests(unittest.TestCase):
             RouteKind.COMPARE_QUERY: CandidateView.COMPARE,
             RouteKind.ROSTER_QUERY: CandidateView.ROSTER,
             RouteKind.CHARACTER_STATS: CandidateView.CHARACTER_STATS,
-            RouteKind.GROUP_BOARD: CandidateView.GROUP_BOARD,
         }
         for kind, view in cases.items():
             with self.subTest(kind=kind):

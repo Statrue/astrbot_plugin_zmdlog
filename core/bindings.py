@@ -2,10 +2,10 @@
 
 A binding is the one piece of user data the plugin keeps: the platform
 user key (``aiocqhttp:12345``), the public ``accountId`` and nickname
-snapshot of every account that user proved control of, which chats they
-used the binding commands in, and when. Nothing else — no QQ nickname, no
-site credentials — and every account here was verified with a binding code
-the site issued to whoever was logged into it (``ACCOUNT_BINDING_CODE_API``).
+snapshot of every account that user proved control of, and when. Nothing
+else — no QQ nickname, no site credentials, not the chats it was used in —
+and every account here was verified with a binding code the site issued to
+whoever was logged into it (``ACCOUNT_BINDING_CODE_API``).
 
 The book also remembers the digests of the codes already redeemed: the
 site's lookup does not consume a code, so within its ten-minute life a
@@ -20,7 +20,6 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from .matcher import fold_text
-from .origins import group_origin_of
 from .timestamps import parse_timestamp
 
 BINDINGS_VERSION = 1
@@ -64,10 +63,9 @@ class BoundAccount:
 
 @dataclass(frozen=True, slots=True)
 class UserBindings:
-    """One user's accounts (the first is the primary) and the chats they used."""
+    """One user's accounts; the first is the primary."""
 
     accounts: tuple[BoundAccount, ...]
-    groups: tuple[str, ...] = ()
     updated_at: str = ""
 
     @property
@@ -140,7 +138,6 @@ class BindingBook:
         user_key: str,
         account: BoundAccount,
         *,
-        origin: str,
         now: str,
     ) -> tuple["BindingBook", str]:
         """Append ``account`` to the user's list; the flag says what happened.
@@ -155,7 +152,7 @@ class BindingBook:
         if current is None:
             if self.total_users >= MAX_BOUND_USERS:
                 return self, "full"
-            current = UserBindings(accounts=(), groups=(), updated_at=now)
+            current = UserBindings(accounts=(), updated_at=now)
         accounts = list(current.accounts)
         status = "added"
         for index, existing in enumerate(accounts):
@@ -167,12 +164,7 @@ class BindingBook:
             if len(accounts) >= MAX_ACCOUNTS_PER_USER:
                 return self, "full"
             accounts.append(account)
-        updated = replace(
-            current,
-            accounts=tuple(accounts),
-            groups=_with_origin(current.groups, origin),
-            updated_at=now,
-        )
+        updated = replace(current, accounts=tuple(accounts), updated_at=now)
         return self._with_user(user_key, updated), status
 
     def with_primary(
@@ -196,44 +188,6 @@ class BindingBook:
             user_key, replace(current, accounts=(chosen, *others), updated_at=now)
         )
 
-    def with_group(self, user_key: str, origin: str, *, now: str) -> "BindingBook":
-        """Note that a bound user used a binding command in ``origin``.
-
-        This is the whole membership rule of the group board: no platform
-        gives a portable member list, so a chat's members are the bound
-        users who have shown up in it.
-        """
-
-        current = self.for_user(user_key)
-        if current is None or not origin or origin in current.groups:
-            return self
-        updated = replace(
-            current, groups=_with_origin(current.groups, origin), updated_at=now
-        )
-        return self._with_user(user_key, updated)
-
-    def with_group_origins(self) -> tuple["BindingBook", int]:
-        """Put the chats each user used under 隔离对话 back to their groups.
-
-        The user key is the member id the isolated origin was built from
-        (``core/origins``). ``updated_at`` stays: nobody did anything. The
-        count is how many recorded chats moved.
-        """
-
-        users: list[tuple[str, UserBindings]] = []
-        moved = 0
-        for key, bindings in self.users:
-            groups: tuple[str, ...] = ()
-            for origin in bindings.groups:
-                target = group_origin_of(origin, key)
-                if target is not None:
-                    moved += 1
-                groups = _with_origin(groups, target or origin)
-            users.append((key, replace(bindings, groups=groups)))
-        if not moved:
-            return self, 0
-        return replace(self, users=tuple(users)), moved
-
     def without_account(
         self, user_key: str, account_id: str, *, now: str
     ) -> "BindingBook":
@@ -253,28 +207,6 @@ class BindingBook:
     def without_user(self, user_key: str) -> "BindingBook":
         kept = tuple((key, value) for key, value in self.users if key != user_key)
         return replace(self, users=kept)
-
-    def members_of(self, origin: str) -> tuple[tuple[str, UserBindings], ...]:
-        """The bound users who used a binding command in ``origin``, newest first."""
-
-        members = [
-            (key, bindings) for key, bindings in self.users if origin in bindings.groups
-        ]
-        members.sort(key=lambda item: item[1].updated_at, reverse=True)
-        return tuple(members)
-
-    def accounts_in(self, origin: str) -> tuple[BoundAccount, ...]:
-        """Every account bound by a member of ``origin``, each once.
-
-        Two users bound to one account are one public account; the board
-        shows public nicknames, not who bound them.
-        """
-
-        seen: dict[str, BoundAccount] = {}
-        for _, bindings in self.members_of(origin):
-            for account in bindings.accounts:
-                seen.setdefault(account.account_id, account)
-        return tuple(seen.values())
 
     def code_used(self, digest: str, *, now: str) -> bool:
         cutoff = parse_timestamp(now)
@@ -326,7 +258,6 @@ class BindingBook:
                         }
                         for account in bindings.accounts
                     ],
-                    "groups": list(bindings.groups),
                     "updatedAt": bindings.updated_at,
                 }
                 for key, bindings in self.users
@@ -335,14 +266,14 @@ class BindingBook:
         }
 
 
-def _with_origin(groups: tuple[str, ...], origin: str) -> tuple[str, ...]:
-    if not origin or origin in groups:
-        return groups
-    return (*groups, origin)
-
-
 def parse_bindings(payload: Any) -> BindingBook:
-    """Read a stored payload, dropping anything malformed instead of raising."""
+    """Read a stored payload, dropping anything malformed instead of raising.
+
+    A file written before 1.3.0 also lists, per user, the chats they used a
+    binding command in — the membership of a per-chat board since removed.
+    Nothing reads it now, so it is passed over here and the next write
+    leaves it out.
+    """
 
     if not isinstance(payload, dict):
         return BindingBook.empty()
@@ -355,18 +286,11 @@ def parse_bindings(payload: Any) -> BindingBook:
             accounts = _parse_accounts(entry.get("accounts"))
             if not accounts:
                 continue
-            groups = entry.get("groups")
             users.append(
                 (
                     key,
                     UserBindings(
-                        accounts=accounts,
-                        groups=tuple(
-                            origin
-                            for origin in (groups if isinstance(groups, list) else ())
-                            if isinstance(origin, str) and origin
-                        ),
-                        updated_at=_text(entry.get("updatedAt")),
+                        accounts=accounts, updated_at=_text(entry.get("updatedAt"))
                     ),
                 )
             )

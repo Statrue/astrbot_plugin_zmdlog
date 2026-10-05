@@ -221,15 +221,6 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                         answers="我自己各首领的最好成绩是多少？",
                         description="默认看主账号，绑了几个号就写序号。",
                     ),
-                    HelpCommand(
-                        command=(
-                            f"{command} 群榜 <榜单关键词> [--top 数量] [--口径 rdps]"
-                        ),
-                        answers="本群谁打这个榜最快？",
-                        description=(
-                            "本群用过绑定指令的成员在该榜的最好记录，按全榜名次排。"
-                        ),
-                    ),
                 ),
             ),
             HelpSection(

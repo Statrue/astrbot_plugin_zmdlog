@@ -34,7 +34,6 @@ class CandidateView(str, Enum):
     WATCH = "watch"
     WATCH_BOARD = "watch_board"
     TREND = "trend"
-    GROUP_BOARD = "group_board"
     # 榜单: every dungeon, not a match. A pick draws what typing its name
     # draws — the top three of each of its boards, or its one board.
     DUNGEONS = "dungeons"
@@ -57,7 +56,6 @@ _VIEW_TITLES = {
     CandidateView.WATCH: "匹配到 {count} 个公开账号，选一个关注",
     CandidateView.WATCH_BOARD: "匹配到 {count} 个榜单，选一个关注",
     CandidateView.TREND: "匹配到 {count} 个公开账号，选一个看名次趋势",
-    CandidateView.GROUP_BOARD: "的群榜查询匹配到 {count} 个榜单",
     CandidateView.DUNGEONS: "共 {count} 个副本，选一个看它的榜单",
     CandidateView.CHARACTER_PROFILE: (
         "匹配到 {count} 个榜单，选一个看{character}的角色档案"

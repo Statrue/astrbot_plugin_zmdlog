@@ -171,11 +171,11 @@ rather than a decorator. All of them run through one error guard,
   two-local-origins script when touching `_route_asset_request`.
 - **Every JSON store distinguishes missing from corrupt**
   (`core/persistence.py`) — a watch list is recoverable from nowhere else.
-- **A chat is its group.** Everything kept per chat — watch lists, 群榜
-  membership, candidate lists, the auto-expand cooldown — keys on
-  `main._event_origin`, never on `event.unified_msg_origin`, which AstrBot's
-  隔离对话 rewrites per member. `core/origins` explains the restore, and the
-  one-time move of records written before it.
+- **A chat is its group.** Everything kept per chat — watch lists, candidate
+  lists, the auto-expand cooldown — keys on `main._event_origin`, never on
+  `event.unified_msg_origin`, which AstrBot's 隔离对话 rewrites per member.
+  `core/origins` explains the restore, and the one-time move of records
+  written before it.
 - **The binding file holds public data plus one platform user key, and never a
   code.** `bindings.json` is the one file tying a person to an account (README
   lists its fields); no QQ nickname, no site credential, no plaintext code —
@@ -244,14 +244,14 @@ when the user settled the question.
   the 2026-08 design is gone for good; unverified binding was judged an
   unacceptable impersonation surface and that judgement stands.
 - **Every binding command is group-only** (2026-09-15): the bot adds nobody as a
-  friend, so a private chat is not a place any of this is used from. A
-  关注-list-based 群榜 was judged not worth building, and was not; the 群榜 that
-  shipped the same day (`d5736c5`) is drawn from the chat's *bindings* —
-  `queries._group_board_gate` enrols whoever asks, and the page is one board
-  read filtered to the members' account ids. 关注 is not a binding command and
-  stays open in private chats (2026-09-30, #11 withdrawn): it ties no person to
-  a group, so there was no reason to close it, and existing private entries
-  keep their notices.
+  friend, so a private chat is not a place any of this is used from. 关注 is
+  not a binding command and stays open in private chats (2026-09-30, #11
+  withdrawn): it ties no person to a group, so there was no reason to close
+  it, and existing private entries keep their notices.
+- **The per-chat board of bound members is gone** (2026-10-05, #37), shipped
+  2026-09-15 (`d5736c5`) and too little used to keep. With it went the only
+  reader of which chats a person used a binding command in, so `bindings.json`
+  no longer records that; a file that still has the list loads without it.
 - **Cross-boss battle comparison is meaningless** and answers in text: every
   boss has its own rotation.
 - **In a comparison, A keeps the order its own 配装 page shows and B is matched

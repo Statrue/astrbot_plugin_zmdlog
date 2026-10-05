@@ -11,7 +11,6 @@ from core.models import (
     parse_public_user_rankings,
 )
 from core.render import TemplateRenderer
-from core.standings import group_standings
 from tests.helpers import (
     hot_bosses_payload,
     make_card,
@@ -155,19 +154,6 @@ class InvestmentPageTests(unittest.TestCase):
         # Combo A's best run is row 1, its members in profession order
         # 黎风 洁尔佩塔 佩丽卡 卡缪; combo B's is row 3, where only 洛茜 has one.
         self.assertEqual(investments(html), ["5+6", "0+1", "3+4", "1+?"])
-        self.assertIn(LEGEND, html)
-
-    def test_the_group_board_prints_every_members_pair(self) -> None:
-        # Fixture uploaders are usr_<rank padded to 32>.
-        accounts = {f"usr_{rank:032d}" for rank in (1, 3)}
-        rows = group_standings(self.ranking, accounts)
-
-        html = self.renderer.render_group_board(
-            self.ranking, rows, query="群榜 三位一体",
-            member_count=2, account_count=2,
-        )
-
-        self.assertEqual(investments(html), ["5+6", "3+4", "0+1", "1+?"])
         self.assertIn(LEGEND, html)
 
     def test_the_account_page_prints_its_records_pairs(self) -> None:

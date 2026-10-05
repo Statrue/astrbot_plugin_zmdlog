@@ -235,8 +235,6 @@ class RoundTripTests(unittest.TestCase):
              {"stats_potential": "1-5"}),
             (CandidateView.ROSTER, RouteKind.ROSTER_QUERY,
              {"ranking_top": 20, "metric": "rdps"}),
-            (CandidateView.GROUP_BOARD, RouteKind.GROUP_BOARD,
-             {"ranking_top": 15, "metric": "rdps"}),
             (CandidateView.BATTLE, RouteKind.BATTLE_QUERY, {"battle_rank": 3}),
             (CandidateView.BATTLE, RouteKind.BATTLE_QUERY, {}),
             (CandidateView.LOADOUT, RouteKind.LOADOUT_QUERY, {"battle_rank": 2}),

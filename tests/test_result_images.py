@@ -188,7 +188,6 @@ class JumpButtonTests(unittest.TestCase):
             (PageTarget(PageSubject.BATTLE, BATTLE, view.TIMELINE), f"/axis/{BATTLE}"),
             (PageTarget(PageSubject.BOARD, SLUG), f"/boss/{SLUG}"),
             (PageTarget(PageSubject.BOARD, SLUG, view.ROSTER), f"/boss/{SLUG}"),
-            (PageTarget(PageSubject.BOARD, SLUG, view.GROUP_BOARD), f"/boss/{SLUG}"),
             (
                 PageTarget(PageSubject.BOARD, SLUG, metric="rdps"),
                 f"/boss/{SLUG}?metric=rdps",
@@ -250,7 +249,6 @@ EVERY_PAGE = (
     (PageSubject.BOARD, V.RANKING),
     (PageSubject.BOARD, V.ROSTER),
     (PageSubject.BOARD, V.CHARACTER_STATS),
-    (PageSubject.BOARD, V.GROUP_BOARD),
     (PageSubject.CHARACTER, V.CHARACTER_PROFILE),
 )
 _KEYS = {
@@ -332,10 +330,6 @@ class SiblingButtonTests(unittest.TestCase):
                 [("榜单", f"{c} 榜单 {SLUG}"), ("阵容", f"{c} 阵容 {SLUG}")],
             ),
             (
-                page(PageSubject.BOARD, V.GROUP_BOARD),
-                [("榜单", f"{c} 榜单 {SLUG}"), ("阵容", f"{c} 阵容 {SLUG}")],
-            ),
-            (
                 page(PageSubject.ACCOUNT, V.RANKING),
                 [("名次趋势", f"{c} 趋势 {ACCOUNT}")],
             ),
@@ -366,8 +360,7 @@ class SiblingButtonTests(unittest.TestCase):
         )
 
     def test_a_board_page_keeps_its_length_where_the_view_takes_one(self) -> None:
-        # --top means the same on 榜单, 阵容 and 群榜; 角色统计 and 战报
-        # refuse it.
+        # --top means the same on 榜单 and 阵容; 角色统计 and 战报 refuse it.
         for view, expected in (
             (
                 V.RANKING,
@@ -378,8 +371,8 @@ class SiblingButtonTests(unittest.TestCase):
                 ],
             ),
             (
-                V.GROUP_BOARD,
-                [f"{COMMAND} 榜单 {SLUG} --top 30", f"{COMMAND} 阵容 {SLUG} --top 30"],
+                V.ROSTER,
+                [f"{COMMAND} 榜单 {SLUG} --top 30", f"{COMMAND} 角色统计 {SLUG}"],
             ),
         ):
             with self.subTest(view=view):

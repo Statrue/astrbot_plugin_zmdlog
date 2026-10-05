@@ -1,24 +1,24 @@
 """What a chat is: AstrBot's ``unified_msg_origin``, and the one 隔离对话 hides.
 
 An origin is ``platform_id:MessageType:session_id``. Everything this plugin
-keeps per chat — the watch lists, the 群榜 membership, the candidate lists,
-the auto-expand cooldown — is about the *group*: a watch list one member
-cannot see is not a group's watch list.
+keeps per chat — the watch lists, the candidate lists, the auto-expand
+cooldown — is about the *group*: a watch list one member cannot see is not
+a group's watch list.
 
 AstrBot's 隔离对话 (``platform_settings.unique_session``) breaks that. With it
 on, the waking stage rewrites a group message's session id to one per member
 (``aiocqhttp`` gets ``<sender>_<group>``), so every member of one group
-arrived with a different origin: 群榜 showed only whoever asked, and each
-member kept a private watch list. The adapter's own session id survives on
-``message_obj`` — the rewrite only touches ``event.session`` — and AstrBot
-flags it with the ``_session_isolated`` extra, so ``main.py`` puts it back
-with :func:`restore_group_origin` and nothing has to parse the rewritten id.
+arrived with a different origin and kept a private watch list. The adapter's
+own session id survives on ``message_obj`` — the rewrite only touches
+``event.session`` — and AstrBot flags it with the ``_session_isolated``
+extra, so ``main.py`` puts it back with :func:`restore_group_origin` and
+nothing has to parse the rewritten id.
 
 Records written before that fix still carry the per-member origin.
 :func:`group_origin_of` maps one back, but only by stripping a member id it
-is told — a watch entry's ``added_by``, a binding's user key — never by
-guessing where a separator is: some platforms' own group ids contain the
-separator (a Lark chat is ``oc_…``).
+is told — a watch entry's ``added_by`` — never by guessing where a
+separator is: some platforms' own group ids contain the separator (a Lark
+chat is ``oc_…``).
 """
 
 GROUP_MARKER = ":GroupMessage:"
@@ -42,8 +42,7 @@ def is_group_origin(origin: str) -> bool:
     """Whether an AstrBot ``unified_msg_origin`` names a group chat.
 
     The group type is spelled ``GroupMessage`` on every platform, so this is
-    the one portable group test there is; a private chat has no members to
-    put on a board.
+    the one portable group test there is.
     """
 
     return GROUP_MARKER in (origin or "")

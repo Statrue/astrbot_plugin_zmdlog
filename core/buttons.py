@@ -138,7 +138,6 @@ _BOARD_WORDS = {
     CandidateView.TIMELINE: "技能轴",
     CandidateView.COMPARE: "对比",
     CandidateView.WATCH_BOARD: "关注 榜单",
-    CandidateView.GROUP_BOARD: "群榜",
 }
 # ... and for an account target; the other views never list accounts.
 _ACCOUNT_WORDS = {
@@ -204,10 +203,6 @@ _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = 
         CandidateView.RANKING,
         CandidateView.ROSTER,
     ),
-    (PageSubject.BOARD, CandidateView.GROUP_BOARD): (
-        CandidateView.RANKING,
-        CandidateView.ROSTER,
-    ),
     (PageSubject.ACCOUNT, CandidateView.RANKING): (CandidateView.TREND,),
     (PageSubject.ACCOUNT, CandidateView.TREND): (CandidateView.RANKING,),
     (PageSubject.CHARACTER, CandidateView.CHARACTER_PROFILE): (
@@ -218,9 +213,7 @@ _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = 
 # What the button to each site page says it is for.
 _SITE_PAGE_LABELS = {SitePage.BINDING: "去 ZMDLogs 生成绑定码"}
 # A board's views that list its records, and so take --top.
-_LISTING_VIEWS = frozenset(
-    {CandidateView.RANKING, CandidateView.ROSTER, CandidateView.GROUP_BOARD}
-)
+_LISTING_VIEWS = frozenset({CandidateView.RANKING, CandidateView.ROSTER})
 # A sibling's label is its command word, except where that word alone would
 # not say which page it opens.
 _SIBLING_LABELS = {

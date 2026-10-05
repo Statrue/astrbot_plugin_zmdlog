@@ -1,4 +1,4 @@
-"""账号绑定: the binding book, the code flow, the client call and the 群榜 page."""
+"""账号绑定: the binding book, the code flow and the client call."""
 
 import asyncio
 import logging
@@ -26,28 +26,19 @@ from core.client import (
     ZmdLogsClient,
     ZmdLogsClientError,
 )
-from core.models import AccountSearchHit, parse_boss_ranking
+from core.models import AccountSearchHit
 from core.outcome import SitePage
 from core.persistence import load_json, save_json
-from core.presentation import build_group_board_page
-from core.render import TemplateRenderer
 from core.routing import parse_zmdlog_payload
 from core.settings import PluginSettings
-from core.standings import group_standings
-from tests.helpers import ranking_payload_with_rows
 
 GROUP = "aiocqhttp:GroupMessage:1"
-OTHER_GROUP = "aiocqhttp:GroupMessage:2"
 PRIVATE = "aiocqhttp:FriendMessage:9"
-# What 隔离对话 made of GROUP for USER and for OTHER_USER.
-USER_IN_GROUP = "aiocqhttp:GroupMessage:111_1"
-OTHER_USER_IN_GROUP = "aiocqhttp:GroupMessage:222_1"
 USER = "aiocqhttp:111"
 OTHER_USER = "aiocqhttp:222"
 NOW = "2026-09-15T10:00:00+00:00"
 LATER = "2026-09-15T10:20:00+00:00"
 CODE = "ZMD-7K4M-QX2E"
-WEB = "https://zmdlogs.com"
 
 
 def run(coro):
@@ -78,10 +69,10 @@ class CodeTests(unittest.TestCase):
         self.assertNotIn("7K4M", digest)
 
 
-def add(book: BindingBook, user: str, account: BoundAccount, *, origin=GROUP, now=NOW):
+def add(book: BindingBook, user: str, account: BoundAccount, *, now=NOW):
     """with_account with the test's defaults; returns the book and the status."""
 
-    return book.with_account(user, account, origin=origin, now=now)
+    return book.with_account(user, account, now=now)
 
 
 class BookTests(unittest.TestCase):
@@ -94,21 +85,17 @@ class BookTests(unittest.TestCase):
         mine = book.for_user(USER)
         self.assertEqual([a.account_id for a in mine.accounts], ["usr_a", "usr_b"])
         self.assertEqual(mine.primary.account_id, "usr_a")
-        self.assertEqual(mine.groups, (GROUP,))
         self.assertEqual(mine.updated_at, LATER)
 
     def test_rebinding_an_account_refreshes_its_nickname_in_place(self) -> None:
         book, _ = add(BindingBook.empty(), USER, bound("usr_a", "旧名"))
         book, _ = add(book, USER, bound("usr_b"))
 
-        book, status = add(
-            book, USER, bound("usr_a", "新名"), origin=OTHER_GROUP, now=LATER
-        )
+        book, status = add(book, USER, bound("usr_a", "新名"), now=LATER)
 
         self.assertEqual(status, "refreshed")
         mine = book.for_user(USER)
         self.assertEqual([a.display_name for a in mine.accounts], ["新名", "CPU 0"])
-        self.assertEqual(mine.groups, (GROUP, OTHER_GROUP))
 
     def test_the_cap_refuses_the_sixth_account_without_changing_anything(self) -> None:
         book = BindingBook.empty()
@@ -156,43 +143,6 @@ class BookTests(unittest.TestCase):
         self.assertIsNone(mine.resolve("9" * 12))
         self.assertIsNone(mine.resolve(""))
 
-    def test_membership_is_where_a_bound_user_showed_up(self) -> None:
-        book, _ = add(BindingBook.empty(), USER, bound("usr_a"))
-        book, _ = add(book, OTHER_USER, bound("usr_a"), origin=OTHER_GROUP, now=LATER)
-        book, _ = add(book, OTHER_USER, bound("usr_b"), origin=OTHER_GROUP, now=LATER)
-
-        book = book.with_group(OTHER_USER, GROUP, now=LATER)
-        self.assertIs(book.with_group(OTHER_USER, GROUP, now=LATER), book)
-        self.assertIs(book.with_group("aiocqhttp:nobody", GROUP, now=LATER), book)
-
-        members = book.members_of(GROUP)
-        self.assertEqual([key for key, _ in members], [OTHER_USER, USER])
-        # Two users bound to usr_a are one public account on the board.
-        self.assertEqual(
-            [a.account_id for a in book.accounts_in(GROUP)], ["usr_a", "usr_b"]
-        )
-        self.assertEqual(book.accounts_in(PRIVATE), ())
-
-    def test_chats_recorded_under_isolation_move_to_their_group(self) -> None:
-        book, _ = add(BindingBook.empty(), USER, bound("usr_a"), origin=USER_IN_GROUP)
-        book = book.with_group(USER, OTHER_GROUP, now=LATER)
-        book, _ = add(book, OTHER_USER, bound("usr_b"), origin=OTHER_USER_IN_GROUP)
-        self.assertEqual(book.members_of(GROUP), ())
-
-        moved, count = book.with_group_origins()
-
-        self.assertEqual(count, 2)
-        self.assertEqual(moved.for_user(USER).groups, (GROUP, OTHER_GROUP))
-        self.assertEqual(moved.for_user(OTHER_USER).groups, (GROUP,))
-        self.assertEqual(
-            sorted(a.account_id for a in moved.accounts_in(GROUP)), ["usr_a", "usr_b"]
-        )
-        # Moving is not something the user did.
-        self.assertEqual(moved.for_user(USER).updated_at, LATER)
-        again, count = moved.with_group_origins()
-        self.assertIs(again, moved)
-        self.assertEqual(count, 0)
-
     def test_used_codes_are_remembered_for_their_life_and_then_forgotten(self) -> None:
         digest = code_digest(CODE)
         book = BindingBook.empty().with_used_code(digest, now=NOW)
@@ -219,6 +169,7 @@ class BookTests(unittest.TestCase):
             payload["users"][USER]["accounts"],
             [{"accountId": "usr_a", "displayName": "CPU 0", "boundAt": NOW}],
         )
+        self.assertEqual(set(payload["users"][USER]), {"accounts", "updatedAt"})
         self.assertNotIn(CODE, repr(payload))
         self.assertEqual(parse_bindings(payload), book)
         self.assertEqual(parse_bindings("nonsense"), BindingBook.empty())
@@ -321,7 +272,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.client.codes, [CODE], "sent as the site spells it")
         stored = load_json(self.root / BINDINGS_FILE)
         self.assertEqual(stored["users"][USER]["accounts"][0]["accountId"], "usr_a")
-        self.assertEqual(stored["users"][USER]["groups"], [GROUP])
+        self.assertNotIn(GROUP, (self.root / BINDINGS_FILE).read_text(encoding="utf-8"))
         self.assertNotIn(CODE, (self.root / BINDINGS_FILE).read_text(encoding="utf-8"))
         # The service reloads what it wrote.
         again = self._service(self.client)
@@ -342,9 +293,6 @@ class ServiceTests(unittest.TestCase):
         refused = self._handle("解绑", origin=PRIVATE)
         self.assertEqual(refused, messages.BINDING_GROUP_ONLY)
         self.assertIsNotNone(self.service.bindings_for(USER), "still bound")
-        # Membership is a group thing too, whoever calls.
-        self.service.remember_member(USER, PRIVATE)
-        self.assertEqual(self.service.bindings_for(USER).groups, (GROUP,))
 
     def test_a_spent_code_is_refused_for_another_user(self) -> None:
         self._handle("绑定 ZMD-7K4M-QX2E")
@@ -414,39 +362,65 @@ class ServiceTests(unittest.TestCase):
         self._handle("绑定 ZMD-LLLL-MMMM")
         self.assertEqual(self._handle("解绑 全部"), "已解绑 cpu0（usr_b）。")
 
-    def test_membership_and_the_group_board_cap(self) -> None:
-        self._handle("绑定 ZMD-7K4M-QX2E")
-        self._handle("绑定 ZMD-AAAA-BBBB", user=OTHER_USER, origin=OTHER_GROUP)
-
-        accounts, total, members = self.service.accounts_in(GROUP)
-        self.assertEqual([a.account_id for a in accounts], ["usr_a"])
-        self.assertEqual((total, members), (1, 1))
-        self.service.remember_member(OTHER_USER, GROUP)
-        self.service.remember_member("aiocqhttp:nobody", GROUP)
-        self.service.remember_member(USER, "")
-        accounts, total, members = self.service.accounts_in(GROUP)
-        self.assertEqual(sorted(a.account_id for a in accounts), ["usr_a", "usr_b"])
-        self.assertEqual((total, members), (2, 2))
-        stored = load_json(self.root / BINDINGS_FILE)
-        self.assertEqual(stored["users"][OTHER_USER]["groups"], [OTHER_GROUP, GROUP])
-
-        capped = self._service(self.client, group_board_max_accounts=1)
-        accounts, total, members = capped.accounts_in(GROUP)
-        self.assertEqual(len(accounts), 1)
-        self.assertEqual((total, members), (2, 2))
-
-    def test_a_book_written_under_isolation_is_moved_when_loaded(self) -> None:
-        book, _ = add(BindingBook.empty(), USER, bound("usr_a"), origin=USER_IN_GROUP)
-        book, _ = add(book, OTHER_USER, bound("usr_b"), origin=OTHER_USER_IN_GROUP)
-        save_json(self.root / BINDINGS_FILE, book.to_payload())
+    def test_a_file_from_before_1_3_0_keeps_its_bindings_and_drops_its_chats(
+        self,
+    ) -> None:
+        # Up to 1.2 every user carried the chats they had used a binding
+        # command in, the membership of a per-chat board since removed; the
+        # list is read past, and the next write leaves it out.
+        save_json(
+            self.root / BINDINGS_FILE,
+            {
+                "version": 1,
+                "users": {
+                    USER: {
+                        "accounts": [
+                            {"accountId": "usr_a", "displayName": "CPU 0",
+                             "boundAt": NOW},
+                            {"accountId": "usr_b", "displayName": "cpu0",
+                             "boundAt": NOW},
+                        ],
+                        "groups": [GROUP, "aiocqhttp:GroupMessage:111_2"],
+                        "updatedAt": NOW,
+                    },
+                    OTHER_USER: {
+                        "accounts": [
+                            {"accountId": "usr_c", "displayName": "第三",
+                             "boundAt": NOW},
+                        ],
+                        "groups": "not even a list",
+                        "updatedAt": NOW,
+                    },
+                },
+                "usedCodes": {code_digest(CODE): NOW},
+            },
+        )
+        before = (self.root / BINDINGS_FILE).read_text(encoding="utf-8")
 
         service = self._service(self.client)
 
-        _, total, members = service.accounts_in(GROUP)
-        self.assertEqual((total, members), (2, 2))
+        mine = service.bindings_for(USER)
+        self.assertEqual([a.account_id for a in mine.accounts], ["usr_a", "usr_b"])
+        self.assertEqual(mine.primary.display_name, "CPU 0")
+        self.assertEqual(
+            [a.account_id for a in service.bindings_for(OTHER_USER).accounts],
+            ["usr_c"],
+        )
+        self.assertTrue(service.book.code_used(code_digest(CODE), now=NOW))
+        # Loading alone writes nothing.
+        self.assertEqual(
+            (self.root / BINDINGS_FILE).read_text(encoding="utf-8"), before
+        )
+        self.service = service
+        self.assertIn("主账号已改为 cpu0（usr_b）", self._handle("主账号 2"))
         stored = load_json(self.root / BINDINGS_FILE)
-        self.assertEqual(stored["users"][USER]["groups"], [GROUP])
-        self.assertEqual(stored["users"][OTHER_USER]["groups"], [GROUP])
+        for user in (USER, OTHER_USER):
+            with self.subTest(user=user):
+                self.assertNotIn("groups", stored["users"][user])
+        self.assertEqual(
+            [a["accountId"] for a in stored["users"][USER]["accounts"]],
+            ["usr_b", "usr_a"],
+        )
 
     def test_without_a_data_directory_nothing_is_bound(self) -> None:
         service = AccountBinding(
@@ -527,62 +501,6 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ZmdLogsAPIError) as raised:
             await client.get_binding_code_account(CODE)
         self.assertEqual(raised.exception.code, "binding_code_invalid")
-
-
-class GroupBoardTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.ranking = parse_boss_ranking(ranking_payload_with_rows())
-        # Fixture uploaders are usr_<rank padded to 32>; rank 2 and 4 share 黎风.
-        self.ids = {f"usr_{rank:032d}" for rank in (4, 2, 5)}
-
-    def test_each_account_gets_its_best_record_in_board_order(self) -> None:
-        rows = group_standings(self.ranking, self.ids | {"usr_nobody"})
-
-        self.assertEqual([row.rank for row in rows], [2, 4, 5])
-        self.assertEqual(group_standings(self.ranking, set()), ())
-
-    def test_the_page_and_the_template_show_the_chat_not_the_binders(self) -> None:
-        rows = group_standings(self.ranking, self.ids)
-        renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
-
-        page = build_group_board_page(
-            self.ranking,
-            rows,
-            query="群榜 三位一体",
-            web_base_url=WEB,
-            member_count=2,
-            account_count=4,
-            display_limit=2,
-            truncated=True,
-        )
-        html = renderer.render_group_board(
-            self.ranking,
-            rows,
-            query="群榜 三位一体",
-            member_count=2,
-            account_count=4,
-            display_limit=2,
-            truncated=True,
-            web_base_url=WEB,
-        )
-
-        self.assertEqual(page.header.target_type, "群榜")
-        self.assertEqual([row.position for row in page.rows], [1, 2])
-        self.assertEqual([row.rank for row in page.rows], [2, 4])
-        self.assertEqual(page.rows[0].total_rows, 5)
-        self.assertEqual(page.rows[0].account_display_name, "公开账号2")
-        self.assertEqual((page.listed_count, page.shown_count), (3, 2))
-        self.assertEqual((page.member_count, page.account_count), (2, 4))
-        self.assertIn("群内排行", html)
-        self.assertIn("公开账号2", html)
-        self.assertIn("#2 / 5", html)
-        self.assertIn("超过统计上限", html)
-        self.assertNotIn("时效", html)
-        self.assertNotIn(USER, html)
-        empty = renderer.render_group_board(
-            self.ranking, (), query="q", member_count=1, account_count=1
-        )
-        self.assertIn("都没有公开记录", empty)
 
 
 if __name__ == "__main__":

@@ -103,7 +103,7 @@ _OPTION_LABEL = {
 # Rejection text names where the option DOES work, not the current route —
 # "--潜能 不适用于榜单查询" reads like the option belongs somewhere unknown.
 OPTION_USAGE = {
-    "top": "--top 仅适用于具体榜单、阵容和群榜查询。",
+    "top": "--top 仅适用于具体榜单和阵容查询。",
     "character": (
         "--角色 仅适用于具体榜单查询，例如：罗丹 --角色 黎风，"
         "或 罗丹 --角色 黎风 洛茜（同时带上两人的队伍）。"
@@ -119,7 +119,7 @@ OPTION_USAGE = {
     ),
     "profession": "--职业 仅适用于不带角色名的角色排名，例如：角色排名 --职业 突击。",
     "metric": (
-        "--口径 仅适用于具体榜单、阵容、群榜、角色统计、角色排名、玩家排名和新纪录，"
+        "--口径 仅适用于具体榜单、阵容、角色统计、角色排名、玩家排名和新纪录，"
         "例如：罗丹 --口径 rdps。"
     ),
     "board": "--榜单 仅适用于角色档案，例如：角色档案 莱万汀 --榜单 罗丹。",
@@ -175,8 +175,6 @@ class RouteKind(str, Enum):
     PRIMARY_ACCOUNT = "primary_account"
     # 我的: the sender's bound account, drawn as the account page.
     MY_ACCOUNT = "my_account"
-    # 群榜 <榜单>: the chat's bound accounts on one board.
-    GROUP_BOARD = "group_board"
 
 
 ALIAS_ROUTES = frozenset(
@@ -195,9 +193,8 @@ BINDING_ROUTES = frozenset(
     {RouteKind.BIND, RouteKind.UNBIND, RouteKind.PRIMARY_ACCOUNT}
 )
 # The configuration actions — 别名, 关注, 绑定 — as against the queries,
-# which draw a page (群榜 among them, though it enrols whoever asks). They
-# answer in text, and a tapped callback button never runs one: its data is
-# whatever the tapping client sends.
+# which draw a page. They answer in text, and a tapped callback button never
+# runs one: its data is whatever the tapping client sends.
 CONFIGURATION_ROUTES = ALIAS_ROUTES | WATCH_ROUTES | BINDING_ROUTES
 
 
@@ -490,17 +487,6 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
     if command == "我的":
         options.reject_except()
         return RouteRequest(RouteKind.MY_ACCOUNT, remainder)
-
-    if command in {"群榜", "群排名"}:
-        options.reject_except("top", "metric")
-        if not remainder:
-            raise RouteParseError("请提供榜单关键词，例如：群榜 罗丹。")
-        return RouteRequest(
-            RouteKind.GROUP_BOARD,
-            remainder,
-            ranking_top=options.ranking_top,
-            metric=options.metric,
-        )
 
     options.reject_except("top", "character", "element", "metric")
     return RouteRequest(

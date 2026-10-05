@@ -1201,7 +1201,7 @@ class ProfileTemplateTests(unittest.TestCase):
         self.assertIn("btl_upload_cad50c180d36", html)
         self.assertIn("<b>0:45.517</b>", html)
         self.assertIn("<b>0:58.871</b>", html)
-        # The date under the word the account and 群榜 pages print it under.
+        # The date under the word the account page prints it under.
         self.assertRegex(html, r"<span>战斗日期</span>\s*<b>2026-09-24</b>")
         # 养成 written as under every avatar.
         self.assertIn('<b class="investment-text">5+6</b>', html)

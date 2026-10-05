@@ -404,11 +404,11 @@ class ZmdLogsDataSource:
 
         Upstream is asked, and waited for, only when the index holds none.
         ``on_demand`` is for a query about this one board — the board page,
-        the group board, the board tool: a copy not checked for two minutes
-        is then re-read in the background, so asking again shows what
-        changed. Every other reader takes the copy as it is; the rank watch
-        reads the copy its ranks came from. ``metric`` picks the DPS or the
-        rDPS board; the index holds both.
+        the board tool: a copy not checked for two minutes is then re-read in
+        the background, so asking again shows what changed. Every other
+        reader takes the copy as it is; the rank watch reads the copy its
+        ranks came from. ``metric`` picks the DPS or the rDPS board; the
+        index holds both.
         """
 
         return await self.ranking_index.get(

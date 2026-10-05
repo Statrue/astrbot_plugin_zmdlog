@@ -1015,7 +1015,6 @@ class HandlerTests(unittest.TestCase):
         for private, text in (
             (False, "/zmdlog 我的"),
             (False, "/zmdlog 绑定"),
-            (False, "/zmdlog 群榜 三位一体"),
         ):
             with self.subTest(text=text):
                 api = FakeBotApi()
@@ -1223,61 +1222,30 @@ class HandlerTests(unittest.TestCase):
             repr(payload["keyboard"]),
         )
 
-    def test_the_trend_and_the_group_board_link_their_account_and_board(
-        self,
-    ) -> None:
-        from astrbot_plugin_zmdlog.core.models import AccountSearchHit
-
-        self._enable_binding_storage()
+    def test_the_trend_links_its_account(self) -> None:
         self._seed_history()
-        ranking = parse_boss_ranking(ranking_payload_with_rows())
-        uploader = ranking.rows[0]
-
-        async def lookup(code):
-            return AccountSearchHit(uploader.account_id, uploader.account_display_name)
-
-        async def ranking_read(boss_slug, **kwargs):
-            return ranking
-
         path = self._png(2560, 2000)
 
         async def draw(*args, **kwargs):
             return capture(path)
 
-        self.plugin.client.get_binding_code_account = lookup
-        self.plugin.data.get_boss_ranking = ranking_read
         self.plugin.renderer.render_trend = draw
-        self.plugin.renderer.render_group_board = draw
-        self._official("/zmdlog 绑定 ZMD-AAAA-BBBB", api=FakeBotApi())
-        slug = ranking.boss_slug
-        for text, link, siblings in (
-            (
-                "/zmdlog 趋势 usr_1234567890abcdef",
-                "/records/usr_1234567890abcdef",
-                ["/zmdlog 账号 usr_1234567890abcdef"],
-            ),
-            (
-                "/zmdlog 群榜 三位一体",
-                f"/boss/{slug}",
-                [f"/zmdlog 榜单 {slug}", f"/zmdlog 阵容 {slug}"],
-            ),
-        ):
-            with self.subTest(text=text):
-                api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
 
-                _, results = self._official(text, api=api)
+        _, results = self._official("/zmdlog 趋势 usr_1234567890abcdef", api=api)
 
-                self.assertEqual(results, [])
-                (_, payload), = api.calls
-                jump, views = payload["keyboard"]["content"]["rows"]
-                self.assertEqual(
-                    jump["buttons"][0]["action"]["data"], f"https://zmdlogs.com{link}"
-                )
-                # The other views fill in a command with the prefix typed.
-                self.assertEqual(
-                    [button["action"]["data"] for button in views["buttons"]],
-                    siblings,
-                )
+        self.assertEqual(results, [])
+        (_, payload), = api.calls
+        jump, views = payload["keyboard"]["content"]["rows"]
+        self.assertEqual(
+            jump["buttons"][0]["action"]["data"],
+            "https://zmdlogs.com/records/usr_1234567890abcdef",
+        )
+        # The other views fill in a command with the prefix typed.
+        self.assertEqual(
+            [button["action"]["data"] for button in views["buttons"]],
+            ["/zmdlog 账号 usr_1234567890abcdef"],
+        )
 
     def _dungeon_page(self) -> str:
         """A dungeon of two boards, its podiums drawn as a capture."""
@@ -2032,32 +2000,20 @@ class HandlerTests(unittest.TestCase):
         self.assertIn("已取消关注", removed)
         self.assertNotIn(account_id, self.plugin.watcher.rank_history)
 
-    # --- 绑定 / 我的 / 群榜 -------------------------------------------------------
+    # --- 绑定 / 我的 -------------------------------------------------------------
 
     def _enable_binding_storage(self) -> None:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.plugin.bindings.store.path = Path(directory.name) / "bindings.json"
 
-    def test_a_bound_user_sees_their_own_account_and_the_group_board(self) -> None:
-        from astrbot_plugin_zmdlog.core.models import (
-            AccountSearchHit,
-            parse_boss_ranking,
-        )
-        from astrbot_plugin_zmdlog.core.ranking_index import IndexEntry
-        from tests.helpers import ranking_payload_with_rows
+    def test_a_bound_user_sees_their_own_account(self) -> None:
+        from astrbot_plugin_zmdlog.core.models import AccountSearchHit
 
         self._enable_binding_storage()
-        ranking = parse_boss_ranking(ranking_payload_with_rows())
-        index = self.plugin.data.ranking_index
-        index._slugs = (ranking.boss_slug,)
-        index._entries[ranking.boss_slug] = IndexEntry(ranking, 0.0)
-        uploader = ranking.rows[2]
         codes = {
             "ZMD-7K4M-QX2E": AccountSearchHit("usr_1234567890abcdef", "测试账号"),
-            "ZMD-AAAA-BBBB": AccountSearchHit(
-                uploader.account_id, uploader.account_display_name
-            ),
+            "ZMD-AAAA-BBBB": AccountSearchHit("usr_abcdef1234567890", "公开账号3"),
         }
 
         async def lookup(code):
@@ -2069,22 +2025,8 @@ class HandlerTests(unittest.TestCase):
         async def account(requested_id):
             return parse_public_user_rankings(public_user_rankings_payload())
 
-        drawn: list = []
-
-        async def render_group_board(ranking, rows, **kwargs):
-            drawn.append((rows, kwargs))
-            return capture("/tmp/group-board.png")
-
-        reads: list[dict] = []
-
-        async def ranking_read(boss_slug, **kwargs):
-            reads.append(kwargs)
-            return ranking
-
         self.plugin.client.get_binding_code_account = lookup
         self.plugin.data.get_public_user_rankings = account
-        self.plugin.data.get_boss_ranking = ranking_read
-        self.plugin.renderer.render_group_board = render_group_board
 
         (kind, reply), = self._zmdlog("zmdlog 我的")
         self.assertEqual(kind, "plain")
@@ -2102,40 +2044,11 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(kind, "plain")
         self.assertIn("绑定列表里没有「2」", reply)
 
-        # No bound account has a record on the board yet: a sentence.
-        (kind, reply), = self._zmdlog("zmdlog 群榜 三位一体")
-        self.assertEqual(kind, "plain")
-        self.assertIn("都没有公开记录", reply)
         (_, reply), = self._zmdlog("zmdlog 绑定 ZMD-AAAA-BBBB")
         self.assertIn("2. 公开账号3", reply)
-        (kind, result), = self._zmdlog("zmdlog 群榜 三位一体 --top 5")
-        self.assertEqual((kind, result), ("image", "/tmp/group-board.png"))
-        # A question about one board has its copy re-read for the next one.
-        self.assertTrue(reads)
-        self.assertTrue(all(read.get("on_demand") for read in reads))
-        rows, kwargs = drawn[0]
-        self.assertEqual([row.account_id for row in rows], [uploader.account_id])
-        self.assertEqual(kwargs["display_limit"], 5)
-        self.assertEqual((kwargs["member_count"], kwargs["account_count"]), (1, 2))
-        # The chat is the membership: in another group an unbound member
-        # asking finds nobody, and is told how, before any board lookup.
-        (kind, reply), = self._zmdlog(
-            "zmdlog 群榜 三位一体", origin=OTHER_GROUP, sender="222"
-        )
-        self.assertEqual(kind, "plain")
-        self.assertIn("本群还没有人绑定账号", reply)
-        self.assertIn("zmdlog 绑定 ZMD-XXXX-XXXX", reply)
-        # A bound member asking there joins that group's board by asking.
-        (kind, result), = self._zmdlog("zmdlog 群榜 三位一体", origin=OTHER_GROUP)
-        self.assertEqual((kind, result), ("image", "/tmp/group-board.png"))
-        self.assertEqual(
-            self.plugin.bindings.bindings_for("aiocqhttp:111").groups,
-            (GROUP, OTHER_GROUP),
-        )
-        (kind, reply), = self._zmdlog(
-            "zmdlog 群榜 三位一体", origin="aiocqhttp:FriendMessage:1"
-        )
-        self.assertEqual((kind, reply), ("plain", "群榜只能在群聊里用。"))
+        # A binding is the person's, not the chat's: another group knows it.
+        (kind, result), = self._zmdlog("zmdlog 我的 2", origin=OTHER_GROUP)
+        self.assertEqual((kind, result), ("image", "/tmp/account.png"))
         # The bot adds nobody as a friend: every binding command is group-only.
         for text in ("zmdlog 我的", "zmdlog 绑定 ZMD-AAAA-BBBB", "zmdlog 解绑 全部"):
             with self.subTest(text=text):
@@ -2144,6 +2057,35 @@ class HandlerTests(unittest.TestCase):
                 self.assertIn("只能在群聊里用", reply)
         (kind, reply), = self._zmdlog("zmdlog 解绑 全部")
         self.assertIn("已解除全部 2 个绑定", reply)
+
+    def test_the_dropped_group_board_is_answered_like_any_unknown_word(
+        self,
+    ) -> None:
+        # 群榜 was removed in 1.3.0: its words go to the smart query, which
+        # tries the boards and then the public nicknames, as any text does.
+        searched: list[str] = []
+
+        async def search(query, *, limit):
+            searched.append(query)
+            return SimpleNamespace(
+                query=query,
+                has_more=False,
+                accounts=(
+                    SimpleNamespace(account_id="usr_a", account_display_name=query),
+                ),
+            )
+
+        async def account(account_id):
+            return parse_public_user_rankings(public_user_rankings_payload())
+
+        self.plugin.client.search_public_accounts = search
+        self.plugin.data.get_public_user_rankings = account
+        for text in ("群榜", "群排名"):
+            with self.subTest(text=text):
+                (kind, result), = self._zmdlog(f"zmdlog {text}")
+
+                self.assertEqual(searched[-1:], [text])
+                self.assertEqual((kind, result), ("image", "/tmp/account.png"))
 
     def test_the_v2_adapter_knows_a_person_by_the_official_key(self) -> None:
         # Its sender id is the same member_openid, so a binding made on one

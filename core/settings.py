@@ -22,9 +22,6 @@ SNAPSHOT_MAX_AGE_INTERVALS = 3
 MIN_SNAPSHOT_MAX_AGE_SECONDS = 3600.0
 _MIN_RENDER_TIMEOUT_MS = 1_000
 _MAX_RENDER_TIMEOUT_MS = 120_000
-# A group board is one ranking read whatever the chat's size; the cap only
-# bounds the page, and a page past this many rows is not readable anyway.
-_MAX_GROUP_BOARD_ACCOUNTS = 200
 # A config panel hands over real booleans, but a hand-edited YAML or JSON
 # file says "false", and ``bool("false")`` is True.
 _TRUE_WORDS = frozenset({"true", "yes", "on", "1"})
@@ -47,7 +44,6 @@ class PluginSettings:
     rank_watch_interval_seconds: float = 900.0
     rank_watch_rank_threshold: int = DEFAULT_RANK_THRESHOLD
     bindings_enabled: bool = True
-    group_board_max_accounts: int = 30
     # The safety switch for everything the QQ official bot gets on top of
     # what every other platform gets: on, its replies are what they were.
     disable_qq_official_buttons: bool = False
@@ -103,9 +99,6 @@ def load_settings(
             1, int(reader.positive_number("rank_watch_rank_threshold"))
         ),
         bindings_enabled=reader.flag("bindings_enabled"),
-        group_board_max_accounts=reader.positive_integer(
-            "group_board_max_accounts", maximum=_MAX_GROUP_BOARD_ACCOUNTS
-        ),
         disable_qq_official_buttons=reader.flag("disable_qq_official_buttons"),
         qq_official_callbacks=reader.flag("qq_official_callbacks"),
     )
