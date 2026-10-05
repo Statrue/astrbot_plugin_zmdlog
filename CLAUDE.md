@@ -24,9 +24,9 @@ Python 3.11+ (`asyncio.timeout`, `datetime.UTC`), dependencies in
 
 **Read the module docstring first.** Every `core/` module opens with one, and
 the modules that carry a design worth understanding — `ranking_index`,
-`recipes/__init__`, `rank_watch`, `watch`, `queries`, `toolbox`, `facts`,
-`contract`, `timeline`, `telemetry`, `crit`, `bindings`, `origins`,
-`metrics`, `cache`, `buttons` — explain their economics and their reasons
+`board_changes`, `rank_trend`, `recipes/__init__`, `rank_watch`, `watch`,
+`queries`, `toolbox`, `facts`, `contract`, `timeline`, `telemetry`, `crit`,
+`bindings`, `origins`, `metrics`, `cache`, `buttons` — explain their economics and their reasons
 there, and so does `qq_official.py` at the root. That is the module
 map; this file does not repeat it, and a behaviour question is answered by the
 docstring beside the code, not here.
