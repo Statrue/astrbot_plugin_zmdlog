@@ -11,7 +11,7 @@ name can change between tiers (环境：厌氧 at tier 1 is 环境：禁锢 at t
 is tier 2 at score 3), so the page shows the name and the ``score`` field and
 nothing derived.
 
-Pure functions over the parsed model, shared by the battle card and the
+Pure functions over the parsed model, shared by the 数据 view and the
 battle tool's text so both count the same families the same way.
 """
 

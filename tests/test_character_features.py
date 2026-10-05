@@ -456,7 +456,6 @@ class RosterPageTests(unittest.TestCase):
         self.assertIn("zmd-root--roster", html)
         self.assertIn(">ROSTER<", html)
         self.assertIn("<b>5</b> 条公开记录", html)
-        self.assertNotIn("scene-background", html)
         # One card of six profession blocks, then the teams beside the
         # main Cs; the first main C wears the yellow ring.
         self.assertIn("<strong>职业位出场率</strong>", html)

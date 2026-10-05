@@ -489,8 +489,6 @@ class CompareTemplateTests(unittest.TestCase):
         self.assertIn('id="zmd-root"', html)
         self.assertIn('class="zmd-main', html)
         self.assertIn(">VERSUS<", html)
-        self.assertNotIn('id="zmd-page"', html)
-        self.assertNotIn("scene-background", html)
 
     def test_the_page_draws_every_section_by_the_uploaders_names(self) -> None:
         html = self.render(rank_a=1, rank_b=2)

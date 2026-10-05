@@ -45,14 +45,14 @@
     </div>
     {% endfor %}
     {% else %}
-    <p class="w-empty">读过的榜单里没有{{ page.team_label }}的公开记录</p>
+    <p class="w-empty">读过的榜单里没有{{ page.team_phrase }}的公开记录</p>
     {% endif %}
   </div>
 </section>
 
 {% if page.absent %}
 <section class="b-block">
-  {{ bar("没有" ~ page.team_label ~ "的记录", card_w) }}
+  {{ bar("没有" ~ page.team_phrase ~ "的记录", card_w) }}
   <p class="b-body w-chips">{% for name in page.absent %}<span>{{ name }}</span>{% endfor %}</p>
 </section>
 {% endif %}

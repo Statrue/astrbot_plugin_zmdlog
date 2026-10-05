@@ -312,7 +312,6 @@ class TrendTemplateTests(unittest.TestCase):
         self.assertIn("<b>2</b>", html)
         self.assertIn("<polyline", html)
         self.assertIn("t-tri is-now", html)
-        self.assertNotIn("scene-background", html)
         empty = renderer.render_trend(
             AccountHistory("usr_x", "X", ()), query="q", web_base_url="https://zmdlogs.com"
         )

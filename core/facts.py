@@ -66,6 +66,7 @@ from .presentation import (
     weapon_label,
 )
 from .professions import normalize_profession
+from .routing import MAX_RANKING_ROWS, RANKING_PAGE_SIZE
 from .standings import (
     AccountTally,
     CharacterStandings,
@@ -125,21 +126,21 @@ def format_board_ranking(
         rows = tuple(row for row in rows if row_fields(row, names, character_scope))
         label = "、".join(names)
         filters.append(
-            f"主C 为「{label}」"
+            f"主 C 为「{label}」"
             if character_scope is CharacterFilterScope.MAIN
             else f"阵容包含「{label}」"
         )
     if element:
         known = elements or {}
         rows = tuple(row for row in rows if known.get(row.character_name) == element)
-        filters.append(f"主C 为{element}属性")
+        filters.append(f"主 C 为{element}属性")
     if profession:
         rows = tuple(
             row
             for row in rows
             if normalize_profession(row.character_profession or "") == profession
         )
-        filters.append(f"主C 为{profession}")
+        filters.append(f"主 C 为{profession}")
     if since is not None:
         rows = tuple(
             row
@@ -178,12 +179,18 @@ def format_board_ranking(
             gap = f" · 落后第一 {(row.duration_ms - leader.duration_ms) / 1000:.2f} 秒"
         lines.append(
             f"#{row.rank} {_duration(row.duration_ms)} · DPS {row.dps:,.0f}"
-            f" · 主C {_main_c(row)} · {row.account_display_name}"
+            f" · 主 C {_main_c(row)} · {row.account_display_name}"
             f" · {_date(row.battle_end_at)}{gap}"
         )
         lines.append(f"    阵容 {_team(row.roster_entries)} · battleId {row.battle_id}")
     if len(rows) > _bounded(limit):
-        lines.append(f"（另有 {len(rows) - _bounded(limit)} 条未列出，图里有）")
+        # The tool draws the first page, or the first thirty past a page's
+        # worth, with the same filters but never the window.
+        pictured = RANKING_PAGE_SIZE
+        if _bounded(limit) > RANKING_PAGE_SIZE:
+            pictured = MAX_RANKING_ROWS
+        on_picture = "，图里有" if since is None and len(rows) <= pictured else ""
+        lines.append(f"（另有 {len(rows) - _bounded(limit)} 条未列出{on_picture}）")
     if any(_any_investment(row.roster_entries) for row in shown):
         lines.append(_INVESTMENT_KEY)
     usage = _profession_usage(ranking)
@@ -242,7 +249,7 @@ def format_boards_overview(
             invested = invested or investment is not None
             lines.append(
                 f"{prefix}#{position} {_duration(run.duration_ms)}"
-                f" · 主C {_named(run.character_name, investment)}"
+                f" · 主 C {_named(run.character_name, investment)}"
                 f" · {run.uploader_nickname} · battleId {run.battle_id}"
             )
     if invested:
@@ -299,7 +306,7 @@ def _board_window_events(events: tuple[RecordEvent, ...]) -> list[str]:
     lines = [f"这段时间索引发现新上传 {len(fresh)} 条，第一名易主 {len(changes)} 次"]
     for event in changes[:3]:
         lines.append(
-            f"    {event.account_display_name}（主C {event.character_name}，"
+            f"    {event.account_display_name}（主 C {event.character_name}，"
             f"{_duration(event.duration_ms)}）"
             f"顶掉 {event.previous_account_display_name}"
             f"（{_duration(event.previous_duration_ms)}）· battleId {event.battle_id}"
@@ -805,7 +812,7 @@ def format_character_standings(
     # stop at ``limit``.
     lines.append(
         f"冠军（第一名）{standings.first_places} 个榜"
-        f"（其中 {'其中一人' if standings.is_team else name} 当主C"
+        f"（其中 {'其中一人' if standings.is_team else name} 当主 C"
         f" {standings.first_places_as_main} 个）"
         f" · 前三 {len(standings.boards_within(3))} 个榜"
         f" · 前十 {len(standings.boards_within(10))} 个榜。"
@@ -835,7 +842,7 @@ def format_character_standings(
     for board in standings.boards[: _bounded(limit)]:
         row = board.best
         roster = "、".join(entry.character_name for entry in row.roster_entries)
-        lead = f"主C {row.character_name}"
+        lead = f"主 C {row.character_name}"
         if not board.best_as_main:
             lead += f"（{'、'.join(standings.characters)} 为队员）"
         lines.append(
@@ -852,7 +859,7 @@ def format_character_standings(
     lines.append("")
     subject = "同时带这些角色" if standings.is_team else "带该角色"
     lines.append(
-        f"以上是{subject}的队伍的成绩，不是角色本身的强度；名次受玩家水平和配装影响。"
+        f"以上是{subject}的队伍的成绩，不是角色本身的强度；名次受玩家水平和养成影响。"
     )
     return _joined(lines)
 
@@ -888,7 +895,7 @@ def format_character_tallies(
         f"{scope}里{who}各占几个",
         *_metric_note(metric),
         "「冠军」= 该榜第一名记录的队伍里带这个角色，四名角色各算一个；"
-        "「当主C」= 其中该角色是主C的。",
+        "「当主 C」= 其中该角色是主 C的。",
         "",
     ]
     if not tallies:
@@ -903,7 +910,7 @@ def format_character_tallies(
     top_main = max(tallies, key=lambda t: t.first_places_as_main)
     lines.append(
         f"冠军最多：{top_team.name} {top_team.first_places} 个榜；"
-        f"当主C的冠军最多：{top_main.name} {top_main.first_places_as_main} 个榜。"
+        f"当主 C的冠军最多：{top_main.name} {top_main.first_places_as_main} 个榜。"
     )
     lines.append(
         f"上榜{noun} {len(tallies)} 个，其中有冠军的"
@@ -918,7 +925,7 @@ def format_character_tallies(
     for tally in shown:
         lines.append(
             f"{tally.name} · 冠军 {tally.first_places}"
-            f"（当主C {tally.first_places_as_main}）"
+            f"（当主 C {tally.first_places_as_main}）"
             f" · 前三 {tally.podiums} · 前十 {tally.top_tens}"
             f" · 上榜 {tally.boards} 个榜"
         )
@@ -980,7 +987,7 @@ def format_records(
     for event in changes[: _bounded(limit)]:
         lines.append(
             f"    {event.boss_name}：{event.account_display_name}"
-            f"（主C {event.character_name}，{_duration(event.duration_ms)}）"
+            f"（主 C {event.character_name}，{_duration(event.duration_ms)}）"
             f" 顶掉 {event.previous_account_display_name}"
             f"（{_duration(event.previous_duration_ms)}）"
             f" · battleId {event.battle_id}"
@@ -1043,7 +1050,7 @@ def format_account_tallies(
     for tally in shown:
         habits = ""
         if tally.main_c:
-            habits = f" · 常用主C {tally.main_c}（{tally.main_c_count} 次）"
+            habits = f" · 常用主 C {tally.main_c}（{tally.main_c_count} 次）"
         lines.append(
             f"{tally.display_name} · 冠军 {tally.first_places}"
             f" · 前三 {tally.podiums} · 前十 {tally.top_tens}"
@@ -1093,7 +1100,7 @@ def format_account(
         )
         if habits.main_c:
             lines.append(
-                f"常用主C {habits.main_c}（{habits.main_c_count} 次）"
+                f"常用主 C {habits.main_c}（{habits.main_c_count} 次）"
                 + (
                     f" · 常用阵容 {'、'.join(habits.team)}（{habits.team_count} 次）"
                     if habits.team
@@ -1238,7 +1245,7 @@ def _champions_cut(tallies, limit: int, noun: str, *, name_zeros: bool = False):
 
 _RDPS_NOTE = (
     "rDPS 口径：只收录能算出团队贡献的记录（新版上传器的上传，目前很少），"
-    "名次仍按通关时间排，主C 按 rDPS 最高的角色算；不写口径就是 DPS。"
+    "名次仍按通关时间排，主 C 按 rDPS 最高的角色算；不写口径就是 DPS。"
 )
 
 

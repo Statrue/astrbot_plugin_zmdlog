@@ -74,7 +74,7 @@ class AccountTalliesTests(unittest.TestCase):
         self.assertIn("全部 2 个榜", text)
         self.assertIn("第一名记录的上传者", text)
         self.assertIn(f"冠军最多：{self.leader.account_display_name} 2 个榜", text)
-        self.assertIn("常用主C", text)
+        self.assertIn("常用主 C", text)
         self.assertIn("ZMDLogs", text)
         self.assertNotIn("数据截至", text)
 

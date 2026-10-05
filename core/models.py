@@ -1103,7 +1103,7 @@ def _parse_damage_points(value: Any) -> tuple[BattleDamagePoint, ...]:
     """Read the damage ticks out of ``timelineEvents``, skipping the rest.
 
     Deliberately lenient: this feeds the DPS curve, an extra section, so one
-    odd event must never cost the whole battle card. Everything the curve
+    odd event must never cost the battle's pages. Everything the curve
     needs (timestamp, dealer, amount) has to be present and sane, otherwise
     the event is dropped.
     """
@@ -1145,7 +1145,7 @@ def _parse_crit_roll(context: Any) -> CritRoll | None:
     well-typed flag, rate and bonus. Anything else — an ``unavailable`` roll,
     a newer version, a field of the wrong type, including an optional bound
     that is present but not a number — leaves the hit uncovered, which
-    lowers the 暴击期望 coverage instead of costing the battle card.
+    lowers the 暴击期望 coverage instead of costing the battle's pages.
     """
 
     if not isinstance(context, dict):

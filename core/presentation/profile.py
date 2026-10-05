@@ -9,7 +9,6 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from ..elements import element_key
 from ..loadout import is_raw_item_name
 from ..models import (
     CharacterProfile,
@@ -57,7 +56,6 @@ class ShareRowView:
     bar_width: float
     icon_url: str | None = None
     initial: str = ""
-    element_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,7 +110,6 @@ class CharacterProfilePage:
     header: PageHeader
     character_initial: str
     character_avatar_url: str | None
-    element_key: str | None
     range_label: str
     sample_count: int
     account_count: int
@@ -130,7 +127,6 @@ def build_character_profile_page(
     character: CharacterType,
     query: str,
     web_base_url: str | None = None,
-    elements: Mapping[str, str] | None = None,
     icons: Mapping[str, str] | None = None,
 ) -> CharacterProfilePage:
     """The four share blocks in the site's order, then the boards, best first.
@@ -140,7 +136,6 @@ def build_character_profile_page(
     profile cut to one board lists that board's records instead.
     """
 
-    known = elements or {}
     faces = icons or {}
     cut = _cut_view(profile)
     boards = (
@@ -165,7 +160,6 @@ def build_character_profile_page(
         character_avatar_url=_face_url(
             character.icon_path, character.key, web_base_url
         ),
-        element_key=element_key(character.element),
         range_label=_RANGE_LABELS.get(profile.range, profile.range),
         sample_count=profile.sample_count,
         account_count=profile.account_count,
@@ -208,7 +202,6 @@ def build_character_profile_page(
                         faces.get(share.name, ""), share.key, web_base_url
                     ),
                     initial=_initial(share.name),
-                    ring=element_key(known.get(share.name)),
                 ),
             ),
         ),
@@ -304,7 +297,6 @@ def _share_row(
     *,
     icon_url: str | None = None,
     initial: str = "",
-    ring: str | None = None,
 ) -> ShareRowView:
     return ShareRowView(
         label=label,
@@ -313,7 +305,6 @@ def _share_row(
         bar_width=round(min(100.0, share.percent), 2),
         icon_url=icon_url,
         initial=initial,
-        element_key=ring,
     )
 
 

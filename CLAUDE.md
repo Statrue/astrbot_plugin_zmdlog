@@ -6,7 +6,8 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 
 AstrBot plugin (`ZmdLogBot`) that queries public ZMDLogs data (Endfield DPS
 leaderboards, account best records, battle reports) and replies with a single
-1280px-wide PNG rendered by Jinja2 + Playwright.
+PNG rendered by Jinja2 + Playwright: the board ranking a 540 px phone-width
+list, every other page 960 px wide, both captured at 2× (ADR 0003).
 
 `main.py` and the platform module `qq_official.py` are the only files that
 touch AstrBot. `main.py` holds the handlers, the error ladder, event field
@@ -26,8 +27,8 @@ Python 3.11+ (`asyncio.timeout`, `datetime.UTC`), dependencies in
 the modules that carry a design worth understanding — `ranking_index`,
 `board_changes`, `rank_trend`, `recipes/__init__`, `rank_watch`, `watch`,
 `queries`, `toolbox`, `facts`, `contract`, `timeline`, `telemetry`, `crit`,
-`bindings`, `origins`, `metrics`, `cache`, `buttons`, `battle_views` — explain their economics and their reasons
-there, and so does `qq_official.py` at the root. That is the module
+`bindings`, `origins`, `metrics`, `cache`, `buttons`, `battle_views`,
+`render` — explain their economics and their reasons there, and so does `qq_official.py` at the root. That is the module
 map; this file does not repeat it, and a behaviour question is answered by the
 docstring beside the code, not here.
 
@@ -43,7 +44,7 @@ Two other sources of truth this file defers to:
 ## Commands
 
 ```bash
-.venv/Scripts/python.exe -m unittest discover -s tests -v          # full suite, offline, under 10 s
+.venv/Scripts/python.exe -m unittest discover -s tests -v          # full suite, offline, about 20 s
 .venv/Scripts/python.exe -m ruff check main.py qq_official.py core tests tools    # lint (ruff.toml: E/F/I/W, py311)
 .venv/Scripts/python.exe -m unittest tests.test_matcher -v         # one module
 .venv/Scripts/python.exe -m unittest tests.test_matcher.MatcherTests.test_slug_and_board_aliases_match_one_board
@@ -124,26 +125,32 @@ rather than a decorator. All of them run through one error guard,
   waiting for a slot capped too, with only the wait under `render_timeout_ms` —
   wrapping the capture itself would trip on a legitimately slow page. An
   overloaded bot answers 图片生成失败 while the reply is still worth having.
-- **Page integrity.** A rendered page must contain `#zmd-page > .main-panel` and
-  the local background data-URL, or `_validate_page` fails the render.
-  Decorative elements that overflow belong inside `.scene-deco`, or `#zmd-page`
-  scrollWidth exceeds 1280 and validation fails.
-- **Template discipline.** Pages not yet migrated to V2 extend
-  `resources/common/base.html`; page-specific CSS is `{% include %}`d into
-  `extra_styles`; a page includes its own stylesheet plus the shared ones under
-  `resources/common/`. Anything two of them need lives in `base.css`. A V2 page
-  extends `shell/list-base.html` (540) or `shell/wide-base.html` (960) and
-  includes its own stylesheet into `styles`; the frame's shared CSS comes with
-  the base, and wide pages share the macros in `shell/wide-parts.html`. CSS files render under autoescape like the
-  templates. The comic pages (帮助, and the 顶屁股通告 after it) extend
+- **Every page kind declares its frame.** `render.PAGE_FRAMES` maps each
+  kind to the 540 list frame or the 960 wide frame (ADR 0003), and the frame
+  is the one source of the width: the template sets the root to it, the
+  capture opens a viewport of it, and `_validate_page` checks the drawn page
+  against it — `#zmd-root > .zmd-main` present, `--zmd-frame-width` declared
+  equal to the frame, the root exactly the frame wide, the main panel ending
+  inside it. A decoration that overflows widens the root and fails the
+  render; a new page kind is added to `PAGE_FRAMES` or it cannot be drawn.
+- **Template discipline.** Everything shared lives under `resources/shell/`.
+  `shell/base.html` is the root: font links, colour and size tokens, the
+  validation anchors. A list page extends `shell/list-base.html` (540), every
+  other page `shell/wide-base.html` (960), and includes its own stylesheet
+  into `styles`; the frame's shared CSS comes with the base, and wide pages
+  share the macros in `shell/wide-parts.html` and the table core in
+  `shell/wide-table.css`. The comic pages (帮助 and the 顶屁股通告) extend
   `shell/base.html` directly and share `shell/comic.css` (included by the
-  page itself) and the macros in `shell/comic.html`.
-- **Visual language is Endfield-style**, every colour and every font size a
-  token in `base.css` (the `--fs-*` scale; a size off it is a design change,
-  and `test_render.test_every_font_size_is_a_scale_token` pins the rule), and
-  one term per concept on every page: 主 C, 名次, 通关时间 (hero) / 用时
-  (column), DPS (column) / 总 DPS (hero), 公开账号, 全部榜单, 总伤害, 阵容,
-  武器未记录. A single-series bar is always yellow.
+  page itself) and the macros in `shell/comic.html`. Anything two pages need
+  goes into the shell, never into one page's stylesheet. CSS files render
+  under autoescape like the templates.
+- **The approved prototype owns the look** (ADR 0002): the pictures on the
+  branch `prototype/frontend-v2` are the reference a page is checked against,
+  and a change to one is a design change for the user to approve. Every
+  colour and every font size is a token in `shell/base.css` (the `--fs-*`
+  scale; a size off it is a design change, and
+  `test_render.test_every_font_size_is_a_scale_token` pins the rule). Each
+  concept has one word on every page, recorded in [CONTEXT.md](CONTEXT.md).
 - **Fonts stay subset and OFL**, and the bundled faces are not swapped without
   re-reading the licence reasoning in
   [ASSETS.md](resources/common/ASSETS.md), which owns the font story. The one
@@ -203,9 +210,10 @@ rather than a decorator. All of them run through one error guard,
   synchronously on the event loop, so an unbounded keyword was a one-message
   denial of service.
 - **`core/presentation/` dependency direction is
-  common ← charts ← rail ← battle ← compare, never back**; `battle_data`
-  (数据) and `build` (养成) hang off `battle` beside `compare`, and none of
-  the three imports another.
+  common ← charts ← rail ← battle ← build ← compare, never back**;
+  `battle_data` (数据) hangs off `battle` and nothing imports it, and the
+  pages outside a battle import only `common` (and `boards`, for its rows
+  and faces).
 - **The LLM tool surface is four tools, one per subject** (榜单 / 战报 / 角色 /
   账号), never one per feature — README's 大模型工具 section states the four
   design rules and their reasons. What follows from them when extending:
@@ -238,8 +246,8 @@ when the user settled the question.
 
 - **The cast rail** follows one rule from the user's design memo (2026-09-03):
   线管连续、长度管时长、宽度与颜色管招式层级、节点管瞬时. Four layouts came
-  before it and must not come back: horizontal 20-second strips (the fixed
-  1280 px width could not fit a name into a half-second cast), full-width
+  before it and must not come back: horizontal 20-second strips (the old
+  desktop page's fixed width could not fit a name into a half-second cast), full-width
   vertical blocks ("一整块砸下来"), a hairline rail with dots (too thin to read
   without zooming), and a uniform 44 px track (the light-grey normal-attack runs
   read as columns of filler). The graded bar widths settled it.
@@ -259,13 +267,15 @@ when the user settled the question.
   prints them, and the QQ official bot's buttons under the picture are exactly
   the strip's other entries, by the same names. A view a battle lacks the
   data for (no skill statistics, no casts, no roster) is left out of both.
-- **Elements get rings and a filter, nothing else** (2026-09-06): no element
-  chip, no element text, no element statistics page. The main C wears no ring of
-  its own — the row prints 主 C by name — so a ring there only cost the element
-  its colour.
+- **Elements get a filter, nothing else** (2026-09-06): no element chip, no
+  element statistics page. The old pages also ringed each face in its
+  element's colour; the V2 pages draw no element rings (the approved
+  prototype has none, and the one ring left is the main C's yellow), so
+  `--属性` and the element named after the profession on 养成 are all of
+  elements the bot shows.
 - **冠军 means a board's #1 record, credited to all four members** of that team
-  (2026-09-06) — the headline and the sort key. First places as main C are a
-  side note.
+  (2026-09-06) — the 冠军 column and the sort key of the 角色冠军榜. First
+  places as main C are a side column (当主 C).
 - **One tool per subject** (2026-09-05), set when a seven-tool surface was cut:
   seven schemas cost ≈1445 tokens on every message in every group. The
   `zmdlogs_` prefix keeps these apart from the sibling plugin zmdlore's
@@ -301,33 +311,32 @@ when the user settled the question.
   on 2026-09-08 so it reads as the sibling of 角色排名.
 - **rDPS got the full scope** on 2026-09-16, chosen knowing the rDPS boards hold
   1.5% of the records.
-- **危机合约 词条 stay off the ranking rows and go on the battle card**
+- **危机合约 词条 stay off the ranking rows and go on the 数据 view**
   (2026-09-19). `eb907ff` (2026-08-09) cut the tag chips from the ranking page
   — five columns plus chips read as noise — and kept only 合约分数; that ruling
   is about the *rows* and stands (`test_contract_ranking_only_shows_score`
-  pins it). The battle card never had a ruling: its contract fields arrived a
+  pins it). The battle page never had a ruling: its contract fields arrived a
   week later with the battle lookup and were parsed but never drawn, which is
-  why this read as a deferred feature for six weeks. The card draws the
-  record's own tags as one section after `battle-identity` — icon, name and
-  score, grouped 队列 / 改写 / 环境, each family's header carrying that
-  family's tag count and subtotal — and nothing beyond that: no
-  `description` (an unexpandable template, see UPSTREAM.md), no tier badge
-  (the id's last digit usually matches the score but five tags disagree, and
-  the score is what counts), no merging by tag base (names change between
-  tiers), no "N of the catalog" denominator and no board-best reference (the
-  catalog has no upstream endpoint, and a second upstream for a decorative
-  figure was rejected). Neutral colour: 合约 is data, not action. Since the
-  摘要 replaced the card (#39) it carries 合约分数 alone, as its lead hero
-  figure; the tags section is the 数据 view's last, under the rules above.
+  why this read as a deferred feature for six weeks. The record's own tags
+  are drawn as one section — icon, name and score, grouped 队列 / 改写 /
+  环境, each family's header carrying that family's tag count and subtotal —
+  and nothing beyond that: no `description` (an unexpandable template, see
+  UPSTREAM.md), no tier badge (the id's last digit usually matches the score
+  but five tags disagree, and the score is what counts), no merging by tag
+  base (names change between tiers), no "N of the catalog" denominator and
+  no board-best reference (the catalog has no upstream endpoint, and a
+  second upstream for a decorative figure was rejected). Neutral colour: 合约
+  is data, not action. The section went on the old battle card after its
+  identity; since the 摘要 replaced the card (#39) the 摘要 carries 合约分数
+  alone, as its lead hero figure, and the tags section is the 数据 view's
+  last.
 - **The Chinese name is the market name; the code identity stays ZmdLogBot**
   (2026-09-19). `display_name` is 终末地·藕粉铺子 (藕粉 puns on 凹分) and the help
   page title follows it; the repository name, the `zmdlog` command, the
-  `ZmdLogBotPlugin` class and every log prefix do not move. Neither does the
-  brand on the page: the `ZMD LOG` wordmark in `base.html` is hard-coded, and
-  `footer-brand` is set in `--font-num` (Barlow, no CJK glyphs), so a Chinese
-  name there would fall through to the system stack and show tofu wherever no
-  CJK font is installed. `render.py`'s `plugin.name` is therefore the Latin
-  `ZmdLog`.
+  `ZmdLogBotPlugin` class and every log prefix do not move. The V2 pages
+  carry no wordmark: the foot says 数据来源 ZMDLogs and the version, and
+  `render.py`'s `plugin.name`, the Latin `ZmdLog`, reaches only the
+  document title.
 - **Market metadata lives in `metadata.yaml`, and AstrBot itself ignores most of
   it** (2026-09-19). The cloud market reads `category`, `tags`, `social_link`
   and `support_platforms`; `StarMetadata` only knows the last two. Omitting
@@ -408,9 +417,10 @@ Single-context: `CONTEXT.md` + `docs/adr/` at the repo root, created lazily. See
   https://github.com/medps16000/endfield-suite-open (`endfield-logs/apps/api`).
   The live site has run unpublished code since; UPSTREAM.md says what still
   matches.
-- Reference plugin for structure/visual style only:
+- Reference plugin for structure only:
   https://github.com/Entropy-Increase-Team/astrbot_plugin_endfield (AGPL-3.0;
-  its background image was used until the Endfield restyle and is no longer present)
+  the first pages borrowed its background image and style, and neither is
+  left)
 - Planning notes under `docs/` are local and gitignored, except `docs/agents/`
   and `docs/adr/`.
   [UPSTREAM.md](UPSTREAM.md) is the source of truth for the API contract.

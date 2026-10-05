@@ -1,9 +1,10 @@
 """The five elements a character can have, and how people spell them.
 
 The game data catalog names them 物理 / 灼热 / 寒冷 / 自然 / 电磁; upstream's
-battle payloads key them physical / fire / cryst / natural / pulse, which
-is what the page CSS uses too. Players type 火 for 灼热 and 雷 for 电磁,
-so a small alias table stands between what was typed and the label.
+battle payloads key them physical / fire / cryst / natural / pulse. An
+element is a filter (``--属性``) and a word on the 养成 page; no page rings
+a face in its colour any more. Players type 火 for 灼热 and 雷 for 电磁, so
+a small alias table stands between what was typed and the label.
 """
 
 from .labels import normalize_label
@@ -48,11 +49,3 @@ def normalize_element(text: str) -> str | None:
     return normalize_label(
         text, labels=ELEMENT_KEYS, aliases=_ALIASES, suffixes=_SUFFIXES
     )
-
-
-def element_key(label: str | None) -> str | None:
-    """The CSS / upstream key for a catalog label; None for unknown or none."""
-
-    if label is None:
-        return None
-    return ELEMENT_KEYS.get(label)

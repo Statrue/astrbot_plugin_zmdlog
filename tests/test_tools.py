@@ -278,7 +278,7 @@ class ToolServiceTests(unittest.TestCase):
         self.assertEqual(answer.image_path, "/tmp/ranking.png")
         # 黎风 leads records on this board, so the filter is main-C scoped,
         # as the command would decide; the page gets the same scope.
-        self.assertIn(f"主C 为「{name}」", answer.text)
+        self.assertIn(f"主 C 为「{name}」", answer.text)
         self.assertIn("最常同队", answer.text)
         self.assertNotIn("常见阵容（全榜", answer.text)
 
@@ -395,7 +395,7 @@ class ToolServiceTests(unittest.TestCase):
         nobody = run(self.service.board("三位一体", element="雷"))
         nonsense = run(self.service.board("三位一体", element="光"))
 
-        self.assertIn("主C 为自然属性", board.text)
+        self.assertIn("主 C 为自然属性", board.text)
         self.assertEqual(board.image_path, "/tmp/ranking.png")
         self.assertIn("自然属性角色", champions.text)
         self.assertIn(lead, champions.text)
@@ -520,6 +520,27 @@ class FactsTests(unittest.TestCase):
         self.assertIn("没有", text)
         self.assertNotIn("最常同队", text)
 
+    def test_unlisted_rows_point_at_the_picture_only_when_it_holds_them(self) -> None:
+        # The picture is the first page (10 rows) for a limit up to 10 and
+        # the first thirty past it; rows beyond that are on no picture.
+        payload = ranking_payload_with_rows()
+        template = payload["rows"][0]
+        payload["rows"] = [
+            {**template, "rank": rank, "battleId": f"btl_upload_{rank:012d}"}
+            for rank in range(1, 16)
+        ]
+        ranking = parse_boss_ranking(payload)
+
+        paged = facts.format_board_ranking(ranking, limit=3)
+        self.assertIn("另有 12 条未列出", paged)
+        self.assertNotIn("图里有", paged)
+
+        everything = facts.format_board_ranking(ranking, limit=12)
+        self.assertIn("另有 3 条未列出，图里有", everything)
+
+        short = facts.format_board_ranking(self.ranking, limit=3)
+        self.assertIn("另有 2 条未列出，图里有", short)
+
     def test_row_limits_are_bounded_whatever_is_asked_for(self) -> None:
         for asked in (0, -5, 999):
             with self.subTest(asked=asked):
@@ -641,7 +662,7 @@ class ToolSurfaceTests(unittest.TestCase):
         answer = run(self.service.board("三位一体", character="黎"))
 
         self.assertEqual(answer.image_path, "/tmp/ranking.png")
-        self.assertIn("主C 为「黎风」", answer.text)
+        self.assertIn("主 C 为「黎风」", answer.text)
 
     def test_the_page_follows_the_texts_scope(self) -> None:
         # 佩丽卡 never leads a record here: text and page both take the roster.
@@ -691,7 +712,7 @@ class ToolSurfaceTests(unittest.TestCase):
     def test_a_profession_keeps_only_rows_led_by_that_class(self) -> None:
         answer = run(self.service.board("三位一体", profession="术师"))
 
-        self.assertIn("主C 为术士", answer.text)
+        self.assertIn("主 C 为术士", answer.text)
         self.assertIn("#5 ", answer.text)
         self.assertNotIn("#1 ", answer.text)
         self.assertEqual(
@@ -723,7 +744,7 @@ class ToolSurfaceTests(unittest.TestCase):
         self.assertEqual(self.renderer.calls, [])
         self.assertIn("全部公开榜单：3 个榜单", answer.text)
         self.assertIn(
-            "危境再现·罗丹：#1 1 分 1.234 秒 · 主C 余烬 · 公开账户"
+            "危境再现·罗丹：#1 1 分 1.234 秒 · 主 C 余烬 · 公开账户"
             " · battleId battle-rush01",
             answer.text,
         )
@@ -778,7 +799,7 @@ class ToolSurfaceTests(unittest.TestCase):
         answer = run(self.service.character("黎风", board="三位一体"))
 
         self.assertEqual(answer.image_path, "/tmp/ranking.png")
-        self.assertIn("主C 为「黎风」", answer.text)
+        self.assertIn("主 C 为「黎风」", answer.text)
 
     def test_a_boss_name_asked_as_a_character_points_at_the_board_tool(self) -> None:
         answer = run(self.service.character("三位一体"))

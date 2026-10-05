@@ -4,8 +4,8 @@
 
 - `sky-art.webp`：页头黄天右侧的机械线条半调图（1080×224，无损 WebP，即 540px 的 2 倍）；`box-head.svg` / `box-page.svg`：页头与页面底的大方格加对角线；`topo-strip.svg`：深色名条右端的等高线。
 - 来源：本仓库自绘，均由 V2 原型的程序化脚本一次生成（`prototype/frontend-v2` 分支 `prototype/frontend_v2/shards.py` 的 `sky_art()`、`topo.py` 的 `box_grid(90, …)` / `box_grid(108, …)` / `contours(280, 56, …, seed=3, levels=12, base=2, fade_left=True)`），之后作为静态文件提交；运行时不依赖 numpy / Pillow。渲染时由 `core/render.py` 以 data URL 内嵌进页面。
-- `comic-topo.svg`：漫画风页面（帮助）黄底上的白色等高线，由同一个 `topo.py` 的 `contours(480, 300, "rgba(255,255,255,0.55)", seed=11, levels=9, base=2, fade_left=False)` 生成。
-- `topo-card.svg`：战报 养成 角色名条右端较窄的等高线，`contours(240, 48, "rgba(255,255,255,0.10)", seed=7, levels=10, base=2, fade_left=True)`；`rings.svg`：养成 武器与装备方块右下角的同心波纹，`rings(200)`。同一个 `topo.py` 生成。养成页的潜能 / 精炼星是照游戏美术描出的五片刀刃多边形，直接写在 `shell/wide-parts.html` 的宏里，不是图片。
+- `comic-topo.svg`：漫画风页面（帮助、顶屁股通告）黄底上的白色等高线，由同一个 `topo.py` 的 `contours(480, 300, "rgba(255,255,255,0.55)", seed=11, levels=9, base=2, fade_left=False)` 生成。
+- `topo-card.svg`：战报 养成与对比的角色名条右端较窄的等高线，`contours(240, 48, "rgba(255,255,255,0.10)", seed=7, levels=10, base=2, fade_left=True)`；`rings.svg`：养成与对比的武器与装备方块右下角的同心波纹，`rings(200)`。同一个 `topo.py` 生成。养成页的潜能 / 精炼星是照游戏美术描出的五片刀刃多边形，直接写在 `shell/wide-parts.html` 的宏里，不是图片。
 - 无第三方素材。
 
 ## `../help/chibi-*.webp`
@@ -36,7 +36,7 @@
 与再分发，只要求随附许可原文。字形差别很小（Noto 略宽、笔画收尾更圆），
 版面、行高、换行都没有变化。
 
-不在子集内的字符（生僻字、日文假名等）由 `base.css` 中的系统字体栈回退，因此部署环境仍建议安装一套中文字体（如 Noto Sans CJK）。
+不在子集内的字符（生僻字、日文假名等）由 `../shell/base.css` 中的系统字体栈回退，因此部署环境仍建议安装一套中文字体（如 Noto Sans CJK）。
 
 ## 历史
 

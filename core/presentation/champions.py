@@ -7,10 +7,8 @@ characters left out of the table. A 冠军 is a board's #1 record, credited
 to all four of its members.
 """
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 
-from ..elements import element_key
 from ..metrics import metric_label
 from ..standings import CharacterTally, ProfessionUsage, TeamTally
 from .boards import RosterEntryView, _build_roster
@@ -35,7 +33,6 @@ class UsageChipView:
     share_label: str
     character_initial: str
     avatar_url: str | None
-    element_key: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +55,6 @@ class TallyRowView:
     boards: int
     # First places as a share of the leader's, for the in-row bar.
     bar_width: float
-    element_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +87,6 @@ def build_character_champions_page(
     query: str,
     web_base_url: str | None = None,
     element: str | None = None,
-    elements: Mapping[str, str] | None = None,
     profession: str | None = None,
     teams: tuple[TeamTally, ...] = (),
     usage: tuple[ProfessionUsage, ...] = (),
@@ -109,7 +104,6 @@ def build_character_champions_page(
         list(tallies) if profession else [tally for tally in tallies if tally.podiums]
     )
     peak = board_count
-    known = elements or {}
     rows = tuple(
         TallyRowView(
             position=index,
@@ -123,14 +117,13 @@ def build_character_champions_page(
             top_tens=tally.top_tens,
             boards=tally.boards,
             bar_width=_bar_width(tally.first_places, peak),
-            element_key=element_key(known.get(tally.name)),
         )
         for index, tally in enumerate(ranked, start=1)
     )
     team_views = tuple(
         TeamComboView(
             members=_build_roster(
-                team.entries, team.names, web_base_url=web_base_url, elements=elements
+                team.entries, team.names, web_base_url=web_base_url
             ),
             count=team.count,
         )
@@ -146,7 +139,6 @@ def build_character_champions_page(
                     share_label=f"{entry.share:g}%",
                     character_initial=_initial(entry.name),
                     avatar_url=_safe_asset_url(entry.avatar_url, base_url=web_base_url),
-                    element_key=element_key(known.get(entry.name)),
                 )
                 for entry in group.entries
             ),

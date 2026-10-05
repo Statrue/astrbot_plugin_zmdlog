@@ -370,7 +370,6 @@ class TemplateRenderer:
         character: CharacterType,
         query: str,
         web_base_url: str | None = None,
-        elements: Mapping[str, str] | None = None,
         icons: Mapping[str, str] | None = None,
         embed_fonts: bool = True,
     ) -> str:
@@ -379,7 +378,6 @@ class TemplateRenderer:
             character=character,
             query=query,
             web_base_url=web_base_url,
-            elements=elements,
             icons=icons,
         )
         return self._render(
@@ -395,7 +393,6 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str | None = None,
-        elements: Mapping[str, str] | None = None,
         metric: str = "dps",
         embed_fonts: bool = True,
     ) -> str:
@@ -403,7 +400,6 @@ class TemplateRenderer:
             standings,
             query=query,
             web_base_url=web_base_url,
-            elements=elements,
             metric=metric,
         )
         return self._render(
@@ -421,7 +417,6 @@ class TemplateRenderer:
         query: str,
         web_base_url: str | None = None,
         element: str | None = None,
-        elements: Mapping[str, str] | None = None,
         profession: str | None = None,
         teams: tuple[TeamTally, ...] = (),
         usage: tuple[ProfessionUsage, ...] = (),
@@ -436,7 +431,6 @@ class TemplateRenderer:
             query=query,
             web_base_url=web_base_url,
             element=element,
-            elements=elements,
             teams=teams,
             usage=usage,
             window_label=window_label,
@@ -524,7 +518,6 @@ class TemplateRenderer:
         web_base_url: str,
         rows_by_battle: Mapping[str, BossRankingRow] | None = None,
         listed_boards: Collection[str] | None = None,
-        elements: Mapping[str, str] | None = None,
         icons: Mapping[str, str] | None = None,
         embed_fonts: bool = True,
     ) -> str:
@@ -534,7 +527,6 @@ class TemplateRenderer:
             web_base_url=web_base_url,
             rows_by_battle=rows_by_battle,
             listed_boards=listed_boards,
-            elements=elements,
             icons=icons,
         )
         return self._render(
@@ -1536,7 +1528,7 @@ def _load_inline_assets(
 
 
 # Subset web fonts built by tools/build_fonts.py; missing files simply fall
-# back to the system font stack declared in base.css.
+# back to the system font stack declared in shell/base.css.
 _FONT_FACES = (
     ("NotoSansSC-Black.woff2", "Noto Sans SC", 900),
     ("NotoSansSC-Bold.woff2", "Noto Sans SC", 700),

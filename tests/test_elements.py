@@ -9,7 +9,7 @@ from core.datasource import (
     CATALOG_REFRESH_MIN_INTERVAL_SECONDS,
     ZmdLogsDataSource,
 )
-from core.elements import ELEMENTS, element_key, normalize_element
+from core.elements import normalize_element
 from core.models import parse_boss_ranking, parse_character_types
 from core.presentation import build_character_champions_page, build_ranking_page
 from core.routing import RouteKind, RouteParseError, parse_zmdlog_payload
@@ -65,11 +65,6 @@ class NormalizeTests(unittest.TestCase):
         for typed in ("", "光", "提弗洛斯", "属性"):
             with self.subTest(typed=typed):
                 self.assertIsNone(normalize_element(typed))
-
-    def test_every_label_has_a_css_key(self) -> None:
-        self.assertEqual(len({element_key(label) for label in ELEMENTS}), 5)
-        self.assertIsNone(element_key(None))
-        self.assertIsNone(element_key("光"))
 
 
 class CatalogTests(unittest.TestCase):
@@ -206,11 +201,10 @@ class PageTests(unittest.TestCase):
             board_count=1,
             query="角色排名",
             element="自然",
-            elements=self.elements,
         )
 
         self.assertIn("自然", page.header.title)
-        self.assertTrue(all(row.element_key == "natural" for row in page.rows))
+        self.assertEqual([row.name for row in page.rows], [t.name for t in kept])
 
 
 if __name__ == "__main__":

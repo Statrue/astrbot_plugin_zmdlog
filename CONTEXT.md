@@ -2,10 +2,51 @@
 
 The vocabulary of the plugin's pages, replies and LLM tool text: what a
 player-facing word means here, and which of its synonyms the pages never use.
-CLAUDE.md's "one term per concept" list is the older seed of this file; a
-term recorded there is not repeated here unless its meaning needed sharpening.
+One concept has one word on every page; a page that needs a new word adds it
+here.
 
 ## Language
+
+### Records
+
+**名次**:
+A record's position on one board: fastest clear first (危机合约 boards:
+highest 合约分数 first), ranks dense from 1, on the DPS board unless
+`--口径 rDPS` asks for that board's. Printed as a number on a row (`03`
+on the board ranking, `#3` elsewhere), 第 N 名 in text.
+_Avoid_: 排名 (for one record), 位次, 排位
+
+**主 C**:
+The character a record is filed under: the top-DPS member of its team (on
+an rDPS board, the top-rDPS one). Rows put its face first, on the yellow
+ring, and `--角色` / `--属性` / `--职业` test it first. Always with the
+space.
+_Avoid_: 主C, 核心, C 位
+
+**阵容**:
+The four characters a record fielded; also the page (`阵容 <榜单>`) that
+counts them over a board. A hero figure on the 摘要.
+_Avoid_: 编队, 配队, 队伍配置
+
+**通关时间** / **用时**:
+How long a record's clear took. 通关时间 as a hero figure (摘要, 对比),
+用时 as a column or beside a row's figures.
+_Avoid_: 耗时, 时长, 时间 (alone)
+
+**DPS** / **总 DPS**:
+A record's team damage per second. DPS as a column, 总 DPS as a hero
+figure. The rDPS figure is always written rDPS; the two are never mixed on
+one page.
+_Avoid_: 秒伤, 输出
+
+**总伤害**:
+A record's team damage over the whole clear; a hero figure.
+_Avoid_: 伤害总量, 总输出
+
+**公开账号**:
+A ZMDLogs account whose records are public — the only kind the bot can
+read, so every account it names is one.
+_Avoid_: 玩家账号, 用户
 
 ### Boards
 
@@ -26,11 +67,13 @@ _Avoid_: 已下线榜单, 下线的榜
 
 **潜能**:
 A character's potential rank, 0–5, as recorded on the battle roster or the
-ranking row. Printed as `潜能 N` on the battle card.
+ranking row. Drawn as the game's potential star with `N⁄5` on 养成,
+printed `潜能 N` on 对比.
 _Avoid_: 潜力, 星级
 
 **精炼**:
-A weapon's refinement rank, 1–6. Printed as `精炼 N` on the battle card.
+A weapon's refinement rank, 1–6. Drawn on the same star as 潜能 on 养成
+(`MAX` at 6), printed `精炼 N` on 对比.
 _Avoid_: 精炼等级, 武器等级, 突破
 
 **词条**:
@@ -39,6 +82,16 @@ One of a weapon's two attribute lines, named as the game names it
 the 养成 page draws the weapon's own skill as **武器技能**, whose level the
 精炼 caps (精炼 + 3). A line the bot cannot name is 名称未收录.
 _Avoid_: 副词条, 武器属性
+
+**名称未收录**:
+What the bot prints for an item, 词条 or stat it has only a raw id for; a
+raw id is never printed as a name.
+_Avoid_: 未知, 未命名
+
+**武器未记录**:
+A record whose roster names no weapon for that character (older uploads);
+`5+?` in the 养成 shorthand.
+_Avoid_: 无武器, 未知武器
 
 **养成**:
 How far one fielded character is built: its level, 潜能, 精炼, skill
@@ -64,7 +117,7 @@ _Avoid_: 角色配装, 角色养成, 角色资料
 **通关名次**:
 A character's position on one board when every character is ordered by the
 fastest team clear it appears in; ties share a rank. Distinct from 名次,
-which is a record's DPS position on a board.
+which is a record's position on a board.
 _Avoid_: 竞速名次, 速通排名, 角色名次
 
 ### Battle statistics

@@ -21,7 +21,6 @@ class AccountRecipe:
     # 全部榜单's slugs, None when the board list could not be read; with them
     # the page tells a 未收录榜单 from a board the index has not read yet.
     listed_boards: frozenset[str] | None
-    elements: Mapping[str, str]
     icons: Mapping[str, str]
     query: str
     web_base_url: str
@@ -33,7 +32,6 @@ class AccountRecipe:
             web_base_url=self.web_base_url,
             rows_by_battle=self.rows_by_battle,
             listed_boards=self.listed_boards,
-            elements=self.elements,
             icons=self.icons,
         )
 
@@ -53,7 +51,6 @@ async def prepare_account(
         account=account,
         rows_by_battle=rows,
         listed_boards=listed,
-        elements=await data.character_elements(names=names),
         icons=await data.character_icons(names=names),
         query=query,
         web_base_url=web_base_url,

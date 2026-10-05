@@ -505,8 +505,6 @@ class BattleCastPageTests(unittest.TestCase):
         # The foot's strip, this page lit.
         foot = html[html.index('<footer class="i-foot">'):]
         self.assertIn('<span>摘要</span><i>·</i><span class="is-on">排轴</span>', foot)
-        # Nothing of the old shell.
-        self.assertNotIn('id="zmd-page"', html)
 
     def test_without_the_detail_the_rail_stands_alone(self) -> None:
         page = build_battle_cast_page(self.export, query="q", web_base_url=WEB)

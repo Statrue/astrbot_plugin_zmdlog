@@ -89,7 +89,7 @@ class TalliesTests(unittest.TestCase):
         self.assertIn("全部 2 个榜", text)
         self.assertIn("四名角色各算一个", text)
         self.assertIn(f"冠军最多：{self.leader.character_name} 2 个榜", text)
-        self.assertIn(f"{self.leader.character_name} · 冠军 2（当主C 2）", text)
+        self.assertIn(f"{self.leader.character_name} · 冠军 2（当主 C 2）", text)
         self.assertIn("不代表哪个角色更强", text)
         self.assertNotIn("数据截至", text)
 

@@ -1,6 +1,5 @@
 """角色排名: where the teams fielding a character stand, and who holds the firsts."""
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -34,7 +33,6 @@ class StandingsRecipe:
     query: str
     web_base_url: str | None
     missing_count: int
-    elements: Mapping[str, str]
     metric: str = "dps"
 
     async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
@@ -42,7 +40,6 @@ class StandingsRecipe:
             self.standings,
             query=self.query,
             web_base_url=self.web_base_url,
-            elements=self.elements,
             metric=self.metric,
         )
 
@@ -70,7 +67,6 @@ async def prepare_standings(
         query=query,
         web_base_url=web_base_url,
         missing_count=snapshot.missing_count,
-        elements=await data.character_elements(names=snapshot.fielded),
         metric=snapshot.metric,
     )
 
@@ -84,10 +80,8 @@ class ChampionsRecipe:
     query: str
     web_base_url: str | None
     missing_count: int
-    # The element the board was cut to, if any; ``elements`` is the catalog
-    # map every row's ring is drawn from.
+    # The element the board was cut to, if any.
     element: str | None
-    elements: Mapping[str, str]
     profession: str | None
     teams: tuple[TeamTally, ...]
     usage: tuple[ProfessionUsage, ...]
@@ -104,7 +98,6 @@ class ChampionsRecipe:
             query=self.query,
             web_base_url=self.web_base_url,
             element=self.element,
-            elements=self.elements,
             profession=self.profession,
             teams=self.teams,
             usage=self.usage,
@@ -151,7 +144,6 @@ async def prepare_champions(
         web_base_url=web_base_url,
         missing_count=snapshot.missing_count,
         element=element,
-        elements=elements,
         profession=profession,
         teams=first_place_teams(snapshot.rankings, since=since),
         usage=profession_usage(snapshot.rankings, since=since),

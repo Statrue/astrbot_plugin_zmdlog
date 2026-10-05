@@ -1099,7 +1099,7 @@ class HandlerTests(unittest.TestCase):
         path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk)
         return str(path)
 
-    def _account_page(self, *, size=(2560, 3000), scale=2) -> str:
+    def _account_page(self, *, size=(1920, 3000), scale=2) -> str:
         """The account page, drawn as a capture of ``size`` at ``scale``."""
 
         path = self._png(*size)
@@ -1117,7 +1117,7 @@ class HandlerTests(unittest.TestCase):
     def test_an_official_chat_gets_the_picture_as_markdown_with_its_link(
         self,
     ) -> None:
-        self._account_page(size=(2560, 3000), scale=2)
+        self._account_page(size=(1920, 3000), scale=2)
         for private, scene, prefix in (
             (False, "group", "/v2/groups/G1/"),
             (True, "c2c", "/v2/users/U1/"),
@@ -1141,10 +1141,10 @@ class HandlerTests(unittest.TestCase):
                 self.assertEqual(payload["msg_id"], "msg-1")
                 self.assertGreater(payload["msg_seq"], 10_000)
                 self.assertEqual(payload["msg_type"], 2)
-                # 2560 x 3000 device pixels at 2x: 1280 x 1500 CSS pixels.
+                # 1920 x 3000 device pixels at 2x: 960 x 1500 CSS pixels.
                 self.assertEqual(
                     payload["markdown"]["content"],
-                    f"![img #1280px #1500px]"
+                    f"![img #960px #1500px]"
                     f"({self.RAW_URL}&response-content-type=image%2Fpng)",
                 )
                 (row,) = payload["keyboard"]["content"]["rows"]
@@ -1155,15 +1155,15 @@ class HandlerTests(unittest.TestCase):
                     f"https://zmdlogs.com/records/{self.ACCOUNT}",
                 )
 
-    def test_a_long_page_captured_at_1x_is_declared_at_its_own_size(self) -> None:
-        self._account_page(size=(1280, 7588), scale=1)
+    def test_a_page_is_declared_at_the_scale_it_was_captured_at(self) -> None:
+        self._account_page(size=(960, 7588), scale=1)
         api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
 
         self._official(f"/zmdlog 账号 {self.ACCOUNT}", api=api)
 
         (_, payload), = api.calls
         self.assertTrue(
-            payload["markdown"]["content"].startswith("![img #1280px #7588px](")
+            payload["markdown"]["content"].startswith("![img #960px #7588px](")
         )
 
     def test_a_picture_that_cannot_go_as_markdown_goes_as_itself(self) -> None:
@@ -1221,7 +1221,7 @@ class HandlerTests(unittest.TestCase):
         async def detail(battle_id):
             return parse_battle_detail(battle_detail_payload())
 
-        path = self._png(2560, 2000)
+        path = self._png(1920, 2000)
 
         async def render_battle(battle, **kwargs):
             return capture(path)
@@ -1242,7 +1242,7 @@ class HandlerTests(unittest.TestCase):
 
     def test_the_trend_links_its_account(self) -> None:
         self._seed_history()
-        path = self._png(2560, 2000)
+        path = self._png(1920, 2000)
 
         async def draw(*args, **kwargs):
             return capture(path)
@@ -1336,7 +1336,7 @@ class HandlerTests(unittest.TestCase):
             first, bossSlug="dung01_group_bossrush03", bossName="危境再现·白垩界卫"
         )
         self.cards = parse_hot_bosses([first, second])
-        path = self._png(2560, 3000)
+        path = self._png(1920, 3000)
 
         async def render_dungeon_top3(choice, cards, **kwargs):
             return capture(path)
@@ -1354,7 +1354,7 @@ class HandlerTests(unittest.TestCase):
         self.assertTrue(event.stopped)
         (_, payload), = api.calls
         self.assertTrue(
-            payload["markdown"]["content"].startswith("![img #1280px #1500px](")
+            payload["markdown"]["content"].startswith("![img #960px #1500px](")
         )
         # Each board's ranking, one tap away; no link, the site has no
         # page of a dungeon.
@@ -1457,7 +1457,7 @@ class HandlerTests(unittest.TestCase):
 
     def test_pages_about_no_one_thing_stay_native_pictures(self) -> None:
         async def render_help(*, command_prefix, official=False):
-            return capture(self._png(1280, 9000), 1)
+            return capture(self._png(1920, 9000), 2)
 
         self.plugin.renderer.render_help = render_help
         http = FakeBotHttp(raw_url=self.RAW_URL)
@@ -1888,7 +1888,7 @@ class HandlerTests(unittest.TestCase):
     def test_a_tapped_page_about_no_one_thing_goes_as_a_native_picture(
         self,
     ) -> None:
-        path = self._png(2560, 2000)
+        path = self._png(1920, 2000)
 
         async def render_help(*, command_prefix, official=False):
             return capture(path)

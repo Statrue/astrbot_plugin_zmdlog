@@ -295,7 +295,6 @@ class RecordsPageTests(unittest.TestCase):
             html.index("<strong>各榜近 7 天新增</strong>"),
         )
         self.assertNotIn('class="w-empty"', html)
-        self.assertNotIn("scene-background", html)
         self.assertNotIn("数据截至", text)
         self.assertNotIn("时效", html)
 

@@ -355,7 +355,7 @@
 .rail-label em {
   flex: 0 0 auto;
   font-family: var(--font-num);
-  font-size: var(--fs-15);
+  font-size: var(--fs-14);
   font-style: normal;
   font-weight: 600;
   color: var(--muted);
@@ -369,7 +369,7 @@
 .rail-label small {
   flex: 0 0 auto;
   font-family: var(--font-num);
-  font-size: var(--fs-15);
+  font-size: var(--fs-14);
   font-weight: 800;
   color: var(--muted);
 }
@@ -384,6 +384,7 @@
 }
 .rail-label.is-normal,
 .rail-label.is-summon {
+  font-size: var(--fs-14);
   font-weight: 600;
   color: var(--muted);
 }

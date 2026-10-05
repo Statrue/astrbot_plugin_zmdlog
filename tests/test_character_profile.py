@@ -435,8 +435,6 @@ class ProfileQueryTests(unittest.TestCase):
         self.assertEqual(profile.range, "7d")
         self.assertEqual(kwargs["character"].name, "莱万汀")
         self.assertEqual(kwargs["query"], "莱万汀")
-        # The teammates' rings come from the catalog.
-        self.assertEqual(kwargs["elements"]["卡缪"], "电磁")
         # The page is the site's character page, under that window.
         self.assertEqual(
             outcome.target,
@@ -1045,7 +1043,6 @@ class ProfileTemplateTests(unittest.TestCase):
             character=character,
             query="lwt",
             web_base_url=WEB,
-            elements={entry.name: entry.element for entry in CATALOG},
             icons=icons or {},
         )
 

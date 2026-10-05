@@ -64,11 +64,11 @@ COMMAND = "/zmdlog"
 
 class ResultImageMessageTests(unittest.TestCase):
     def test_the_declared_size_is_the_capture_in_css_pixels(self) -> None:
-        # Pixels over the scale the renderer used. A long page captured at
-        # 1x and a short one at 2x both come out 1280 CSS pixels wide.
+        # Pixels over the scale the renderer used: the same 960 page
+        # captured at 1x or at 2x is declared 960 CSS pixels wide.
         for scale, size, declared in (
-            (1, (1280, 7588), "#1280px #7588px"),
-            (2, (2560, 3000), "#1280px #1500px"),
+            (1, (960, 7588), "#960px #7588px"),
+            (2, (1920, 3000), "#960px #1500px"),
         ):
             with self.subTest(scale=scale):
                 message = result_image_message(
@@ -94,10 +94,10 @@ class ResultImageMessageTests(unittest.TestCase):
         # 5001 device pixels at 2x is 2500.5 CSS pixels. 2500 would declare a
         # shape a hair shorter than the picture, the one error that crops.
         message = result_image_message(
-            RAW_URL, size=(2560, 5001), scale=2, keyboard=KEYBOARD
+            RAW_URL, size=(1920, 5001), scale=2, keyboard=KEYBOARD
         )
 
-        self.assertTrue(message.markdown.startswith("![img #1280px #2501px]("))
+        self.assertTrue(message.markdown.startswith("![img #960px #2501px]("))
 
     def test_a_link_that_would_break_out_of_the_image_is_refused(self) -> None:
         # The link comes from the platform, and it is written into markdown
@@ -114,26 +114,26 @@ class ResultImageMessageTests(unittest.TestCase):
             with self.subTest(raw_url=raw_url):
                 self.assertIsNone(
                     result_image_message(
-                        raw_url, size=(2560, 3000), scale=2, keyboard=KEYBOARD
+                        raw_url, size=(1920, 3000), scale=2, keyboard=KEYBOARD
                     )
                 )
 
     def test_a_link_without_a_query_gets_one(self) -> None:
         message = result_image_message(
             "https://cos.example.com/part_1",
-            size=(1280, 900),
-            scale=1,
+            size=(1920, 1800),
+            scale=2,
             keyboard=KEYBOARD,
         )
 
         self.assertEqual(
             message.markdown,
-            "![img #1280px #900px]"
+            "![img #960px #900px]"
             "(https://cos.example.com/part_1?response-content-type=image%2Fpng)",
         )
 
     def test_a_size_or_scale_that_is_no_picture_is_refused(self) -> None:
-        for size, scale in (((2560, 3000), 0), ((0, 3000), 2), ((2560, 0), 1)):
+        for size, scale in (((1920, 3000), 0), ((0, 3000), 2), ((1920, 0), 1)):
             with self.subTest(size=size, scale=scale):
                 self.assertIsNone(
                     result_image_message(

@@ -29,7 +29,6 @@ class CharacterProfileRecipe:
     character: CharacterType
     query: str
     web_base_url: str | None
-    elements: Mapping[str, str]
     icons: Mapping[str, str]
 
     async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
@@ -38,7 +37,6 @@ class CharacterProfileRecipe:
             character=self.character,
             query=self.query,
             web_base_url=self.web_base_url,
-            elements=self.elements,
             icons=self.icons,
         )
 
@@ -116,6 +114,5 @@ async def prepare_character_profile(
         character=character,
         query=query,
         web_base_url=web_base_url,
-        elements=await data.character_elements(names=names),
         icons=await data.character_icons(names=names),
     )

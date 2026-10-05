@@ -6,7 +6,6 @@ names asked about are marked nowhere else — and the boards without one as
 chips at the end.
 """
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..metrics import metric_label
@@ -40,8 +39,10 @@ class CharacterStandingsPage:
     header: PageHeader
     # ``A`` or ``A · B``: the label every sentence on the page uses.
     character_name: str
-    # 带 A / 同时带 A · B — the phrase the notes complete.
+    # 带 A / 同时带 A · B — the header's chip, the name set apart.
     team_label: str
+    # 带A / 同时带A · B — the same inside a sentence, where it runs on.
+    team_phrase: str
     metric_label: str
     appearances: int
     main_appearances: int
@@ -57,7 +58,6 @@ def build_character_standings_page(
     *,
     query: str,
     web_base_url: str | None = None,
-    elements: Mapping[str, str] | None = None,
     metric: str = "dps",
 ) -> CharacterStandingsPage:
     """One row per board the character appeared on, best rank first.
@@ -69,6 +69,7 @@ def build_character_standings_page(
 
     label = standings.character
     team_label = f"同时带 {label}" if standings.is_team else f"带 {label}"
+    team_phrase = team_label.replace("带 ", "带", 1)
     rows: list[StandingRowView] = []
     for board in standings.boards:
         row = board.best
@@ -76,7 +77,6 @@ def build_character_standings_page(
             row.roster_entries,
             row.roster_summary,
             web_base_url=web_base_url,
-            elements=elements,
         )
         rows.append(
             StandingRowView(
@@ -109,6 +109,7 @@ def build_character_standings_page(
         ),
         character_name=label,
         team_label=team_label,
+        team_phrase=team_phrase,
         metric_label=metric_label(metric),
         appearances=standings.appearances,
         main_appearances=sum(board.main_appearances for board in standings.boards),

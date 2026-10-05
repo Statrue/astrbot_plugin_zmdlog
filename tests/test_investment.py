@@ -203,10 +203,10 @@ class InvestmentTextTests(unittest.TestCase):
 
         text = facts.format_board_ranking(parse_boss_ranking(payload))
 
-        self.assertIn("主C 黎风 5+6 · 公开账号1", text)
+        self.assertIn("主 C 黎风 5+6 · 公开账号1", text)
         self.assertIn("阵容 黎风 5+6、卡缪 3+4、佩丽卡 0+1、洁尔佩塔 · battleId", text)
-        self.assertIn("主C 洛茜 1+? · 公开账号3", text)
-        self.assertIn("主C 黎风 · 公开账号2", text)
+        self.assertIn("主 C 洛茜 1+? · 公开账号3", text)
+        self.assertIn("主 C 黎风 · 公开账号2", text)
         self.assertIn(self.KEY, text)
 
     def test_a_board_without_any_pair_does_not_explain_one(self) -> None:
@@ -251,7 +251,7 @@ class InvestmentTextTests(unittest.TestCase):
 
         text = facts.format_boards_overview((card,), title="全部榜单")
 
-        self.assertIn("主C 余烬 5+? · 公开账户", text)
+        self.assertIn("主 C 余烬 5+? · 公开账户", text)
         self.assertIn(self.KEY, text)
 
 

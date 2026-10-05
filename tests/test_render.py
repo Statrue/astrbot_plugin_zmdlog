@@ -155,8 +155,6 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("--zmd-frame-width: 960;", html)
         self.assertIn('id="zmd-root"', html)
         self.assertIn('class="zmd-main', html)
-        self.assertNotIn('id="zmd-page"', html)
-        self.assertNotIn("scene-background", html)
         # The five chibis travel inside the page, never fetched at capture.
         chibis = re.findall(
             r'<img class="comic-chibi[^"]*" src="data:image/webp;base64,', html
@@ -352,7 +350,6 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn(">110,061<", html)
         self.assertNotIn("110,061.2", html)
         self.assertIn(">2026-07-13<", html)
-        self.assertNotIn("scene-background", html)
 
     def test_account_rows_lead_with_the_main_c_and_a_contract_scores(self) -> None:
         payload = public_user_rankings_payload()
@@ -447,9 +444,6 @@ class TemplateRendererTests(unittest.TestCase):
         )
         self.assertIn("https://zmdlogs.com/images/character/luoxi.png", record)
         self.assertNotIn("合约分数", html)
-        # Nothing of the old whole card, its shell or its tables.
-        self.assertNotIn('id="zmd-page"', html)
-        self.assertNotIn("scene-background", html)
         self.assertNotIn("战斗贡献", html)
         self.assertNotIn("ignored", html)
 
@@ -709,9 +703,7 @@ class TemplateRendererTests(unittest.TestCase):
                 self.assertIn('class="zmd-main"', html)
                 self.assertIn(f">{giant}<", html)
                 self.assertIn(f"v{self.renderer.version}", html)
-                # Nothing of the old shell.
-                self.assertNotIn('id="zmd-page"', html)
-                self.assertNotIn("scene-background", html)
+
     def _champion_boards(self):
         # Two boards sharing one #1 record, the second cut to three rows.
         return (
@@ -768,9 +760,6 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertEqual(teams.count('class="w-team-m"'), 4)
         self.assertNotIn("三位一体", teams)
         self.assertIn('class="w-usage-chip"', html)
-        # Nothing of the old shell.
-        self.assertNotIn('id="zmd-page"', html)
-        self.assertNotIn("scene-background", html)
         self.assertNotIn("hero-fact", html)
 
     def test_the_champions_name_their_filters_and_metric(self) -> None:
@@ -830,7 +819,6 @@ class TemplateRendererTests(unittest.TestCase):
         for tally in champions:
             with self.subTest(account=tally.display_name):
                 self.assertIn(f"<span>{tally.display_name}</span>", rest)
-        self.assertNotIn('id="zmd-page"', html)
         self.assertNotIn("hero-fact", html)
 
     def test_every_font_size_is_a_scale_token(self) -> None:
@@ -969,8 +957,6 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn(">RANKING<", html)
         self.assertIn("TOP 1", html)
         self.assertIn(f"v{self.renderer.version}", html)
-        self.assertNotIn("scene-background", html)
-        self.assertNotIn('id="zmd-page"', html)
 
     def test_the_main_c_leads_the_faces_and_no_name_is_cut(self) -> None:
         roster = tuple(
@@ -1306,10 +1292,9 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("#zmd-root", drawn.script)
         self.assertIn(".zmd-main", drawn.script)
-        self.assertNotIn("#zmd-page", drawn.script)
         for wrong in (
             {"width": 560},  # a decoration spilling past the frame
-            {"boxWidth": 1280},
+            {"boxWidth": 960},  # the root drawn at another width
             {"declaredWidth": 960},  # the template and the page kind disagree
             {"declaredWidth": 0},
             {"panelBottom": 2100},

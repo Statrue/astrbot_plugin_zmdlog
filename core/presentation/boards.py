@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..characters import CharacterFilterScope, filter_ranking_rows
-from ..elements import element_key
 from ..matcher import MatchChoice, TargetType
 from ..metrics import is_rdps, metric_label
 from ..models import (
@@ -81,8 +80,6 @@ class RosterEntryView:
     profession: str
     character_initial: str
     avatar_url: str | None
-    # The CSS key of the catalog element; None when the catalog lacks the name.
-    element_key: str | None = None
     # 养成, when the record names it; a roster of names only never does.
     investment: InvestmentView | None = None
 
@@ -556,7 +553,6 @@ def _build_roster(
     summary: tuple[str, ...],
     *,
     web_base_url: str | None,
-    elements: Mapping[str, str] | None = None,
     icons: Mapping[str, str] | None = None,
     investment_of: str | None = None,
 ) -> tuple[RosterEntryView, ...]:
@@ -568,7 +564,6 @@ def _build_roster(
     Every face carries its 养成, or only the one named ``investment_of``.
     """
 
-    known = elements or {}
     portraits = icons or {}
 
     def portrait(name: str, given: str | None) -> str | None:
@@ -581,7 +576,6 @@ def _build_roster(
                 profession=entry.profession,
                 character_initial=_initial(entry.character_name),
                 avatar_url=portrait(entry.character_name, entry.avatar_url),
-                element_key=element_key(known.get(entry.character_name)),
                 investment=(
                     investment_view(entry.character_potential, entry.weapon_refine)
                     if investment_of in (None, entry.character_name)
@@ -596,7 +590,6 @@ def _build_roster(
             profession="",
             character_initial=_initial(name),
             avatar_url=portrait(name, None),
-            element_key=element_key(known.get(name)),
         )
         for name in summary
     )

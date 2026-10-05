@@ -88,7 +88,7 @@ class StandingsTests(unittest.TestCase):
         text = facts.format_character_standings(both)
 
         self.assertIn("同时带「卡缪」「洛茜」的队伍", text)
-        self.assertIn("其中一人 当主C", text)
+        self.assertIn("其中一人 当主 C", text)
         self.assertIn("同时带这些角色的队伍的成绩", text)
         never = facts.format_character_standings(
             character_standings(self.rankings, "黎风", "洛茜")
@@ -207,9 +207,11 @@ class StandingsPageTests(unittest.TestCase):
         self.assertIn(f"<small>/ {len(self.rankings[0].rows)}</small>", html)
         self.assertNotIn("时效", html)
         # Never paged; the boards without the character are chips at the end.
-        self.assertIn("没有带 没有这个人的记录", empty)
+        # Inside a sentence the name runs on, as the approved page has it;
+        # only the header's 带 X 的队伍 keeps the space.
+        self.assertIn("没有带没有这个人的记录", empty)
         self.assertIn("<span>罗丹</span>", empty)
-        self.assertIn("读过的榜单里没有带 没有这个人的公开记录", empty)
+        self.assertIn("读过的榜单里没有带没有这个人的公开记录", empty)
 
     def test_a_team_page_rings_only_each_records_main_c(self) -> None:
         both = character_standings(self.rankings, "卡缪", "洛茜")
