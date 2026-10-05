@@ -51,6 +51,7 @@ if astrbot is not None:
         ZmdLogsAPIError,
         ZmdLogsClientError,
     )
+    from astrbot_plugin_zmdlog.core.cooldown import Cooldown
     from astrbot_plugin_zmdlog.core.models import (
         parse_battle_detail,
         parse_battle_export,
@@ -1299,6 +1300,8 @@ class HandlerTests(unittest.TestCase):
                 [
                     ("阵容", f"/zmdlog 阵容 {slug} --口径 rdps"),
                     ("角色统计", f"/zmdlog 角色统计 {slug} --口径 rdps"),
+                ],
+                [
                     ("第一名战报", f"/zmdlog 战报 {slug} --口径 rdps"),
                     ("对比第一名", f"/zmdlog 对比 {slug} 我 --口径 rdps"),
                 ],
@@ -1312,14 +1315,14 @@ class HandlerTests(unittest.TestCase):
 
         # Sent, 下一页 draws the last page, filtered, which turns no further.
         api.calls.clear()
-        self._official(rows[1][1][1], api=api)
+        self._official(rows[2][1][1], api=api)
         self.assertEqual(received[-1]["page"], 2)
         self.assertEqual(received[-1]["character_filter"], ("黎风",))
         (_, payload), = api.calls
         self.assertEqual(
             [
                 button["render_data"]["label"]
-                for button in payload["keyboard"]["content"]["rows"][1]["buttons"]
+                for button in payload["keyboard"]["content"]["rows"][2]["buttons"]
             ],
             ["全部"],
         )
@@ -1810,6 +1813,44 @@ class HandlerTests(unittest.TestCase):
                     trend["action"]["data"], f"/zmdlog 趋势 {self.ACCOUNT}"
                 )
 
+    def test_a_button_tapped_again_in_the_chat_draws_nothing(self) -> None:
+        # Two members tapping one button: the first picture went to both.
+        self._account_page()
+        data = f"/zmdlog 账号 {self.ACCOUNT}"
+        now = [0.0]
+        self.plugin._tapped = Cooldown(60, clock=lambda: now[0])
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+        adapter = self._enable_callbacks(api)
+
+        run(adapter.client.on_interaction_create(tap_of(data, member="111")))
+        run(adapter.client.on_interaction_create(tap_of(data, member="222")))
+
+        self.assertEqual(len(api.calls), 1)
+        # Both taps acknowledged, so neither tapper sees 操作失败.
+        self.assertEqual(len(api.acks), 2)
+        # Another chat is another audience; the claim running out, the
+        # same chat is answered again.
+        self._tap(adapter, data, private=True)
+        self.assertEqual(len(api.calls), 2)
+        now[0] += 60
+        run(adapter.client.on_interaction_create(tap_of(data, member="222")))
+        self.assertEqual(len(api.calls), 3)
+
+    def test_a_tap_that_failed_for_now_leaves_the_button_free(self) -> None:
+        async def down(*args, **kwargs):
+            raise ZmdLogsClientError("down")
+
+        self.plugin.data.get_public_user_rankings = down
+        data = f"/zmdlog 账号 {self.ACCOUNT}"
+        api = FakeBotApi()
+        adapter = self._enable_callbacks(api)
+
+        self._tap(adapter, data)
+        self._tap(adapter, data)
+
+        # Upstream down is worth a retry: both taps are answered.
+        self.assertEqual(len(api.calls), 2)
+
     def test_a_tapped_pick_list_answers_taps_but_a_watch_list_fills_in(
         self,
     ) -> None:
@@ -1962,7 +2003,7 @@ class HandlerTests(unittest.TestCase):
         typed.bot = adapter.client
         run(collect(self.plugin.zmdlog(typed)))
         (_, page), = api.calls
-        compare = page["keyboard"]["content"]["rows"][0]["buttons"][3]
+        compare = page["keyboard"]["content"]["rows"][1]["buttons"][1]
         self.assertEqual(compare["render_data"]["label"], "对比第一名")
         self.assertEqual(compare["action"]["type"], 1)
         data = compare["action"]["data"]

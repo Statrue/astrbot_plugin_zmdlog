@@ -288,6 +288,12 @@ class RouteRequest:
     # 角色档案 only: the board keyword ``--榜单`` cut the profile to.
     board_query: str | None = None
 
+    @property
+    def names_requester(self) -> bool:
+        """Whether the page depends on who asks: 我的 and ``对比 … 我``."""
+
+        return self.compare_self or self.kind is RouteKind.MY_ACCOUNT
+
 
 def ranking_page_count(row_count: int) -> int:
     """The pages ``row_count`` ranking rows fill; no rows is still one page."""

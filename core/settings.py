@@ -51,6 +51,9 @@ class PluginSettings:
     # Button taps answered with the page at once, through a runtime patch of
     # AstrBot's built-in adapter; off unless the deployer turns it on.
     qq_official_callbacks: bool = False
+    # A callback button tapped again in the same chat within this long draws
+    # nothing: the first tap's picture went to everyone (``core/cooldown``).
+    button_tap_dedupe_seconds: float = 60.0
 
     @property
     def rank_snapshot_max_age_seconds(self) -> float:
@@ -102,6 +105,9 @@ def load_settings(
         bindings_enabled=reader.flag("bindings_enabled"),
         disable_qq_official_buttons=reader.flag("disable_qq_official_buttons"),
         qq_official_callbacks=reader.flag("qq_official_callbacks"),
+        button_tap_dedupe_seconds=reader.positive_number(
+            "button_tap_dedupe_seconds"
+        ),
     )
 
 

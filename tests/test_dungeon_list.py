@@ -194,6 +194,8 @@ class DungeonListTests(unittest.TestCase):
                 [
                     ("阵容", 2, "/zmdlog 阵容 echo_blade"),
                     ("角色统计", 2, "/zmdlog 角色统计 echo_blade"),
+                ],
+                [
                     ("第一名战报", 2, "/zmdlog 战报 echo_blade"),
                     ("对比第一名", 2, "/zmdlog 对比 echo_blade 我"),
                 ],
