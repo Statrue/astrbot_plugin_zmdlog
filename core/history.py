@@ -20,6 +20,9 @@ MAX_POINT_AGE_SECONDS = TREND_RETENTION_DAYS * 86_400.0
 MAX_POINTS_PER_BOARD = 500
 # What ``all`` means on a trace: the whole of what is kept.
 ALL_TREND_LABEL = f"近 {TREND_RETENTION_DAYS} 天"
+# The window 趋势 draws when none is asked for: the moves a reader asks
+# about are recent ones, and ``--范围 30d`` is there for the longer view.
+DEFAULT_TREND_RANGE = "7d"
 
 
 @dataclass(frozen=True, slots=True)

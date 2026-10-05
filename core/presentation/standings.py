@@ -1,16 +1,21 @@
-"""Where the teams fielding one character (or several) stand on every board."""
+"""Where the teams fielding one character (or several) stand on every board.
+
+角色排名 <角色> is one wide table, never paged: a row a board, its best
+record of such a team, that record's own main C on the yellow ring — the
+names asked about are marked nowhere else — and the boards without one as
+chips at the end.
+"""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from ..metrics import metric_label
 from ..standings import CharacterStandings
 from .boards import RosterEntryView, _build_roster
 from .common import (
     PageHeader,
-    _initial,
     format_duration,
     format_number,
-    metric_footer,
 )
 
 
@@ -21,13 +26,12 @@ class StandingRowView:
     boss_name: str
     dungeon_name: str
     duration: str
+    # The board's figure as a whole number.
     dps: str
     account_display_name: str
-    # The record's main C, and whether that is a character asked about.
+    # The record's main C, whose face leads the roster.
     character_name: str
-    is_main: bool
     roster: tuple[RosterEntryView, ...]
-    appearances: int
     battle_id: str
 
 
@@ -36,16 +40,13 @@ class CharacterStandingsPage:
     header: PageHeader
     # ``A`` or ``A · B``: the label every sentence on the page uses.
     character_name: str
-    # The names themselves, for highlighting each one in a roster.
     character_names: tuple[str, ...]
     # 带 A / 同时带 A · B — the phrase the notes complete.
     team_label: str
-    character_initial: str
-    character_avatar_url: str | None
+    metric_label: str
     appearances: int
     main_appearances: int
     first_places: int
-    first_places_as_main: int
     board_count: int
     absent_count: int
     rows: tuple[StandingRowView, ...]
@@ -63,16 +64,14 @@ def build_character_standings_page(
     """One row per board the character appeared on, best rank first.
 
     The rank is the record's rank among every record on that board, which
-    is what the board page shows; the page says so, and says how old the
-    index behind it is, because it is drawn from memory, not from upstream.
-    Several characters draw the same page for the teams fielding all of them.
+    is what the board page shows, and the page says so. Several characters
+    draw the same page for the teams fielding all of them.
     """
 
     label = standings.character
     names = standings.characters
     team_label = f"同时带 {label}" if standings.is_team else f"带 {label}"
     rows: list[StandingRowView] = []
-    avatar_url: str | None = None
     for board in standings.boards:
         row = board.best
         roster = _build_roster(
@@ -81,15 +80,6 @@ def build_character_standings_page(
             web_base_url=web_base_url,
             elements=elements,
         )
-        if avatar_url is None:
-            avatar_url = next(
-                (
-                    member.avatar_url
-                    for member in roster
-                    if member.character_name == names[0] and member.avatar_url
-                ),
-                None,
-            )
         rows.append(
             StandingRowView(
                 rank=row.rank,
@@ -97,12 +87,16 @@ def build_character_standings_page(
                 boss_name=board.boss_name,
                 dungeon_name=board.dungeon_name,
                 duration=format_duration(row.duration_ms),
-                dps=format_number(row.dps),
+                dps=format_number(round(row.dps)),
                 account_display_name=row.account_display_name,
                 character_name=row.character_name,
-                is_main=board.best_as_main,
-                roster=roster,
-                appearances=board.appearances,
+                # A stable sort: the main C first, the rest in record order.
+                roster=tuple(
+                    sorted(
+                        roster,
+                        key=lambda face: face.character_name != row.character_name,
+                    )
+                ),
                 battle_id=row.battle_id,
             )
         )
@@ -117,20 +111,17 @@ def build_character_standings_page(
             query=query,
             matched_name=f"{label} · 各榜单最好名次",
             target_type="角色排名",
-            footer_note=(
-                metric_footer(metric) + " · 队伍成绩 · 名次为该记录在全榜的名次"
-            ),
+            # The masthead names the metric; the foot what the rows are.
+            footer_note="公开榜单 · 队伍成绩",
             metric=metric,
         ),
         character_name=label,
         character_names=names,
         team_label=team_label,
-        character_initial=_initial(names[0]),
-        character_avatar_url=avatar_url,
+        metric_label=metric_label(metric),
         appearances=standings.appearances,
         main_appearances=sum(board.main_appearances for board in standings.boards),
         first_places=standings.first_places,
-        first_places_as_main=standings.first_places_as_main,
         board_count=len(standings.boards),
         absent_count=len(standings.absent),
         rows=tuple(rows),

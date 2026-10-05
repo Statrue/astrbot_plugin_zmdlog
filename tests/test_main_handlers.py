@@ -2325,6 +2325,26 @@ class HandlerTests(unittest.TestCase):
         )
         self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
 
+    def test_trend_shows_a_week_unless_asked_for_more(self) -> None:
+        self._seed_history()
+        drawn: list[dict] = []
+
+        async def draw(history, **kwargs):
+            drawn.append(kwargs)
+            return capture("/tmp/trend.png")
+
+        self.plugin.renderer.render_trend = draw
+
+        (kind, _), = self._zmdlog("zmdlog 趋势 usr_1234567890abcdef")
+        self.assertEqual(kind, "image")
+        (kind, _), = self._zmdlog("zmdlog 趋势 usr_1234567890abcdef --范围 30d")
+        self.assertEqual(kind, "image")
+        self.assertEqual([call["time_range"] for call in drawn], ["7d", "30d"])
+        # One picture holds every board: the trend takes no page.
+        (kind, reply), = self._zmdlog("zmdlog 趋势 usr_1234567890abcdef --页 2")
+        self.assertEqual(kind, "plain")
+        self.assertIn("--页", reply)
+
     def test_trend_searches_upstream_for_unknown_nicknames(self) -> None:
         self._seed_history()
         hits = {"CPU 0": "usr_1234567890abcdef", "路人甲": "usr_a"}

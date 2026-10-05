@@ -157,14 +157,18 @@ class InvestmentPageTests(unittest.TestCase):
         self.assertEqual(investments(html), ["5+6", "0+1", "3+4", "1+?"])
         self.assertIn(LEGEND, html)
 
-    def test_the_account_page_prints_its_records_pairs(self) -> None:
+    def test_the_account_page_prints_no_pair_and_borrows_the_index_faces(
+        self,
+    ) -> None:
+        # The V2 account row is faces, time, DPS and date, like the board's.
         own = parse_public_user_rankings(
             account_with_entries(pair(5, 6), pair(0, None), {}, {})
         )
         # Without a roster of its own, the index's row of the same battle
         # (here the fixture's row 1) is where the faces come from.
         bare = parse_public_user_rankings(public_user_rankings_payload())
-        held = {bare.rankings[0].battle_id: self.ranking.rows[0]}
+        held_row = self.ranking.rows[0]
+        held = {bare.rankings[0].battle_id: held_row}
 
         own_html = self.renderer.render_account(
             own, query="账号", web_base_url="https://zmdlogs.com"
@@ -174,9 +178,11 @@ class InvestmentPageTests(unittest.TestCase):
             rows_by_battle=held,
         )
 
-        self.assertEqual(investments(own_html), ["5+6", "0+?"])
-        self.assertEqual(investments(held_html), ["5+6", "3+4", "0+1"])
-        self.assertIn(LEGEND, own_html)
+        self.assertEqual(investments(own_html), [])
+        self.assertNotIn(LEGEND, own_html)
+        self.assertEqual(investments(held_html), [])
+        portrait = next(e.avatar_url for e in held_row.roster_entries if e.avatar_url)
+        self.assertIn(portrait.rsplit("/", 1)[-1], held_html)
 
 
 class InvestmentTextTests(unittest.TestCase):

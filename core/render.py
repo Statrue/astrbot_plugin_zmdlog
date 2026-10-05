@@ -44,7 +44,7 @@ from .client import DEFAULT_USER_AGENT
 from .crit import CritExpectation
 from .events import BoardActivity, RecordEvent
 from .help import build_help_page
-from .history import AccountHistory
+from .history import DEFAULT_TREND_RANGE, AccountHistory
 from .matcher import MatchChoice
 from .models import (
     BattleDetailSummary,
@@ -140,6 +140,9 @@ PAGE_FRAMES: dict[str, PageFrame] = {
     "battle-cast": WIDE_FRAME,
     "battle-build": WIDE_FRAME,
     "notice": WIDE_FRAME,
+    "account": WIDE_FRAME,
+    "trend": WIDE_FRAME,
+    "character-standings": WIDE_FRAME,
 }
 
 
@@ -629,8 +632,7 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str,
-        time_range: str = "30d",
-        last_checked: str | None = None,
+        time_range: str = DEFAULT_TREND_RANGE,
         embed_fonts: bool = True,
     ) -> str:
         page = build_trend_page(
@@ -638,7 +640,6 @@ class TemplateRenderer:
             query=query,
             web_base_url=web_base_url,
             time_range=time_range,
-            last_checked=last_checked,
         )
         return self._render(
             "trend/trend.html",

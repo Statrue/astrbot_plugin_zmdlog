@@ -210,7 +210,7 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                     ),
                     HelpCommand(
                         command=f"{command} 趋势 <账号> [--范围 7d|14d|30d|all]",
-                        answers="查看一个账号最近各榜名次的涨跌",
+                        answers="查看一个账号各榜名次的涨跌，默认近 7 天",
                     ),
                 ),
             ),

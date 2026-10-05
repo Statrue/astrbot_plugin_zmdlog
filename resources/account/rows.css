@@ -1,0 +1,32 @@
+/* What the 账号, 趋势 and 角色排名 <角色> tables add to the shared table
+   (shell/wide-table.css): a row's board with its dungeon under it, and a
+   muted date on the right. Names wrap, never truncate. */
+
+.w-tr > .w-board {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+.w-board strong {
+  font-family: var(--font-cjk);
+  font-weight: 700;
+  font-size: var(--fs-17);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.w-board small {
+  font-family: var(--font-cjk);
+  font-weight: 400;
+  font-size: var(--fs-15);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.w-tr > .w-date {
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: var(--fs-17);
+  color: var(--muted);
+  white-space: nowrap;
+}

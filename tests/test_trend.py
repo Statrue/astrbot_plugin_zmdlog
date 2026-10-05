@@ -150,31 +150,37 @@ class TrendPageTests(unittest.TestCase):
             web_base_url="https://zmdlogs.com",
             time_range="30d",
             now=NOW,
-            last_checked=stamp(0, 1),
         )
 
         self.assertEqual(page.header.target_type, "名次趋势")
-        self.assertEqual(page.tracked_since, "2026-07-25")
         self.assertEqual(page.tracked_days, "40 天")
-        self.assertEqual(page.last_checked, "2026-09-03 17:00")
-        self.assertEqual(page.best_rank, "#1")
-        self.assertEqual((page.improved_count, page.declined_count), (1, 1))
+        self.assertEqual(
+            (page.improved_count, page.declined_count, page.flat_count), (1, 1, 1)
+        )
         self.assertEqual(page.range_label, "近 30 天")
-        self.assertEqual(page.account_url, "https://zmdlogs.com/records/usr_watched")
+        # The header dates the window the lines run across, 月-日.
+        self.assertEqual((page.window_start, page.window_end), ("08-04", "09-03"))
         self.assertEqual(
             [row.boss_name for row in page.rows],
             ["三位一体", "“碾骨之拳”罗丹", "山中见犼·苦难"],
         )
         rodan = page.rows[1]
         self.assertEqual(
-            (rodan.start_rank, rodan.current_rank, rodan.delta_label, rodan.delta_kind),
-            (4, 2, "上升 2", "up"),
+            (rodan.start_rank, rodan.current_rank, rodan.change, rodan.delta_kind),
+            (4, 2, 2, "up"),
         )
         self.assertEqual((rodan.best_rank, rodan.worst_rank), (1, 4))
         self.assertEqual(
             rodan.polyline,
             "0.0,38.0 33.33,38.0 33.33,16.67 60.0,16.67 60.0,6.0 "
             "90.0,6.0 90.0,16.67 100.0,16.67",
+        )
+        # The soft area under the line, as a clip path in the cell's own %.
+        self.assertEqual(
+            rodan.area,
+            "0.0% 86.36%, 33.33% 86.36%, 33.33% 37.89%, 60.0% 37.89%, "
+            "60.0% 13.64%, 90.0% 13.64%, 90.0% 37.89%, 100.0% 37.89%, "
+            "100% 100%, 0.0% 100%",
         )
         self.assertEqual(rodan.dots[0], (0.0, 86.36))
         self.assertEqual(len(rodan.dots), 4)
@@ -183,12 +189,25 @@ class TrendPageTests(unittest.TestCase):
         self.assertEqual(rodan.last_change, "08-31")
         self.assertEqual((rodan.axis_top, rodan.axis_bottom), ("#1", "#4"))
         flat = page.rows[0]
-        self.assertEqual(flat.delta_kind, "flat")
+        self.assertEqual((flat.delta_kind, flat.change), ("flat", 0))
         self.assertEqual(flat.polyline, "16.67,22.0 100.0,22.0")
+        # A rank that never moved in the window has no change to date.
+        self.assertEqual(flat.last_change, "未变")
         down = page.rows[2]
         self.assertEqual(
-            (down.delta_label, down.delta_kind, down.start_rank), ("下降 6", "down", 6)
+            (down.change, down.delta_kind, down.start_rank), (6, "down", 6)
         )
+
+    def test_the_default_window_is_a_week(self) -> None:
+        page = build_trend_page(
+            self.history, query="q", web_base_url="https://zmdlogs.com", now=NOW
+        )
+
+        self.assertEqual(page.range_label, "近 7 天")
+        self.assertEqual((page.window_start, page.window_end), ("08-27", "09-03"))
+        # 罗丹 moved inside the week: from #1 (held since day 12) to #2.
+        rodan = next(row for row in page.rows if row.boss_name.endswith("罗丹"))
+        self.assertEqual((rodan.start_rank, rodan.current_rank), (1, 2))
 
     def test_all_time_axis_starts_at_the_first_record(self) -> None:
         page = build_trend_page(
@@ -225,8 +244,7 @@ class TrendPageTests(unittest.TestCase):
             now=NOW,
         )
         self.assertEqual(empty.rows, ())
-        self.assertEqual(empty.best_rank, "—")
-        self.assertEqual(empty.tracked_since, "—")
+        self.assertEqual(empty.tracked_days, "—")
 
     def test_all_draws_the_90_days_kept_and_nothing_before(self) -> None:
         # A board keeps its newest point however old; the one before that
@@ -259,7 +277,7 @@ class TrendPageTests(unittest.TestCase):
 
 
 class TrendTemplateTests(unittest.TestCase):
-    def test_trend_page_renders(self) -> None:
+    def test_trend_is_a_wide_table_of_every_board(self) -> None:
         renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
         # The renderer windows against the wall clock, so the points are
         # placed relative to it rather than to the fixture's fixed NOW —
@@ -269,24 +287,32 @@ class TrendTemplateTests(unittest.TestCase):
             RankPoint((recent - timedelta(days=5)).isoformat(), 3),
             RankPoint((recent - timedelta(days=1)).isoformat(), 1),
         )
-        history = AccountHistory(
-            "usr_watched",
-            "CPU<b>0",
-            (BoardHistory("a", "首领", "副本", points),),
-        )
+        long_board = "终末地藕粉铺子凹分研究所特别行动小组的超长首领名字"
+        boards = tuple(
+            BoardHistory(f"b{index}", f"首领{index}", "副本", points)
+            for index in range(14)
+        ) + (BoardHistory("long", long_board, "副本", points),)
+        history = AccountHistory("usr_watched", "CPU<b>0", boards)
 
         html = renderer.render_trend(
-            history,
-            query="趋势 CPU",
-            web_base_url="https://zmdlogs.com",
-            time_range="7d",
+            history, query="趋势 CPU", web_base_url="https://zmdlogs.com"
         )
 
-        self.assertIn("CPU&lt;b&gt;0", html)
-        self.assertIn("上升 2", html)
-        self.assertIn("<polyline points=", html)
-        self.assertIn("trend-dot", html)
-        self.assertIn("https://zmdlogs.com/records/usr_watched", html)
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn('class="zmd-main"', html)
+        self.assertIn(">TREND<", html)
+        self.assertIn('<h1 class="i-title">CPU&lt;b&gt;0</h1>', html)
+        # A week by default, its dates over the lines.
+        self.assertIn("近 7 天名次变化", html)
+        # Never paged: one picture holds every board, long names whole.
+        self.assertEqual(html.count('class="w-tr w-trend is-up'), 15)
+        self.assertIn(f"<strong>{long_board}</strong>", html)
+        # The arrow is drawn, not typed: the subset fonts have no ▲.
+        self.assertIn('<svg class="t-arrow"', html)
+        self.assertIn("<b>2</b>", html)
+        self.assertIn("<polyline", html)
+        self.assertIn("t-tri is-now", html)
+        self.assertNotIn("scene-background", html)
         empty = renderer.render_trend(
             AccountHistory("usr_x", "X", ()), query="q", web_base_url="https://zmdlogs.com"
         )
@@ -294,11 +320,14 @@ class TrendTemplateTests(unittest.TestCase):
 
 
 class TrendRouteTests(unittest.TestCase):
-    def test_trend_route_defaults_to_a_month(self) -> None:
+    def test_trend_route_defaults_to_a_week(self) -> None:
         route = parse_zmdlog_payload("趋势 CPU 0")
         self.assertEqual(route.kind, RouteKind.TREND_QUERY)
         self.assertEqual(route.query, "CPU 0")
-        self.assertEqual(route.stats_range, "30d")
+        self.assertEqual(route.stats_range, "7d")
+        self.assertEqual(
+            parse_zmdlog_payload("趋势 CPU 0 --范围 30d").stats_range, "30d"
+        )
         self.assertEqual(
             parse_zmdlog_payload("名次趋势 usr_x --范围 all").stats_range, "all"
         )

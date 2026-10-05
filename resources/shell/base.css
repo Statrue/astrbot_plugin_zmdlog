@@ -89,6 +89,12 @@
   --rail-hatch: rgba(28, 32, 40, 0.22);
   --band-enemy: #d98f4e;
   --band-enemy-ink: #b8692e;
+  /* 趋势: a rank that rose (red), one that fell (green), one that held;
+     the soft ground under a rank's stepped line */
+  --rank-up: #d9675e;
+  --rank-down: #3a9e68;
+  --rank-flat: #9aa0a8;
+  --trend-area: rgba(52, 55, 61, 0.045);
   /* the potential star, the level block and the level pips */
   --star-base: #d3d6db;
   --star-shadow: rgba(30, 34, 42, 0.32);

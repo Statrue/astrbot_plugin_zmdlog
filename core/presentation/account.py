@@ -1,4 +1,4 @@
-"""One public account's best records."""
+"""One public account's best records: 账号, one wide table drawn whole."""
 
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
@@ -10,7 +10,6 @@ from .common import (
     _format_date,
     format_duration,
     format_number,
-    public_url,
 )
 
 
@@ -19,8 +18,8 @@ class AccountRankingView:
     boss_name: str
     dungeon_name: str | None
     rank: int
-    percentile: str
     duration: str
+    # The team's DPS as a whole number.
     total_dps: str
     battle_date: str
     battle_id: str
@@ -29,6 +28,7 @@ class AccountRankingView:
     # False for a 未收录榜单, a board outside 全部榜单: the index never reads
     # it, so its main C is unknown, and the page says why.
     board_listed: bool
+    # The four faces, the main C's first when it is known.
     roster: tuple[RosterEntryView, ...]
     contract_score: str | None
 
@@ -37,10 +37,11 @@ class AccountRankingView:
 class AccountPage:
     header: PageHeader
     account_id: str
-    account_url: str
     record_count: int
-    best_rank: str
-    best_percentile: str
+    # The figures card: records at 第 1, in the 前 3 and the 前 10.
+    first_places: int
+    top_three: int
+    top_ten: int
     average_percentile: str
     rows: tuple[AccountRankingView, ...]
     # Some row is a 未收录榜单, which the legend then explains; only a page
@@ -73,10 +74,6 @@ def build_account_page(
     held = rows_by_battle or {}
     rows = sorted(account.rankings, key=lambda row: (row.rank, row.boss_name))
     record_count = len(rows)
-    best_rank = f"#{min(row.rank for row in rows)}" if rows else "—"
-    best_percentile = (
-        f"{max(row.score_percent for row in rows)}%" if rows else "—"
-    )
     average_percentile = (
         f"{round(sum(row.score_percent for row in rows) / record_count)}%"
         if rows
@@ -85,6 +82,15 @@ def build_account_page(
     views: list[AccountRankingView] = []
     for row in rows:
         indexed = held.get(row.battle_id)
+        main_c = indexed.character_name if indexed is not None else ""
+        roster = _build_roster(
+            row.roster_entries
+            or (indexed.roster_entries if indexed is not None else ()),
+            row.roster_summary,
+            web_base_url=web_base_url,
+            elements=elements,
+            icons=icons,
+        )
         views.append(
             AccountRankingView(
                 boss_name=row.boss_name,
@@ -94,24 +100,17 @@ def build_account_page(
                     else None
                 ),
                 rank=row.rank,
-                percentile=f"{format_number(row.score_percent)}%",
                 duration=format_duration(row.duration_ms),
-                total_dps=format_number(row.total_dps),
+                total_dps=format_number(round(row.total_dps)),
                 battle_date=_format_date(row.battle_end_at),
                 battle_id=row.battle_id,
-                character_name=(
-                    indexed.character_name if indexed is not None else ""
-                ),
+                character_name=main_c,
                 board_listed=(
                     listed_boards is None or row.boss_slug in listed_boards
                 ),
-                roster=_build_roster(
-                    row.roster_entries
-                    or (indexed.roster_entries if indexed is not None else ()),
-                    row.roster_summary,
-                    web_base_url=web_base_url,
-                    elements=elements,
-                    icons=icons,
+                # A stable sort: the main C first, the rest in record order.
+                roster=tuple(
+                    sorted(roster, key=lambda face: face.character_name != main_c)
                 ),
                 contract_score=(
                     format_number(row.contract_tag_score)
@@ -130,14 +129,10 @@ def build_account_page(
             footer_note="公开账号 · 当前最佳记录",
         ),
         account_id=account.account_id,
-        account_url=public_url(
-            web_base_url,
-            "records",
-            account.account_id,
-        ),
         record_count=record_count,
-        best_rank=best_rank,
-        best_percentile=best_percentile,
+        first_places=sum(1 for row in rows if row.rank == 1),
+        top_three=sum(1 for row in rows if row.rank <= 3),
+        top_ten=sum(1 for row in rows if row.rank <= 10),
         average_percentile=average_percentile,
         rows=tuple(views),
         has_unlisted_boards=any(not view.board_listed for view in views),

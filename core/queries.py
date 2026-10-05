@@ -829,7 +829,6 @@ class QueryService:
             query=query,
             web_base_url=self._web_base_url,
             time_range=time_range,
-            last_checked=self._trend.last_checked(account_id),
         )
         return Outcome.image(
             rendered,

@@ -1,10 +1,16 @@
-"""Rank trend of one account, from the trace every board read keeps."""
+"""Rank trend of one account, from the trace every board read keeps.
+
+趋势 is one wide table, never paged: a row a board, its change over the
+window and the stepped line it took, with the window's dates over the
+lines; a week unless ``--范围`` asks for more (``history.DEFAULT_TREND_RANGE``).
+"""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from ..history import (
     ALL_TREND_LABEL,
+    DEFAULT_TREND_RANGE,
     AccountHistory,
     BoardHistory,
     RankPoint,
@@ -12,14 +18,7 @@ from ..history import (
     trend_window_start,
 )
 from ..timestamps import parse_timestamp
-from .common import (
-    _RANGE_LABELS,
-    PageHeader,
-    _format_date,
-    _format_datetime,
-    _format_month_day,
-    public_url,
-)
+from .common import _RANGE_LABELS, PageHeader, _format_month_day
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,17 +27,22 @@ class TrendRowView:
     dungeon_name: str
     current_rank: int
     start_rank: int
-    delta_label: str
+    # Places gained or lost over the window, never negative; 0 when flat.
+    change: int
     # "up" (rank improved), "down" (rank worsened) or "flat".
     delta_kind: str
     best_rank: int
     worst_rank: int
     # Stepped polyline in a 100×44 viewBox; time left to right, best rank up.
     polyline: str
-    # Change points as (left %, top %) for HTML-positioned dots.
+    # The ground under the line: a clip-path polygon in the chart's own %.
+    area: str
+    # Change points as (left %, top %); the one at the left edge is the
+    # rank carried into the window, not a change.
     dots: tuple[tuple[float, float], ...]
     axis_top: str
     axis_bottom: str
+    # 月-日 of the newest move, or 未变 when the rank held all window.
     last_change: str
 
 
@@ -46,15 +50,16 @@ class TrendRowView:
 class TrendPage:
     header: PageHeader
     account_id: str
-    account_url: str
     range_label: str
-    tracked_since: str
+    # 月-日 at the left and right edge of the lines.
+    window_start: str
+    window_end: str
+    # How long the trend has recorded this account, at most the 90 days kept.
     tracked_days: str
-    last_checked: str
     board_count: int
-    best_rank: str
     improved_count: int
     declined_count: int
+    flat_count: int
     rows: tuple[TrendRowView, ...]
 
 
@@ -72,11 +77,13 @@ def build_trend_page(
     *,
     query: str,
     web_base_url: str,
-    time_range: str = "30d",
+    time_range: str = DEFAULT_TREND_RANGE,
     now: datetime | None = None,
-    last_checked: str | None = None,
 ) -> TrendPage:
-    """One stepped line per board from the ranks the board reads recorded."""
+    """One stepped line per board from the ranks the board reads recorded.
+
+    Every board the window holds is a row; the page is drawn whole.
+    """
 
     current_time = now if now is not None else datetime.now(UTC)
     start = trend_window_start(time_range, now=current_time)
@@ -112,25 +119,22 @@ def build_trend_page(
             footer_note="公开账号 · 机器人每次读榜时记录的名次变化",
         ),
         account_id=history.account_id,
-        account_url=public_url(web_base_url, "records", history.account_id),
         range_label=(
             ALL_TREND_LABEL
             if time_range == "all"
             else _RANGE_LABELS.get(time_range, time_range)
         ),
-        tracked_since=(
-            _format_date(first_seen.isoformat()) if first_seen is not None else "—"
-        ),
+        window_start=_format_month_day(axis_start.isoformat()),
+        window_end=_format_month_day(current_time.isoformat()),
         tracked_days=(
             "—"
             if tracked_days is None
             else (f"{tracked_days} 天" if tracked_days >= 1 else "不足 1 天")
         ),
-        last_checked=_format_datetime(last_checked or current_time.isoformat()),
         board_count=len(rows),
-        best_rank=f"#{min(row.current_rank for row in rows)}" if rows else "—",
         improved_count=sum(1 for row in rows if row.delta_kind == "up"),
         declined_count=sum(1 for row in rows if row.delta_kind == "down"),
+        flat_count=sum(1 for row in rows if row.delta_kind == "flat"),
         rows=tuple(rows),
     )
 
@@ -169,27 +173,27 @@ def _trend_row(
     coords.append((100.0, coords[-1][1]))
     start_rank, current_rank = points[0].rank, points[-1].rank
     delta = start_rank - current_rank
-    if delta > 0:
-        kind, label = "up", f"上升 {delta}"
-    elif delta < 0:
-        kind, label = "down", f"下降 {-delta}"
-    else:
-        kind, label = "flat", "持平"
+    kind = "up" if delta > 0 else "down" if delta < 0 else "flat"
+    area = [f"{x}% {round(y / _TREND_CHART_HEIGHT * 100, 2)}%" for x, y in coords]
+    area += ["100% 100%", f"{coords[0][0]}% 100%"]
     return TrendRowView(
         boss_name=board.boss_name,
         dungeon_name=board.dungeon_name,
         current_rank=current_rank,
         start_rank=start_rank,
-        delta_label=label,
+        change=abs(delta),
         delta_kind=kind,
         best_rank=best,
         worst_rank=worst,
         polyline=" ".join(f"{x},{y}" for x, y in coords),
+        area=", ".join(area),
         dots=tuple(
             (x_of(point), round(y_of(point.rank) / _TREND_CHART_HEIGHT * 100, 2))
             for point in points
         ),
         axis_top=f"#{best}",
         axis_bottom=f"#{worst}",
-        last_change=_format_month_day(points[-1].checked_at),
+        last_change=(
+            "未变" if best == worst else _format_month_day(points[-1].checked_at)
+        ),
     )

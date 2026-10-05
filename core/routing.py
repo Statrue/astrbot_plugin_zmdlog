@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 
 from .elements import normalize_element
+from .history import DEFAULT_TREND_RANGE
 from .metrics import DEFAULT_METRIC, parse_metric_text
 from .professions import normalize_profession
 
@@ -25,8 +26,6 @@ STATS_RANGES = ("7d", "14d", "30d", "all")
 STATS_POTENTIALS = ("0", "1-5", "all")
 DEFAULT_STATS_RANGE = "all"
 DEFAULT_STATS_POTENTIAL = "all"
-# The trend page reads a local trace, so a month is a sensible default view.
-DEFAULT_TREND_RANGE = "30d"
 
 _RANKS_START_AT_ONE = "战报名次从 1 开始。"
 _BATTLE_RANK_RE = re.compile(r"^(?:第|#)?([0-9]{1,3})(?:名)?$")

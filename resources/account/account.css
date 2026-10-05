@@ -1,9 +1,6 @@
-/* 公开账号 — 两格身份条（样式在 base.css 的 identity strip 里），记录行复用 common/standings-rows.css。 */
-
-.account-identity {
-  display: grid;
-  grid-template-columns: 0.9fr 1.6fr;
-  gap: 10px;
-  margin-top: 24px;
+/* 账号: the columns. The faces get a fixed width and the board the
+   flexible one, so a long board name wraps and never pushes a row's
+   later columns out of line with the head. */
+.w-acc {
+  grid-template-columns: 64px minmax(0, 1fr) 196px 110px 100px 110px;
 }
-

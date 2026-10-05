@@ -1,60 +1,66 @@
-{% extends "common/base.html" %}
+{# 趋势: one account's rank on every board over the window, one wide
+   table drawn whole (never paged). A row: its rank now, the change (a
+   rise red, a fall green), the stepped line with an inverted triangle on
+   every move and a yellow one on the rank now, best rank up and the
+   window's dates over the column, then the newest move's date. #}
+{% extends "shell/wide-base.html" %}
+{% from "shell/wide-parts.html" import bar %}
 
-{% block extra_styles %}{% include "trend/trend.css" %}{% endblock %}
+{% block styles %}{% include "shell/wide-table.css" %}{% include "account/rows.css" %}{% include "trend/trend.css" %}{% endblock %}
 
-{% block hero_facts %}
-<div class="hero-facts">
-  <div class="hero-fact"><span>记录榜单</span><strong>{{ page.board_count }}</strong></div>
-  <div class="hero-fact hero-fact--key"><span>当前最佳</span><strong>{{ page.best_rank }}</strong></div>
-  <div class="hero-fact"><span>上升 / 下降</span><strong>{{ page.improved_count }} / {{ page.declined_count }}</strong><em>{{ page.range_label }}</em></div>
-</div>
+{% block giant %}TREND{% endblock %}
+
+{% block meta %}
+<span>{{ page.range_label }}名次变化</span>
+<span><b>{{ page.board_count }}</b> 个榜单</span>
 {% endblock %}
 
 {% block content %}
-<section class="battle-identity" aria-label="账号信息">
-  <div><span>accountId</span><code>{{ page.account_id }}</code></div>
-  <div><span>记录起点</span><strong>{{ page.tracked_since }} · {{ page.tracked_days }}</strong></div>
-  <div><span>最近检查</span><strong>{{ page.last_checked }}</strong></div>
-  <div><span>统计范围</span><strong>{{ page.range_label }}</strong></div>
-  <div class="battle-link"><span>账号主页</span><code>{{ page.account_url }}</code></div>
+{# a move's inverted triangle, its tip on the point; the rank now larger, on yellow #}
+{% macro tri(x, y, now=false) -%}
+<svg class="t-tri{% if now %} is-now{% endif %}" style="left: {{ x }}%; top: {{ y }}%;" viewBox="0 0 14 12" aria-hidden="true"><polygon points="1.5,1.5 12.5,1.5 7,10.5"/></svg>
+{%- endmacro %}
+{% set card_w = frame.width - 48 %}
+<section class="w-facts">
+  <div class="is-up"><dt>上升</dt><dd>{{ page.improved_count }}</dd></div>
+  <div class="is-down"><dt>下降</dt><dd>{{ page.declined_count }}</dd></div>
+  <div><dt>持平</dt><dd>{{ page.flat_count }}</dd></div>
+  <div><dt>已记录</dt><dd>{{ page.tracked_days }}</dd></div>
 </section>
 
-<div class="section-heading">
-  <h2>各榜单名次变化</h2>
-  <span class="section-note">折线为名次随时间的变化，越靠上名次越好 · 机器人每次读榜时比对，只在名次变化时留点</span>
-</div>
-
-{% if page.rows %}
-<section class="trend-list" aria-label="名次趋势">
-  {% for row in page.rows %}
-  <article class="trend-row is-{{ row.delta_kind }}">
-    <div class="trend-board">
-      <strong>{{ row.boss_name }}</strong>
-      <span>{{ row.dungeon_name }}</span>
+<section class="b-block">
+  {{ bar("各榜名次变化", card_w, "越靠上名次越好") }}
+  <div class="b-body w-table">
+    {% if page.rows %}
+    <div class="w-tr w-th w-trend">
+      <span>名次</span><span class="w-left">榜单</span><span>变化</span>
+      <span class="w-left t-span"><i>{{ page.window_start }}</i><i>{{ page.window_end }}</i></span>
+      <span>最近变化</span>
     </div>
-    <div class="trend-rank">
-      <span class="ranking-position{% if row.current_rank <= 3 %} is-{{ row.current_rank }}{% endif %}">#{{ row.current_rank }}</span>
-      <em class="trend-delta">{{ row.delta_label }}</em>
+    {% for row in page.rows %}
+    {% set moved = row.best_rank != row.worst_rank %}
+    <div class="w-tr w-trend is-{{ row.delta_kind }}{% if row.current_rank <= 3 %} is-top is-{{ row.current_rank }}{% endif %}">
+      <span class="w-rank"><b>{{ "%02d"|format(row.current_rank) }}</b></span>
+      <span class="w-board"><strong>{{ row.boss_name }}</strong>{% if row.dungeon_name %}<small>{{ row.dungeon_name }}</small>{% endif %}</span>
+      <span class="t-change">
+        {%- if row.delta_kind == "flat" %}—{% else %}<svg class="t-arrow" viewBox="0 0 12 10" aria-hidden="true"><polygon points="{{ '6,0 12,10 0,10' if row.delta_kind == 'up' else '0,0 12,0 6,10' }}"/></svg><b>{{ row.change }}</b>{% endif -%}
+      </span>
+      <span class="t-cell">
+        <span class="t-ax">{{ row.axis_top }}{% if moved %}<br>{{ row.axis_bottom }}{% endif %}</span>
+        <span class="t-chart">
+          {% if moved %}<i class="t-rule is-best"></i><i class="t-rule is-worst"></i>{% endif %}
+          <i class="t-area" style="clip-path: polygon({{ row.area }});"></i>
+          <svg viewBox="0 0 100 44" preserveAspectRatio="none" aria-hidden="true"><polyline class="t-line" points="{{ row.polyline }}" vector-effect="non-scaling-stroke"/></svg>
+          {% for x, y in row.dots %}{% if x > 0 %}{{ tri(x, y) }}{% endif %}{% endfor %}
+          {{ tri(100, row.dots[-1][1], now=true) }}
+        </span>
+      </span>
+      <span class="w-date">{{ row.last_change }}</span>
     </div>
-    <div class="trend-chart-wrap">
-      <div class="trend-chart-box">
-        <svg class="trend-chart" viewBox="0 0 100 44" preserveAspectRatio="none" aria-hidden="true">
-          <polyline points="{{ row.polyline }}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-        </svg>
-        {% for x, y in row.dots %}<i class="trend-dot" style="left: {{ x }}%; top: {{ y }}%;"></i>{% endfor %}
-      </div>
-      <div class="trend-axis"><span>{{ row.axis_top }}</span><span>{{ row.axis_bottom }}</span></div>
-    </div>
-    <div class="trend-facts">
-      <div><span>区间起点</span><b>#{{ row.start_rank }}</b></div>
-      <div><span>最好</span><b>#{{ row.best_rank }}</b></div>
-      <div><span>最差</span><b>#{{ row.worst_rank }}</b></div>
-      <div><span>最近变化</span><b>{{ row.last_change }}</b></div>
-    </div>
-  </article>
-  {% endfor %}
+    {% endfor %}
+    {% else %}
+    <p class="w-empty">这段时间没有名次记录</p>
+    {% endif %}
+  </div>
 </section>
-{% else %}
-<div class="empty-ranking">这段时间没有名次记录</div>
-{% endif %}
 {% endblock %}

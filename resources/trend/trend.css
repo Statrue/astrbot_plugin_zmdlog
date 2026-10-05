@@ -1,177 +1,126 @@
-.trend-list {
-  display: grid;
-  gap: 10px;
+/* 趋势: the columns, the change, and the stepped line in its cell. A rank
+   that rose is red, one that fell green (the user's rule). */
+
+.w-trend {
+  grid-template-columns: 64px 220px 70px minmax(0, 1fr) 90px;
+}
+.w-facts .is-up dd {
+  color: var(--rank-up);
+}
+.w-facts .is-down dd {
+  color: var(--rank-down);
 }
 
-.trend-row {
-  display: grid;
-  grid-template-columns: 250px 112px minmax(0, 1fr) 300px;
-  gap: 18px;
+/* the change: an arrow and the places, or a dash */
+.w-tr > .t-change {
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
-  padding: 12px 18px 12px 16px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
-}
-
-.trend-board {
-  min-width: 0;
-}
-
-.trend-board strong {
-  display: block;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: var(--fs-16);
-  font-weight: 900;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.trend-board span {
-  display: block;
-  overflow: hidden;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.trend-rank {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
-}
-
-.trend-rank .ranking-position {
-  min-width: 52px;
-  font-size: var(--fs-20);
-}
-
-.trend-rank .ranking-position.is-1::before {
-  background: var(--action);
-}
-
-.trend-rank .ranking-position.is-2,
-.trend-rank .ranking-position.is-3 {
-  color: var(--on-dark);
-}
-
-.trend-rank .ranking-position.is-2::before {
-  background: var(--ink);
-}
-
-.trend-rank .ranking-position.is-3::before {
-  background: var(--muted);
-}
-
-.trend-delta {
-  padding: 1px 6px;
-  color: var(--steel);
-  background: var(--line-soft);
-  font-size: var(--fs-11);
-  font-style: normal;
+  gap: 4px;
   font-weight: 800;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+  color: var(--rank-flat);
+}
+.t-change b {
+  font-weight: 800;
+}
+.t-arrow {
+  width: 17px;
+  height: 15px;
+  fill: currentColor;
+}
+.w-trend.is-up .t-change {
+  color: var(--rank-up);
+}
+.w-trend.is-down .t-change {
+  color: var(--rank-down);
 }
 
-/* 红涨绿跌：the user reads rank moves the way the A-share market colours
-   them, so an improvement is red and a drop is green — not the design
-   system's danger red for a drop. */
-.is-up .trend-delta {
-  color: var(--on-dark);
-  background: var(--danger);
-}
-
-.is-down .trend-delta {
-  color: var(--on-dark);
-  background: var(--green);
-}
-
-/* ---------- stepped chart ---------- */
-
-.trend-chart-wrap {
+/* the window's dates over the lines, clear of the rank labels */
+.w-tr.w-th > .t-span {
   display: flex;
-  align-items: stretch;
-  gap: 10px;
-  height: 58px;
-  color: var(--steel);
+  justify-content: space-between;
+  padding: 0 8px 0 64px;
+}
+.t-span i {
+  font-style: normal;
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: var(--fs-15);
 }
 
-.is-up .trend-chart-wrap {
-  color: var(--danger);
+/* the cell: #best over #worst, then the line */
+.w-tr > .t-cell {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
 }
-
-.is-down .trend-chart-wrap {
-  color: var(--green);
+.t-ax {
+  text-align: right;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-15);
+  line-height: 1.7;
+  color: var(--ink-2);
 }
-
-.trend-chart-box {
+.t-chart {
   position: relative;
-  flex: 1;
-  min-width: 0;
-  background:
-    linear-gradient(var(--line-soft), var(--line-soft)) 0 50% / 100% 1px no-repeat;
-}
-
-.trend-chart {
   display: block;
+  height: 34px;
+  margin: 4px 8px 4px 0;
+}
+.t-chart > * {
+  position: absolute;
+}
+.t-chart svg {
+  inset: 0;
   width: 100%;
   height: 100%;
   overflow: visible;
 }
-
-.trend-dot {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  margin: -4px 0 0 -4px;
-  border: 2px solid var(--card);
-  border-radius: 50%;
-  background: currentColor;
+/* the best and the worst rank's levels, 6 and 38 of the line's 44 */
+.t-rule {
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--rail-line);
+}
+.t-rule.is-best {
+  top: 13.64%;
+}
+.t-rule.is-worst {
+  top: 86.36%;
+}
+.t-area {
+  inset: 0;
+  background: var(--trend-area);
+}
+.t-line {
+  fill: none;
+  stroke: var(--who-bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 
-.trend-axis {
-  display: flex;
-  flex: 0 0 40px;
-  flex-direction: column;
-  justify-content: space-between;
-  color: var(--muted);
-  font-family: var(--font-num);
-  font-size: var(--fs-11);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  line-height: 1;
+/* a move: an inverted triangle, its centre on the point */
+.t-chart .t-tri {
+  inset: auto;
+  width: 14px;
+  height: 12px;
+  transform: translate(-50%, -50%);
 }
-
-.trend-facts {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+.t-tri polygon {
+  fill: var(--card);
+  stroke: var(--who-bg);
+  stroke-width: 2.2;
+  stroke-linejoin: miter;
 }
-
-.trend-facts span {
-  display: block;
-  color: var(--muted);
-  font-size: var(--fs-10);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
+.t-chart .t-tri.is-now {
+  width: 20px;
+  height: 17px;
 }
-
-.trend-facts b {
-  display: block;
-  overflow: hidden;
-  margin-top: 3px;
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: var(--fs-15);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.t-tri.is-now polygon {
+  fill: var(--yellow);
+  stroke-width: 2;
 }

@@ -170,7 +170,22 @@ class StandingsPageTests(unittest.TestCase):
         self.assertEqual(len(page.rows[0].roster), 4)
         self.assertEqual(page.absent, ())
 
-    def test_the_template_renders_the_rows_and_the_folded_boards(self) -> None:
+    def test_each_row_leads_with_its_own_main_c(self) -> None:
+        standings = character_standings(self.rankings, self.name)
+
+        page = build_character_standings_page(
+            standings, query=self.name, web_base_url=WEB
+        )
+
+        for row in page.rows:
+            self.assertEqual(row.roster[0].character_name, row.character_name)
+        self.assertEqual(
+            (page.first_places, page.appearances, page.absent_count),
+            (2, standings.appearances, 0),
+        )
+        self.assertEqual(page.metric_label, "DPS")
+
+    def test_the_template_is_a_wide_table_with_the_folded_boards_last(self) -> None:
         standings = character_standings(self.rankings[:1], self.name)
         standings_absent = character_standings(self.rankings, "没有这个人")
         renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
@@ -182,13 +197,21 @@ class StandingsPageTests(unittest.TestCase):
             standings_absent, query="没有这个人", web_base_url=WEB
         )
 
-        self.assertIn("各榜单最好名次", html)
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn('class="zmd-main"', html)
+        self.assertIn(">STANDINGS<", html)
+        self.assertIn(f'<h1 class="i-title">{self.name}</h1>', html)
+        self.assertIn(f"带 {self.name}的队伍", html)
+        self.assertIn("各榜最好记录", html)
         self.assertIn("三位一体", html)
+        self.assertIn(f"<small>/ {len(self.rankings[0].rows)}</small>", html)
         self.assertNotIn("时效", html)
-        self.assertIn("没有出场", empty)
-        self.assertIn("罗丹", empty)
+        # Never paged; the boards without the character are chips at the end.
+        self.assertIn("没有带 没有这个人的记录", empty)
+        self.assertIn("<span>罗丹</span>", empty)
+        self.assertIn("读过的榜单里没有带 没有这个人的公开记录", empty)
 
-    def test_a_team_page_names_every_member_and_highlights_each(self) -> None:
+    def test_a_team_page_rings_only_each_records_main_c(self) -> None:
         both = character_standings(self.rankings, "卡缪", "洛茜")
         renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
 
@@ -202,13 +225,11 @@ class StandingsPageTests(unittest.TestCase):
         self.assertEqual(page.character_name, "卡缪 · 洛茜")
         self.assertEqual(page.character_names, ("卡缪", "洛茜"))
         self.assertEqual(page.team_label, "同时带 卡缪 · 洛茜")
-        self.assertEqual(page.character_initial, "卡")
-        self.assertIn("同时带这些角色的队伍", html)
-        self.assertIn("每个榜同时带 卡缪 · 洛茜的最好一条公开记录", html)
-        # Both names are highlighted in the roster, whichever one is main C
-        # (the class ends the attribute, which keeps the stylesheet out).
-        self.assertEqual(html.count('is-match">'), 2 * len(page.rows))
-
+        self.assertIn("同时带 卡缪 · 洛茜的队伍", html)
+        # One yellow ring a row, its record's main C; the names asked about
+        # get nothing special.
+        self.assertEqual(html.count("i-face is-lead"), len(page.rows))
+        self.assertNotIn("is-match", html)
 
 if __name__ == "__main__":
     unittest.main()

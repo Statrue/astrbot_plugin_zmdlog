@@ -1,78 +1,61 @@
-{% extends "common/base.html" %}
-{% from "common/member-face.html" import render_member_face %}
+{# 账号: one public account's best record on every board, one wide table
+   drawn whole (never paged). The figures card counts its 第 1 / 前 3 /
+   前 10 and the average percentile; a row is the record's rank there, the
+   board and its dungeon, the team with its main C first on the yellow
+   ring, the time (a 危机合约 record's score, the time under it), the DPS
+   and the date. #}
+{% extends "shell/wide-base.html" %}
+{% from "shell/parts.html" import face %}
+{% from "shell/wide-parts.html" import bar %}
 
-{% block extra_styles %}{% include "common/standings-rows.css" %}{% include "account/account.css" %}{% endblock %}
+{% block styles %}{% include "shell/wide-table.css" %}{% include "account/rows.css" %}{% include "account/account.css" %}{% endblock %}
 
-{% block hero_facts %}
-<div class="hero-facts">
-  <div class="hero-fact"><span>上榜记录</span><strong>{{ page.record_count }}</strong></div>
-  <div class="hero-fact hero-fact--key"><span>最佳名次</span><strong>{{ page.best_rank }}</strong></div>
-  <div class="hero-fact"><span>最佳百分位</span><strong>{{ page.best_percentile }}</strong></div>
-  <div class="hero-fact"><span>已上榜平均</span><strong>{{ page.average_percentile }}</strong></div>
-</div>
+{% block giant %}ACCOUNT{% endblock %}
+
+{% block meta %}
+<span>各首领最佳</span>
+<span><b>{{ page.record_count }}</b> 条上榜记录</span>
+<span>DPS 口径</span>
 {% endblock %}
 
 {% block content %}
-<section class="account-identity" aria-label="公开账号信息">
-  <div><span>accountId</span><code>{{ page.account_id }}</code></div>
-  <div><span>账号主页</span><code>{{ page.account_url }}</code></div>
+{% set card_w = frame.width - 48 %}
+<section class="w-facts">
+  <div class="is-key"><dt>第 1</dt><dd>{{ page.first_places }}</dd></div>
+  <div><dt>前 3</dt><dd>{{ page.top_three }}</dd></div>
+  <div><dt>前 10</dt><dd>{{ page.top_ten }}</dd></div>
+  <div><dt>平均百分位</dt><dd>{{ page.average_percentile }}</dd></div>
 </section>
 
-<div class="section-heading">
-  <h2>各首领最佳记录</h2>
-  <span class="section-note">每个榜单该账号的最好一条公开记录，按名次排 · 名次是该记录在该榜全部记录中的位置</span>
-</div>
-
-{% if page.rows %}
-<section class="standings">
-  <div class="standings-head" aria-hidden="true">
-    <span class="standings-head-rank">名次 · 百分位</span>
-    <span class="standings-head-board">榜单 · 阵容</span>
-    <span class="standings-head-record">记录</span>
-    <span class="standings-head-time">用时</span>
-    <span class="standings-head-dps">DPS</span>
-  </div>
-  <ol class="standings-rows">
+<section class="b-block">
+  {{ bar("各首领最佳记录", card_w, "名次为该记录在该榜全部记录中的位置") }}
+  <div class="b-body w-table">
+    {% if page.rows %}
+    <div class="w-tr w-th w-acc">
+      <span>名次</span><span class="w-left">榜单</span><span class="w-left">阵容</span><span>用时</span><span>DPS</span><span>日期</span>
+    </div>
     {% for row in page.rows %}
-    <li class="standings-row rank-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
-      <div class="standings-rank">
-        <b>{{ row.rank }}</b>
-        <i>{{ row.percentile }}</i>
-      </div>
-      <div class="standings-board">
-        <strong>{{ row.boss_name }}</strong>
-        {% if row.dungeon_name %}<span>{{ row.dungeon_name }}</span>{% endif %}
-      </div>
-      <div class="standings-record">
-        <strong>{% if row.character_name %}主 C {{ row.character_name }}{% elif row.board_listed %}主 C 未知{% else %}未收录榜单{% endif %}</strong>
-        <span>战斗日期 <b>{{ row.battle_date }}</b>{% if row.contract_score %} · 合约 <b>{{ row.contract_score }} 分</b>{% endif %}</span>
-      </div>
-      <div class="standings-time">
-        <span>用时</span>
-        <b>{{ row.duration }}</b>
-      </div>
-      <div class="standings-dps">
-        <span>DPS</span>
-        <b>{{ row.total_dps }}</b>
-      </div>
-      <div class="standings-team">
-        {% for member in row.roster %}
-        <span class="team-member{% if row.character_name and member.character_name == row.character_name %} is-lead{% endif %}">
-          {{ render_member_face(member) }}
-          {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
-        </span>
-        {% endfor %}
-      </div>
-      <div class="standings-battle">{{ row.battle_id }}</div>
-    </li>
+    <div class="w-tr w-acc{% if row.rank <= 3 %} is-top is-{{ row.rank }}{% endif %}">
+      <span class="w-rank"><b>{{ "%02d"|format(row.rank) }}</b></span>
+      <span class="w-board"><strong>{{ row.boss_name }}</strong>
+        {%- if row.dungeon_name or not row.board_listed %}<small>{{ row.dungeon_name or "" }}{% if row.dungeon_name and not row.board_listed %} · {% endif %}{% if not row.board_listed %}未收录榜单{% endif %}</small>{% endif -%}
+      </span>
+      <span class="w-faces">{% for member in row.roster %}{{ face(member, lead=row.character_name and member.character_name == row.character_name, size="w-face-t") }}{% endfor %}</span>
+      {% if row.contract_score %}
+      <span class="w-time"><b>{{ row.contract_score }}<small>分</small></b><small>{{ row.duration }}</small></span>
+      {% else %}
+      <span class="w-time"><b>{{ row.duration }}</b></span>
+      {% endif %}
+      <span class="w-muted">{{ row.total_dps }}</span>
+      <span class="w-date">{{ row.battle_date }}</span>
+    </div>
     {% endfor %}
-  </ol>
-  <p class="board-legend">
-    阵容里加粗的是该场主 C，头像下的数字是 潜能+精炼（? 为武器未记录）；名次下方为 ZMDLogs 公开排名的百分位；用时为通关时间，DPS 为整队合计{% if page.has_unlisted_boards %}；未收录榜单（ZMDLogs 榜单列表里没有的榜）不标主 C{% endif %}。
-    <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
-  </p>
+    {% if page.has_unlisted_boards %}
+    <p class="w-empty">未收录榜单是 ZMDLogs 榜单列表里没有的榜，不标主 C。</p>
+    {% endif %}
+    {% else %}
+    <p class="w-empty">该账号暂无当前公开榜单记录</p>
+    {% endif %}
+  </div>
 </section>
-{% else %}
-<div class="empty-ranking">该账号暂无当前公开榜单记录</div>
-{% endif %}
 {% endblock %}

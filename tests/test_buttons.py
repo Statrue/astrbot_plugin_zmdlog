@@ -284,8 +284,8 @@ class RoundTripTests(unittest.TestCase):
                 self.assertEqual(route.compare_rank, rank)
 
     def test_trend_writes_its_range_only_off_its_own_default(self) -> None:
-        # 趋势 defaults to 30 days, not to the whole history.
-        for stats_range, written in (("30d", False), ("7d", True), ("all", True)):
+        # 趋势 defaults to a week, not to the whole history.
+        for stats_range, written in (("7d", False), ("30d", True), ("all", True)):
             with self.subTest(stats_range=stats_range):
                 entry = entry_for(
                     CandidateView.TREND,

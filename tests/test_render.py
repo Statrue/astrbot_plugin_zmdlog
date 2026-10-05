@@ -19,6 +19,7 @@ from core.models import (
 )
 from core.presentation import (
     PresentationError,
+    build_account_page,
     build_dungeon_top3_page,
     build_ranking_page,
     format_duration,
@@ -292,23 +293,89 @@ class TemplateRendererTests(unittest.TestCase):
         )
         self.assertNotIn("astrbot_plugin_zmdbot", metadata)
 
-    def test_account_page_shows_exact_identity_and_best_records(self) -> None:
+    def test_account_is_a_wide_table_of_every_record(self) -> None:
         payload = public_user_rankings_payload()
         payload["accountDisplayName"] = "测试<script>账号"
+        base = payload["rankings"][0]
+        long_board = "终末地藕粉铺子凹分研究所特别行动小组的超长首领名字"
+        payload["rankings"] = [
+            {
+                **base,
+                "rank": rank,
+                "scorePercent": 100 - rank,
+                "bossSlug": f"slug{rank}",
+                "bossName": long_board if rank == 15 else f"首领{rank}",
+                "battleId": f"btl_upload_{rank:012d}",
+            }
+            for rank in range(1, 16)
+        ]
         account = parse_public_user_rankings(payload)
 
+        page = build_account_page(
+            account, query="usr_1234567890abcdef", web_base_url="https://zmdlogs.com"
+        )
         html = self.renderer.render_account(
             account,
             query="usr_1234567890abcdef",
             web_base_url="https://zmdlogs.com",
         )
 
-        self.assertIn("测试&lt;script&gt;账号", html)
-        self.assertIn("usr_1234567890abcdef", html)
-        self.assertIn("https://zmdlogs.com/records/usr_1234567890abcdef", html)
-        self.assertIn("110,061.2", html)
-        self.assertIn("DPS 为整队合计", html)
-        self.assertIn("95%", html)
+        # The figures card: 第 1 / 前 3 / 前 10 / 平均百分位.
+        self.assertEqual(
+            (page.first_places, page.top_three, page.top_ten), (1, 3, 10)
+        )
+        self.assertEqual(page.average_percentile, "92%")
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn('class="zmd-main"', html)
+        self.assertIn(">ACCOUNT<", html)
+        self.assertIn('<h1 class="i-title">测试&lt;script&gt;账号</h1>', html)
+        self.assertIn("<dt>平均百分位</dt><dd>92%</dd>", html)
+        # Never paged: every record is a row, a long board name whole.
+        self.assertEqual(html.count('class="w-tr w-acc'), 15)
+        self.assertIn(f"<strong>{long_board}</strong>", html)
+        self.assertIn("<small>危境再现·罗丹</small>", html)
+        # 用时 on yellow, DPS whole, the battle's date.
+        self.assertIn('<span class="w-time"><b>0:20.833</b></span>', html)
+        self.assertIn(">110,061<", html)
+        self.assertNotIn("110,061.2", html)
+        self.assertIn(">2026-07-13<", html)
+        self.assertNotIn("scene-background", html)
+
+    def test_account_rows_lead_with_the_main_c_and_a_contract_scores(self) -> None:
+        payload = public_user_rankings_payload()
+        payload["rankings"][0]["contractTagScore"] = 36
+        account = parse_public_user_rankings(payload)
+        (record,) = account.rankings
+        held = replace(
+            self._board(1).rows[0],
+            battle_id=record.battle_id,
+            character_name="卡缪",
+        )
+
+        page = build_account_page(
+            account,
+            query="q",
+            web_base_url="https://zmdlogs.com",
+            rows_by_battle={record.battle_id: held},
+        )
+        html = self.renderer.render_account(
+            account,
+            query="q",
+            web_base_url="https://zmdlogs.com",
+            rows_by_battle={record.battle_id: held},
+        )
+
+        self.assertEqual(
+            [face.character_name for face in page.rows[0].roster],
+            ["卡缪", "洛茜", "洁尔佩塔", "佩丽卡"],
+        )
+        self.assertEqual(html.count("i-face is-lead"), 1)
+        # A 危机合约 record puts its score where the time goes, the time under.
+        self.assertIn(
+            '<span class="w-time"><b>36<small>分</small></b>'
+            "<small>0:20.833</small></span>",
+            html,
+        )
 
     def test_a_board_outside_the_board_list_is_unlisted_never_retired(self) -> None:
         # Upstream cannot tell whether a board it no longer lists is retired:
@@ -327,13 +394,12 @@ class TemplateRendererTests(unittest.TestCase):
         unlisted = drawn("dung01_group_bossrush02")
         listed = drawn("dung01_group_bossrush02", record.boss_slug)
 
-        self.assertIn("<strong>未收录榜单</strong>", unlisted)
+        self.assertIn("<small>危境再现·罗丹 · 未收录榜单</small>", unlisted)
         self.assertNotIn("下线", unlisted)
-        # The legend explains the term only on a page that prints it.
+        # The note explains the term only on a page that prints it.
         self.assertIn("不标主 C", unlisted)
         self.assertNotIn("未收录榜单", listed)
         self.assertNotIn("不标主 C", listed)
-        self.assertIn("<strong>主 C 未知</strong>", listed)
 
     def test_the_battle_summary_is_a_wide_page_on_the_new_shell(self) -> None:
         battle = parse_battle_detail(battle_detail_payload())
@@ -1027,6 +1093,9 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page_frame("battle"), WIDE_FRAME)
         self.assertEqual(page_frame("battle-cast"), WIDE_FRAME)
         self.assertEqual(page_frame("battle-build"), WIDE_FRAME)
+        # 账号, 趋势 and 角色排名 <角色>: one wide table each, never paged.
+        for kind in ("account", "trend", "character-standings"):
+            self.assertEqual(page_frame(kind), WIDE_FRAME)
         # Pages not yet on the V2 shell keep the old frame.
         self.assertEqual(page_frame("compare"), LEGACY_FRAME)
         self.assertEqual((LEGACY_FRAME.width, LEGACY_FRAME.scale), (1280, 1))

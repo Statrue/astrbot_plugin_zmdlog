@@ -1,0 +1,7 @@
+/* 角色排名 <角色>: the columns. The faces get a fixed width and the
+   account, the last text column, the flexible one, so a long name wraps
+   and never pushes a row's columns out of line with the head. */
+.w-std {
+  grid-template-columns: 86px 196px 196px 100px 84px minmax(0, 1fr);
+  gap: 14px;
+}
