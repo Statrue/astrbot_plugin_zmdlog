@@ -156,7 +156,8 @@ rather than a decorator. All of them run through one error guard,
   render without. A hit's crit roll that is unreadable or self-contradictory
   lowers 暴击期望's coverage; it never withholds the section, which is where
   `crit` departs from the site on purpose. Raw item ids are never printed as
-  names (`is_raw_item_name` → 名称未收录); a raw buff key prints its effect
+  names (`is_raw_item_name` → 名称未收录), nor is a weapon 词条's key
+  (`weapon_affix_name`); a raw buff key prints its effect
   instead of the key.
 - **Top-3 pages must not leak ranking-only fields** (slug, percentile, DPS,
   roster, links) — enforced by
@@ -201,7 +202,8 @@ rather than a decorator. All of them run through one error guard,
   denial of service.
 - **`core/presentation/` dependency direction is
   common ← charts ← rail ← battle ← compare, never back**; `battle_data`
-  (数据) hangs off `battle` beside `compare`, and neither imports the other.
+  (数据) and `build` (养成) hang off `battle` beside `compare`, and none of
+  the three imports another.
 - **The LLM tool surface is four tools, one per subject** (榜单 / 战报 / 角色 /
   账号), never one per feature — README's 大模型工具 section states the four
   design rules and their reasons. What follows from them when extending:
@@ -247,10 +249,8 @@ when the user settled the question.
 - **A battle's pages name one another from one table** (2026-10-05):
   `core/battle_views` lists 摘要 and the 详细视图 in the order the foot's strip
   prints them, and the QQ official bot's buttons under the picture are exactly
-  the strip's other entries, by the same names. A view joins the table when
-  its V2 page lands; until then neither strip nor buttons offer it, even where
-  its pre-1.3.0 page still answers its old command — those pages keep their
-  old buttons, which reach the V2 pages under the strip's names.
+  the strip's other entries, by the same names. A view a battle lacks the
+  data for (no skill statistics, no casts, no roster) is left out of both.
 - **Elements get rings and a filter, nothing else** (2026-09-06): no element
   chip, no element text, no element statistics page. The main C wears no ring of
   its own — the row prints 主 C by name — so a ring there only cost the element
@@ -282,7 +282,7 @@ when the user settled the question.
   no longer records that; a file that still has the list loads without it.
 - **Cross-boss battle comparison is meaningless** and answers in text: every
   boss has its own rotation.
-- **In a comparison, A keeps the order its own 配装 page shows and B is matched
+- **In a comparison, A keeps the order its own 养成 page shows and B is matched
   to it.** Sorting both sides aligned them but left neither matching the page a
   reader cross-checks against.
 - **玩家排名** was named 玩家冠军榜 on 2026-09-06 (榜霸榜 rejected), then renamed

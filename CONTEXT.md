@@ -33,6 +33,13 @@ _Avoid_: 潜力, 星级
 A weapon's refinement rank, 1–6. Printed as `精炼 N` on the battle card.
 _Avoid_: 精炼等级, 武器等级, 突破
 
+**词条**:
+One of a weapon's two attribute lines, named as the game names it
+(`敏捷提升·大`): 词条 1 the base attribute, 词条 2 the second. Beside them
+the 养成 page draws the weapon's own skill as **武器技能**, whose level the
+精炼 caps (精炼 + 3). A line the bot cannot name is 名称未收录.
+_Avoid_: 副词条, 武器属性
+
 **养成**:
 How far one fielded character is built: its level, 潜能, 精炼, skill
 levels, weapon and gear — everything the 养成 view of a battle draws. Its

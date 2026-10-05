@@ -237,7 +237,7 @@ below) for every character to 3–4 decimals: 莱万汀 0.0547 against 0.055.
 `characterLevel`, `characterPotential`,
 `weapon{weaponName, weaponLevel (often null/0), weaponRefine, iconUrl, skills[{skillKey, level, potentialLevel}]}`
 where `sk_wpn_*` is the weapon's own skill and `wpn_attr_*` / `wpn_sp_attr_*`
-are affixes, `equips[]` (4 pieces: 护手 / 护甲 / 配件 ×2) and
+are affixes (词条, below), `equips[]` (4 pieces: 护手 / 护甲 / 配件 ×2) and
 `skills[{skillKey, level}]` (`_attack1..5`, `_normal_skill`, `_combo_skill`,
 `_ultimate_skill`, talents at level 1).
 
@@ -279,6 +279,31 @@ belongs to no suit.
 
 Older uploads (crisis-contract era, parser < v34) have empty weapon skills /
 stats / enhance lists.
+
+**Weapon 词条 keys carry no name; the key spells it** (2026-10-05). A
+weapon's `skills[]` hold three entries in no fixed order — `wpn_sp_attr_*`,
+`sk_wpn_<template>`, `wpn_attr_*` is how `btl_upload_c5cf4810aa09` sends them.
+`wpn_attr_{stat}_{tier}` is the base attribute (词条 1) and
+`wpn_sp_attr_{kind}_{tier}` the second (词条 2); the tier is `low` / `mid` /
+`high` = 小 / 中 / 大. The names are the game data catalog's: each weapon's
+`skilllist` in `/api/game-data/weapon/{id}` lists the two 词条 by name with
+the stat they raise as the blackboard key, which the skill catalog's
+`binaryProbe` hints tie to the key. Stats: `str` 力量, `agi` 敏捷, `wisd`
+智识, `will` 意志, `main` 主能力; kinds: `atk` 攻击, `hp` 生命, `heal` 治疗效率,
+`crirate` 暴击率, `usgs` 终结技充能效率 (not 源石技艺), `phy_spell` 源石技艺强度,
+`phydam` / `firedam` / `crystdam` / `electrondam` / `naturaldam` 物理 / 灼热 /
+寒冷 / 电磁 / 自然伤害, and `magicdam` 法术 — the catalog's name is 法术提升
+though it raises 法术伤害. Each name is `<stat>提升·<tier>`. On 120 board
+battles every key seen named the same catalog name every time. `cridmg`
+(`wpn_sp_attr_cridmg_high`) is in the skill catalog but on no battle and on no
+weapon whose detail answers, so 暴击伤害 is **inferred**. The skill catalog
+also lists `wpn_sk_atk` / `wpn_sk_cscd` / `wpn_sk_ussp` and
+`wpn_sp_normalattack_high`, never seen on a battle and named nowhere; the
+plugin prints any key it cannot name as 名称未收录. The weapon skill's level
+is capped by the 精炼: 精炼 r allows r + 3 (the boards: 精炼 1 at 4, 6 at 9,
+2–5 at 5–8), though 3 of 399 board weapons at 精炼 1 carried a level of 5 or
+8. The weapon skill's own name (`skilllist`'s last entry) is the catalog's
+only; the battle has none.
 
 ### `roleSkillStats[]`
 
@@ -629,7 +654,11 @@ whether a character has 角色统计. Three entries are named 管理员
 
 Sibling modules: `character` (33), `weapon` (79), `enemy` (92), `dungeon` (94),
 `buff`, `skill`, `attribute_type`. The detail routes
-(`/api/game-data/{kind}/{id}`) answer 503 `catalog_data_missing`.
+(`/api/game-data/{kind}/{id}`) answered 503 `catalog_data_missing` when first
+tried; on 2026-10-05 `weapon/{id}` answered for 72 of the 80 weapons it then
+listed (the other 8 still 503), with `detail.skilllist[{skillName,
+description, blackboard}]` — the 词条 names above. Python urllib's default
+User-Agent got 403 there; curl's did not.
 
 `GET /api/game-semantics/*` and `/api/game-semantics/hints/*` are live too but
 **not worth using**: their ids are internal `abilityentity_*` keys with mostly
