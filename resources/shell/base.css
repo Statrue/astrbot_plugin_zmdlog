@@ -155,6 +155,8 @@
   --comic-hatch: rgba(255, 255, 255, 0.85);
   --comic-foot-pill: rgba(120, 124, 132, 0.82);
   --comic-sticker-shadow: rgba(29, 79, 108, 0.25);
+  /* the 顶屁股通告's ▼ before → after: the green of a place lost */
+  --comic-down: #3a9e68;
   --font-cjk: "Noto Sans SC", "Source Han Sans SC", "PingFang SC",
     "Microsoft YaHei", sans-serif;
   --font-body: "Barlow", var(--font-cjk);

@@ -18,6 +18,11 @@
 - 用途：帮助页上的五个 Q 版小人（持矛的猫耳、冰淇淋、抱臂、挥手、举团子），渲染时由 `core/render.py` 以 data URL 内嵌进页面，不在截图时联网取。
 - 来源：用户提供的《加油吧！终末地》官方 Q 版贴纸（鹰角网络），在 V2 原型中切成单张（`prototype/frontend_v2/chibi.py`），再按各自在页面上的 CSS 宽度的 2 倍缩放、存为 WebP（质量 86），共约 106 KB。版权归鹰角所有，不在本仓库的 MIT 许可范围内；用户确认不另做许可审查。
 
+## `../notice/chibi-*.webp`
+
+- 用途：顶屁股通告页头的两个 Q 版小人——左边吃惊的女孩（`chibi-surprised.webp`，页面上 200 px 宽），右边猫耳女孩连同她踢人的想象气泡（`chibi-dreaming.webp`，250 px 宽）。后者是**一张图**：原型试过把人物和气泡拆成两张，拆开就不成一对了，不要再拆。渲染时由 `core/render.py` 以 data URL 内嵌进页面，不在截图时联网取。
+- 来源：与帮助页的小人同一份用户提供的《加油吧！终末地》官方 Q 版贴纸（鹰角网络），在 V2 原型中切出（`prototype/frontend-v2` 分支 `289b2c9` 的 `assets/chibi/notice-left.png` / `notice-right.png`），再按页面上 CSS 宽度的 2 倍（400 / 500 px）缩放、存为 WebP（质量 86），共约 105 KB。版权与许可同上。
+
 ## `fonts/*.woff2`
 
 由 `tools/build_fonts.py` 从上游字体子集化生成（GB2312 全集 6763 字 + 模板固定文案；拉丁字体只保留 ASCII 与常用符号）。渲染时页面通过保留域名 `https://fonts.zmdlog.invalid` 引用它们，由 Playwright 路由从内存直接返回；只有退回 AstrBot 文转图时才以 data URL 内嵌（见 `core/render.py`）。

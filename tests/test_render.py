@@ -172,6 +172,115 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn("获取群内全部消息", official)
         self.assertIn("机器人主动在群聊内发言", official)
 
+    def _notice_batch(self):
+        """A #1 changing hands, a #3 entering, a contract board's #6."""
+
+        from core.board_changes import NoticeEntry, PushedAccount
+
+        def row(rank, name, **fields):
+            return BossRankingRow(
+                rank=rank,
+                score_percent=100,
+                battle_id=f"btl_upload_{rank:04d}",
+                battle_end_at="2026-10-05T10:20:00+08:00",
+                character_name="莱万汀",
+                character_profession="术士",
+                account_id=f"usr_{rank}",
+                account_display_name=name,
+                dps=fields.pop("dps", 61_204.77),
+                duration_ms=fields.pop("duration_ms", 33_391),
+                roster_summary=(),
+                roster_entries=(),
+                character_avatar_url="/images/character/charremoteicon/icon_x.png",
+                **fields,
+            )
+
+        def entry(slug, boss, dungeon, rank, name, pushed, **fields):
+            return NoticeEntry(
+                boss_slug=slug,
+                boss_name=boss,
+                dungeon_name=dungeon,
+                seen_at="2026-10-05T02:38:00+00:00",
+                rank=rank,
+                record=row(rank, name, **fields),
+                pushed=tuple(
+                    PushedAccount(record=row(after, who), before=before, after=after)
+                    for who, before, after in pushed
+                ),
+            )
+
+        return (
+            entry("a", "白刃穿水·残酷", "战争回响", 1, "BlazeR",
+                  (("華鳥風月", 1, 2), ("Yanxi", 2, 3))),
+            entry("b", "危境再现·罗丹", "危境再现", 3, "dusk・&華鳥風月",
+                  (("duck", 3, 4), ("吆一二三", 10, 11))),
+            entry("indie_group_ccdg", "破潮之像", "危机合约", 6, "克劳德",
+                  (("cordy5134", 9, 10),), contract_tag_score=47,
+                  duration_ms=382_451),
+        )
+
+    def _render_notice(self, **kwargs) -> str:
+        return self.renderer.render_notice(
+            self._notice_batch(),
+            window_start="2026-10-05T02:30:00+00:00",
+            window_end="2026-10-05T02:45:00+00:00",
+            top_n=10,
+            web_base_url="https://zmdlogs.com",
+            **kwargs,
+        )
+
+    def test_notice_is_a_wide_comic_page_with_its_chibis_embedded(self) -> None:
+        from core.render import page_frame
+
+        html = self._render_notice()
+
+        self.assertEqual(page_frame("notice"), WIDE_FRAME)
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn('class="zmd-main comic-ground', html)
+        self.assertIn('aria-label="顶屁股通告"', html)
+        self.assertIn("3 个榜单有新纪录", html)
+        self.assertIn("10:30 – 10:45 · 前 10 名的变动", html)
+        self.assertIn("OOPS!", html)
+        self.assertIn("数据来源 ZMDLogs", html)
+        version = read_plugin_version(self.root / "metadata.yaml")
+        self.assertIn(f"v{version}", html)
+        # The surprised girl and the cat with her dream, one picture each,
+        # travel inside the page.
+        chibis = re.findall(
+            r'<img class="comic-chibi[^"]*" src="data:image/webp;base64,', html
+        )
+        self.assertEqual(len(chibis), 2)
+        linked = self._render_notice(embed_fonts=False)
+        self.assertLess(len(linked), 300_000)
+
+    def test_notice_draws_one_card_a_board_with_its_record_and_whom_it_pushed(
+        self,
+    ) -> None:
+        html = self._render_notice()
+
+        self.assertEqual(html.count('class="comic-card notice-card'), 3)
+        self.assertIn('data-ch="白刃穿水·残酷"', html)
+        self.assertIn('data-ch="危机合约"', html)
+        self.assertIn('data-ch="#1"', html)
+        self.assertIn('data-ch="#3"', html)
+        # One new champion, two plain new records.
+        self.assertEqual(html.count(">新冠军!<"), 1)
+        self.assertEqual(html.count(">NEW!<"), 2)
+        # 用时 and DPS; the contract board's score and 用时 instead.
+        self.assertIn("0:33.391", html)
+        self.assertIn("DPS 61,205", html)
+        self.assertIn("47 分", html)
+        self.assertIn("用时 6:22.451", html)
+        # Whom each pushed down, and the one who fell out of the top 10.
+        self.assertEqual(html.count("被顶下去的"), 3)
+        self.assertIn("華鳥風月", html)
+        self.assertIn("10 → 11", html)
+        self.assertEqual(html.count("跌出前 10"), 1)
+        # The uploader is named; the main C's face says who, not a word.
+        self.assertIn("dusk・&amp;華鳥風月", html)
+        self.assertNotIn("主 C", html)
+        self.assertIn("https://zmdlogs.com/images/character/", html)
+
     def test_metadata_uses_current_plugin_identity(self) -> None:
         metadata = (self.root / "metadata.yaml").read_text(encoding="utf-8")
 

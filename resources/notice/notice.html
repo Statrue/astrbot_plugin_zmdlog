@@ -1,0 +1,95 @@
+{# 顶屁股通告 (#52), the prototype's approved comic page (289b2c9): one
+   chat's batch of board notices. The white top with the chunky title
+   between the user's two chibis — surprised on the left, the cat with
+   her dream of a kick on the right, one picture — the pill counting the
+   boards and the interval; below, a sticker card a board on the yellow
+   ground, two abreast as the builder dealt them: each new record (its
+   place, the main C's face, who, how fast) and whom it pushed down;
+   OOPS! at the foot. Shares the comic kit with 帮助. #}
+{% extends "shell/base.html" %}
+{% from "shell/comic.html" import brand, letter, tick, pill, scribble, dots, chibi, card, foot %}
+
+{% block styles %}{% include "shell/comic.css" %}{% include "notice/notice.css" %}{% endblock %}
+{% block root_class %}comic{% endblock %}
+
+{# A round face, its initial under it should the picture not load. #}
+{% macro face(f, cls) -%}
+<span class="notice-face {{ cls }}"><span class="notice-initial">{{ f.initial }}</span>{% if f.avatar_url %}<img src="{{ f.avatar_url }}" alt="" onerror="this.remove()">{% endif %}</span>
+{%- endmacro %}
+
+{% block root %}
+{% set tilts = (-0.9, 0.7, -0.5) %}
+<header class="comic-top notice-top">
+  {{ brand() }}
+  <h1 class="comic-title" aria-label="顶屁股通告">
+    <span class="comic-line comic-line--1">
+      {{ letter("顶", "yellow", -6, 4) }}{{ letter("屁", "pale", 5, -4) }}{{ letter("股", "yellow", -3, 2) }}
+      {{ tick("m", "left: -6px; top: 70px; transform: rotate(-24deg);") }}
+      {{ tick("g", "right: -10px; top: 8px; transform: rotate(18deg);") }}
+    </span>
+    <span class="comic-line comic-line--2">
+      {{ letter("通", "dots", -4, 0) }}{{ letter("告", "dots", 4, -3) }}{{ letter("!", "yellow", 10, -4) }}
+    </span>
+  </h1>
+  {{ pill(page.board_count ~ " 个榜单有新纪录") }}
+  <p class="notice-window">{{ page.window }} · 前 {{ page.top_n }} 名的变动</p>
+  {{ chibi(chibis.surprised, "notice-chibi-left") }}
+  {{ chibi(chibis.dreaming, "notice-chibi-right") }}
+  {{ scribble("notice-scribble") }}
+</header>
+
+<main class="zmd-main comic-ground notice-ground">
+  {{ dots(3) }}
+
+  <div class="notice-cards">
+    {% for column in page.columns %}
+    <div class="notice-col">
+      {% for board in column %}
+      {% call card(tilts[loop.index0 % 3], "notice-card") %}
+        <h2 class="notice-sec">
+          <span class="comic-sec-name" data-ch="{{ board.board_name }}">{{ board.board_name }}</span>
+          {% if board.dungeon_label %}<small>{{ board.dungeon_label }}</small>{% endif %}
+          <em>{{ board.seen_at }}</em>
+        </h2>
+        {% for record in board.records %}
+        {# the new record: its place in big lettering, who, how fast #}
+        <div class="notice-new">
+          <span class="notice-rank" data-ch="#{{ record.rank }}">#{{ record.rank }}</span>
+          {{ face(record.face, "is-main") }}
+          <b class="notice-who">{{ record.uploader }}</b>
+          <p class="notice-figs">
+            {% if record.contract_score is not none %}
+            <b>{{ record.contract_score }} 分</b><span>用时 {{ record.time }}</span>
+            {% else %}
+            <b>{{ record.time }}</b><span>DPS {{ record.dps }}</span>
+            {% endif %}
+          </p>
+          {% if record.champion %}
+          <span class="notice-tag is-champ">新冠军!</span>
+          {% else %}
+          <span class="notice-tag">NEW!</span>
+          {% endif %}
+        </div>
+        {% if record.pushed %}
+        <p class="notice-pushed-head"><span>被顶下去的</span></p>
+        <ol class="notice-pushed">
+          {% for pushed in record.pushed %}
+          <li>
+            {{ face(pushed.face, "is-small") }}
+            <b>{{ pushed.name }}</b>
+            <span class="notice-move"><i>▼</i>{{ pushed.before }} → {{ pushed.after }}</span>
+            {% if pushed.fell_out %}<em class="notice-out">跌出前 {{ page.top_n }}</em>{% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+        {% endif %}
+        {% endfor %}
+      {% endcall %}
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% call foot("OOPS!", plugin.version, 1) %}{% endcall %}
+</main>
+{% endblock %}

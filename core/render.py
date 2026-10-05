@@ -21,7 +21,7 @@ import tempfile
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, Collection, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from html import unescape
@@ -38,6 +38,7 @@ from jinja2 import (
 )
 from markupsafe import Markup
 
+from .board_changes import NoticeEntry
 from .characters import CharacterFilterScope
 from .client import DEFAULT_USER_AGENT
 from .crit import CritExpectation
@@ -70,6 +71,7 @@ from .presentation import (
     build_character_stats_page,
     build_compare_page,
     build_dungeon_top3_page,
+    build_notice_page,
     build_player_champions_page,
     build_ranking_page,
     build_records_page,
@@ -137,6 +139,7 @@ PAGE_FRAMES: dict[str, PageFrame] = {
     "battle-data": WIDE_FRAME,
     "battle-cast": WIDE_FRAME,
     "battle-build": WIDE_FRAME,
+    "notice": WIDE_FRAME,
 }
 
 
@@ -194,6 +197,9 @@ class TemplateRenderer:
         self.help_chibis = _load_inline_assets(
             self.resources_path / "help", _HELP_CHIBIS
         )
+        self.notice_chibis = _load_inline_assets(
+            self.resources_path / "notice", _NOTICE_CHIBIS
+        )
         self.font_files, self.font_face_css, self.linked_font_face_css = (
             _load_fonts(fonts_path)
         )
@@ -233,6 +239,33 @@ class TemplateRenderer:
             "help",
             embed_fonts=embed_fonts,
             chibis=self.help_chibis,
+        )
+
+    def render_notice(
+        self,
+        entries: Sequence[NoticeEntry],
+        *,
+        window_start: str,
+        window_end: str,
+        top_n: int,
+        web_base_url: str,
+        embed_fonts: bool = True,
+    ) -> str:
+        """顶屁股通告: one chat's batch of board notices for one interval."""
+
+        page = build_notice_page(
+            entries,
+            window_start=window_start,
+            window_end=window_end,
+            top_n=top_n,
+            web_base_url=web_base_url,
+        )
+        return self._render(
+            "notice/notice.html",
+            page,
+            "notice",
+            embed_fonts=embed_fonts,
+            chibis=self.notice_chibis,
         )
 
     def render_dungeon_top3(
@@ -893,6 +926,7 @@ class LongImageRenderer:
     # TemplateRenderer method it runs; the page kind picks the capture scale
     # and names the output file.
     render_help = _captured("help", TemplateRenderer.render_help)
+    render_notice = _captured("notice", TemplateRenderer.render_notice)
     render_dungeon_top3 = _captured(
         "dungeon-top3", TemplateRenderer.render_dungeon_top3
     )
@@ -1534,6 +1568,14 @@ _HELP_CHIBIS = {
     "arms_crossed": ("chibi-arms-crossed.webp", "image/webp"),
     "waving": ("chibi-waving.webp", "image/webp"),
     "blob": ("chibi-blob.webp", "image/webp"),
+}
+# The 顶屁股通告's two, the same art and the same way: the surprised girl
+# (drawn 200 px) and the cat with her dream of a kick (250 px), one picture
+# — split apart, the two no longer read as a pair. About 105 KB.
+# Name -> (file under resources/notice, media type).
+_NOTICE_CHIBIS = {
+    "surprised": ("chibi-surprised.webp", "image/webp"),
+    "dreaming": ("chibi-dreaming.webp", "image/webp"),
 }
 
 
