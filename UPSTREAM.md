@@ -265,7 +265,7 @@ numbers are the catalog's ids; nothing states it). 39 (`Str`, 力量) was not
 seen and is mapped from the catalog alone. `attribute_type_0` (`AttributeType0`, no icon) carries
 values of several different stats (0.299, 0.269123, 35, 23) and names none.
 `core/loadout.stat_label` maps the numbers above and prints any other
-non-Chinese name as 属性未收录.
+non-Chinese name as 名称未收录, the one term for any raw id.
 
 **`suitName` is not a property of the item and must never be used as an
 identity or as the truth.** Surveyed over 270 battles: 17 of 129 item ids come
