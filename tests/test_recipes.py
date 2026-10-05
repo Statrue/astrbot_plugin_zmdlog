@@ -337,9 +337,8 @@ class SamePictureTests(unittest.TestCase):
         (ranking,) = self.command_renderer.args["ranking"]
         kwargs = self.tool_renderer.kwargs["ranking"]
         self.assertEqual(ranking.metric, "rdps")
-        # Both cross-reference the DPS board the index holds.
-        self.assertEqual(kwargs["dps_row_count"], len(self.ranking.rows))
-        self.assertIn("btl_upload_000000000001", kwargs["dps_rows"])
+        # Both draw the rDPS board's first page.
+        self.assertEqual(kwargs["page"], 1)
         self.assertIn("rDPS 口径", answer.text)
 
     def test_a_board_with_no_eligible_record_is_refused_on_both(self) -> None:

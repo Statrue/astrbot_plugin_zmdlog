@@ -41,7 +41,7 @@ from core.matcher import (
 )
 from core.outcome import SitePage
 from core.queries import pending_from_route
-from core.routing import RouteKind, parse_zmdlog_payload
+from core.routing import ALL_PAGES, RouteKind, parse_zmdlog_payload
 from core.watch import Notice, NoticeLink
 from tests.helpers import make_card
 
@@ -58,7 +58,7 @@ CARDS = (
 # every one of them, so an option that a button dropped cannot pass.
 OPTION_FIELDS = (
     "view",
-    "ranking_top",
+    "ranking_page",
     "character_filter",
     "element_filter",
     "stats_range",
@@ -159,7 +159,7 @@ class RoundTripTests(unittest.TestCase):
         entry = entry_for(
             CandidateView.RANKING,
             board_choice(),
-            ranking_top=5,
+            ranking_page=3,
             character_filter="黎风 洛茜",
             element_filter="物理",
             metric="rdps",
@@ -168,6 +168,16 @@ class RoundTripTests(unittest.TestCase):
         route = self._assert_round_trip(entry, entry.choices[0])
 
         self.assertIs(route.kind, RouteKind.RANKING_QUERY)
+
+    def test_the_all_page_is_written_as_typed(self) -> None:
+        entry = entry_for(
+            CandidateView.RANKING, board_choice(), ranking_page=ALL_PAGES
+        )
+
+        command = pick_command(entry, entry.choices[0], command=COMMAND)
+
+        self.assertEqual(command, f"{COMMAND} 榜单 {SLUG} --页 全部")
+        self._assert_round_trip(entry, entry.choices[0])
 
     def test_a_board_with_default_options_writes_none(self) -> None:
         entry = entry_for(CandidateView.RANKING, board_choice())
@@ -217,7 +227,7 @@ class RoundTripTests(unittest.TestCase):
                     view,
                     account_choice(ACCOUNT, "CPU 0", query="cpu"),
                     metric="rdps",
-                    ranking_top=5,
+                    ranking_page=5,
                 )
 
                 route = parse_button(
@@ -233,8 +243,7 @@ class RoundTripTests(unittest.TestCase):
              {"stats_range": "7d", "stats_potential": "0", "metric": "rdps"}),
             (CandidateView.CHARACTER_STATS, RouteKind.CHARACTER_STATS,
              {"stats_potential": "1-5"}),
-            (CandidateView.ROSTER, RouteKind.ROSTER_QUERY,
-             {"ranking_top": 20, "metric": "rdps"}),
+            (CandidateView.ROSTER, RouteKind.ROSTER_QUERY, {"metric": "rdps"}),
             (CandidateView.BATTLE, RouteKind.BATTLE_QUERY, {"battle_rank": 3}),
             (CandidateView.BATTLE, RouteKind.BATTLE_QUERY, {}),
             (CandidateView.LOADOUT, RouteKind.LOADOUT_QUERY, {"battle_rank": 2}),

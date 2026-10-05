@@ -1,4 +1,17 @@
-"""Strict HTML templates and single-image Playwright capture for ZmdLogBot."""
+"""Strict HTML templates and single-image Playwright capture for ZmdLogBot.
+
+Every page kind declares its frame (``PAGE_FRAMES``): the CSS width it is
+laid out at, the device scale it is captured at, and which shell it is
+built on. The V2 shell (``resources/shell/``, ADR 0003) has two widths —
+the 540 px phone list and the 960 px wide page — both captured at 2x;
+a page kind not yet moved onto it keeps the 1280 px 1x frame of the old
+shell (``resources/common/base.html``) until its own migration.
+
+The frame is the one source of the width: the template receives it and
+sets the root to it, the capture opens a viewport of it, and validation
+checks the drawn root against it — through the old anchors for an old
+page, through the new ones for a V2 page.
+"""
 
 import asyncio
 import base64
@@ -63,7 +76,6 @@ from .presentation import (
     build_timeline_page,
     build_trend_page,
 )
-from .routing import DEFAULT_RANKING_TOP
 from .standings import (
     AccountTally,
     CharacterStandings,
@@ -81,12 +93,6 @@ _OUTPUT_FILE_GLOB = "zmd-*.png"
 # they weigh 3.7 MB base64, and pushing that through set_content plus
 # decoding it cost a third of every capture.
 FONT_ORIGIN = "https://fonts.zmdlog.invalid"
-# Every page is captured at 1x (#26, 2026-10-01). Most used to be 2x for
-# phones, which tripled the capture and made the PNG 2.5 times larger — the
-# account page took 2.4 s and 4.8 MB — and paid off only when a reader zoomed
-# in. A page that must be zoomed to be read is a layout problem, not a
-# resolution one.
-_CAPTURE_SCALE = 1
 _BROWSER_CLOSE_TIMEOUT_SECONDS = 10.0
 DEFAULT_MAX_CONCURRENT_RENDERS = 2
 # The semaphore bounds how many captures run at once, not how many callers
@@ -99,12 +105,49 @@ DEFAULT_MAX_OUTPUT_FILES = 50
 
 
 @dataclass(frozen=True, slots=True)
+class PageFrame:
+    """How one page kind is laid out and captured.
+
+    ``width`` is the root's CSS width; ``scale`` the device pixels per CSS
+    pixel of the capture; ``v2`` whether the page is built on the V2 shell,
+    whose anchors validation checks instead of the old shell's.
+    """
+
+    width: int
+    scale: int
+    v2: bool
+
+
+# The old shell: a 1280 px desktop page at 1x (#26, 2026-10-01), kept by
+# every page kind until its migration to the V2 shell. Most pages were 2x
+# for phones once, which tripled the capture and made the PNG 2.5 times
+# larger and paid off only when a reader zoomed in.
+LEGACY_FRAME = PageFrame(width=1280, scale=1, v2=False)
+# The V2 shell's two widths (ADR 0003): the board ranking is a phone-width
+# long picture read without zooming; every other page is wide, opened and
+# zoomed on a phone. Both at 2x: the longest wide page (角色排名 洛茜)
+# captured in 2.6 s on the production host, far inside the render budget.
+LIST_FRAME = PageFrame(width=540, scale=2, v2=True)
+WIDE_FRAME = PageFrame(width=960, scale=2, v2=True)
+# Page kinds on the V2 shell; every other kind is drawn in LEGACY_FRAME.
+PAGE_FRAMES: dict[str, PageFrame] = {
+    "ranking": LIST_FRAME,
+}
+
+
+def page_frame(page_kind: str) -> PageFrame:
+    """The frame ``page_kind`` is laid out and captured in."""
+
+    return PAGE_FRAMES.get(page_kind, LEGACY_FRAME)
+
+
+@dataclass(frozen=True, slots=True)
 class RenderedImage:
     """One captured page: the PNG, and the device pixels per CSS pixel.
 
-    The scale is the one the capture used, ``_CAPTURE_SCALE``. Callers read
+    The scale is the one the capture used, its page's frame. Callers read
     it from here rather than assume it, so a picture's declared size stays
-    right if the scale ever changes again.
+    right whichever frame drew it.
     """
 
     path: str
@@ -140,6 +183,7 @@ class TemplateRenderer:
         self.resources_path = resources_path.resolve()
         self.version = read_plugin_version(metadata_path)
         self.background_data_url = _load_background_data_url(background_path)
+        self.shell_textures = _load_shell_textures(self.resources_path / "shell")
         self.font_files, self.font_face_css, self.linked_font_face_css = (
             _load_fonts(fonts_path)
         )
@@ -207,33 +251,31 @@ class TemplateRenderer:
         ranking: BossRanking,
         *,
         query: str,
-        ranking_limit: int = DEFAULT_RANKING_TOP,
+        page: int | str = 1,
         web_base_url: str | None = None,
         character_filter: str | tuple[str, ...] | None = None,
         character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
         element_filter: str | None = None,
         elements: Mapping[str, str] | None = None,
         profession_filter: str | None = None,
-        dps_rows: Mapping[str, BossRankingRow] | None = None,
-        dps_row_count: int | None = None,
         embed_fonts: bool = True,
     ) -> str:
-        page = build_ranking_page(
+        """One page of a board's ranking; ``page`` is a number or ``ALL_PAGES``."""
+
+        view = build_ranking_page(
             ranking,
             query=query,
-            display_limit=ranking_limit,
+            page=page,
             web_base_url=web_base_url,
             character_filter=character_filter,
             character_filter_scope=character_filter_scope,
             element_filter=element_filter,
             elements=elements,
             profession_filter=profession_filter,
-            dps_rows=dps_rows,
-            dps_row_count=dps_row_count,
         )
         return self._render(
             "ranking/ranking.html",
-            page,
+            view,
             "ranking",
             embed_fonts=embed_fonts,
         )
@@ -418,16 +460,12 @@ class TemplateRenderer:
         ranking: BossRanking,
         *,
         query: str,
-        ranking_limit: int = DEFAULT_RANKING_TOP,
         web_base_url: str | None = None,
         embed_fonts: bool = True,
     ) -> str:
-        page = build_roster_page(
-            ranking,
-            query=query,
-            display_limit=ranking_limit,
-            web_base_url=web_base_url,
-        )
+        """Common teams over the board's first ten records (no count option)."""
+
+        page = build_roster_page(ranking, query=query, web_base_url=web_base_url)
         return self._render(
             "roster/roster.html",
             page,
@@ -629,8 +667,10 @@ class TemplateRenderer:
         return template.render(
             page=page,
             page_kind=page_kind,
+            frame=page_frame(page_kind),
             plugin={"name": "ZmdLog", "version": self.version},
             background_data_url=self.background_data_url,
+            shell=self.shell_textures,
             font_face_css=(
                 self.font_face_css if embed_fonts else self.linked_font_face_css
             ),
@@ -762,7 +802,7 @@ def _captured(
 
 
 class LongImageRenderer:
-    """Capture every result as one complete 1280px-wide PNG."""
+    """Capture every result as one complete PNG, in its page kind's frame."""
 
     def __init__(
         self,
@@ -863,7 +903,7 @@ class LongImageRenderer:
         """Launch Chromium and render one page so the first query is fast."""
 
         warmed = await self._render(
-            "warmup",
+            "help",
             partial(self.templates.render_help, command_prefix="/"),
         )
         await self._discard_output(Path(warmed.path))
@@ -930,11 +970,12 @@ class LongImageRenderer:
     async def _capture_once(self, html: str, page_kind: str) -> RenderedImage:
         browser = await self._ensure_browser()
         output_path = await self._reserve_output_path(page_kind)
-        scale = _CAPTURE_SCALE
+        frame = page_frame(page_kind)
+        scale = frame.scale
         context = None
         page = None
         try:
-            context, page, metrics = await self._load_page(browser, html, scale)
+            context, page, metrics = await self._load_page(browser, html, frame)
             await page.screenshot(
                 path=str(output_path),
                 full_page=True,
@@ -943,7 +984,7 @@ class LongImageRenderer:
                 timeout=self.render_timeout_ms,
             )
             width, height = read_png_dimensions(output_path)
-            if width != 1280 * scale or height < metrics["height"] * scale:
+            if width != frame.width * scale or height < metrics["height"] * scale:
                 raise RenderError("captured image does not contain the full page")
             await self._complete_output(output_path)
             return RenderedImage(str(output_path), scale)
@@ -965,14 +1006,14 @@ class LongImageRenderer:
                 except Exception:
                     pass
 
-    async def _load_page(self, browser, html: str, scale: int):
+    async def _load_page(self, browser, html: str, frame: PageFrame):
         """Open the page in a fresh context and validate its frame."""
 
         # Viewport height must not exceed the page's min-height, otherwise
         # short pages get a blank strip below the footer in full-page shots.
         context = await browser.new_context(
-            viewport={"width": 1280, "height": 600},
-            device_scale_factor=scale,
+            viewport={"width": frame.width, "height": 600},
+            device_scale_factor=frame.scale,
             color_scheme="light",
         )
         page = None
@@ -987,7 +1028,7 @@ class LongImageRenderer:
                 timeout=self.render_timeout_ms,
             )
             await self._settle_page(page)
-            metrics = await self._validate_page(page)
+            metrics = await self._validate_page(page, frame)
         except BaseException:
             if page is not None:
                 try:
@@ -1274,7 +1315,20 @@ class LongImageRenderer:
             min(5_000, self.render_timeout_ms // 3),
         )
 
-    async def _validate_page(self, page) -> dict[str, int]:
+    async def _validate_page(
+        self, page, frame: PageFrame = LEGACY_FRAME
+    ) -> dict[str, int]:
+        """Check the drawn page against its frame before it is captured.
+
+        Each shell has its anchors: the root that must be exactly the
+        frame's width (an overflowing decoration widens it) and the panel
+        that must end inside it. An old page must also carry the local
+        scene background; a V2 page must declare the frame's width itself,
+        so a template and its page kind cannot disagree on it unseen.
+        """
+
+        if frame.v2:
+            return await self._validate_v2_page(page, frame)
         metrics = await page.evaluate(
             """
             () => {
@@ -1298,10 +1352,47 @@ class LongImageRenderer:
         )
         if metrics is None:
             raise RenderError("page frame is missing")
-        if metrics["width"] != 1280 or metrics["height"] <= 0:
+        if metrics["width"] != frame.width or metrics["height"] <= 0:
             raise RenderError("page frame has invalid dimensions")
         if not metrics["hasBackground"]:
             raise RenderError("local scene background is missing")
+        if metrics["panelBottom"] > metrics["height"]:
+            raise RenderError("main panel does not contain the complete result")
+        return metrics
+
+    async def _validate_v2_page(self, page, frame: PageFrame) -> dict[str, int]:
+        metrics = await page.evaluate(
+            """
+            () => {
+              const root = document.querySelector("#zmd-root");
+              const main = root && root.querySelector(":scope > .zmd-main");
+              if (!root || !main) return null;
+              const rootRect = root.getBoundingClientRect();
+              const mainRect = main.getBoundingClientRect();
+              const declared = parseInt(
+                getComputedStyle(root).getPropertyValue("--zmd-frame-width"),
+                10,
+              );
+              return {
+                width: Math.ceil(root.scrollWidth),
+                boxWidth: Math.round(rootRect.width),
+                declaredWidth: Number.isNaN(declared) ? 0 : declared,
+                height: Math.ceil(root.scrollHeight),
+                panelBottom: Math.round(mainRect.bottom - rootRect.top),
+              };
+            }
+            """
+        )
+        if metrics is None:
+            raise RenderError("page frame is missing")
+        if metrics["declaredWidth"] != frame.width:
+            raise RenderError("page does not declare its frame width")
+        if (
+            metrics["width"] != frame.width
+            or metrics["boxWidth"] != frame.width
+            or metrics["height"] <= 0
+        ):
+            raise RenderError("page frame has invalid dimensions")
         if metrics["panelBottom"] > metrics["height"]:
             raise RenderError("main panel does not contain the complete result")
         return metrics
@@ -1384,6 +1475,31 @@ def _load_background_data_url(background_path: Path) -> str:
         )
     encoded = base64.b64encode(payload).decode("ascii")
     return f"data:{media_type};base64,{encoded}"
+
+
+# The V2 shell's textures, drawn once by the prototype (ASSETS.md) and
+# inlined as data URLs: a capture loads nothing it was not handed, and they
+# are small. Name -> (file under resources/shell, media type).
+_SHELL_TEXTURES = {
+    "sky_art": ("sky-art.webp", "image/webp"),
+    "box_head": ("box-head.svg", "image/svg+xml"),
+    "box_page": ("box-page.svg", "image/svg+xml"),
+    "topo_strip": ("topo-strip.svg", "image/svg+xml"),
+}
+
+
+def _load_shell_textures(shell_path: Path) -> dict[str, str]:
+    textures: dict[str, str] = {}
+    for name, (file_name, media_type) in _SHELL_TEXTURES.items():
+        try:
+            payload = (shell_path / file_name).read_bytes()
+        except OSError as exc:
+            raise TemplateConfigurationError(
+                f"shell texture is unavailable: {file_name}"
+            ) from exc
+        encoded = base64.b64encode(payload).decode("ascii")
+        textures[name] = f"data:{media_type};base64,{encoded}"
+    return textures
 
 
 # Subset web fonts built by tools/build_fonts.py; missing files simply fall

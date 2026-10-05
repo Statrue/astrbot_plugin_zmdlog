@@ -5,6 +5,12 @@
 - 用途：所有 ZmdLogBot 图片共用的页面底纹（浅灰点阵 + 细网格），以 `data:image/svg+xml` 内嵌进页面。
 - 来源：本仓库自绘，无第三方素材。其余装饰（斜纹块、色条、描边水印）全部由 `base.css` 生成。
 
+## `../shell/` 的纹理（V2 外壳）
+
+- `sky-art.webp`：页头黄天右侧的机械线条半调图（1080×224，无损 WebP，即 540px 的 2 倍）；`box-head.svg` / `box-page.svg`：页头与页面底的大方格加对角线；`topo-strip.svg`：深色名条右端的等高线。
+- 来源：本仓库自绘，均由 V2 原型的程序化脚本一次生成（`prototype/frontend-v2` 分支 `prototype/frontend_v2/shards.py` 的 `sky_art()`、`topo.py` 的 `box_grid(90, …)` / `box_grid(108, …)` / `contours(280, 56, …, seed=3, levels=12, base=2, fade_left=True)`），之后作为静态文件提交；运行时不依赖 numpy / Pillow。渲染时由 `core/render.py` 以 data URL 内嵌进页面。
+- 无第三方素材。
+
 ## `fonts/*.woff2`
 
 由 `tools/build_fonts.py` 从上游字体子集化生成（GB2312 全集 6763 字 + 模板固定文案；拉丁字体只保留 ASCII 与常用符号）。渲染时页面通过保留域名 `https://fonts.zmdlog.invalid` 引用它们，由 Playwright 路由从内存直接返回；只有退回 AstrBot 文转图时才以 data URL 内嵌（见 `core/render.py`）。

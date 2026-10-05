@@ -2,6 +2,7 @@ import unittest
 
 from core.help import build_help_page
 from core.routing import (
+    ALL_PAGES,
     RouteKind,
     RouteParseError,
     parse_zmdlog_payload,
@@ -36,40 +37,65 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(battle.kind, RouteKind.BATTLE_QUERY)
         self.assertIn("btl_upload_abcdef123456", battle.query)
 
-    def test_top_option_is_removed_before_matching(self) -> None:
-        shortcut = parse_zmdlog_payload("罗丹 --top 30")
-        ranking = parse_zmdlog_payload("榜单 罗丹 --top 12")
+    def test_page_option_is_removed_before_matching(self) -> None:
+        for payload, page in (
+            ("罗丹 --页 2", 2),
+            ("罗丹 --page 2", 2),
+            ("罗丹 -p 2", 2),
+            ("罗丹 -P 3", 3),
+            ("罗丹 --页 全部", ALL_PAGES),
+            ("罗丹 --页 all", ALL_PAGES),
+            ("罗丹 --page ALL", ALL_PAGES),
+        ):
+            with self.subTest(payload=payload):
+                route = parse_zmdlog_payload(payload)
+                self.assertEqual(route.kind, RouteKind.SMART_QUERY)
+                self.assertEqual(route.query, "罗丹")
+                self.assertEqual(route.ranking_page, page)
 
-        self.assertEqual(shortcut.kind, RouteKind.SMART_QUERY)
-        self.assertEqual(shortcut.query, "罗丹")
-        self.assertEqual(shortcut.ranking_top, 30)
-        self.assertEqual(shortcut.ranking_limit, 30)
+        ranking = parse_zmdlog_payload("榜单 罗丹 --页 2 --角色 黎风 --口径 rdps")
         self.assertEqual(ranking.kind, RouteKind.RANKING_QUERY)
         self.assertEqual(ranking.query, "罗丹")
-        self.assertEqual(ranking.ranking_top, 12)
+        self.assertEqual(ranking.ranking_page, 2)
+        self.assertEqual(ranking.character_filter, "黎风")
+        self.assertEqual(ranking.metric, "rdps")
 
-    def test_concrete_ranking_defaults_to_top_ten(self) -> None:
-        route = parse_zmdlog_payload("罗丹")
+    def test_concrete_ranking_defaults_to_the_first_page(self) -> None:
+        self.assertIsNone(parse_zmdlog_payload("罗丹").ranking_page)
 
-        self.assertIsNone(route.ranking_top)
-        self.assertEqual(route.ranking_limit, 10)
-
-    def test_invalid_top_options_have_clear_errors(self) -> None:
+    def test_invalid_page_options_have_clear_errors(self) -> None:
         invalid_payloads = (
-            "罗丹 --top",
-            "罗丹 --top abc",
-            "罗丹 --top 0",
-            "罗丹 --top 31",
-            "罗丹 --top 10 --top 20",
-            "罗丹 --top 10 额外内容",
-            "榜单 --top 10",
-            "账号 usr_1234567890abcdef --top 10",
-            "战报 btl_upload_abcdef123456 --top 10",
+            "罗丹 --页",
+            "罗丹 --页 abc",
+            "罗丹 --页 0",
+            "罗丹 --页 -1",
+            "罗丹 --页 1 --page 2",
+            "罗丹 -p 1 -p 2",
+            "罗丹 --页 2 额外内容",
+            "榜单 --页 2",
+            "阵容 罗丹 --页 2",
+            "账号 usr_1234567890abcdef --页 2",
+            "战报 btl_upload_abcdef123456 --页 2",
+            "角色统计 罗丹 --页 2",
         )
 
         for payload in invalid_payloads:
             with self.subTest(payload=payload):
-                with self.assertRaisesRegex(RouteParseError, "--top"):
+                with self.assertRaisesRegex(RouteParseError, "--页"):
+                    parse_zmdlog_payload(payload)
+
+    def test_top_is_gone_and_says_where_paging_went(self) -> None:
+        # Every command that took --top refuses it the same way, whatever
+        # the value: the user is told the option became --页.
+        for payload in (
+            "罗丹 --top 30",
+            "榜单 罗丹 --top 12",
+            "阵容 罗丹 --top 5",
+            "罗丹 --TOP 5",
+            "罗丹 --top",
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(RouteParseError, "--页"):
                     parse_zmdlog_payload(payload)
 
     def test_account_and_battle_require_a_reference(self) -> None:
@@ -79,17 +105,15 @@ class RoutingTests(unittest.TestCase):
                     parse_zmdlog_payload(payload)
 
 
-class TopOptionBoundsTests(unittest.TestCase):
-    def test_absurd_top_values_are_rejected_as_route_errors(self) -> None:
-        from core.routing import RouteParseError
-
+class PageOptionBoundsTests(unittest.TestCase):
+    def test_absurd_page_values_are_rejected_as_route_errors(self) -> None:
         # int() raises a plain ValueError past 4300 digits, which no handler
         # guard would catch; the bound must trip first.
-        for raw in ("9" * 4301, "9" * 5000, "0031", "1" * 10):
+        for raw in ("9" * 4301, "9" * 5000, "1" * 10, "１"):
             with self.subTest(raw=raw):
                 with self.assertRaises(RouteParseError):
-                    parse_zmdlog_payload(f"罗丹 --top {raw}")
-        self.assertEqual(parse_zmdlog_payload("罗丹 --top 030").ranking_top, 30)
+                    parse_zmdlog_payload(f"罗丹 --页 {raw}")
+        self.assertEqual(parse_zmdlog_payload("罗丹 --页 003").ranking_page, 3)
 
 
 class HelpTests(unittest.TestCase):
@@ -107,11 +131,11 @@ class HelpTests(unittest.TestCase):
             commands,
             (
                 (
-                    "!zmdlog <榜单关键词> [--top 数量] [--角色 角色名…] "
+                    "!zmdlog <榜单关键词> [--页 N|全部] [--角色 角色名…] "
                     "[--属性 属性] [--口径 rdps]"
                 ),
                 "!zmdlog 榜单",
-                "!zmdlog 阵容 <榜单关键词> [--top 数量] [--口径 rdps]",
+                "!zmdlog 阵容 <榜单关键词> [--口径 rdps]",
                 "!zmdlog 新纪录 [--范围 7d|14d|30d] [--口径 rdps]",
                 "!zmdlog 玩家排名 [--范围 7d|14d|30d] [--口径 rdps]",
                 (
@@ -290,7 +314,7 @@ class WatchRouteTests(unittest.TestCase):
         self.assertEqual(
             parse_zmdlog_payload("取消关注 CPU").kind, RouteKind.WATCH_REMOVE
         )
-        for payload in ("取关", "关注 CPU --top 3", "取关 1 --角色 黎风"):
+        for payload in ("取关", "关注 CPU --页 3", "取关 1 --角色 黎风"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
@@ -313,7 +337,7 @@ class WatchRouteTests(unittest.TestCase):
         )
         # A nickname that merely starts with 榜单 still means an account.
         self.assertEqual(parse_zmdlog_payload("关注 榜单侠").kind, RouteKind.WATCH_ADD)
-        for payload in ("关注 榜单", "取关 榜单", "关注 榜单 罗丹 --top 3"):
+        for payload in ("关注 榜单", "取关 榜单", "关注 榜单 罗丹 --页 3"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
@@ -330,7 +354,7 @@ class AliasRouteTests(unittest.TestCase):
         remove = parse_zmdlog_payload("别名 删除 小罗")
         self.assertEqual(remove.kind, RouteKind.ALIAS_REMOVE)
         self.assertEqual(remove.query, "小罗")
-        for payload in ("别名 添加 罗丹", "别名 删除", "别名 看看", "别名 --top 3"):
+        for payload in ("别名 添加 罗丹", "别名 删除", "别名 看看", "别名 --页 3"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
@@ -357,7 +381,7 @@ class BindingRouteTests(unittest.TestCase):
         self.assertEqual(mine.kind, RouteKind.MY_ACCOUNT)
         self.assertEqual(mine.query, "")
         self.assertEqual(parse_zmdlog_payload("我的 2").query, "2")
-        refused = ("我的 --top 3", "绑定 x --top 3")
+        refused = ("我的 --页 3", "绑定 x --页 3")
         for payload in refused:
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
@@ -386,7 +410,7 @@ class CharacterStandingsRouteTests(unittest.TestCase):
         self.assertEqual(bare.kind, RouteKind.CHARACTER_STANDINGS)
         self.assertEqual(bare.query, "")
         with self.assertRaises(RouteParseError):
-            parse_zmdlog_payload("角色排名 诀 --top 5")
+            parse_zmdlog_payload("角色排名 诀 --页 5")
         # A window applies to the bare champions board only.
         self.assertEqual(parse_zmdlog_payload("角色排名 --范围 7d").stats_range, "7d")
         players = parse_zmdlog_payload("玩家排名 --范围 30d")

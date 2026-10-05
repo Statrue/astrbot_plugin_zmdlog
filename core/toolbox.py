@@ -200,7 +200,8 @@ class ToolService:
             ranking,
             query=keyword,
             web_base_url=self._web_base_url,
-            ranking_limit=max(limit, facts.DEFAULT_ROW_LIMIT),
+            # The picture is the first page whatever ``limit`` the text lists.
+            page=1,
             character_filter=character or None,
             element_filter=wanted or None,
             profession_filter=role or None,

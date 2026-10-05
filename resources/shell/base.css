@@ -1,0 +1,132 @@
+/* The V2 shell (ADR 0003): what every V2 page shares — the palette, the
+   fonts, the type scale and the root node the capture validates. The look
+   is the one the prototype settled (prototype/frontend-v2, variant I); the
+   parts that only some pages draw live in parts.css, the frame of each
+   width in its own stylesheet (list.css). */
+:root {
+  color-scheme: light;
+  /* ground and ink */
+  --page-bg: #e4e6e9;
+  --card: #ffffff;
+  --ink: #1c2130;
+  --ink-2: #545b69;
+  --muted: #7d8492;
+  --title-ink: #111111;
+  --meta-ink: #3a3d44;
+  --meta-rule: #a0a4ab;
+  /* the one yellow, and the two medal colours beside it */
+  --yellow: #ffe100;
+  --silver: #b9c7d4;
+  --bronze: #e3a066;
+  /* the charcoal of the official site's buttons, and what sits on it */
+  --who-bg: #34373d;
+  --who-ink: #f2f3f5;
+  --who-ink-2: #aeb3bc;
+  --bracket: #8a8f98;
+  --block: #d6d8dc;
+  --block-ink: #1d2230;
+  --medal-ink: #15171c;
+  /* the hatched band under a record's faces */
+  --stripe-a: #f1f2f4;
+  --stripe-b: #e7e9ec;
+  /* faces */
+  --ring: #f8f8f8;
+  --face-bg: #cdd1d7;
+  --dot: #c2c5cb;
+  /* the masthead: logo bar, ground under the giant word, the title's tick */
+  --logo-bg: #111111;
+  --ground-a: #e2e3e6;
+  --ground-b: #f3f4f5;
+  --ground-c: #eceef0;
+  --giant-ink: #ffffff;
+  --magenta: #ff1f8f;
+  --mint: #00f0a8;
+  /* the dark foot */
+  --foot-bg: #262828;
+  --foot-ink: #b9bcc0;
+  --foot-ink-strong: #e6e6e6;
+  --foot-rule: #6d7074;
+  /* shadows: one ink, at the strengths the parts use */
+  --shadow-6: rgba(0, 0, 0, 0.06);
+  --shadow-8: rgba(0, 0, 0, 0.08);
+  --shadow-12: rgba(0, 0, 0, 0.12);
+  --lift-12: rgba(18, 24, 40, 0.12);
+  --lift-16: rgba(24, 32, 52, 0.16);
+  --lift-24: rgba(24, 32, 52, 0.24);
+  --lift-28: rgba(24, 32, 52, 0.28);
+  --lift-38: rgba(18, 24, 40, 0.38);
+  --lift-42: rgba(18, 24, 40, 0.42);
+  --font-cjk: "Noto Sans SC", "Source Han Sans SC", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  --font-body: "Barlow", var(--font-cjk);
+  --font-num: "Barlow Semi Condensed", "Barlow", var(--font-cjk);
+  /* Type scale — the only font sizes a V2 page may use, and test_render
+     pins the rule. The prototype's pages used 34 sizes; any two a pixel
+     apart were merged into the more used one (16 and 18 into 17, 19 and
+     21 into 20, 14 into 15, 11 and 12 into 13, 31 into 30), so a size off
+     this scale is a design change. 17 is the floor of information text on
+     the 540 list (ADR 0001). Named by their size: the scale is short
+     enough that a role name would only hide which step is which. */
+  --fs-13: 13px;
+  --fs-15: 15px;
+  --fs-17: 17px;
+  --fs-20: 20px;
+  --fs-22: 22px;
+  --fs-24: 24px;
+  --fs-26: 26px;
+  --fs-28: 28px;
+  --fs-30: 30px;
+  --fs-32: 32px;
+  --fs-34: 34px;
+  --fs-36: 36px;
+  --fs-38: 38px;
+  --fs-40: 40px;
+  --fs-44: 44px;
+  --fs-46: 46px;
+  --fs-48: 48px;
+  --fs-52: 52px;
+  --fs-62: 62px;
+  --fs-66: 66px;
+  --fs-84: 84px;
+  --fs-92: 92px;
+  --fs-128: 128px;
+  --fs-140: 140px;
+  --fs-150: 150px;
+  --fs-230: 230px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background: var(--page-bg);
+}
+
+body {
+  font-family: var(--font-cjk);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The root the capture validates: exactly the frame's width, which the
+   page declares as --zmd-frame-width, and at least the viewport's height
+   so a short page ends in its foot, not in a blank strip. Decoration that
+   would reach past the width is clipped here. */
+#zmd-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: calc(var(--zmd-frame-width) * 1px);
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* The page's content: what validation requires to end inside the root. */
+.zmd-main {
+  position: relative;
+  flex: 1 0 auto;
+}

@@ -8,9 +8,16 @@ from .elements import normalize_element
 from .metrics import DEFAULT_METRIC, parse_metric_text
 from .professions import normalize_profession
 
-DEFAULT_RANKING_TOP = 10
-MIN_RANKING_TOP = 1
-MAX_RANKING_TOP = 30
+# A board ranking is read a page of ten rows at a time (``--页 N``), or as
+# one long picture of its first thirty (``--页 全部``); past thirty the
+# picture points at the site instead of growing.
+RANKING_PAGE_SIZE = 10
+MAX_RANKING_ROWS = 30
+# ``--页 全部``: the one page value that is not a number.
+ALL_PAGES = "all"
+# A page number never needs more digits than this; int() raises a plain
+# ValueError past ~4300 of them, so a longer one is refused before conversion.
+_MAX_PAGE_DIGITS = 3
 # A team has four slots, so more names than that can never all be in one.
 MAX_CHARACTER_FILTERS = 4
 
@@ -77,7 +84,7 @@ _POTENTIAL_ALIASES = {
 
 # Canonical option name -> accepted spellings (case-insensitive).
 _OPTION_SPELLINGS: dict[str, tuple[str, ...]] = {
-    "top": ("--top",),
+    "page": ("--页", "--page", "-p"),
     "character": ("--角色", "--char", "--character"),
     "range": ("--范围", "--range"),
     "potential": ("--潜能", "--potential"),
@@ -92,7 +99,7 @@ _OPTION_BY_SPELLING = {
     for spelling in spellings
 }
 _OPTION_LABEL = {
-    "top": "--top",
+    "page": "--页",
     "character": "--角色",
     "range": "--范围",
     "potential": "--潜能",
@@ -104,7 +111,7 @@ _OPTION_LABEL = {
 # Rejection text names where the option DOES work, not the current route —
 # "--潜能 不适用于榜单查询" reads like the option belongs somewhere unknown.
 OPTION_USAGE = {
-    "top": "--top 仅适用于具体榜单和阵容查询。",
+    "page": "--页 仅适用于具体榜单查询，例如：罗丹 --页 2，或 罗丹 --页 全部。",
     "character": (
         "--角色 仅适用于具体榜单查询，例如：罗丹 --角色 黎风，"
         "或 罗丹 --角色 黎风 洛茜（同时带上两人的队伍）。"
@@ -125,6 +132,20 @@ OPTION_USAGE = {
     ),
     "board": "--榜单 仅适用于角色档案，例如：角色档案 莱万汀 --榜单 罗丹。",
 }
+
+
+# Options a single dash introduces; every other option is spelled ``--``.
+_SHORT_OPTIONS = frozenset(
+    spelling
+    for spellings in _OPTION_SPELLINGS.values()
+    for spelling in spellings
+    if not spelling.startswith("--")
+)
+# ``--top N`` drew the first N rows until the ranking was paged (1.3.0).
+_REMOVED_TOP = (
+    "--top 已改为 --页：每页 10 条，例如：罗丹 --页 2，"
+    "或 罗丹 --页 全部 一次看前 30 条。"
+)
 
 
 class RouteParseError(ValueError):
@@ -217,7 +238,8 @@ _BATTLE_STYLE_COMMANDS.update(
 class RouteOptions:
     """Trailing ``--name value`` options parsed from the payload."""
 
-    ranking_top: int | None = None
+    # A page number from 1, or ``ALL_PAGES``; None when not given.
+    ranking_page: int | str | None = None
     character_filter: str | None = None
     element_filter: str | None = None
     profession_filter: str | None = None
@@ -231,7 +253,7 @@ class RouteOptions:
         """Raise when an option outside ``allowed`` was given."""
 
         for name in (
-            "top", "character", "range", "potential", "element", "profession",
+            "page", "character", "range", "potential", "element", "profession",
             "metric", "board",
         ):
             if name in self.present and name not in allowed:
@@ -244,7 +266,9 @@ class RouteRequest:
 
     kind: RouteKind
     query: str = ""
-    ranking_top: int | None = None
+    # The board ranking's page: a number from 1 or ``ALL_PAGES``; None is
+    # the first page, as typed without ``--页``.
+    ranking_page: int | str | None = None
     character_filter: str | None = None
     # A catalog element label (物理 …); rows whose main C has it.
     element_filter: str | None = None
@@ -265,15 +289,11 @@ class RouteRequest:
     # 角色档案 only: the board keyword ``--榜单`` cut the profile to.
     board_query: str | None = None
 
-    @property
-    def ranking_limit(self) -> int:
-        """Return the requested concrete-ranking size or its default."""
 
-        return (
-            self.ranking_top
-            if self.ranking_top is not None
-            else DEFAULT_RANKING_TOP
-        )
+def ranking_page_count(row_count: int) -> int:
+    """The pages ``row_count`` ranking rows fill; no rows is still one page."""
+
+    return max(1, -(-row_count // RANKING_PAGE_SIZE))
 
 
 def parse_zmdlog_payload(payload: str) -> RouteRequest:
@@ -294,11 +314,11 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         if not separator:
             options.reject_except()
             return RouteRequest(RouteKind.DUNGEON_LIST)
-        options.reject_except("top", "character", "element", "metric")
+        options.reject_except("page", "character", "element", "metric")
         return RouteRequest(
             RouteKind.RANKING_QUERY,
             remainder,
-            ranking_top=options.ranking_top,
+            ranking_page=options.ranking_page,
             character_filter=options.character_filter,
             element_filter=options.element_filter,
             metric=options.metric,
@@ -430,13 +450,12 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         )
 
     if command == "阵容":
-        options.reject_except("top", "metric")
+        options.reject_except("metric")
         if not separator or not remainder:
             raise RouteParseError("请提供榜单关键词。")
         return RouteRequest(
             RouteKind.ROSTER_QUERY,
             remainder,
-            ranking_top=options.ranking_top,
             metric=options.metric,
         )
 
@@ -499,11 +518,11 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         options.reject_except()
         return RouteRequest(RouteKind.MY_ACCOUNT, remainder)
 
-    options.reject_except("top", "character", "element", "metric")
+    options.reject_except("page", "character", "element", "metric")
     return RouteRequest(
         RouteKind.SMART_QUERY,
         normalized,
-        ranking_top=options.ranking_top,
+        ranking_page=options.ranking_page,
         character_filter=options.character_filter,
         element_filter=options.element_filter,
         metric=options.metric,
@@ -515,9 +534,7 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
 
     tokens = payload.split()
     positions = [
-        index
-        for index, token in enumerate(tokens)
-        if token.startswith("--")
+        index for index, token in enumerate(tokens) if _is_option_token(token)
     ]
     if not positions:
         return payload, RouteOptions()
@@ -530,20 +547,22 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
         token = tokens[index]
         name = _OPTION_BY_SPELLING.get(token.casefold())
         if name is None:
+            if token.casefold() == "--top":
+                raise RouteParseError(_REMOVED_TOP)
             if token.startswith("--"):
                 raise RouteParseError(f"不支持的选项 {token}。")
             raise RouteParseError(f"{last_label} 参数必须放在查询末尾。")
         label = last_label = _OPTION_LABEL[name]
         if name in values:
             raise RouteParseError(f"{label} 参数只能填写一次。")
-        if index + 1 >= len(tokens) or tokens[index + 1].startswith("--"):
+        if index + 1 >= len(tokens) or _is_option_token(tokens[index + 1]):
             raise RouteParseError(f"{label} 后需要填写取值。")
         if name in ("character", "board"):
             # Both take every word up to the next option: ``--角色 黎风 洛茜``
             # asks for teams fielding both, and a board keyword is as many
             # words as one typed after zmdlog (``--榜单 白刃穿水 残酷``).
             end = index + 1
-            while end < len(tokens) and not tokens[end].startswith("--"):
+            while end < len(tokens) and not _is_option_token(tokens[end]):
                 end += 1
             words = tokens[index + 1 : end]
             if name == "character":
@@ -578,7 +597,7 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
             raise RouteParseError("--口径 只能填 dps 或 rdps。")
         metric = parsed_metric
     return query, RouteOptions(
-        ranking_top=_parse_top(values["top"]) if "top" in values else None,
+        ranking_page=_parse_page(values["page"]) if "page" in values else None,
         character_filter=values.get("character"),
         element_filter=element_filter,
         profession_filter=profession_filter,
@@ -598,6 +617,10 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
         ),
         present=frozenset(values),
     )
+
+
+def _is_option_token(token: str) -> bool:
+    return token.startswith("--") or token.casefold() in _SHORT_OPTIONS
 
 
 def _board_watch_argument(remainder: str) -> str | None:
@@ -718,16 +741,23 @@ def _split_battle_rank(remainder: str) -> tuple[str, int]:
     return " ".join(tokens[:-1]), rank
 
 
-def _parse_top(raw_top: str) -> int:
-    # int() raises a plain ValueError past ~4300 digits; the maximum has two
-    # digits, so anything past three (a leading zero is tolerated) is
-    # rejected before conversion.
-    if not raw_top.isascii() or not raw_top.isdecimal() or len(raw_top) > 3:
-        raise RouteParseError("--top 只支持 1–30 的整数。")
-    ranking_top = int(raw_top)
-    if not MIN_RANKING_TOP <= ranking_top <= MAX_RANKING_TOP:
-        raise RouteParseError("--top 只支持 1–30 的整数。")
-    return ranking_top
+def _parse_page(raw: str) -> int | str:
+    """A page number from 1, or ``ALL_PAGES`` for 全部 / all.
+
+    Whether the page exists depends on the board and its filters, so the
+    upper bound is checked once the rows are known, not here.
+    """
+
+    if raw == "全部" or raw.casefold() == ALL_PAGES:
+        return ALL_PAGES
+    if (
+        not raw.isascii()
+        or not raw.isdecimal()
+        or len(raw) > _MAX_PAGE_DIGITS
+        or int(raw) < 1
+    ):
+        raise RouteParseError("--页 只能填页码（1、2、3…）或 全部。")
+    return int(raw)
 
 
 def _parse_range(raw: str) -> str:

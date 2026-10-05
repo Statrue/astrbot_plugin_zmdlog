@@ -1,0 +1,28 @@
+{# The 540 px phone list (ADR 0003): the masthead with its giant word,
+   the page's rows, and one dark foot with the source and the version.
+   A list page fills ``giant`` (the word across the sky), ``meta`` (the
+   line under the title) and ``content``. #}
+{% extends "shell/base.html" %}
+{% from "shell/parts.html" import masthead %}
+
+{% block frame_styles %}{% include "shell/parts.css" %}{% include "shell/list.css" %}{% endblock %}
+{% block root_class %}zmd-list{% endblock %}
+
+{% block root %}
+{% call masthead(page.header.title, self.giant(), shell.sky_art) %}{{ self.meta() }}{% endcall %}
+<main class="zmd-main">
+  {% block content %}{% endblock %}
+</main>
+{# after the Endfield site's foot: one dark bar with the source and version #}
+<footer class="i-foot">
+  <p class="i-foot-meta">
+    <span>数据来源 ZMDLogs</span>
+    <span>{{ page.header.footer_note }}</span>
+    <span><b>v{{ plugin.version }}</b></span>
+  </p>
+</footer>
+{% endblock %}
+
+{# Filled by the page; drawn through self.* in the masthead above. #}
+{% block giant %}{% endblock %}
+{% block meta %}{% endblock %}

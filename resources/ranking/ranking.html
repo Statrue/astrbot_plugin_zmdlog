@@ -1,117 +1,57 @@
-{% extends "common/base.html" %}
-{% from "common/member-face.html" import render_member_face %}
+{# One page of a board's ranking (prototype variant I): two-layer rows, the
+   arrow block, 名次 and 上传者 over the faces and the figures. A 危机合约
+   board puts its 合约分数 where the time goes. The page names no filter
+   and never says a next page exists; the header's count is the only hint.
+   The 全部 view ends in a strip sending the rest to the site. #}
+{% extends "shell/list-base.html" %}
+{% from "shell/parts.html" import arrow, face %}
 
-{% block extra_styles %}{% include "ranking/ranking.css" %}{% endblock %}
+{% block styles %}{% include "ranking/ranking.css" %}{% endblock %}
 
-{% block hero_facts %}
-{% if page.top_dps %}
-<div class="hero-facts">
-  <div class="hero-fact"><span>公开排名</span><strong>{{ page.row_count }}</strong></div>
-  <div class="hero-fact hero-fact--key"><span>榜首 {{ page.metric_label }} ＝ 刻度 100%</span><strong>{{ page.top_dps }}</strong></div>
-</div>
+{% block giant %}RANKING{% endblock %}
+
+{% block meta %}
+{% if page.show_contract_score %}
+<span>按合约分数</span>
+{% else %}
+{% if page.dungeon_label %}<span>{{ page.dungeon_label }}</span>{% endif %}
+<span>按通关用时</span>
 {% endif %}
+<span><b>{{ page.record_count }}</b> 条公开记录</span>
+{% if not page.show_contract_score %}<span>{{ page.metric_label }} 口径</span>{% endif %}
 {% endblock %}
 
 {% block content %}
-<section class="board{% if page.show_contract_score %} board--contract{% endif %}">
-  <div class="board-benchmark">
-    <span class="bm-tag">榜单基准</span>
-    <span class="bm-slug">{{ page.boss_slug }}</span>
-    {% if page.character_filter %}
-    <span class="bm-filter">{% if page.character_filter_scope == "roster" %}阵容含{% else %}主 C{% endif %} {{ page.character_filter }}</span>
-    {% endif %}
-    {% if page.element_filter %}
-    <span class="bm-filter">主 C {{ page.element_filter }}属性</span>
-    {% endif %}
-    {% if page.profession_filter %}
-    <span class="bm-filter">主 C {{ page.profession_filter }}</span>
-    {% endif %}
-    {% if page.rdps_note %}
-    <span class="bm-filter">{{ page.rdps_note }}</span>
-    {% endif %}
-    <span class="bm-count">
-      {% if page.character_filter or page.element_filter or page.profession_filter %}
-      筛选出 {{ page.filtered_count }} 条{% if page.rows|length < page.filtered_count %} · 展示前 {{ page.rows|length }} 名{% endif %} · 共 {{ page.row_count }} 条公开排名
-      {% elif page.rows|length < page.row_count %}
-      展示前 {{ page.rows|length }} 名 · 共 {{ page.row_count }} 条公开排名
-      {% else %}
-      {{ page.row_count }} 条公开排名
-      {% endif %}
-    </span>
-  </div>
-
-  {% if page.character_filter and page.character_filter_scope == "roster" and page.character_filters|length > 1 %}
-  <p class="board-fallback">
-    只看阵容里同时带上「{{ page.character_filter }}」的队伍，共 {{ page.filtered_count }} 支。
-  </p>
-  {% elif page.character_filter and page.character_filter_scope == "roster" %}
-  <p class="board-fallback">
-    本榜没有以「{{ page.character_filter }}」为主 C 的公开记录，
-    下面是阵容里带上它的 {{ page.filtered_count }} 支队伍。
-  </p>
-  {% endif %}
-
-  {% if page.rows %}
-  <div class="board-head">
-    <span>名次</span>
-    <span>公开账号 · 主 C</span>
-    <span class="head-axis">
-      <span class="axis-caption">相对榜首 {{ page.metric_label }}<i>100%</i></span>
-      <span class="axis-ruler"></span>
-    </span>
-    <span class="head-right">{{ page.metric_label }}</span>
-    {% if page.show_contract_score %}
-    <span class="head-right">合约分数</span>
-    {% endif %}
-    <span class="head-right">用时</span>
-  </div>
-
-  <ol class="board-rows">
-    {% for row in page.rows %}
-    <li class="board-row rank-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
-      <div class="cell-rank">
-        <span class="rank-num">{{ row.rank }}</span>
-        <span class="percentile">{{ row.percentile }}</span>
-      </div>
-      <div class="cell-id">
-        <strong>{{ row.account_display_name }}</strong>
-        <em>主 C <b>{{ row.character_name }}</b></em>
-        {% if row.dps_rank is not none %}
-        <em class="dps-ref">DPS 榜 #{{ row.dps_rank }}{% if row.dps_character_name %} · DPS 口径主 C {{ row.dps_character_name }}{% endif %}</em>
-        {% endif %}
-      </div>
-      <div class="cell-chart" aria-hidden="true"><i style="width: {{ row.score_bar_width }}%;"></i></div>
-      <div class="cell-dps">{{ row.dps }}</div>
-      {% if page.show_contract_score %}
-      <div class="cell-contract">
-        {% if row.contract_score is not none %}
-        <b>{{ row.contract_score }}</b>
-        {% else %}
-        <span>—</span>
-        {% endif %}
-      </div>
-      {% endif %}
-      <div class="cell-time">{{ row.duration }}</div>
-      {% if row.roster %}
-      <div class="cell-team">
+<ol class="i-rows">
+  {% for row in page.rows %}
+  <li class="i-row{% if row.rank <= 3 %} is-top is-{{ row.rank }}{% endif %}">
+    <div class="i-layer i-layer--who">
+      {{ arrow() }}
+      <span class="i-rank">{{ "%02d"|format(row.rank) }}</span>
+      <span class="i-name"><i class="i-bracket">[</i><strong>{{ row.account_display_name }}</strong><i class="i-bracket">]</i></span>
+      {% if row.rank <= 3 %}<span class="i-badge">TOP {{ row.rank }}</span>{% endif %}
+    </div>
+    <div class="i-layer i-layer--run">
+      <div class="i-team">
         {% for member in row.roster %}
-        <span class="team-member{% if member.character_name == row.character_name %} is-lead{% endif %}{% if page.character_filter_scope == "roster" and member.character_name in page.character_filters %} is-match{% endif %}">
-          {{ render_member_face(member) }}
-          {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
-        </span>
+        {{ face(member, lead=member.character_name == row.character_name) }}
         {% endfor %}
       </div>
-      {% endif %}
-    </li>
-    {% endfor %}
-  </ol>
-
-  <p class="board-legend">
-    条形长度为该记录 DPS 相对榜首 {{ page.top_dps }} 的比例；名次下方为 ZMDLogs 公开排名的百分位；阵容里加粗的是该场主 C，主 C 头像下的数字是 潜能+精炼（? 为武器未记录）。
-    <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
-  </p>
-  {% else %}
-  <div class="empty-ranking">{% if page.element_filter %}该榜单没有主 C 为{{ page.element_filter }}属性的公开排名{% elif page.character_filter %}该榜单没有带 {{ page.character_filter }} 的公开排名{% else %}该榜单暂无公开排名{% endif %}</div>
-  {% endif %}
-</section>
+      <div class="i-figs">
+        {% if page.show_contract_score %}
+        <div class="i-time"><b>{{ row.contract_score if row.contract_score is not none else "—" }}</b><small>分</small></div>
+        <div class="i-dps"><span>用时</span>{{ row.duration }}</div>
+        {% else %}
+        <div class="i-time"><b>{{ row.duration }}</b></div>
+        <div class="i-dps"><span>{{ page.metric_label }}</span>{{ row.dps }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </li>
+  {% endfor %}
+</ol>
+{% if page.site_only_count %}
+{# after the site's 更多情报 button: the 全部 view stops at thirty rows #}
+<p class="i-more">其余<b>{{ page.site_only_count }}</b>条记录请到 ZMDLogs 官网查看</p>
+{% endif %}
 {% endblock %}

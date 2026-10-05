@@ -139,12 +139,13 @@ class InvestmentPageTests(unittest.TestCase):
         payload = ranking_with_pairs(pair(1, None), row=2, payload=payload)
         self.ranking = parse_boss_ranking(payload)
 
-    def test_the_ranking_page_prints_the_main_c_pair_only(self) -> None:
+    def test_the_ranking_page_prints_no_pair(self) -> None:
+        # The V2 ranking row is faces, time and DPS only (the prototype's
+        # ruling); 养成 is the battle's 养成 view's to show.
         html = self.renderer.render_ranking(self.ranking, query="三位一体")
 
-        # Row 2's main C has no 潜能 recorded, so prints nothing.
-        self.assertEqual(investments(html), ["5+6", "1+?"])
-        self.assertIn(LEGEND, html)
+        self.assertEqual(investments(html), [])
+        self.assertNotIn(LEGEND, html)
 
     def test_the_roster_page_prints_each_combo_members_pair_from_its_best_run(
         self,

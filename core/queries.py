@@ -93,7 +93,7 @@ from .recipes import (
     prepare_standings,
 )
 from .render import LongImageRenderer
-from .routing import DEFAULT_RANKING_TOP, OPTION_USAGE, RouteKind, RouteRequest
+from .routing import OPTION_USAGE, RouteKind, RouteRequest
 from .settings import PluginSettings
 
 # 战报 / 配装 / 技能 / 技能轴 share one argument shape and one lookup; only
@@ -530,7 +530,7 @@ class QueryService:
                 route.query,
                 candidates,
                 origin=origin,
-                ranking_top=pending.ranking_top,
+                ranking_page=pending.ranking_page,
                 view=pending.view,
                 character_filter=pending.character_filter,
                 element_filter=pending.element_filter,
@@ -606,8 +606,8 @@ class QueryService:
 
         # A dungeon or a scope draws top-three cards, which none of the row
         # options can filter; say where the option works instead.
-        if pending.ranking_top is not None:
-            return Outcome(message=OPTION_USAGE["top"])
+        if pending.ranking_page is not None:
+            return Outcome(message=OPTION_USAGE["page"])
         if pending.character_filter is not None:
             return Outcome(message=OPTION_USAGE["character"])
         if pending.element_filter is not None:
@@ -1113,11 +1113,6 @@ class QueryService:
         """Render one concrete board in whichever view the request asked for."""
 
         renderer = self._renderer()
-        ranking_limit = (
-            pending.ranking_top
-            if pending.ranking_top is not None
-            else DEFAULT_RANKING_TOP
-        )
         if pending.view is CandidateView.CHARACTER_PROFILE:
             # A pick off 角色档案's list of boards; the list kept the
             # catalog's name, which resolves to the same character again.
@@ -1164,7 +1159,7 @@ class QueryService:
             boss_slug,
             pending.view,
             metric=pending.metric,
-            ranking_top=pending.ranking_top,
+            ranking_page=pending.ranking_page,
         )
         if pending.view is CandidateView.COMPARE and pending.compare_self:
             if pending.me is None:
@@ -1203,7 +1198,6 @@ class QueryService:
             rendered = await renderer.render_roster(
                 ranking,
                 query=query,
-                ranking_limit=ranking_limit,
                 web_base_url=self._web_base_url,
             )
             return Outcome.image(rendered, target=board)
@@ -1213,7 +1207,7 @@ class QueryService:
             ranking,
             query=query,
             web_base_url=self._web_base_url,
-            ranking_limit=ranking_limit,
+            page=pending.ranking_page if pending.ranking_page is not None else 1,
             character_filter=pending.character_filter,
             element_filter=pending.element_filter,
         )
@@ -1451,7 +1445,7 @@ def pending_from_route(route: RouteRequest) -> PendingCandidates:
         code="",
         query=route.query,
         choices=(),
-        ranking_top=route.ranking_top,
+        ranking_page=route.ranking_page,
         created_at=0.0,
         view=route_view(route),
         character_filter=route.character_filter,
@@ -1479,7 +1473,7 @@ def _plain_ranking_query(view: CandidateView, pending: PendingCandidates) -> boo
 
     return (
         view is CandidateView.RANKING
-        and pending.ranking_top is None
+        and pending.ranking_page is None
         and pending.character_filter is None
         and pending.element_filter is None
     )

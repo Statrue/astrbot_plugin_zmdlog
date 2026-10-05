@@ -360,24 +360,25 @@ class SiblingButtonTests(unittest.TestCase):
             ],
         )
 
-    def test_a_board_page_keeps_its_length_where_the_view_takes_one(self) -> None:
-        # --top means the same on 榜单 and 阵容; 角色统计 and 战报 refuse it.
+    def test_a_board_page_keeps_its_page_to_itself(self) -> None:
+        # Only the ranking is paged: page 3 of it opens the board's other
+        # views as they are, and they open the ranking on its first page.
         for view, expected in (
             (
                 V.RANKING,
                 [
-                    f"{COMMAND} 阵容 {SLUG} --top 30",
+                    f"{COMMAND} 阵容 {SLUG}",
                     f"{COMMAND} 角色统计 {SLUG}",
                     f"{COMMAND} 战报 {SLUG}",
                 ],
             ),
             (
                 V.ROSTER,
-                [f"{COMMAND} 榜单 {SLUG} --top 30", f"{COMMAND} 角色统计 {SLUG}"],
+                [f"{COMMAND} 榜单 {SLUG}", f"{COMMAND} 角色统计 {SLUG}"],
             ),
         ):
             with self.subTest(view=view):
-                target = page(PageSubject.BOARD, view, ranking_top=30)
+                target = page(PageSubject.BOARD, view, ranking_page=3)
 
                 self.assertEqual(
                     [command for _, command in sibling_buttons(target)], expected
@@ -389,8 +390,8 @@ class SiblingButtonTests(unittest.TestCase):
         for subject, view in EVERY_PAGE:
             board = subject is PageSubject.BOARD
             for metric in ("dps", "rdps") if board else ("dps",):
-                for top in (None, 30) if board else (None,):
-                    target = page(subject, view, metric=metric, ranking_top=top)
+                for top in (None, 3) if board else (None,):
+                    target = page(subject, view, metric=metric, ranking_page=top)
                     for label, command in sibling_buttons(target):
                         with self.subTest(command=command):
                             payload = command.removeprefix(f"{COMMAND} ")
@@ -401,8 +402,7 @@ class SiblingButtonTests(unittest.TestCase):
                             self.assertEqual(route.query, target.name or target.key)
                             self.assertEqual(route.metric, metric)
                             self.assertEqual(route.battle_rank, 1)
-                            if drawn in (V.RANKING, V.ROSTER) and board:
-                                self.assertEqual(route.ranking_top, top)
+                            self.assertIsNone(route.ranking_page)
 
     def test_every_page_with_a_target_has_a_list(self) -> None:
         for subject, view in EVERY_PAGE:

@@ -96,6 +96,7 @@ from .metrics import DEFAULT_METRIC
 from .outcome import PageSubject, PageTarget, SitePage
 from .presentation import public_url, safe_http_url
 from .routing import (
+    ALL_PAGES,
     CONFIGURATION_ROUTES,
     DEFAULT_STATS_POTENTIAL,
     DEFAULT_STATS_RANGE,
@@ -212,8 +213,6 @@ _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = 
 }
 # What the button to each site page says it is for.
 _SITE_PAGE_LABELS = {SitePage.BINDING: "去 ZMDLogs 生成绑定码"}
-# A board's views that list its records, and so take --top.
-_LISTING_VIEWS = frozenset({CandidateView.RANKING, CandidateView.ROSTER})
 # A sibling's label is its command word, except where that word alone would
 # not say which page it opens.
 _SIBLING_LABELS = {
@@ -317,8 +316,8 @@ def pick_command(
                 parts.append(str(entry.compare_rank))
         elif (entry.battle_rank, entry.compare_rank) != (1, 2):
             parts += [str(entry.battle_rank), str(entry.compare_rank)]
-    if entry.ranking_top is not None:
-        parts += ["--top", str(entry.ranking_top)]
+    if entry.ranking_page is not None and entry.view is CandidateView.RANKING:
+        parts += ["--页", _page_word(entry.ranking_page)]
     if entry.character_filter is not None:
         parts += ["--角色", entry.character_filter]
     if entry.element_filter is not None:
@@ -536,11 +535,12 @@ def _sibling_commands(
     """``(view, label, command)`` of every other view ``target``'s page offers.
 
     A board keeps its metric: the other views of an rDPS board are its rDPS
-    views, its 第 1 名战报 the rDPS board's first place. Its length
-    (``--top``) goes wherever it means the same, the board's lists; its
-    statistics window and potential belong to the statistics page. A
-    character is named by its name, and its window goes to its 角色统计,
-    which reads the same one. A battle or an account command takes no option.
+    views, its 第 1 名战报 the rDPS board's first place. Its page stays
+    with the ranking: no other view is paged, and the ranking a sibling
+    opens starts on its first page. Its statistics window and potential
+    belong to the statistics page. A character is named by its name, and
+    its window goes to its 角色统计, which reads the same one. A battle or
+    an account command takes no option.
     """
 
     words = _SUBJECT_WORDS.get(target.subject, _BOARD_WORDS)
@@ -556,8 +556,6 @@ def _sibling_commands(
         if view in target.unavailable:
             continue
         parts = [command, words[view], target.name or target.key]
-        if target.ranking_top is not None and view in _LISTING_VIEWS:
-            parts += ["--top", str(target.ranking_top)]
         if other_metric:
             parts += ["--口径", target.metric]
         if windowed and view is CandidateView.CHARACTER_STATS:
@@ -565,6 +563,12 @@ def _sibling_commands(
         label = _SIBLING_LABELS.get((target.subject, view), words[view])
         offered.append((view, label, " ".join(parts)))
     return offered
+
+
+def _page_word(page: int | str) -> str:
+    """``--页``'s value as a user types it: the number, or 全部."""
+
+    return "全部" if page == ALL_PAGES else str(page)
 
 
 def _jump_url(target: PageTarget, *, web_base_url: str) -> str | None:

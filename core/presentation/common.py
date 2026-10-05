@@ -65,14 +65,6 @@ def metric_footer(metric: str, what: str = "公开榜单") -> str:
     return f"{what} · {metric_label(metric)} 口径"
 
 
-def _dps_share(dps: float, top_dps: float) -> float:
-    """Percent of the board leader's DPS, clamped to a visible minimum."""
-
-    if top_dps <= 0:
-        return 2.0
-    return round(max(2.0, min(100.0, dps / top_dps * 100.0)), 2)
-
-
 _RANGE_LABELS = {
     "7d": "近 7 天",
     "14d": "近 14 天",

@@ -1,5 +1,6 @@
 """Resolve a user-typed character name against the names seen in one ranking."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 
@@ -7,6 +8,7 @@ from . import messages
 from .matcher import fold_text, normalize_search_text, pinyin_keys
 from .messages import shorten
 from .models import BossRanking, BossRankingRow, PublicUserRankings
+from .professions import normalize_profession
 
 # A team has four slots, so 角色排名 takes at most four names (--角色 too).
 MAX_TEAM_NAMES = 4
@@ -210,3 +212,35 @@ def row_fields(
         fielded = {entry.character_name for entry in row.roster_entries}
         return bool(names) and all(name in fielded for name in names)
     return False
+
+
+def filter_ranking_rows(
+    ranking: BossRanking,
+    *,
+    names: tuple[str, ...] = (),
+    scope: CharacterFilterScope = CharacterFilterScope.MAIN,
+    element: str | None = None,
+    elements: Mapping[str, str] | None = None,
+    profession: str | None = None,
+) -> tuple[BossRankingRow, ...]:
+    """The rows a ranking page's filters keep, in the board's order.
+
+    ``names`` are resolved ``--角色`` names matched as ``scope`` says;
+    ``element`` keeps rows whose main C has it in ``elements`` (the catalog
+    by name), ``profession`` rows whose main C plays it. Every filter left
+    out keeps every row, and rows keep their board rank. The recipe counts
+    pages with it and the page draws them, so the two cannot disagree on
+    which rows page 2 holds.
+    """
+
+    known = elements or {}
+    return tuple(
+        row
+        for row in ranking.rows
+        if (not names or row_fields(row, names, scope))
+        and (element is None or known.get(row.character_name) == element)
+        and (
+            profession is None
+            or normalize_profession(row.character_profession or "") == profession
+        )
+    )

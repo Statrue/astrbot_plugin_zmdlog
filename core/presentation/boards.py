@@ -4,7 +4,7 @@ from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from ..characters import CharacterFilterScope
+from ..characters import CharacterFilterScope, filter_ranking_rows
 from ..elements import element_key
 from ..matcher import MatchChoice, TargetType
 from ..metrics import is_rdps, metric_label
@@ -14,11 +14,11 @@ from ..models import (
     BossRankingRow,
     HotBossCard,
 )
-from ..professions import normalize_profession
 from ..routing import (
-    DEFAULT_RANKING_TOP,
-    MAX_RANKING_TOP,
-    MIN_RANKING_TOP,
+    ALL_PAGES,
+    MAX_RANKING_ROWS,
+    RANKING_PAGE_SIZE,
+    ranking_page_count,
 )
 from ..standings import profession_record_counts
 from .common import (
@@ -27,7 +27,6 @@ from .common import (
     PageHeader,
     PresentationError,
     _bar_width,
-    _dps_share,
     _initial,
     _safe_asset_url,
     _share,
@@ -86,49 +85,46 @@ class RosterEntryView:
 @dataclass(frozen=True, slots=True)
 class RankingRowView:
     rank: int
-    percentile: str
     account_display_name: str
     character_name: str
-    character_initial: str
-    character_avatar_url: str | None
+    # The four faces, the main C's first; the rest keep the record's order.
     roster: tuple[RosterEntryView, ...]
+    # The board's own figure, DPS or rDPS, as a whole number.
     dps: str
     duration: str
     contract_score: str | None
-    # Real DPS share of the board leader, for the in-row bar. Upstream
-    # ``scorePercent`` is a rank percentile and would only restate the rank.
-    score_bar_width: float = 100.0
-    # On the rDPS board: where the same record sits on the DPS board, and
-    # the DPS board's main C when the two readings disagree.
-    dps_rank: int | None = None
-    dps_character_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class RankingPage:
+    """One page of one board's ranking, or its 全部 view.
+
+    ``record_count`` is what the header says the board holds: the rows the
+    filters keep, the whole board without filters, the rDPS board's own
+    rows on the rDPS board. A numbered page holds ten of them; the 全部
+    view (``page_number`` None) the first thirty, and ``site_only_count``
+    is how many more the site lists, for the strip that sends the reader
+    there. The page never says whether a next page exists.
+    """
+
     header: PageHeader
     boss_slug: str
-    row_count: int
-    show_contract_score: bool
+    record_count: int
     rows: tuple[RankingRowView, ...]
-    # Formatted DPS of the board leader; the 100% mark of the in-row bars.
-    top_dps: str = ""
-    # ``dps`` or ``rdps``, and the column label that goes with it.
+    # A 危机合约 board is ordered by 合约分数, which takes the time's place.
+    show_contract_score: bool
+    page_number: int | None
+    page_count: int
+    site_only_count: int = 0
+    # ``dps`` or ``rdps``, and its label beside each row's figure.
     metric: str = "dps"
     metric_label: str = "DPS"
-    # What the rDPS board holds, against the DPS board it is cut from.
-    rdps_note: str = ""
-    character_filter: str | None = None
-    # MAIN filters on the row's main C; ROSTER is the automatic fallback for
-    # characters that never carry, matching anywhere in the four-man team.
-    character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN
-    filtered_count: int | None = None
-    # The resolved names behind ``character_filter`` (their display join);
-    # several names mean every one of them must be in the team.
+    # The dungeon, unless the board's name already says it.
+    dungeon_label: str = ""
+    # The resolved filters the rows passed; the page itself names none.
     character_filters: tuple[str, ...] = ()
-    # Rows whose main C has this element, on top of the character filter.
+    character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN
     element_filter: str | None = None
-    # Rows whose main C has this profession, on top of the other filters.
     profession_filter: str | None = None
 
 
@@ -222,29 +218,22 @@ def build_ranking_page(
     ranking: BossRanking,
     *,
     query: str,
-    display_limit: int = DEFAULT_RANKING_TOP,
+    page: int | str = 1,
     web_base_url: str | None = None,
     character_filter: str | tuple[str, ...] | None = None,
     character_filter_scope: CharacterFilterScope = CharacterFilterScope.MAIN,
     element_filter: str | None = None,
     elements: Mapping[str, str] | None = None,
     profession_filter: str | None = None,
-    dps_rows: Mapping[str, BossRankingRow] | None = None,
-    dps_row_count: int | None = None,
 ) -> RankingPage:
-    """Build the first public rows in their upstream order.
+    """One page of the rows the filters keep, in their upstream order.
 
-    ``character_filter`` is an already-resolved character name matched against
-    the row's main C, or against the whole roster when the scope says so; rows
-    keep their upstream global rank after filtering. On the rDPS board
-    ``dps_rows`` (the DPS board's rows by battle id) lets every row say where
-    it stands on the DPS board and who counts as its main C there.
+    ``page`` is a page number from 1 or ``ALL_PAGES``; a page past the last
+    is the caller's to refuse (the recipe answers "共 N 页"), so it is an
+    error here. ``character_filter`` is already-resolved names matched as
+    ``character_filter_scope`` says; rows keep their board rank after
+    filtering.
     """
-
-    if isinstance(display_limit, bool) or not isinstance(display_limit, int):
-        raise PresentationError("ranking display limit must be an integer")
-    if not MIN_RANKING_TOP <= display_limit <= MAX_RANKING_TOP:
-        raise PresentationError("ranking display limit must be between 1 and 30")
 
     if character_filter is None:
         filters: tuple[str, ...] = ()
@@ -252,49 +241,35 @@ def build_ranking_page(
         filters = (character_filter,)
     else:
         filters = tuple(character_filter)
-    source_rows = ranking.rows
-    filtered_count: int | None = None
-    if filters:
-        if character_filter_scope is CharacterFilterScope.ROSTER:
-            # Every named character has to be in the four-man team.
-            source_rows = tuple(
-                row
-                for row in ranking.rows
-                if all(
-                    any(entry.character_name == name for entry in row.roster_entries)
-                    for name in filters
-                )
-            )
-        else:
-            source_rows = tuple(
-                row for row in ranking.rows if row.character_name in filters
-            )
-        filtered_count = len(source_rows)
-    if element_filter is not None:
-        known = elements or {}
-        source_rows = tuple(
-            row
-            for row in source_rows
-            if known.get(row.character_name) == element_filter
-        )
-        filtered_count = len(source_rows)
-    if profession_filter is not None:
-        source_rows = tuple(
-            row
-            for row in source_rows
-            if normalize_profession(row.character_profession or "")
-            == profession_filter
-        )
-        filtered_count = len(source_rows)
-    displayed_rows = source_rows[:display_limit]
+    kept = filter_ranking_rows(
+        ranking,
+        names=filters,
+        scope=character_filter_scope,
+        element=element_filter,
+        elements=elements,
+        profession=profession_filter,
+    )
+    page_count = ranking_page_count(len(kept))
+    if page == ALL_PAGES:
+        page_number = None
+        shown = kept[:MAX_RANKING_ROWS]
+    elif (
+        isinstance(page, int)
+        and not isinstance(page, bool)
+        and 1 <= page <= page_count
+    ):
+        page_number = page
+        first = (page - 1) * RANKING_PAGE_SIZE
+        shown = kept[first : first + RANKING_PAGE_SIZE]
+    else:
+        raise PresentationError("ranking page is out of range")
     rdps = is_rdps(ranking.metric)
 
     def value(row: BossRankingRow) -> float:
         # The rDPS board's number is the row's rDPS; an older row without
-        # one falls back to its DPS rather than losing its bar.
+        # one falls back to its DPS rather than showing nothing.
         return row.rdps if rdps and row.rdps is not None else row.dps
 
-    top_dps = value(ranking.rows[0]) if ranking.rows else 0.0
     is_crisis_contract = ranking.boss_slug == _CRISIS_CONTRACT_BOSS_SLUG
     title = "危机合约" if is_crisis_contract else ranking.boss_name
     subtitle = "活动竞速" if is_crisis_contract else ranking.dungeon_name
@@ -303,12 +278,6 @@ def build_ranking_page(
         if is_crisis_contract
         else f"{ranking.dungeon_name} · {ranking.boss_name}"
     )
-    known_dps = dps_rows or {}
-    rdps_note = ""
-    if rdps:
-        rdps_note = f"只收录可计算 rDPS 的记录 {len(ranking.rows)} 条"
-        if dps_row_count is not None:
-            rdps_note += f" · DPS 榜 {dps_row_count} 条"
     return RankingPage(
         header=PageHeader(
             title=title,
@@ -320,63 +289,71 @@ def build_ranking_page(
             metric=ranking.metric,
         ),
         boss_slug=ranking.boss_slug,
-        row_count=len(ranking.rows),
-        show_contract_score=any(
-            row.contract_tag_score is not None for row in displayed_rows
-        ),
+        record_count=len(kept),
         rows=tuple(
             RankingRowView(
                 rank=row.rank,
-                percentile=f"{format_number(row.score_percent)}%",
                 account_display_name=row.account_display_name,
                 character_name=row.character_name,
-                character_initial=_initial(row.character_name),
-                character_avatar_url=_safe_asset_url(
-                    row.character_avatar_url,
-                    base_url=web_base_url,
-                ),
-                # The row is about its main C: only that face gets a 养成.
-                roster=_build_roster(
-                    row.roster_entries,
-                    row.roster_summary,
-                    web_base_url=web_base_url,
-                    elements=elements,
-                    investment_of=row.character_name,
-                ),
-                dps=format_number(value(row)),
+                roster=_lead_first(row, web_base_url=web_base_url),
+                dps=format_number(round(value(row))),
                 duration=format_duration(row.duration_ms),
                 contract_score=(
                     format_number(row.contract_tag_score)
                     if row.contract_tag_score is not None
                     else None
                 ),
-                score_bar_width=_dps_share(value(row), top_dps),
-                dps_rank=(
-                    known_dps[row.battle_id].rank
-                    if rdps and row.battle_id in known_dps
-                    else None
-                ),
-                dps_character_name=(
-                    known_dps[row.battle_id].character_name
-                    if rdps
-                    and row.battle_id in known_dps
-                    and known_dps[row.battle_id].character_name != row.character_name
-                    else None
-                ),
             )
-            for row in displayed_rows
+            for row in shown
         ),
-        top_dps=format_number(top_dps) if ranking.rows else "",
+        show_contract_score=any(
+            row.contract_tag_score is not None for row in shown
+        ),
+        page_number=page_number,
+        page_count=page_count,
+        site_only_count=(
+            len(kept) - len(shown) if page_number is None else 0
+        ),
         metric=ranking.metric,
         metric_label=metric_label(ranking.metric),
-        rdps_note=rdps_note,
-        character_filter=" · ".join(filters) if filters else None,
-        character_filter_scope=character_filter_scope,
-        filtered_count=filtered_count,
+        dungeon_label="" if _normalised(subtitle) in _normalised(title) else subtitle,
         character_filters=filters,
+        character_filter_scope=character_filter_scope,
         element_filter=element_filter,
         profession_filter=profession_filter,
     )
+
+
+def _lead_first(
+    row: BossRankingRow, *, web_base_url: str | None
+) -> tuple[RosterEntryView, ...]:
+    """The record's four faces with its main C moved to the front.
+
+    A record whose roster does not name its main C still shows that face
+    first, drawn from the row's own portrait.
+    """
+
+    faces = _build_roster(
+        row.roster_entries, row.roster_summary, web_base_url=web_base_url
+    )
+    lead = [face for face in faces if face.character_name == row.character_name]
+    rest = [face for face in faces if face.character_name != row.character_name]
+    if not lead and row.character_name:
+        lead = [
+            RosterEntryView(
+                character_name=row.character_name,
+                profession=row.character_profession or "",
+                character_initial=_initial(row.character_name),
+                avatar_url=_safe_asset_url(
+                    row.character_avatar_url, base_url=web_base_url
+                ),
+            )
+        ]
+    return tuple(lead[:1] + rest)
+
+
+def _normalised(text: str) -> str:
+    return "".join(text.split()).replace("·", "").replace("・", "")
 
 
 _MAX_USAGE_ENTRIES = 6
@@ -395,14 +372,14 @@ def build_roster_page(
     ranking: BossRanking,
     *,
     query: str,
-    display_limit: int = DEFAULT_RANKING_TOP,
+    display_limit: int = RANKING_PAGE_SIZE,
     web_base_url: str | None = None,
 ) -> RosterPage:
     """Profession usage (whole board) plus top-N roster / main-character stats."""
 
     if isinstance(display_limit, bool) or not isinstance(display_limit, int):
         raise PresentationError("ranking display limit must be an integer")
-    if not MIN_RANKING_TOP <= display_limit <= MAX_RANKING_TOP:
+    if not 1 <= display_limit <= MAX_RANKING_ROWS:
         raise PresentationError("ranking display limit must be between 1 and 30")
 
     is_crisis_contract = ranking.boss_slug == _CRISIS_CONTRACT_BOSS_SLUG

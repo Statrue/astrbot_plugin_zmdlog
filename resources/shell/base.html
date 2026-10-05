@@ -1,0 +1,30 @@
+{# The V2 shell's root (ADR 0003): what every V2 page shares and nothing
+   else — the root node at the frame's width, the fonts, the palette and
+   type scale, and the anchors the capture validates (#zmd-root holding
+   .zmd-main). A frame's base (list-base.html) extends it and fills
+   ``root``; a page extends that and adds its own stylesheet in ``styles``. #}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width={{ frame.width }}, initial-scale=1.0">
+  <title>{{ page.header.title }} · {{ plugin.name }}</title>
+  <style>
+    {{ font_face_css }}
+    :root {
+      --zmd-frame-width: {{ frame.width }};
+      --box-head: url("{{ shell.box_head }}");
+      --box-page: url("{{ shell.box_page }}");
+      --topo-strip: url("{{ shell.topo_strip }}");
+    }
+    {% include "shell/base.css" %}
+    {% block frame_styles %}{% endblock %}
+    {% block styles %}{% endblock %}
+  </style>
+</head>
+<body>
+  <div id="zmd-root" class="zmd-root {% block root_class %}{% endblock %} zmd-root--{{ page_kind }}">
+    {% block root %}{% endblock %}
+  </div>
+</body>
+</html>

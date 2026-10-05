@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from core.matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
 from core.models import (
     BossRanking,
+    BossRankingRosterEntry,
     BossRankingRow,
     ContractTag,
     parse_battle_detail,
@@ -25,6 +26,9 @@ from core.presentation import (
 )
 from core.render import (
     FONT_ORIGIN,
+    LEGACY_FRAME,
+    LIST_FRAME,
+    WIDE_FRAME,
     AssetCache,
     LongImageRenderer,
     RenderError,
@@ -32,6 +36,7 @@ from core.render import (
     TemplateRenderer,
     read_plugin_version,
 )
+from core.routing import ALL_PAGES
 from tests.helpers import (
     battle_detail_payload,
     crisis_contract_tags,
@@ -291,46 +296,62 @@ class TemplateRendererTests(unittest.TestCase):
 
     def test_every_font_size_is_a_scale_token(self) -> None:
         # Colours were tokens from the first commit; sizes drifted into
-        # nineteen values with half-pixels between them. The --fs-* scale in
-        # base.css is now the only place a size may come from, and every
-        # token a page uses must exist there.
-        base_css = (self.root / "resources" / "common" / "base.css").read_text(
-            encoding="utf-8"
-        )
-        root_start = base_css.index(":root {")
-        root_block = base_css[root_start : base_css.index("}", root_start)]
-        defined = set(re.findall(r"--fs-[a-z0-9-]+(?=:)", root_block))
-        self.assertTrue(defined)
+        # nineteen values with half-pixels between them. Each shell's
+        # base.css now holds the only sizes its pages may use — the old
+        # shell's under resources/common, the V2 shell's under
+        # resources/shell — and every token a page uses must exist in the
+        # scale of the shell it is built on.
+        resources = self.root / "resources"
+
+        def scale(base: Path) -> set[str]:
+            css = base.read_text(encoding="utf-8")
+            root_start = css.index(":root {")
+            root_block = css[root_start : css.index("}", root_start)]
+            return set(re.findall(r"--fs-[a-z0-9-]+(?=:)", root_block))
+
+        old_scale = scale(resources / "common" / "base.css")
+        new_scale = scale(resources / "shell" / "base.css")
+        self.assertTrue(old_scale)
+        self.assertTrue(new_scale)
+
+        # A V2 file is the shell's own, or one a V2 page includes.
+        v2_files = set((resources / "shell").glob("*.*"))
+        for template in resources.rglob("*.html"):
+            markup = template.read_text(encoding="utf-8")
+            if '{% extends "shell/' in markup:
+                v2_files.add(template)
+                v2_files.update(
+                    resources / name
+                    for name in re.findall(r'{% include "([^"]+)" %}', markup)
+                )
 
         raw_size = re.compile(r"font-size:\s*[0-9.]+(?:px|em|rem|%)")
-        used: set[str] = set()
-        for path in sorted((self.root / "resources").rglob("*.css")):
-            css = path.read_text(encoding="utf-8")
-            self.assertEqual(
-                raw_size.findall(css), [], f"{path.name} sets a raw font-size"
-            )
-            used.update(re.findall(r"font-size:\s*var\((--fs-[a-z0-9-]+)\)", css))
-
         # The rule is about sizes, not about stylesheets. An inline
         # style="font-size: 13px" or an SVG font-size="13" would put an
         # untokenised size on the page and never be seen by a .css scan.
         # A token spelled inline is still a token, so only digits are refused.
         raw_inline = re.compile(r"font-size\s*[:=]\s*[\"']?\s*[0-9.]")
-        for path in sorted((self.root / "resources").rglob("*.html")):
-            markup = path.read_text(encoding="utf-8")
+        token = re.compile(
+            r"font-size\s*[:=]\s*[\"']?\s*var\((--fs-[a-z0-9-]+)\)"
+        )
+        used = {True: set(), False: set()}
+        for path in sorted(resources.rglob("*")):
+            if path.suffix not in {".css", ".html"}:
+                continue
+            text = path.read_text(encoding="utf-8")
+            refused = raw_size if path.suffix == ".css" else raw_inline
             self.assertEqual(
-                raw_inline.findall(markup), [], f"{path.name} sets a raw font-size"
+                refused.findall(text), [], f"{path.name} sets a raw font-size"
             )
-            used.update(
-                re.findall(r"font-size\s*[:=]\s*[\"']?\s*var\((--fs-[a-z0-9-]+)\)",
-                           markup)
-            )
+            used[path in v2_files].update(token.findall(text))
 
-        self.assertTrue(used)
-        self.assertEqual(used - defined, set())
+        self.assertTrue(used[True])
+        self.assertTrue(used[False])
+        self.assertEqual(used[True] - new_scale, set())
+        self.assertEqual(used[False] - old_scale, set())
 
-    def test_specific_ranking_defaults_to_ten_and_supports_top_thirty(self) -> None:
-        ranking = BossRanking(
+    def _board(self, count: int, **row_fields) -> BossRanking:
+        return BossRanking(
             boss_slug="test-boss",
             boss_name="测试首领",
             dungeon_name="测试副本",
@@ -342,64 +363,144 @@ class TemplateRendererTests(unittest.TestCase):
                     battle_id=f"battle-{rank}",
                     battle_end_at="2026-01-01T00:00:00Z",
                     character_name=f"角色{rank}",
-                    character_profession="近战",
+                    character_profession="近卫",
                     account_id=f"account-{rank}",
-                    account_display_name=f"公开账号{rank}",
-                    dps=100_000 - rank,
-                    duration_ms=60_000,
+                    account_display_name=f"公开账号{rank}号",
+                    dps=100_000.6 - rank,
+                    duration_ms=60_000 + rank,
                     roster_summary=(),
                     roster_entries=(),
+                    **row_fields,
                 )
-                for rank in range(1, 36)
+                for rank in range(1, count + 1)
             ),
         )
 
-        page = build_ranking_page(
-            ranking,
-            query="测试",
-        )
+    def test_a_ranking_page_holds_ten_rows_and_the_header_counts_them_all(
+        self,
+    ) -> None:
+        ranking = self._board(35)
 
-        self.assertEqual(page.row_count, 35)
-        self.assertEqual(len(page.rows), 10)
-        self.assertEqual(page.rows[-1].rank, 10)
-        self.assertFalse(page.show_contract_score)
-        self.assertEqual(page.header.title, "测试首领")
-        self.assertEqual(page.header.subtitle, "测试副本")
-        self.assertEqual(page.header.matched_name, "测试副本 · 测试首领")
+        first = build_ranking_page(ranking, query="测试")
+        self.assertEqual([row.rank for row in first.rows], list(range(1, 11)))
+        self.assertEqual((first.record_count, first.page_count), (35, 4))
+        self.assertEqual(first.header.title, "测试首领")
+        self.assertEqual(first.header.matched_name, "测试副本 · 测试首领")
+        self.assertEqual(first.rows[0].dps, "100,000")
 
-        expanded_page = build_ranking_page(
-            ranking,
-            query="测试",
-            display_limit=30,
-        )
-        self.assertEqual(len(expanded_page.rows), 30)
-        self.assertEqual(expanded_page.rows[-1].rank, 30)
+        last = build_ranking_page(ranking, query="测试", page=4)
+        self.assertEqual([row.rank for row in last.rows], [31, 32, 33, 34, 35])
 
-        expanded_html = self.renderer.render_ranking(
-            ranking,
-            query="测试",
-            ranking_limit=30,
-        )
-        self.assertIn("公开账号30", expanded_html)
-        self.assertNotIn("公开账号31", expanded_html)
+        html = self.renderer.render_ranking(ranking, query="测试", page=2)
+        self.assertIn("公开账号11号", html)
+        self.assertIn("公开账号20号", html)
+        self.assertNotIn("公开账号10号", html)
+        self.assertNotIn("公开账号21号", html)
+        self.assertIn("<b>35</b> 条公开记录", html)
+        self.assertIn("DPS 口径", html)
+        # The picture never says a next page exists, and only 全部 has a strip.
+        self.assertNotIn("下一页", html)
+        self.assertNotIn("--页", html)
+        self.assertNotIn("官网查看", html)
 
-    def test_specific_ranking_rejects_out_of_range_display_limit(self) -> None:
-        ranking = BossRanking(
-            boss_slug="test-boss",
-            boss_name="测试首领",
-            dungeon_name="测试副本",
-            profession_groups=(),
-            rows=(),
-        )
-
-        for display_limit in (0, 31, True):
-            with self.subTest(display_limit=display_limit):
+    def test_a_page_past_the_last_is_refused(self) -> None:
+        ranking = self._board(35)
+        for page in (0, 5, True, "2"):
+            with self.subTest(page=page):
                 with self.assertRaises(PresentationError):
-                    build_ranking_page(
-                        ranking,
-                        query="测试",
-                        display_limit=display_limit,
-                    )
+                    build_ranking_page(ranking, query="测试", page=page)
+
+    def test_all_shows_thirty_rows_and_sends_the_rest_to_the_site(self) -> None:
+        html = self.renderer.render_ranking(
+            self._board(35), query="测试", page=ALL_PAGES
+        )
+        self.assertIn("公开账号30号", html)
+        self.assertNotIn("公开账号31号", html)
+        self.assertIn("其余<b>5</b>条记录请到 ZMDLogs 官网查看", html)
+
+        for count in (30, 12):
+            with self.subTest(count=count):
+                html = self.renderer.render_ranking(
+                    self._board(count), query="测试", page=ALL_PAGES
+                )
+                self.assertIn(f"公开账号{count}号", html)
+                self.assertNotIn("官网查看", html)
+
+    def test_filters_hold_on_every_page_and_the_header_counts_what_they_keep(
+        self,
+    ) -> None:
+        ranking = self._board(35)
+        elements = {f"角色{rank}": "物理" for rank in range(1, 36, 2)}
+
+        page = build_ranking_page(
+            ranking, query="测试", page=2, element_filter="物理", elements=elements
+        )
+        self.assertEqual(page.record_count, 18)
+        self.assertEqual(page.page_count, 2)
+        self.assertEqual(
+            [row.rank for row in page.rows], [21, 23, 25, 27, 29, 31, 33, 35]
+        )
+
+    def test_the_ranking_is_a_list_page_on_the_new_shell(self) -> None:
+        html = self.renderer.render_ranking(self._board(3), query="测试")
+
+        self.assertIn("--zmd-frame-width: 540;", html)
+        self.assertIn('id="zmd-root"', html)
+        self.assertIn('class="zmd-main"', html)
+        self.assertIn("终末地·藕粉铺子", html)
+        self.assertIn(">RANKING<", html)
+        self.assertIn("TOP 1", html)
+        self.assertIn(f"v{self.renderer.version}", html)
+        self.assertNotIn("scene-background", html)
+        self.assertNotIn('id="zmd-page"', html)
+
+    def test_the_main_c_leads_the_faces_and_no_name_is_cut(self) -> None:
+        roster = tuple(
+            BossRankingRosterEntry(character_name=name, profession="近卫")
+            for name in ("甲", "乙", "主", "丁")
+        )
+        long_name = "终末地藕粉铺子凹分研究所特别行动小组第一分队长期招募中欢迎"
+        ranking = replace(
+            self._board(1),
+            rows=(
+                replace(
+                    self._board(1).rows[0],
+                    rank=101,
+                    character_name="主",
+                    account_display_name=long_name,
+                    roster_entries=roster,
+                ),
+            ),
+        )
+
+        page = build_ranking_page(ranking, query="测试")
+        self.assertEqual(
+            [face.character_name for face in page.rows[0].roster],
+            ["主", "甲", "乙", "丁"],
+        )
+        html = self.renderer.render_ranking(ranking, query="测试")
+        self.assertIn(f"<strong>{long_name}</strong>", html)
+        self.assertIn(">101<", html)
+        self.assertEqual(html.count("i-face is-lead"), 1)
+        shell_css = (self.root / "resources" / "shell" / "parts.css").read_text(
+            encoding="utf-8"
+        )
+        name_rule = re.search(r"\.i-name strong\s*\{([^}]*)\}", shell_css)
+        self.assertIsNotNone(name_rule)
+        self.assertNotIn("ellipsis", name_rule.group(1))
+        self.assertNotIn("nowrap", name_rule.group(1))
+
+    def test_rdps_board_counts_its_own_rows_and_says_nothing_more(self) -> None:
+        ranking = replace(
+            self._board(13, rdps=50_000.4), metric="rdps"
+        )
+        html = self.renderer.render_ranking(ranking, query="测试")
+
+        self.assertIn("<b>13</b> 条公开记录", html)
+        self.assertIn("rDPS 口径", html)
+        self.assertIn("<span>rDPS</span>50,000", html)
+        self.assertNotIn("DPS 榜", html)
+        self.assertNotIn("只收录", html)
 
     def test_contract_ranking_only_shows_score(self) -> None:
         ranking = BossRanking(
@@ -440,25 +541,18 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertEqual(page.header.subtitle, "活动竞速")
         self.assertEqual(page.header.matched_name, "危机合约")
         self.assertNotIn("破潮之像", html)
-        self.assertIn("合约分数", html)
-        self.assertIn("<b>52</b>", html)
-        self.assertIn('<span class="head-right">DPS</span>', html)
-        self.assertIn('<span class="head-right">用时</span>', html)
-        self.assertNotIn("DPS / 用时", html)
-        self.assertIn("<strong>公开账号", html)
+        # The score takes the time's place; the time moves under it, and no
+        # DPS or 口径 is printed for a board ordered by score.
+        self.assertIn("按合约分数", html)
+        self.assertIn("<b>52</b><small>分</small>", html)
+        self.assertIn("<span>用时</span>6:25.648", html)
+        self.assertNotIn("按通关用时", html)
+        self.assertNotIn("<span>DPS 口径</span>", html)
+        self.assertNotIn("17,184", html)
+        self.assertIn("<strong>公开账号</strong>", html)
         self.assertNotIn("队列：折刃", html)
         self.assertNotIn("secret-battle-id", html)
         self.assertNotIn("战斗详情", html)
-
-    def test_public_account_column_uses_bold_style(self) -> None:
-        css = (self.root / "resources" / "ranking" / "ranking.css").read_text(
-            encoding="utf-8",
-        )
-
-        self.assertRegex(
-            css,
-            r"\.cell-id strong\s*\{[^}]*font-weight:\s*800;",
-        )
 
     def test_top_three_template_does_not_leak_ranking_fields(self) -> None:
         card = make_card(
@@ -587,14 +681,14 @@ class TemplateRendererTests(unittest.TestCase):
             web_base_url="https://zmdlogs.com",
         )
         self.assertEqual(
-            page.rows[0].character_avatar_url,
+            page.rows[0].roster[0].avatar_url,
             "https://zmdlogs.com/images/character/luoxi.png",
         )
-        self.assertIsNone(page.rows[1].character_avatar_url)
+        self.assertIsNone(page.rows[1].roster[0].avatar_url)
 
         # Without a base URL only absolute HTTP(S) URLs survive.
         page = build_ranking_page(ranking, query="测试")
-        self.assertIsNone(page.rows[0].character_avatar_url)
+        self.assertIsNone(page.rows[0].roster[0].avatar_url)
 
         card = make_card("a", "首领", "副本", with_run=True)
         html = self.renderer.render_dungeon_top3(
@@ -622,6 +716,57 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
         renderer = object.__new__(LongImageRenderer)
         with self.assertRaises(RenderError):
             await renderer._validate_page(MissingPage())
+
+    async def test_a_v2_page_is_checked_against_its_declared_frame(self) -> None:
+        class DrawnPage:
+            def __init__(self, **metrics) -> None:
+                self.metrics = {
+                    "width": 540,
+                    "boxWidth": 540,
+                    "declaredWidth": 540,
+                    "height": 2000,
+                    "panelBottom": 1900,
+                    **metrics,
+                }
+
+            async def evaluate(self, script):
+                # The V2 anchors, never the old shell's.
+                self.script = script
+                return self.metrics
+
+        renderer = object.__new__(LongImageRenderer)
+        drawn = DrawnPage()
+        self.assertEqual(
+            await renderer._validate_page(drawn, LIST_FRAME), drawn.metrics
+        )
+        self.assertIn("#zmd-root", drawn.script)
+        self.assertIn(".zmd-main", drawn.script)
+        self.assertNotIn("#zmd-page", drawn.script)
+        for wrong in (
+            {"width": 560},  # a decoration spilling past the frame
+            {"boxWidth": 1280},
+            {"declaredWidth": 960},  # the template and the page kind disagree
+            {"declaredWidth": 0},
+            {"panelBottom": 2100},
+            {"height": 0},
+        ):
+            with self.subTest(wrong=wrong):
+                with self.assertRaises(RenderError):
+                    await renderer._validate_page(DrawnPage(**wrong), LIST_FRAME)
+
+        # The same page in another frame fails on its width.
+        with self.assertRaises(RenderError):
+            await renderer._validate_page(DrawnPage(), WIDE_FRAME)
+
+    def test_each_page_kind_declares_its_frame(self) -> None:
+        from core.render import page_frame
+
+        self.assertEqual(page_frame("ranking"), LIST_FRAME)
+        self.assertEqual((LIST_FRAME.width, LIST_FRAME.scale), (540, 2))
+        self.assertEqual((WIDE_FRAME.width, WIDE_FRAME.scale), (960, 2))
+        # Pages not yet on the V2 shell keep the old frame.
+        self.assertEqual(page_frame("battle"), LEGACY_FRAME)
+        self.assertEqual((LEGACY_FRAME.width, LEGACY_FRAME.scale), (1280, 1))
 
     async def test_capture_failure_keeps_rendered_html_for_fallback(self) -> None:
         renderer = LongImageRenderer(self.root)

@@ -1,0 +1,31 @@
+/* The 540 px phone list: the operator-card ground under the rows (big
+   boxes, each crossed by one diagonal), and the dark foot after the
+   Endfield site's. */
+.zmd-list {
+  background: var(--box-page) 0 180px / 216px 216px repeat, var(--page-bg);
+}
+
+.i-foot {
+  margin-top: 18px;
+  padding: 14px 16px 15px;
+  background: var(--foot-bg);
+  text-align: center;
+}
+.i-foot-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: var(--fs-17);
+  line-height: 1.35;
+  color: var(--foot-ink);
+}
+.i-foot-meta span + span::before {
+  content: "|";
+  margin: 0 12px;
+  color: var(--foot-rule);
+}
+.i-foot-meta b {
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--foot-ink-strong);
+}

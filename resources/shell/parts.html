@@ -1,0 +1,51 @@
+{# The V2 shell's shared parts (parts.css styles them). #}
+
+{# The masthead: ``giant`` is the word across the sky; the caller fills the
+   meta line under the title. #}
+{% macro masthead(title, giant, sky_art) -%}
+<header class="i-head">
+  <div class="i-sky" aria-hidden="true">
+    {# the machine: a fine line halftone, drawn once (ASSETS.md) #}
+    <img class="i-art" src="{{ sky_art }}" alt="">
+    <svg class="i-shards" viewBox="0 0 540 112" preserveAspectRatio="xMidYMax slice">
+      <defs>
+        <pattern id="dots-big" width="4.6" height="4.6" patternUnits="userSpaceOnUse"><circle cx="2.3" cy="2.3" r="1.1" fill="#3a3a3a"/></pattern>
+        <pattern id="dots-small" width="4.6" height="4.6" patternUnits="userSpaceOnUse" x="2.3" y="2.3"><circle cx="2.3" cy="2.3" r="0.6" fill="#3a3a3a"/></pattern>
+        <radialGradient id="fade-core" cx="336" cy="40" r="34" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".7" stop-color="#fff" stop-opacity=".2"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+        <radialGradient id="fade-rim" cx="336" cy="40" r="56" gradientUnits="userSpaceOnUse"><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset=".62" stop-color="#fff" stop-opacity=".4"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+        <mask id="m-core"><rect width="540" height="112" fill="url(#fade-core)"/></mask>
+        <mask id="m-rim"><rect width="540" height="112" fill="url(#fade-rim)"/></mask>
+      </defs>
+      {# halftone: big dots at the heart, small ones on the rim, both fading out #}
+      <rect width="540" height="112" fill="url(#dots-big)" mask="url(#m-core)"/>
+      <rect width="540" height="112" fill="url(#dots-small)" mask="url(#m-rim)"/>
+      {# a white beam across the machine, thin, as on the banner #}
+      <polygon points="262,112 434,0 446,0 274,112" fill="#fff" opacity=".9"/>
+      <polygon points="281,112 453,0 455,0 283,112" fill="#fff" opacity=".7"/>
+    </svg>
+  </div>
+  <span class="i-giant" aria-hidden="true">{{ giant }}</span>
+  <div class="i-ground" aria-hidden="true"></div>
+  <div class="i-logo">终末地·藕粉铺子</div>
+  <div class="i-titlebox">
+    <i class="i-tick" aria-hidden="true"></i>
+    <h1 class="i-title">{{ title }}</h1>
+    <p class="i-meta">{{ caller() }}</p>
+  </div>
+</header>
+{%- endmacro %}
+
+{# The block an arrow points out of, at the head of a record card. #}
+{% macro arrow() -%}
+<span class="i-arrow"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4L15 15M15 6.5V15H6.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/></svg></span>
+{%- endmacro %}
+
+{# One round face; ``lead`` gives it the main C's yellow ring and halo. #}
+{% macro face(member, lead=false) -%}
+<span class="i-face{% if lead %} is-lead{% endif %}">
+  <span class="i-face-disc">
+    <span class="initial">{{ member.character_initial }}</span>
+    {% if member.avatar_url %}<img src="{{ member.avatar_url }}" alt="">{% endif %}
+  </span>
+</span>
+{%- endmacro %}

@@ -54,26 +54,31 @@ class OptionRoutingTests(unittest.TestCase):
         self.assertEqual(route.stats_potential, "1-5")
 
     def test_roster_route(self) -> None:
-        route = parse_zmdlog_payload("阵容 罗丹 --top 30")
+        route = parse_zmdlog_payload("阵容 罗丹 --口径 rdps")
         self.assertEqual(route.kind, RouteKind.ROSTER_QUERY)
         self.assertEqual(route.query, "罗丹")
-        self.assertEqual(route.ranking_top, 30)
+        self.assertEqual(route.metric, "rdps")
         with self.assertRaises(RouteParseError):
             parse_zmdlog_payload("阵容")
+        # 阵容 counts a fixed top ten now; neither --top nor --页 is taken.
+        for payload in ("阵容 罗丹 --top 30", "阵容 罗丹 --页 2"):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(RouteParseError, "--页"):
+                    parse_zmdlog_payload(payload)
 
     def test_character_filter_option(self) -> None:
-        route = parse_zmdlog_payload("罗丹 --角色 黎风 --top 5")
+        route = parse_zmdlog_payload("罗丹 --角色 黎风 --页 5")
         self.assertEqual(route.kind, RouteKind.SMART_QUERY)
         self.assertEqual(route.query, "罗丹")
         self.assertEqual(route.character_filter, "黎风")
-        self.assertEqual(route.ranking_top, 5)
+        self.assertEqual(route.ranking_page, 5)
         route = parse_zmdlog_payload("榜单 罗丹 --char lf")
         self.assertEqual(route.kind, RouteKind.RANKING_QUERY)
         self.assertEqual(route.character_filter, "lf")
 
     def test_options_rejected_where_they_do_not_apply(self) -> None:
         cases = {
-            "角色统计 罗丹 --top 5": "--top",
+            "角色统计 罗丹 --页 5": "--页",
             "角色统计 罗丹 --角色 黎风": "--角色",
             "阵容 罗丹 --范围 7d": "--范围",
             "罗丹 --潜能 0": "--潜能",
@@ -85,7 +90,7 @@ class OptionRoutingTests(unittest.TestCase):
             "罗丹 --角色 黎风 --角色 洛茜": "--角色",
             # A trailing token after --角色 is a second character name now
             # (see test_character_intersection); other options stay single.
-            "罗丹 --top 5 多余": "--top",
+            "罗丹 --页 5 多余": "--页",
             "罗丹 --unknown 1": "--unknown",
         }
         for payload, fragment in cases.items():
@@ -205,22 +210,21 @@ class CharacterFilterPageTests(unittest.TestCase):
     def test_filter_keeps_global_rank_and_counts(self) -> None:
         ranking = parse_boss_ranking(ranking_payload_with_rows())
         page = build_ranking_page(
-            ranking, query="测试 --角色 黎风", display_limit=2, character_filter="黎风"
+            ranking, query="测试 --角色 黎风", character_filter="黎风"
         )
-        self.assertEqual(page.character_filter, "黎风")
-        self.assertEqual(page.filtered_count, 3)
-        self.assertEqual(page.row_count, 5)
-        self.assertEqual([row.rank for row in page.rows], [1, 2])
+        self.assertEqual(page.character_filters, ("黎风",))
+        self.assertEqual(page.record_count, 3)
+        self.assertEqual([row.rank for row in page.rows], [1, 2, 4])
 
-    def test_template_shows_filter_meta(self) -> None:
+    def test_the_header_counts_the_rows_the_filter_keeps(self) -> None:
+        # The page names no filter (the prototype's ruling): the count is
+        # what tells a filtered page from the whole board.
         renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
         ranking = parse_boss_ranking(ranking_payload_with_rows())
-        html = renderer.render_ranking(
-            ranking, query="q", ranking_limit=10, character_filter="洛茜"
-        )
-        self.assertIn("主 C 洛茜", html)
-        self.assertIn("筛选出 1 条", html)
-        self.assertIn("共 5 条公开排名", html)
+        html = renderer.render_ranking(ranking, query="q", character_filter="洛茜")
+        self.assertIn("<b>1</b> 条公开记录", html)
+        self.assertIn("公开账号3", html)
+        self.assertNotIn("公开账号1<", html)
 
     def test_an_unfiltered_page_draws_no_filter_note(self) -> None:
         # A scope passed without a filter used to render the roster-fallback
@@ -231,13 +235,11 @@ class CharacterFilterPageTests(unittest.TestCase):
         html = renderer.render_ranking(
             ranking,
             query="q",
-            ranking_limit=10,
             character_filter_scope=CharacterFilterScope.ROSTER,
         )
 
-        self.assertNotIn("本榜没有以", html)
         self.assertNotIn("None", html)
-        self.assertIn("5 条公开排名", html)
+        self.assertIn("<b>5</b> 条公开记录", html)
 
     def test_scope_prefers_the_main_c_and_falls_back_to_the_roster(self) -> None:
         ranking = parse_boss_ranking(ranking_payload_with_rows())
@@ -262,29 +264,12 @@ class CharacterFilterPageTests(unittest.TestCase):
         page = build_ranking_page(
             ranking,
             query="测试 --角色 佩丽卡",
-            display_limit=10,
             character_filter="佩丽卡",
             character_filter_scope=CharacterFilterScope.ROSTER,
         )
 
-        self.assertEqual(page.filtered_count, 5)
+        self.assertEqual(page.record_count, 5)
         self.assertEqual([row.rank for row in page.rows], [1, 2, 3, 4, 5])
-
-    def test_template_explains_the_roster_fallback(self) -> None:
-        renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
-        ranking = parse_boss_ranking(ranking_payload_with_rows())
-        html = renderer.render_ranking(
-            ranking,
-            query="q",
-            ranking_limit=10,
-            character_filter="佩丽卡",
-            character_filter_scope=CharacterFilterScope.ROSTER,
-        )
-
-        self.assertIn("阵容含 佩丽卡", html)
-        self.assertIn("没有以「佩丽卡」为主 C 的公开记录", html)
-        self.assertIn("筛选出 5 条", html)
-        self.assertIn("is-match", html)
 
 
 class CharacterStatsPageTests(unittest.TestCase):

@@ -1389,7 +1389,7 @@ class ProfileRouteTests(unittest.TestCase):
         for payload, option in (
             ("角色档案 莱万汀 --口径 rdps", "metric"),
             ("角色档案 莱万汀 --潜能 0", "potential"),
-            ("角色档案 莱万汀 --top 5", "top"),
+            ("角色档案 莱万汀 --页 5", "page"),
             ("角色档案 莱万汀 --角色 卡缪", "character"),
             ("角色档案 莱万汀 --属性 灼热", "element"),
             ("角色档案 莱万汀 --职业 突击", "profession"),

@@ -8,18 +8,18 @@ from .. import messages
 from ..characters import (
     CharacterFilterScope,
     CharacterResolutionStatus,
+    filter_ranking_rows,
     pick_character_filter_scope,
     ranking_character_names,
     resolve_character_name,
     row_fields,
 )
-from ..client import ZmdLogsClientError
 from ..matcher import MatchChoice
 from ..messages import shorten
 from ..metrics import is_rdps
-from ..models import BossRanking, BossRankingRow, HotBossCard
+from ..models import BossRanking, HotBossCard
 from ..professions import normalize_profession
-from ..routing import DEFAULT_RANKING_TOP
+from ..routing import ALL_PAGES, ranking_page_count
 
 if TYPE_CHECKING:
     from ..datasource import ZmdLogsDataSource
@@ -28,12 +28,14 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class RankingRecipe:
-    """One board's public ranking, cut by main C / roster, element and profession."""
+    """One page of one board's public ranking, cut by main C / roster,
+    element and profession; the filters hold on every page."""
 
     ranking: BossRanking
     query: str
     web_base_url: str | None
-    ranking_limit: int
+    # A page number from 1 that exists, or ``ALL_PAGES``.
+    page: int | str
     # The resolved ``--角色`` names, in the board's spelling, and how they
     # are matched: one name as main C when the board has such rows, in the
     # roster otherwise; several names always in the roster (a team has one
@@ -43,24 +45,18 @@ class RankingRecipe:
     element_filter: str | None
     profession_filter: str | None
     elements: Mapping[str, str]
-    # On the rDPS board: the DPS board's rows by battle id and its size,
-    # so every row can say where it stands on the board everyone reads.
-    dps_rows: Mapping[str, BossRankingRow] | None = None
-    dps_row_count: int | None = None
 
     async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_ranking(
             self.ranking,
             query=self.query,
-            ranking_limit=self.ranking_limit,
+            page=self.page,
             web_base_url=self.web_base_url,
             character_filter=self.character_filter,
             character_filter_scope=self.character_filter_scope,
             element_filter=self.element_filter,
             elements=self.elements,
             profession_filter=self.profession_filter,
-            dps_rows=self.dps_rows,
-            dps_row_count=self.dps_row_count,
         )
 
 
@@ -70,17 +66,19 @@ async def prepare_ranking(
     *,
     query: str,
     web_base_url: str | None,
-    ranking_limit: int = DEFAULT_RANKING_TOP,
+    page: int | str = 1,
     character_filter: str | None = None,
     element_filter: str | None = None,
     profession_filter: str | None = None,
 ) -> RankingRecipe | str:
-    """The ranking page, or the one-line reason its filters leave nothing.
+    """The ranking page, or the one-line reason there is nothing to draw.
 
     ``character_filter`` is the typed names, space-separated, resolved here
     against the board's own rosters. Every filter is checked alone and then
     all together, because each alone may keep rows while the combination
     draws an empty page — which reads as a broken render, not as an answer.
+    ``page`` is a page number from 1 or ``ALL_PAGES``; a page past the
+    last answers with how many pages the rows the filters keep fill.
     """
 
     board = ranking.boss_name
@@ -130,42 +128,34 @@ async def prepare_ranking(
         labels.append(f"主 C 为{profession_filter}")
     if names is not None:
         labels.append(f"带「{'、'.join(names)}」")
-    if len(labels) > 1 and not any(
-        (element_filter is None or elements.get(row.character_name) == element_filter)
-        and (
-            profession_filter is None
-            or normalize_profession(row.character_profession or "")
-            == profession_filter
-        )
-        and (names is None or row_fields(row, names, scope))
-        for row in ranking.rows
-    ):
+    kept = filter_ranking_rows(
+        ranking,
+        names=names or (),
+        scope=scope,
+        element=element_filter,
+        elements=elements,
+        profession=profession_filter,
+    )
+    if len(labels) > 1 and not kept:
         return f"「{board}」的公开排名里没有{'且'.join(labels)}的记录。"
-    dps_rows: dict[str, BossRankingRow] | None = None
-    dps_row_count: int | None = None
-    if is_rdps(ranking.metric):
-        # The DPS board is what everyone reads: each rDPS row says where it
-        # sits there and who counts as its main C there. The copy the index
-        # holds is enough; an unreadable one only costs the cross-reference.
-        try:
-            dps = await data.get_boss_ranking(ranking.boss_slug)
-        except ZmdLogsClientError:
-            dps = None
-        if dps is not None:
-            dps_rows = {row.battle_id: row for row in dps.rows}
-            dps_row_count = len(dps.rows)
+    if page != ALL_PAGES:
+        page_count = ranking_page_count(len(kept))
+        if not isinstance(page, int) or page > page_count:
+            where = "筛选后" if labels else "公开排名"
+            return (
+                f"「{board}」{where}共 {len(kept)} 条记录，"
+                f"共 {page_count} 页，没有第 {page} 页。"
+            )
     return RankingRecipe(
         ranking=ranking,
         query=query,
         web_base_url=web_base_url,
-        ranking_limit=ranking_limit,
+        page=page,
         character_filter=names,
         character_filter_scope=scope,
         element_filter=element_filter,
         profession_filter=profession_filter,
         elements=elements,
-        dps_rows=dps_rows,
-        dps_row_count=dps_row_count,
     )
 
 

@@ -174,7 +174,9 @@ class PageTests(unittest.TestCase):
         self.elements = {lead: "自然", member: "物理"}
         self.lead = lead
 
-    def test_ranking_page_filters_on_main_c_element_and_rings_avatars(self) -> None:
+    def test_ranking_page_filters_on_main_c_element(self) -> None:
+        # The V2 ranking draws no element ring (the prototype's ruling); the
+        # filter still keeps the rows whose main C has the element.
         page = build_ranking_page(
             self.ranking,
             query="罗丹",
@@ -184,10 +186,8 @@ class PageTests(unittest.TestCase):
 
         self.assertEqual(page.element_filter, "自然")
         self.assertTrue(all(row.character_name == self.lead for row in page.rows))
-        self.assertEqual(page.filtered_count, len(page.rows))
-        keys = {m.element_key for row in page.rows for m in row.roster if m.element_key}
-        self.assertTrue(keys <= {"natural", "physical"})
-        self.assertTrue(keys)
+        self.assertEqual(page.record_count, len(page.rows))
+        self.assertTrue(page.rows)
 
     def test_an_element_nobody_leads_with_leaves_the_page_empty(self) -> None:
         page = build_ranking_page(
@@ -195,7 +195,7 @@ class PageTests(unittest.TestCase):
         )
 
         self.assertEqual(page.rows, ())
-        self.assertEqual(page.filtered_count, 0)
+        self.assertEqual(page.record_count, 0)
 
     def test_the_champions_page_names_the_element_it_was_filtered_to(self) -> None:
         tallies = character_tallies((self.ranking,))

@@ -52,10 +52,10 @@ class PageTarget:
     carries the second. ``view`` is the page drawn of it,
     ``RANKING`` being a target's own page (an account's records, a board's
     ranking); the options are the ones it was drawn with that its ZMDLogs
-    counterpart or its other views read too (``ranking_top`` is the rows a
-    board page listed, None for its default). A page about no one thing —
-    help, the statistics of every board, a comparison of two battles — has
-    no target.
+    counterpart or its other views read too (``ranking_page`` is the page
+    of a board's ranking drawn, a number or ``ALL_PAGES``, None for the
+    first). A page about no one thing — help, the statistics of every
+    board, a comparison of two battles — has no target.
 
     ``unavailable`` names the views of this target that drawing it showed
     cannot be drawn — an older upload without loadout, skill statistics or
@@ -78,7 +78,7 @@ class PageTarget:
     metric: str = DEFAULT_METRIC
     stats_range: str = DEFAULT_STATS_RANGE
     stats_potential: str = DEFAULT_STATS_POTENTIAL
-    ranking_top: int | None = None
+    ranking_page: int | str | None = None
     unavailable: frozenset[CandidateView] = frozenset()
     name: str = ""
     boards: tuple[tuple[str, str], ...] = ()

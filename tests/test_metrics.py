@@ -54,55 +54,38 @@ class RankingPageTests(unittest.TestCase):
         self.rdps = parse_boss_ranking(rdps_payload(), metric="rdps")
         self.dps_rows = {row.battle_id: row for row in self.dps.rows}
 
-    def test_the_rdps_page_points_every_row_at_the_dps_board(self) -> None:
-        page = build_ranking_page(
-            self.rdps,
-            query="三位一体",
-            web_base_url=WEB,
-            dps_rows=self.dps_rows,
-            dps_row_count=len(self.dps.rows),
-        )
+    def test_the_rdps_page_draws_the_rdps_board_and_nothing_more(self) -> None:
+        # The V2 page says only how many rDPS records there are: no note on
+        # what the board leaves out, no cross-reference to the DPS board
+        # (the prototype's ruling, "说明要精简").
+        page = build_ranking_page(self.rdps, query="三位一体", web_base_url=WEB)
 
         self.assertEqual(page.header.metric, "rdps")
         self.assertEqual(page.metric_label, "rDPS")
-        self.assertIn("只收录可计算 rDPS 的记录 2 条", page.rdps_note)
-        self.assertIn(f"DPS 榜 {len(self.dps.rows)} 条", page.rdps_note)
-        first, second = page.rows
-        # The first rDPS row is DPS #1 with another main C; the second is
-        # DPS #3 with the same one, so only the first names a DPS main C.
-        self.assertEqual((first.rank, first.dps_rank), (1, 1))
-        self.assertEqual(first.dps_character_name, "黎风")
-        self.assertEqual((second.rank, second.dps_rank), (2, 3))
-        self.assertIsNone(second.dps_character_name)
-        # The column shows the row's rDPS, and the bar is relative to it.
-        self.assertEqual(first.dps, format_number(self.rdps.rows[0].rdps))
+        self.assertEqual(page.record_count, len(self.rdps.rows))
+        # The figure is the row's rDPS.
+        self.assertEqual(
+            page.rows[0].dps, format_number(round(self.rdps.rows[0].rdps))
+        )
 
     def test_the_dps_page_is_unchanged(self) -> None:
         page = build_ranking_page(self.dps, query="三位一体", web_base_url=WEB)
 
         self.assertEqual(page.header.metric, "dps")
-        self.assertEqual(page.rdps_note, "")
-        self.assertTrue(all(row.dps_rank is None for row in page.rows))
+        self.assertEqual(page.metric_label, "DPS")
         self.assertEqual(page.header.footer_note, "公开榜单 · DPS 口径")
+        self.assertEqual(page.rows[0].dps, format_number(round(self.dps.rows[0].dps)))
 
-    def test_the_template_carries_the_badge_and_the_cross_reference(self) -> None:
+    def test_the_template_names_its_metric(self) -> None:
         renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
 
-        html = renderer.render_ranking(
-            self.rdps,
-            query="三位一体",
-            web_base_url=WEB,
-            dps_rows=self.dps_rows,
-            dps_row_count=len(self.dps.rows),
-        )
+        html = renderer.render_ranking(self.rdps, query="三位一体", web_base_url=WEB)
         plain = renderer.render_ranking(self.dps, query="三位一体", web_base_url=WEB)
 
-        self.assertIn("rDPS 口径", html)
-        self.assertIn("DPS 榜 #1 · DPS 口径主 C 黎风", html)
-        self.assertIn("DPS 榜 #3", html)
-        self.assertIn("相对榜首 rDPS", html)
-        self.assertNotIn("rDPS 口径", plain)
-        self.assertNotIn("DPS 榜 #", plain)
+        self.assertIn("<span>rDPS 口径</span>", html)
+        self.assertIn(f"<b>{len(self.rdps.rows)}</b> 条公开记录", html)
+        self.assertNotIn("DPS 榜", html)
+        self.assertNotIn("rDPS", plain)
 
 
 class BattleCardTests(unittest.TestCase):

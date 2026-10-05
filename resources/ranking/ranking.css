@@ -1,282 +1,124 @@
-/* 榜单页 —— 数据简报家族：纸白画布 + 白色数据行 + 全表共享的 DPS 刻度（黄=完成度条）。
-   榜首 DPS 定义刻度 100%，基准条的右缘、表头刻度尺的终点、每一行条形的满格
-   落在同一条竖线上；行内条形量的是真实 DPS 比例，不是名次的复述。 */
-
-.board {
-  /* 名次 | 账户与主C | 条形轨 | DPS | 用时  ——行内左右内边距各 18px */
-  --cols: 56px minmax(0, 380px) minmax(0, 1fr) 112px 88px;
-  --gap: 16px;
-  margin-top: 24px;
-}
-
-.board--contract {
-  --cols: 56px minmax(0, 340px) minmax(0, 1fr) 106px 82px 88px;
-}
-
-/* ---------- 基准条：定义刻度，不复述榜首行 ---------- */
-
-.board-benchmark {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 0 9px;
-  color: var(--ink);
-  border-bottom: 1px solid var(--line);
-}
-
-/* 区段标签：黄色短竖条 + 文字；黄色实底留给“当前选择”（榜首、筛选） */
-.bm-tag {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  color: var(--ink);
-  font-size: var(--fs-12);
-  font-weight: 800;
-  letter-spacing: 0.04em;
-}
-
-.bm-tag::before {
-  content: "";
-  width: 4px;
-  height: 14px;
-  background: var(--action);
-}
-
-.bm-slug {
-  overflow-wrap: anywhere;
-  padding: 2px 8px;
-  color: var(--on-dark);
-  background: var(--charcoal);
-  font-family: var(--font-body);
-  font-size: var(--fs-12);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-}
-
-.bm-count {
-  color: var(--steel);
-  font-size: var(--fs-12);
-  font-weight: 600;
-}
-
-.bm-filter {
-  flex: 0 0 auto;
-  padding: 3px 9px;
-  color: var(--ink);
-  background: var(--action);
-  font-size: var(--fs-12);
-  font-weight: 800;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
-}
-
-/* ---------- 表头：刻度尺与列名 ---------- */
-
-.board-head {
-  display: grid;
-  grid-template-columns: var(--cols);
-  gap: var(--gap);
-  align-items: end;
-  margin-top: 16px;
-  padding: 0 18px 7px;
-}
-
-.board-head > span {
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-}
-
-.head-right {
-  text-align: right;
-}
-
-.axis-caption {
-  display: flex;
-  justify-content: space-between;
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-
-.axis-caption i {
-  color: var(--steel);
-  font-style: normal;
-  font-weight: 800;
-}
-
-.axis-ruler {
-  display: block;
-  height: 6px;
-  margin-top: 4px;
-  border-right: 2px solid var(--ink);
-  background-image: repeating-linear-gradient(
-    90deg,
-    var(--faint) 0 1px,
-    transparent 1px 25%
-  );
-}
-
-/* ---------- 数据行 ---------- */
-
-.board-rows {
-  overflow: hidden;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--line);
-  background: var(--card);
+/* The board ranking on the 540 list: record cards in one column, the top
+   three in medal colours, the 全部 view's strip to the site. */
+.i-rows {
+  position: relative;
   list-style: none;
-}
-
-.board-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: var(--cols);
-  grid-template-rows: auto auto;
-  gap: 5px var(--gap);
-  align-items: center;
-  padding: 11px 18px 10px;
-}
-
-.board-row + .board-row {
-  border-top: 1px solid var(--line-soft);
-}
-
-.cell-rank {
-  grid-row: 1 / span 2;
-  align-self: center;
-}
-
-.rank-num {
-  display: block;
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: var(--fs-26);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.cell-rank .percentile {
-  margin-top: 3px;
-  font-size: var(--fs-10);
-}
-
-.cell-id {
-  min-width: 0;
-}
-
-.cell-id strong {
-  display: block;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: var(--fs-18);
-  font-weight: 800;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cell-id em {
-  display: block;
-  overflow: hidden;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-style: normal;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cell-id em b {
-  color: var(--steel);
-  font-weight: 700;
-}
-
-/* 条形：满格 = 榜首 DPS，刻度与表头刻度尺同源 */
-.cell-chart {
-  position: relative;
-  height: 12px;
-  background-color: var(--line-soft);
-  background-image: repeating-linear-gradient(
-    90deg,
-    var(--line) 0 1px,
-    transparent 1px 25%
-  );
-}
-
-.cell-chart i {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  display: block;
-  background: var(--action); /* 进度/完成度条=黄（官方任务/通行证语法）；名次语义交给左缘色脊与奖牌 */
-}
-
-.cell-dps {
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: var(--fs-22);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  line-height: 1;
-  text-align: right;
-}
-
-.cell-time {
-  color: var(--steel);
-  font-family: var(--font-num);
-  font-size: var(--fs-17);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  line-height: 1;
-  text-align: right;
-}
-
-.cell-contract {
-  text-align: right;
-}
-
-/* 合约分数是数据列，不是行动：保持中性数字，黄色只留给榜首与筛选 */
-.cell-contract b {
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: var(--fs-17);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-}
-
-.cell-contract span {
-  color: var(--faint);
-  font-size: var(--fs-12);
-  font-weight: 600;
-}
-
-/* 阵容行：圆头像 + 名称，人的信息保持圆形，不做成方框标签 */
-.cell-team {
   display: flex;
-  min-width: 0;
-  grid-column: 2 / -1;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 4px 16px;
-  padding-top: 1px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 14px 0;
+}
+.i-row {
+  position: relative;
+  filter: drop-shadow(0 4px 6px var(--lift-16)) drop-shadow(0 0 0.6px var(--lift-28));
+}
+/* Every row keeps the badge's zone free, badge or not, so a long name
+   stops at the same place on all ten rows, clear of TOP N. */
+.i-row .i-layer--who {
+  padding: 6px 112px 6px 0;
+}
+.i-badge {
+  position: absolute;
+  right: 22px;
+  top: 24px;
+  transform: translateY(-50%);
+  padding: 3px 8px 2px;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-17);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  background: var(--block);
+  color: var(--block-ink);
 }
 
-/* ---------- 回退提示 ---------- */
+/* 1, 2, 3: the arrow block and badge take the medal colour, a bar on top */
+.i-row.is-top {
+  filter: drop-shadow(0 6px 9px var(--lift-24)) drop-shadow(0 0 0.6px var(--lift-28));
+}
+.i-row.is-1 {
+  --medal: var(--yellow);
+}
+.i-row.is-2 {
+  --medal: var(--silver);
+}
+.i-row.is-3 {
+  --medal: var(--bronze);
+}
+.i-row.is-top .i-arrow,
+.i-row.is-top .i-badge {
+  background: var(--medal);
+  color: var(--medal-ink);
+}
+.i-row.is-top .i-layer--who::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: var(--medal);
+}
+.i-row.is-1 .i-rank {
+  font-size: var(--fs-36);
+}
 
-.board-fallback {
-  margin: 10px 0 0;
-  padding: 8px 12px;
-  color: var(--steel);
-  border-left: 3px solid var(--action);
-  background: var(--card-soft);
-  font-size: var(--fs-12);
+/* the figures: the time is the loud one, the board's figure under it */
+.i-figs {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.i-dps {
+  margin-top: 9px;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-22);
+  line-height: 1;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.i-dps span {
+  margin-right: 7px;
+  font-family: var(--font-body);
   font-weight: 600;
-  line-height: 1.5;
+  font-size: var(--fs-17);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* The 全部 view's last line, after the site's 更多情报 button: charcoal
+   with contour lines, a yellow tick inset on the left, the words centred. */
+.i-more {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  margin: 18px 14px 0;
+  border-radius: 4px;
+  background: var(--topo-strip) right center / 280px 56px no-repeat, var(--who-bg);
+  color: var(--who-ink);
+  font-size: var(--fs-17);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  filter: drop-shadow(0 4px 6px var(--lift-16));
+}
+.i-more::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 4px;
+  height: 26px;
+  transform: translateY(-50%);
+  background: var(--yellow);
+}
+.i-more b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-20);
+  margin: 0 4px;
+  color: var(--yellow);
 }

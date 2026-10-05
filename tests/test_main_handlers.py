@@ -659,11 +659,11 @@ class HandlerTests(unittest.TestCase):
 
     # --- parse-layer robustness -----------------------------------------------
 
-    def test_an_absurd_top_value_gets_a_short_reply_not_a_traceback(self) -> None:
-        (kind, reply), = self._zmdlog("zmdlog 罗丹 --top " + "9" * 4301)
+    def test_an_absurd_page_value_gets_a_short_reply_not_a_traceback(self) -> None:
+        (kind, reply), = self._zmdlog("zmdlog 罗丹 --页 " + "9" * 4301)
 
         self.assertEqual(kind, "plain")
-        self.assertIn("--top", reply)
+        self.assertIn("--页", reply)
 
     def test_an_over_long_keyword_is_not_echoed_back(self) -> None:
         async def no_accounts(query, *, limit):
@@ -1689,7 +1689,7 @@ class HandlerTests(unittest.TestCase):
         for data in (
             "/zmdlog 账号 x",  # refused before any request
             f"/zmdlog 账号 {self.ACCOUNT}",  # upstream down
-            "/zmdlog 榜单 罗丹 --top 99",  # a parse error
+            "/zmdlog 榜单 罗丹 --页 0",  # a parse error
         ):
             with self.subTest(data=data):
                 api = FakeBotApi()
@@ -2482,6 +2482,100 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(
             (received[-1]["export"], received[-1]["export_note"]), (None, None)
         )
+
+    # --- ranking pages -----------------------------------------------------------
+
+    def _long_board(self, count: int = 25) -> list[dict]:
+        """A board of ``count`` rows, every third one led by 洛茜."""
+
+        received: list[dict] = []
+        payload = ranking_payload_with_rows()
+        template_a, template_b = payload["rows"][0], payload["rows"][2]
+        payload["rows"] = [
+            {
+                **(template_b if rank % 3 == 0 else template_a),
+                "rank": rank,
+                "battleId": f"btl_upload_{rank:012d}",
+                "accountId": f"usr_{rank:032d}",
+                "accountDisplayName": f"公开账号{rank}",
+                "durationMs": 60_000 + rank * 1000,
+            }
+            for rank in range(1, count + 1)
+        ]
+
+        async def ranking(boss_slug, **kwargs):
+            metric = kwargs.get("metric", "dps")
+            return parse_boss_ranking({**payload, "metric": metric}, metric=metric)
+
+        async def render_ranking(ranking, **kwargs):
+            received.append({**kwargs, "metric": ranking.metric})
+            return capture("/tmp/ranking.png")
+
+        self.plugin.data.get_boss_ranking = ranking
+        self.plugin.renderer.render_ranking = render_ranking
+        return received
+
+    def test_a_ranking_is_drawn_a_page_at_a_time(self) -> None:
+        received = self._long_board()
+
+        for text, page in (
+            ("zmdlog 三位一体", 1),
+            ("zmdlog 榜单 三位一体", 1),
+            ("zmdlog 榜单 三位一体 --页 2", 2),
+            ("zmdlog 三位一体 --page 3", 3),
+            ("zmdlog 三位一体 -p 2", 2),
+            ("zmdlog 榜单 三位一体 --页 全部", "all"),
+            ("zmdlog 三位一体 --页 all", "all"),
+        ):
+            with self.subTest(text=text):
+                (kind, result), = self._zmdlog(text)
+                self.assertEqual((kind, result), ("image", "/tmp/ranking.png"))
+                self.assertEqual(received[-1]["page"], page)
+
+    def test_a_page_past_the_last_says_how_many_there_are(self) -> None:
+        received = self._long_board()
+
+        (kind, reply), = self._zmdlog("zmdlog 榜单 三位一体 --页 4")
+
+        self.assertEqual(kind, "plain")
+        self.assertIn("共 25 条", reply)
+        self.assertIn("共 3 页", reply)
+        self.assertEqual(received, [])
+        # Filtered, the pages are counted over the rows the filter keeps.
+        (kind, reply), = self._zmdlog("zmdlog 三位一体 --角色 洛茜 --页 2")
+        self.assertEqual(kind, "plain")
+        self.assertIn("筛选后共 8 条", reply)
+        self.assertIn("共 1 页", reply)
+
+    def test_paging_keeps_the_filters_and_the_metric(self) -> None:
+        received = self._long_board()
+
+        (kind, result), = self._zmdlog(
+            "zmdlog 榜单 三位一体 --页 2 --角色 黎风 --口径 rdps"
+        )
+
+        self.assertEqual((kind, result), ("image", "/tmp/ranking.png"))
+        self.assertEqual(received[-1]["page"], 2)
+        self.assertEqual(received[-1]["metric"], "rdps")
+        self.assertEqual(received[-1]["character_filter"], ("黎风",))
+        self.assertIs(
+            received[-1]["character_filter_scope"], CharacterFilterScope.MAIN
+        )
+
+    def test_top_is_refused_and_points_at_the_page_option(self) -> None:
+        received = self._long_board()
+
+        for text in (
+            "zmdlog 榜单 三位一体 --top 5",
+            "zmdlog 三位一体 --top 30",
+            "zmdlog 阵容 三位一体 --top 5",
+        ):
+            with self.subTest(text=text):
+                (kind, reply), = self._zmdlog(text)
+                self.assertEqual(kind, "plain")
+                self.assertIn("--top", reply)
+                self.assertIn("--页", reply)
+        self.assertEqual(received, [])
 
     def test_several_character_names_filter_the_whole_team(self) -> None:
         received: list[dict] = []

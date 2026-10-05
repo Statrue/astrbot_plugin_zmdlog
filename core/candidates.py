@@ -69,7 +69,8 @@ class PendingCandidates:
     code: str
     query: str
     choices: tuple[MatchChoice, ...]
-    ranking_top: int | None
+    # The board ranking's page (a number or ``ALL_PAGES``); None is page 1.
+    ranking_page: int | str | None
     created_at: float
     view: CandidateView = CandidateView.RANKING
     # The chat the list was posted in. A code is only honoured from the same
@@ -111,7 +112,7 @@ class CandidateStore:
         query: str,
         choices: tuple[MatchChoice, ...],
         *,
-        ranking_top: int | None = None,
+        ranking_page: int | str | None = None,
         view: CandidateView = CandidateView.RANKING,
         character_filter: str | None = None,
         element_filter: str | None = None,
@@ -135,7 +136,7 @@ class CandidateStore:
             code=code,
             query=query,
             choices=tuple(choices[:limit]),
-            ranking_top=ranking_top,
+            ranking_page=ranking_page,
             created_at=timestamp,
             view=view,
             character_filter=character_filter,

@@ -67,12 +67,12 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                 commands=(
                     HelpCommand(
                         command=(
-                            f"{command} <榜单关键词> [--top 数量] "
+                            f"{command} <榜单关键词> [--页 N|全部] "
                             "[--角色 角色名…] [--属性 属性] [--口径 rdps]"
                         ),
                         answers="这个榜的前几名是谁？带上某些角色的队伍能排第几？",
                         description=(
-                            "关键词认别名和拼音首字母，默认前 10 名；"
+                            "每页 10 条，--页 全部 看前 30 条；"
                             "--角色 写几个名字只看同时带上的队伍；"
                             "--口径 rdps 看团队贡献榜。"
                         ),
@@ -87,10 +87,10 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                     ),
                     HelpCommand(
                         command=(
-                            f"{command} 阵容 <榜单关键词> [--top 数量] [--口径 rdps]"
+                            f"{command} 阵容 <榜单关键词> [--口径 rdps]"
                         ),
                         answers="这个榜大家都在用什么阵容？",
-                        description="职业位出场率按全榜统计，常见组合按前 N 名统计。",
+                        description="职业位出场率按全榜统计，常见组合按前 10 名统计。",
                     ),
                     HelpCommand(
                         command=f"{command} 新纪录 [--范围 7d|14d|30d] [--口径 rdps]",

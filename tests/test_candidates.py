@@ -84,7 +84,7 @@ class CandidateAbuseTests(unittest.TestCase):
 class CandidateStoreTests(unittest.TestCase):
     def test_remember_format_and_resolve_by_quote(self) -> None:
         store = CandidateStore(ttl_seconds=60)
-        entry = store.remember("巨", _ambiguous_choices(), ranking_top=5, now=0.0)
+        entry = store.remember("巨", _ambiguous_choices(), ranking_page=5, now=0.0)
         text = format_candidates(entry, ttl_seconds=60)
 
         self.assertIn("「巨」匹配到", text)
@@ -96,7 +96,7 @@ class CandidateStoreTests(unittest.TestCase):
         resolved = store.resolve(entry.code, "2", now=1.0)
         self.assertIsNotNone(resolved)
         pending, choice = resolved
-        self.assertEqual(pending.ranking_top, 5)
+        self.assertEqual(pending.ranking_page, 5)
         self.assertEqual(choice.target.key, "two")
         self.assertIsNone(store.resolve(entry.code, "3", now=1.0))
         self.assertIsNone(store.resolve("ZZZZ", "1", now=1.0))
