@@ -1,6 +1,7 @@
 """玩家排名: every uploading account counted over all boards."""
 
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from core import facts
@@ -95,10 +96,31 @@ class PlayerPageTests(unittest.TestCase):
         self.assertIn("近 7 天", page.header.title)
         self.assertEqual(page.rows[0].position, 1)
         self.assertEqual(page.rows[0].bar_width, 100.0)
-        self.assertEqual(page.top.account_id, self.rankings[0].rows[0].account_id)
+        self.assertEqual(page.rows[0].account_id, self.rankings[0].rows[0].account_id)
         self.assertTrue(all(row.podiums >= 1 for row in page.rows))
-        self.assertIn("常用主 C", page.rows[0].main_label)
-        self.assertIn("常用阵容", page.rows[0].team_label)
+        # The column is headed 常用主 C; the cell is the name and its count.
+        leader = self.tallies[0]
+        self.assertEqual(
+            page.rows[0].main_label, f"{leader.main_c} ×{leader.main_c_count}"
+        )
+        self.assertEqual(page.metric_label, "DPS")
+
+    def test_the_rest_are_counted_in_full_though_only_sixty_are_named(self) -> None:
+        rest = tuple(
+            replace(
+                self.tallies[0], account_id=f"a{n}", display_name=f"账号{n}", podiums=0
+            )
+            for n in range(65)
+        )
+
+        page = build_player_champions_page(
+            self.tallies + rest, board_count=2, query="玩家排名", metric="rdps"
+        )
+
+        self.assertEqual(len(page.others), 60)
+        unplaced = sum(1 for tally in self.tallies if not tally.podiums)
+        self.assertEqual(page.other_count, unplaced + 65)
+        self.assertEqual(page.metric_label, "rDPS")
 
     def test_the_template_renders(self) -> None:
         renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])

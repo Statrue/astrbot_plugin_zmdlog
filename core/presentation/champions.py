@@ -1,9 +1,17 @@
-"""Who holds the most first places: every character counted over all boards."""
+"""Who holds the most first places: every character counted over all boards.
+
+The 角色冠军榜 (bare 角色排名) is one wide table, never paged: a row a
+character with a podium (every member when cut to a 职业), then the
+compositions holding the most first places, the usage by 职业 and the
+characters left out of the table. A 冠军 is a board's #1 record, credited
+to all four of its members.
+"""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..elements import element_key
+from ..metrics import metric_label
 from ..standings import CharacterTally, ProfessionUsage, TeamTally
 from .boards import RosterEntryView, _build_roster
 from .common import (
@@ -11,7 +19,6 @@ from .common import (
     _bar_width,
     _initial,
     _safe_asset_url,
-    metric_footer,
 )
 
 
@@ -19,7 +26,6 @@ from .common import (
 class TeamComboView:
     members: tuple[RosterEntryView, ...]
     count: int
-    boards_label: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +33,7 @@ class UsageChipView:
     name: str
     count: int
     share_label: str
-    initial: str
+    character_initial: str
     avatar_url: str | None
     element_key: str | None
 
@@ -43,7 +49,7 @@ class TallyRowView:
     position: int
     name: str
     profession: str
-    initial: str
+    character_initial: str
     avatar_url: str | None
     first_places: int
     first_places_as_main: int
@@ -59,10 +65,8 @@ class TallyRowView:
 class CharacterChampionsPage:
     header: PageHeader
     board_count: int
-    # The headline answer (most first places) and its side note (most first
-    # places as main C). Both are None with no records.
-    top_team: TallyRowView | None
-    top_main: TallyRowView | None
+    # DPS or rDPS, the ranking the first places were counted on.
+    metric_label: str
     rows: tuple[TallyRowView, ...]
     # Characters fielded somewhere but never in a top-three record.
     others: tuple[str, ...]
@@ -111,30 +115,24 @@ def build_character_champions_page(
             position=index,
             name=tally.name,
             profession=tally.profession,
-            initial=_initial(tally.name),
+            character_initial=_initial(tally.name),
             avatar_url=_safe_asset_url(tally.avatar_url, base_url=web_base_url),
             first_places=tally.first_places,
             first_places_as_main=tally.first_places_as_main,
             podiums=tally.podiums,
             top_tens=tally.top_tens,
             boards=tally.boards,
-            bar_width=(
-                _bar_width(tally.first_places, peak)
-            ),
+            bar_width=_bar_width(tally.first_places, peak),
             element_key=element_key(known.get(tally.name)),
         )
         for index, tally in enumerate(ranked, start=1)
     )
-    top_main = max(rows, key=lambda row: row.first_places_as_main, default=None)
-    top_team = max(rows, key=lambda row: row.first_places, default=None)
     team_views = tuple(
         TeamComboView(
             members=_build_roster(
                 team.entries, team.names, web_base_url=web_base_url, elements=elements
             ),
             count=team.count,
-            boards_label="、".join(team.boards[:6])
-            + ("…" if len(team.boards) > 6 else ""),
         )
         for team in teams[:5]
     )
@@ -146,7 +144,7 @@ def build_character_champions_page(
                     name=entry.name,
                     count=entry.count,
                     share_label=f"{entry.share:g}%",
-                    initial=_initial(entry.name),
+                    character_initial=_initial(entry.name),
                     avatar_url=_safe_asset_url(entry.avatar_url, base_url=web_base_url),
                     element_key=element_key(known.get(entry.name)),
                 )
@@ -174,13 +172,10 @@ def build_character_champions_page(
             metric=metric,
             matched_name=f"全部 {board_count} 个榜单 · 角色冠军榜",
             target_type="角色排名",
-            footer_note=(
-                metric_footer(metric) + " · 队伍成绩 · 第一名队伍的四名角色各算一个冠军"
-            ),
+            footer_note="公开榜单 · 队伍成绩",
         ),
         board_count=board_count,
-        top_main=top_main,
-        top_team=top_team,
+        metric_label=metric_label(metric),
         profession=profession,
         window_label=window_label,
         teams=team_views,

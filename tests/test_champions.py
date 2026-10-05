@@ -114,7 +114,8 @@ class ChampionsPageTests(unittest.TestCase):
         self.assertEqual(page.board_count, 2)
         self.assertEqual(page.rows[0].position, 1)
         self.assertEqual(page.rows[0].bar_width, 100.0)
-        self.assertEqual(page.top_team.name, self.rankings[0].rows[0].character_name)
+        self.assertEqual(page.rows[0].name, self.rankings[0].rows[0].character_name)
+        self.assertEqual(page.metric_label, "DPS")
         self.assertTrue(all(row.podiums >= 1 for row in page.rows))
         self.assertEqual(
             len(page.rows) + len(page.others), len(self.tallies)
@@ -219,7 +220,7 @@ class WindowTests(unittest.TestCase):
         self.assertIn("最常见的第一名阵容", text)
         self.assertIn("各职业位出场率", text)
         self.assertIn("最常见的第一名阵容", html)
-        self.assertIn("各职业位出场率", html)
+        self.assertIn("各职业出场率", html)
 
 
 if __name__ == "__main__":

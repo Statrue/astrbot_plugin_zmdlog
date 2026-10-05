@@ -1,15 +1,8 @@
-/* 玩家排名 — 复用角色冠军榜的行，多一列记录数，玩家没有头像。 */
+/* 玩家排名: the table's columns; the rest of it is shell/wide-table.css.
+   No faces here: the names take a fixed column and the track the room
+   left. */
 
-.champ.players {
-  --champ-cols: 44px minmax(0, 1fr) 120px minmax(0, 220px) 84px 84px 100px 84px;
-}
-
-.champ.players .champ-char-text strong {
-  font-size: var(--fs-16);
-}
-
-.champ.players .champ-char-text em {
-  font-size: var(--fs-12);
-  line-height: 1.35;
-  white-space: normal;
+.w-players .w-tr {
+  grid-template-columns: 50px 180px minmax(0, 1fr) 48px 48px 48px 48px 160px;
+  gap: 16px;
 }

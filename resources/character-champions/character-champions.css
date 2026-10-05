@@ -1,281 +1,53 @@
-/* 角色冠军榜 — 数据简报家族：一角色一行，第一名数是每行的视觉锚，
-   条形表达相对榜首的比例（黄=完成度/关注），三个计数并列在右。 */
+/* 角色冠军榜: the table's columns, and the usage by 职业 — a profession,
+   then its characters as chips (face · name · share). The rest of the
+   table is shell/wide-table.css. */
 
-.champ {
-  --champ-cols: 44px minmax(0, 1fr) 132px minmax(0, 340px) 96px 96px 112px;
-  --champ-gap: 18px;
-  margin-top: 14px;
+.w-champ .w-tr {
+  grid-template-columns: 50px 200px minmax(0, 1fr) 72px 60px 60px 60px;
 }
 
-.champ-head {
+.w-usage {
   display: grid;
-  grid-template-columns: var(--champ-cols);
-  gap: var(--champ-gap);
-  align-items: center;
-  margin: 0 0 8px;
-  padding: 7px 18px 7px 0;
-  background: var(--line-soft);
-  clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule-soft);
 }
-
-.champ-head > span {
-  position: relative;
-  padding-left: 18px;
-  color: var(--steel);
-  font-size: var(--fs-11);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  white-space: nowrap;
+.w-usage:last-child {
+  border-bottom: 0;
 }
-
-.champ-head > span + span::before {
-  content: "";
-  position: absolute;
-  top: -3px;
-  bottom: -3px;
-  left: 0;
-  width: 1px;
-  background: var(--line);
-}
-
-.champ-head-first,
-.champ-head-num {
-  text-align: right;
-}
-
-.champ-rows {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.champ-row {
-  display: grid;
-  grid-template-columns: var(--champ-cols);
-  gap: var(--champ-gap);
-  align-items: center;
-  padding: 10px 18px 10px 0;
-  background: var(--card);
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.champ-pos {
-  padding-left: 23px;
-  color: var(--muted);
-  font-family: var(--font-num);
-  font-size: var(--fs-16);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  line-height: 44px;
-}
-
-.champ-row.is-1 .champ-pos,
-.champ-row.is-2 .champ-pos,
-.champ-row.is-3 .champ-pos {
-  color: var(--ink);
-}
-
-.champ-char {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 12px;
-}
-
-.champ-char .avatar {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 auto;
-  font-size: var(--fs-18);
-}
-
-.champ-char-text {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.champ-char-text strong {
-  overflow: hidden;
-  color: var(--ink);
+.w-usage-prof {
+  padding-top: 6px;
   font-size: var(--fs-17);
-  font-weight: 800;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 700;
+  color: var(--ink-2);
 }
-
-.champ-char-text em {
-  color: var(--muted);
-  font-size: var(--fs-12);
-  font-style: normal;
-}
-
-.champ-first {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  white-space: nowrap;
-}
-
-.champ-first b {
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: var(--fs-30);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.champ-first i {
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-style: normal;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-}
-
-.champ-bar {
-  position: relative;
-  display: block;
-  height: 10px;
-  background: var(--line-soft);
-}
-
-.champ-bar i {
-  position: absolute;
-  inset: 0 auto 0 0;
-  min-width: 0;
-  background: var(--yellow);
-}
-
-.champ-num {
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: var(--fs-20);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  text-align: right;
-}
-
-.champ-num--muted {
-  color: var(--steel);
-  font-size: var(--fs-17);
-}
-
-.champ-legend {
-  margin-top: 12px;
-}
-
-/* ---------- 最常见的第一名阵容 ---------- */
-
-.champ-teams {
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.champ-team {
-  display: grid;
-  grid-template-columns: 92px minmax(0, 1fr) minmax(0, 360px);
-  gap: 18px;
-  align-items: center;
-  padding: 10px 18px 10px 0;
-  background: var(--card);
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.champ-team-count {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  padding-left: 18px;
-  border-left: 5px solid var(--yellow-deep);
-  white-space: nowrap;
-}
-
-.champ-team-count b {
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: var(--fs-26);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.champ-team-count i {
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-style: normal;
-  font-weight: 800;
-}
-
-.champ-team-members {
+.w-usage-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
-  align-items: center;
-  min-width: 0;
+  gap: 8px 20px;
 }
-
-.champ-team-boards {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--fs-12);
-  line-height: 1.4;
-  text-align: right;
-}
-
-/* ---------- 各职业位出场率 ---------- */
-
-.champ-usage {
-  margin-top: 12px;
-  background: var(--card);
-}
-
-.champ-usage-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 10px;
-  align-items: center;
-  padding: 9px 18px 9px 0;
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.champ-usage-prof {
-  flex: 0 0 74px;
-  padding-left: 18px;
-  border-left: 5px solid var(--ink);
-  color: var(--ink);
-  font-size: var(--fs-13);
-  font-weight: 800;
-}
-
-.champ-usage-chip {
+.w-usage-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px 3px 4px;
-  background: var(--card-soft);
+  gap: 8px;
+}
+.w-usage-chip em {
+  font-style: normal;
+  font-size: var(--fs-17);
+  font-weight: 600;
   color: var(--ink);
-  font-size: var(--fs-13);
-  font-weight: 700;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+  overflow-wrap: anywhere;
 }
-
-.champ-usage-chip .avatar {
-  width: 22px;
-  height: 22px;
-  font-size: var(--fs-10);
-}
-
-.champ-usage-chip b {
-  color: var(--steel);
+.w-usage-chip b {
   font-family: var(--font-num);
-  font-size: var(--fs-13);
-  font-variant-numeric: tabular-nums;
   font-weight: 800;
+  font-size: var(--fs-17);
+  color: var(--ink);
 }
 
+/* the absentees under the left-out, a second line of chips by its label */
+.w-chips--more {
+  padding-top: 0;
+}

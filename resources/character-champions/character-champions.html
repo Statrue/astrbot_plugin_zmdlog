@@ -1,148 +1,87 @@
-{% extends "common/base.html" %}
+{# 角色冠军榜 (bare 角色排名), 960 wide: one table of the characters with a
+   podium, most first places first, then the compositions holding the most
+   first places, the usage by 职业 and the characters the table leaves out.
+   Never paged. A 冠军 is a board's #1 record, credited to all four of its
+   members. #}
+{% extends "shell/wide-base.html" %}
+{% from "shell/parts.html" import face %}
+{% from "shell/wide-parts.html" import bar %}
 
-{% block extra_styles %}
-{% include "character-champions/character-champions.css" %}
-{% endblock %}
+{% block styles %}{% include "shell/wide-table.css" %}{% include "character-champions/character-champions.css" %}{% endblock %}
 
-{% block hero_facts %}
-<div class="hero-facts">
-  {% if page.top_team %}
-  <div class="hero-fact hero-fact--key"><span>冠军最多</span><strong>{{ page.top_team.name }}</strong><em>{{ page.top_team.first_places }} / {{ page.board_count }} 个榜</em></div>
-  {% endif %}
-  {% if page.top_main %}
-  <div class="hero-fact"><span>当主 C 的冠军最多</span><strong>{{ page.top_main.name }}</strong><em>{{ page.top_main.first_places_as_main }} 个榜</em></div>
-  {% endif %}
-  <div class="hero-fact"><span>榜单</span><strong>{{ page.board_count }}</strong><em>{% if page.profession %}{{ page.profession }}角色 {{ page.rows|length }}{% else %}进过前三的角色 {{ page.rows|length }}{% endif %}</em></div>
-</div>
+{% block giant %}CHAMPIONS{% endblock %}
+
+{% block meta %}
+<span>全部 <b>{{ page.board_count }}</b> 个榜单</span>
+<span>{{ page.metric_label }} 口径</span>
 {% endblock %}
 
 {% block content %}
-<div class="section-heading">
-  <h2>角色冠军榜</h2>
-  <span class="section-note">冠军 = 该榜第一名记录的队伍带该角色，四名角色各算一个 · 当主 C = 其中该角色是主 C 的 · 前三、前十按该角色在该榜的最好名次算 · 这是队伍的成绩，不是角色的强度</span>
-</div>
+{% set card_w = frame.width - 48 %}
+{% set unseen_title = page.window_label ~ "未上榜" if page.window_label else "从未上榜" %}
 
-{% if page.rows %}
-<section class="champ">
-  <div class="champ-head" aria-hidden="true">
-    <span class="champ-head-pos">#</span>
-    <span class="champ-head-char">角色</span>
-    <span class="champ-head-first">冠军</span>
-    <span class="champ-head-bar">占榜单数的比例</span>
-    <span class="champ-head-num">前三</span>
-    <span class="champ-head-num">前十</span>
-    <span class="champ-head-num">上榜榜单</span>
-  </div>
-  <ol class="champ-rows">
+<section class="b-block">
+  {{ bar("角色冠军榜", card_w, "第一名队伍的四名角色各算一个冠军") }}
+  <div class="b-body w-table w-champ">
+    <div class="w-tr w-th">
+      <span>名次</span><span class="w-who">角色</span><span class="w-left">冠军</span><span>当主 C</span><span>前三</span><span>前十</span><span>上榜</span>
+    </div>
     {% for row in page.rows %}
-    <li class="champ-row rank-row{% if row.position <= 3 %} is-{{ row.position }}{% endif %}">
-      <span class="champ-pos">{{ row.position }}</span>
-      <span class="champ-char">
-        <span class="avatar{% if row.element_key %} el-{{ row.element_key }}{% endif %}">
-          {{ row.initial }}
-          {% if row.avatar_url %}
-          <img src="{{ row.avatar_url }}" alt="" onerror="this.remove()">
-          {% endif %}
-        </span>
-        <span class="champ-char-text">
-          <strong>{{ row.name }}</strong>
-          {% if row.profession %}<em>{{ row.profession }}</em>{% endif %}
-        </span>
-      </span>
-      <span class="champ-first">
-        <b>{{ row.first_places }}</b>
-        <i>当主 C {{ row.first_places_as_main }}</i>
-      </span>
-      <span class="champ-bar" aria-hidden="true"><i style="width: {{ row.bar_width }}%;"></i></span>
-      <span class="champ-num">{{ row.podiums }}</span>
-      <span class="champ-num">{{ row.top_tens }}</span>
-      <span class="champ-num champ-num--muted">{{ row.boards }}</span>
-    </li>
+    <div class="w-tr{% if row.position <= 3 %} is-top is-{{ row.position }}{% endif %}">
+      <span class="w-rank"><b>{{ "%02d"|format(row.position) }}</b></span>
+      <span class="w-who">{{ face(row, size="w-face-s") }}<strong>{{ row.name }}</strong><em>{{ row.profession }}</em></span>
+      <span class="w-count"><b>{{ row.first_places }}</b><i class="w-track"><i style="width: {{ row.bar_width }}%;"></i></i></span>
+      <span>{{ row.first_places_as_main }}</span>
+      <span>{{ row.podiums }}</span>
+      <span>{{ row.top_tens }}</span>
+      <span class="w-muted">{{ row.boards }}</span>
+    </div>
+    {% else %}
+    <p class="w-empty">{{ page.window_label ~ "没有公开记录" if page.window_label else "读过的榜单里没有任何公开记录" }}</p>
     {% endfor %}
-  </ol>
-  <p class="board-legend champ-legend">
-    条形为冠军数占全部榜单数的比例；按冠军数、当主 C 的冠军数、前三、前十依次排序。
-    <span class="el-legend">头像描边为属性：<i class="el-physical"></i>物理<i class="el-fire"></i>灼热<i class="el-cryst"></i>寒冷<i class="el-natural"></i>自然<i class="el-pulse"></i>电磁</span>
-  </p>
+  </div>
 </section>
-{% else %}
-<div class="empty-ranking">读过的榜单里没有任何公开记录</div>
-{% endif %}
 
 {% if page.teams %}
-<div class="section-heading section-heading--minor">
-  <h2>最常见的第一名阵容</h2>
-  <span class="section-note">{{ page.window_label or "全部榜单" }}第一名记录的阵容，按拿下的榜数排</span>
-</div>
-<ol class="champ-teams">
-  {% for team in page.teams %}
-  <li class="champ-team">
-    <span class="champ-team-count"><b>{{ team.count }}</b><i>个榜</i></span>
-    <span class="champ-team-members">
-      {% for member in team.members %}
-      <span class="team-member">
-        <span class="avatar{% if member.element_key %} el-{{ member.element_key }}{% endif %}">
-          {{ member.character_initial }}
-          {% if member.avatar_url %}
-          <img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">
-          {% endif %}
-        </span>
-        {{ member.character_name }}{% if member.profession %}<i>· {{ member.profession }}</i>{% endif %}
-      </span>
-      {% endfor %}
-    </span>
-    <span class="champ-team-boards">{{ team.boards_label }}</span>
-  </li>
-  {% endfor %}
-</ol>
+<section class="b-block">
+  {{ bar("最常见的第一名阵容", card_w, "按拿下的榜数排") }}
+  <div class="b-body w-table">
+    {% for team in page.teams %}
+    <div class="w-team">
+      <span class="w-team-n"><b>{{ team.count }}</b><small>个榜</small></span>
+      <span class="w-team-faces">{% for member in team.members %}<span class="w-team-m">{{ face(member, size="w-face-s") }}<em>{{ member.character_name }}</em></span>{% endfor %}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
 {% endif %}
 
 {% if page.usage %}
-<div class="section-heading section-heading--minor">
-  <h2>各职业位出场率</h2>
-  <span class="section-note">带该角色的记录占{{ page.window_label or "全部" }}记录的比例，按职业分组</span>
-</div>
-<div class="champ-usage">
-  {% for group in page.usage %}
-  <div class="champ-usage-row">
-    <span class="champ-usage-prof">{{ group.profession }}</span>
-    {% for chip in group.chips %}
-    <span class="champ-usage-chip">
-      <span class="avatar{% if chip.element_key %} el-{{ chip.element_key }}{% endif %}">
-        {{ chip.initial }}
-        {% if chip.avatar_url %}
-        <img src="{{ chip.avatar_url }}" alt="" onerror="this.remove()">
-        {% endif %}
-      </span>
-      {{ chip.name }}<b>{{ chip.share_label }}</b>
-    </span>
+<section class="b-block">
+  {{ bar("各职业出场率", card_w, "带该角色的记录占" ~ (page.window_label or "全部") ~ "记录的比例") }}
+  <div class="b-body w-table">
+    {% for group in page.usage %}
+    <div class="w-usage">
+      <span class="w-usage-prof">{{ group.profession }}</span>
+      <span class="w-usage-chips">{% for chip in group.chips %}<span class="w-usage-chip">{{ face(chip, size="w-face-xs") }}<em>{{ chip.name }}</em><b>{{ chip.share_label }}</b></span>{% endfor %}</span>
+    </div>
     {% endfor %}
   </div>
-  {% endfor %}
-</div>
+</section>
 {% endif %}
 
-{% if page.others %}
-<div class="section-heading section-heading--minor">
-  <h2>上榜但未进前三</h2>
-  <span class="section-note">{{ page.others|length }} 个角色出现在公开记录里，最好名次在第三之后</span>
-</div>
-<div class="stats-insufficient">
-  {% for name in page.others %}
-  <span class="stats-insufficient-chip">{{ name }}</span>
-  {% endfor %}
-</div>
-{% endif %}
-
-{% if page.unseen %}
-<div class="section-heading section-heading--minor">
-  <h2>{% if page.window_label %}{{ page.window_label }}未上榜{% else %}从未上榜{% endif %}</h2>
-  <span class="section-note">{{ page.unseen|length }} 个{{ page.profession or "" }}角色{% if page.window_label %}{{ page.window_label }}没有出现在公开记录里{% else %}没有出现在任何公开记录里{% endif %}</span>
-</div>
-<div class="stats-insufficient">
-  {% for name in page.unseen %}
-  <span class="stats-insufficient-chip">{{ name }}</span>
-  {% endfor %}
-</div>
+{% if page.others or page.unseen %}
+<section class="b-block">
+  {% if page.others %}
+  {{ bar("上榜但未进前三", card_w, page.others|length ~ " 个角色") }}
+  <p class="b-body w-chips">{% for name in page.others %}<span>{{ name }}</span>{% endfor %}</p>
+  {% if page.unseen %}
+  <p class="b-body w-chips w-chips--more"><em>{{ unseen_title }}</em>{% for name in page.unseen %}<span>{{ name }}</span>{% endfor %}</p>
+  {% endif %}
+  {% else %}
+  {{ bar(unseen_title, card_w, page.unseen|length ~ " 个" ~ (page.profession or "") ~ "角色") }}
+  <p class="b-body w-chips">{% for name in page.unseen %}<span>{{ name }}</span>{% endfor %}</p>
+  {% endif %}
+</section>
 {% endif %}
 {% endblock %}

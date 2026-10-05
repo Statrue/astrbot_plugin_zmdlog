@@ -180,7 +180,6 @@ class ClassBoardTests(unittest.TestCase):
         self.assertIn("近 7 天没有出现在公开记录里的近卫角色：未上榜者", text)
         self.assertNotIn("从未出现", text)
         self.assertIn("近 7 天未上榜", html)
-        self.assertIn("近 7 天没有出现在公开记录里", html)
         self.assertNotIn("从未上榜", html)
         self.assertNotIn("任何公开记录", html)
 

@@ -36,13 +36,21 @@ from core.render import (
     RenderError,
     TemplateConfigurationError,
     TemplateRenderer,
+    page_frame,
     read_plugin_version,
 )
 from core.routing import ALL_PAGES
+from core.standings import (
+    account_tallies,
+    character_tallies,
+    first_place_teams,
+    profession_usage,
+)
 from tests.helpers import (
     battle_detail_payload,
     crisis_contract_tags,
     make_card,
+    named_ranking,
     public_user_rankings_payload,
 )
 
@@ -699,6 +707,126 @@ class TemplateRendererTests(unittest.TestCase):
                 # Nothing of the old shell.
                 self.assertNotIn('id="zmd-page"', html)
                 self.assertNotIn("scene-background", html)
+    def _champion_boards(self):
+        # Two boards sharing one #1 record, the second cut to three rows.
+        return (
+            named_ranking("dung01_group_bossrush02", "三位一体"),
+            named_ranking("dung01_group_bossrush03", "罗丹", rows=3),
+        )
+
+    def test_the_champions_are_one_wide_table_then_their_sections(self) -> None:
+        boards = self._champion_boards()
+        tallies = character_tallies(boards)
+        leader = tallies[0]
+
+        html = self.renderer.render_character_champions(
+            tallies,
+            board_count=2,
+            query="角色排名",
+            web_base_url="https://zmdlogs.com",
+            teams=first_place_teams(boards),
+            usage=profession_usage(boards),
+        )
+
+        self.assertEqual(page_frame("character-champions"), WIDE_FRAME)
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn('id="zmd-root"', html)
+        self.assertIn('class="zmd-main"', html)
+        self.assertIn("zmd-root--character-champions", html)
+        self.assertIn(">CHAMPIONS<", html)
+        self.assertIn('<h1 class="i-title">角色冠军榜</h1>', html)
+        self.assertIn("<span>全部 <b>2</b> 个榜单</span>", html)
+        self.assertIn("<span>DPS 口径</span>", html)
+        # One table, unpaged: 名次 | 角色 | 冠军 | 当主 C | 前三 | 前十 | 上榜.
+        self.assertIn(
+            '<span>名次</span><span class="w-who">角色</span>'
+            '<span class="w-left">冠军</span><span>当主 C</span>'
+            "<span>前三</span><span>前十</span><span>上榜</span>",
+            html,
+        )
+        self.assertIn('<span class="w-rank"><b>01</b></span>', html)
+        self.assertIn(
+            f"<strong>{leader.name}</strong><em>{leader.profession}</em>", html
+        )
+        self.assertIn(f'<span class="w-count"><b>{leader.first_places}</b>', html)
+        # Then the first-place teams (a count and four named faces, no
+        # boards), the usage by 职业, the rest as chips.
+        sections = [
+            html.index(f"<strong>{title}</strong>")
+            for title in ("角色冠军榜", "最常见的第一名阵容", "各职业出场率")
+        ]
+        self.assertEqual(sections, sorted(sections))
+        teams = html[sections[1]:sections[2]]
+        self.assertIn(
+            '<span class="w-team-n"><b>2</b><small>个榜</small></span>', teams
+        )
+        self.assertEqual(teams.count('class="w-team-m"'), 4)
+        self.assertNotIn("三位一体", teams)
+        self.assertIn('class="w-usage-chip"', html)
+        # Nothing of the old shell.
+        self.assertNotIn('id="zmd-page"', html)
+        self.assertNotIn("scene-background", html)
+        self.assertNotIn("hero-fact", html)
+
+    def test_the_champions_name_their_filters_and_metric(self) -> None:
+        tallies = character_tallies(self._champion_boards())
+        guards = tuple(tally for tally in tallies if tally.profession == "近卫")
+
+        html = self.renderer.render_character_champions(
+            guards,
+            board_count=2,
+            query="角色排名",
+            profession="近卫",
+            window_label="近 7 天",
+            unseen=("未上榜者",),
+            metric="rdps",
+        )
+
+        self.assertIn('<h1 class="i-title">角色冠军榜 · 近卫 · 近 7 天</h1>', html)
+        self.assertIn("<span>rDPS 口径</span>", html)
+        # Every member a row; the absentees under the window's own word.
+        self.assertEqual(html.count('<span class="w-rank">'), len(guards))
+        self.assertIn("<strong>近 7 天未上榜</strong>", html)
+        self.assertIn("<span>未上榜者</span>", html)
+        self.assertNotIn("从未上榜", html)
+
+    def test_the_player_ranking_is_one_wide_table_then_the_rest(self) -> None:
+        tallies = account_tallies(self._champion_boards())
+        leader = tallies[0]
+        champions = tuple(replace(tally, podiums=0) for tally in tallies[1:])
+
+        html = self.renderer.render_player_champions(
+            (leader, *champions), board_count=2, query="玩家排名"
+        )
+
+        self.assertEqual(page_frame("player-champions"), WIDE_FRAME)
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn('class="zmd-main"', html)
+        self.assertIn("zmd-root--player-champions", html)
+        self.assertIn(">PLAYERS<", html)
+        self.assertIn('<h1 class="i-title">玩家冠军榜</h1>', html)
+        self.assertIn("<span>全部 <b>2</b> 个榜单</span>", html)
+        # 名次 | 账号 | 冠军 | 前三 | 前十 | 上榜 | 记录 | 常用主 C.
+        self.assertIn(
+            '<span>名次</span><span class="w-who">账号</span>'
+            '<span class="w-left">冠军</span><span>前三</span><span>前十</span>'
+            '<span>上榜</span><span>记录</span><span class="w-left">常用主 C</span>',
+            html,
+        )
+        self.assertEqual(html.count('<span class="w-rank">'), 1)
+        self.assertIn(f"<strong>{leader.display_name}</strong>", html)
+        self.assertIn(
+            f'<span class="w-main">{leader.main_c} ×{leader.main_c_count}</span>',
+            html,
+        )
+        # The rest, by name, under the count of them.
+        rest = html[html.index("<strong>上榜但未进前三</strong>"):]
+        self.assertIn(f"{len(champions)} 个账号", rest)
+        for tally in champions:
+            with self.subTest(account=tally.display_name):
+                self.assertIn(f"<span>{tally.display_name}</span>", rest)
+        self.assertNotIn('id="zmd-page"', html)
+        self.assertNotIn("hero-fact", html)
 
     def test_every_font_size_is_a_scale_token(self) -> None:
         # Colours were tokens from the first commit; sizes drifted into
