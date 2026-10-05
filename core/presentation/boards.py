@@ -39,10 +39,13 @@ from .common import (
 
 @dataclass(frozen=True, slots=True)
 class TopRunView:
+    """One of a board's first three, as the 副本前三 card draws it: who,
+    which main C, how fast. Nothing the ranking alone may show."""
+
     rank: int
     character_name: str
     character_initial: str
-    character_avatar_url: str | None
+    avatar_url: str | None
     uploader_nickname: str
     duration: str
     contract_score: str | None
@@ -63,8 +66,10 @@ class TopCardGroupView:
 
 @dataclass(frozen=True, slots=True)
 class Top3Page:
+    """副本前三: a card a board of a dungeon, or of a scope of dungeons
+    (``group_by_dungeon``); the header's title is the dungeon's name."""
+
     header: PageHeader
-    dungeon_names: tuple[str, ...]
     cards: tuple[TopCardView, ...]
     card_groups: tuple[TopCardGroupView, ...]
     group_by_dungeon: bool
@@ -184,7 +189,7 @@ def build_dungeon_top3_page(
     query: str,
     web_base_url: str | None = None,
 ) -> Top3Page:
-    """Build a dungeon or dungeon-scope page using the shared top-three card."""
+    """副本前三 of a dungeon or a scope of dungeons, titled with its name."""
 
     target_type = choice.target.target_type
     if target_type not in {TargetType.DUNGEON, TargetType.DUNGEON_SCOPE}:
@@ -201,13 +206,12 @@ def build_dungeon_top3_page(
     )
     return Top3Page(
         header=PageHeader(
-            title=f"{label}榜单前三名",
+            title=choice.target.name,
             subtitle=subtitle,
             query=query,
             matched_name=choice.target.name,
             target_type=label,
         ),
-        dungeon_names=choice.target.dungeon_names,
         cards=card_views,
         card_groups=_group_top_cards(card_views),
         group_by_dungeon=target_type is TargetType.DUNGEON_SCOPE,
@@ -481,7 +485,7 @@ def _build_roster_combos(
                 count=len(members),
                 percent=_share(len(members), len(rows)),
                 best_rank=best.rank,
-                best_dps=format_number(best.dps),
+                best_dps=format_number(round(best.dps)),
             )
         )
     return tuple(combos)
@@ -521,7 +525,7 @@ def _build_top_card(
                 rank=index,
                 character_name=run.character_name,
                 character_initial=_initial(run.character_name),
-                character_avatar_url=_safe_asset_url(
+                avatar_url=_safe_asset_url(
                     run.character_avatar_url,
                     base_url=web_base_url,
                 ),

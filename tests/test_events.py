@@ -248,6 +248,14 @@ class RecordsPageTests(unittest.TestCase):
         self.assertEqual(page.changes[0].account_display_name, "新人")
         self.assertTrue(page.log_since_label)
         self.assertEqual(page.activity[0].bar_width, 100.0)
+        # A window is a month at most: month and day, the year left off;
+        # the moment a record was fought is its day.
+        self.assertEqual(page.changes[0].seen_label, "09-06 20:00")
+        self.assertEqual(page.records[0].seen_label, "09-06 20:00")
+        self.assertRegex(page.records[0].fought_label, r"^\d\d-\d\d$")
+        # DPS in whole units, as on every wide page.
+        self.assertNotIn(".", page.changes[0].dps)
+        self.assertNotIn(".", page.records[0].dps)
 
     def test_the_text_and_the_template_carry_all_three_sections(self) -> None:
         text = facts.format_records(
@@ -263,11 +271,49 @@ class RecordsPageTests(unittest.TestCase):
         self.assertIn("新上传的记录 1 条", text)
         self.assertIn("打出的记录数", text)
         self.assertIn("ZMDLogs", text)
-        self.assertIn("第一名易主", html)
-        self.assertIn("新人", html)
-        self.assertIn("新增记录", html)
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn("zmd-root--records", html)
+        self.assertIn(">RECORDS<", html)
+        self.assertIn('<h1 class="i-title">新纪录</h1>', html)
+        self.assertIn("<span>第一名易主 <b>1</b> 次</span>", html)
+        # 第一名易主: the new holder on medal 1, whom it pushed off struck out.
+        self.assertIn("<strong>第一名易主</strong>", html)
+        self.assertEqual(html.count('<div class="rc-change">'), 1)
+        self.assertIn('<i class="rc-medal">1</i>', html)
+        self.assertIn("<strong>新人</strong>", html)
+        self.assertIn("<s>", html)
+        # 新上传的记录 as a table under its head row, then 各榜近 7 天新增.
+        self.assertIn("<strong>新上传的记录</strong>", html)
+        self.assertIn("<span>发现</span><span>名次</span>", html)
+        self.assertIn("<strong>各榜近 7 天新增</strong>", html)
+        self.assertLess(
+            html.index("<strong>第一名易主</strong>"),
+            html.index("<strong>新上传的记录</strong>"),
+        )
+        self.assertLess(
+            html.index("<strong>新上传的记录</strong>"),
+            html.index("<strong>各榜近 7 天新增</strong>"),
+        )
+        self.assertNotIn('class="w-empty"', html)
+        self.assertNotIn("scene-background", html)
         self.assertNotIn("数据截至", text)
         self.assertNotIn("时效", html)
+
+    def test_an_empty_window_says_so_in_each_section(self) -> None:
+        renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
+
+        html = renderer.render_records(
+            (), (), query="新纪录", window_label="近 7 天"
+        )
+
+        # Every section keeps its bar and says it is empty; without a log
+        # start, the empty stream reads as "nothing yet".
+        self.assertEqual(html.count('class="w-empty"'), 3)
+        self.assertIn("近 7 天没有发现第一名易主", html)
+        self.assertIn("近 7 天没有发现新上传的记录", html)
+        self.assertIn("近 7 天没有榜单打出新记录", html)
+        self.assertIn("新纪录流从索引上线起记录", html)
+        self.assertNotIn('<div class="w-tr w-th', html)
 
 
 class RecordsRouteTests(unittest.TestCase):

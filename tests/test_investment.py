@@ -58,10 +58,13 @@ def account_with_entries(*pairs):
     return payload
 
 
-def investments(html: str) -> list[str]:
-    """Every 养成 printed on a page, in page order."""
+def investments(html: str, marker: str = 'class="investment">') -> list[str]:
+    """Every 养成 printed on a page, in page order.
 
-    marker = 'class="investment">'
+    ``marker`` is how the page tags one: the old shell's ``investment``
+    span, or a V2 page's own chip.
+    """
+
     return [
         chunk.split("<", 1)[0] for chunk in html.split(marker)[1:]
     ]
@@ -154,8 +157,12 @@ class InvestmentPageTests(unittest.TestCase):
 
         # Combo A's best run is row 1, its members in profession order
         # 黎风 洁尔佩塔 佩丽卡 卡缪; combo B's is row 3, where only 洛茜 has one.
-        self.assertEqual(investments(html), ["5+6", "0+1", "3+4", "1+?"])
-        self.assertIn(LEGEND, html)
+        # A chip under each name (the V2 阵容), with no legend line: the
+        # prototype's ruling, as on the V2 ranking.
+        self.assertEqual(
+            investments(html, 'class="r-inv">'), ["5+6", "0+1", "3+4", "1+?"]
+        )
+        self.assertNotIn(LEGEND, html)
 
     def test_the_account_page_prints_no_pair_and_borrows_the_index_faces(
         self,

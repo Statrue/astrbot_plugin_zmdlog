@@ -148,6 +148,9 @@ PAGE_FRAMES: dict[str, PageFrame] = {
     "character-boss": WIDE_FRAME,
     "character-champions": WIDE_FRAME,
     "player-champions": WIDE_FRAME,
+    "roster": WIDE_FRAME,
+    "dungeon-top3": WIDE_FRAME,
+    "records": WIDE_FRAME,
 }
 
 

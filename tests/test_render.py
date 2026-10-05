@@ -1095,30 +1095,68 @@ class TemplateRendererTests(unittest.TestCase):
             "完整副本名",
             with_run=True,
         )
-        # hot-bosses runs carry 养成 now; the top-3 card lists names and
-        # times only.
+        # hot-bosses runs carry 养成, a percentile and a battle now; the
+        # top-3 card lists names and times only.
         run = replace(
-            card.top_speed_runs[0], character_potential=5, weapon_refine=6
+            card.top_speed_runs[0],
+            character_potential=5,
+            weapon_refine=6,
+            score_percent=87,
+            character_avatar_url="https://zmdlogs.com/images/character/yujin.png",
         )
         card = replace(card, top_speed_runs=(run,))
         html = self.renderer.render_dungeon_top3(
-            dungeon_pick("完整副本名", card), (card,), query="<副本>"
+            dungeon_pick("完整副本名", card),
+            (card,),
+            query="<副本>",
+            embed_fonts=False,
         )
+        drawn = html[html.index('<main class="zmd-main">'):html.index("</main>")]
 
+        # The new page: 960 wide, the dungeon its title, the run's row.
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn("zmd-root--dungeon-top3", html)
+        self.assertIn('<h1 class="i-title">完整副本名</h1>', html)
         self.assertIn("首领&lt;script&gt;", html)
-        self.assertIn("&lt;副本&gt;", html)
+        self.assertIn('<li class="t3-run is-1">', html)
+        self.assertIn("<strong>公开账户</strong><small>余烬</small>", html)
+        self.assertIn("1:01.234", html)
+        self.assertIn("i-face is-lead", html)
+        # The slug, the battle, the percentile, any link, DPS and 养成 stay
+        # off the page.
         self.assertNotIn("secret-slug", html)
         self.assertNotIn("battle-secret-slug", html)
-        self.assertIn("1:01.234", html)
-        # The bare "5+6" also occurs by chance in the embedded fonts' base64.
-        self.assertNotIn(">5+6<", html)
-        self.assertNotIn('class="investment"', html)
+        self.assertNotIn("href=", html)
+        self.assertNotIn("/battle/", html)
+        self.assertNotIn("87", drawn)
+        self.assertNotIn("百分位", drawn)
+        self.assertNotIn("DPS", drawn)
+        self.assertNotIn("阵容", drawn)
+        self.assertNotIn("5+6", drawn)
+        self.assertNotIn("investment", drawn)
+
+    def test_a_contract_board_puts_its_score_before_the_time(self) -> None:
+        card = make_card("indie_group_ccdg", "危机合约", "危机合约", with_run=True)
+        run = replace(card.top_speed_runs[0], contract_tag_score=52)
+        card = replace(card, top_speed_runs=(run,))
+        plain = make_card("a-1", "榜单甲", "危机合约", with_run=True)
+
+        html = self.renderer.render_dungeon_top3(
+            dungeon_pick("危机合约", card, plain), (card, plain), query="合约"
+        )
+
+        self.assertIn(
+            '<span class="t3-time"><b>52</b><small>分 · 1:01.234</small></span>',
+            html,
+        )
+        self.assertIn('<span class="t3-time"><b>1:01.234</b></span>', html)
 
     def test_dungeon_scope_groups_cards_by_dungeon(self) -> None:
         cards = (
             make_card("a-1", "榜单甲", "影拓丰碑1期", with_run=True),
             make_card("b-1", "榜单乙", "影拓丰碑2期", with_run=True),
             make_card("a-2", "榜单丙", "影拓丰碑1期", with_run=True),
+            make_card("b-2", "榜单丁", "影拓丰碑2期"),
         )
         choice = MatchChoice(
             target=MatchTarget(
@@ -1136,6 +1174,7 @@ class TemplateRendererTests(unittest.TestCase):
         page = build_dungeon_top3_page(choice, cards, query="丰碑")
         html = self.renderer.render_dungeon_top3(choice, cards, query="丰碑")
 
+        self.assertEqual(page.header.title, "影拓丰碑1—2期")
         self.assertTrue(page.group_by_dungeon)
         self.assertEqual(
             tuple(group.dungeon_name for group in page.card_groups),
@@ -1143,16 +1182,40 @@ class TemplateRendererTests(unittest.TestCase):
         )
         self.assertEqual(
             tuple(len(group.cards) for group in page.card_groups),
-            (2, 1),
+            (2, 2),
         )
-        self.assertEqual(html.count('class="dungeon-group"'), 2)
-        self.assertNotIn('class="top3-card-dungeon"', html)
+        self.assertIn('<h1 class="i-title">影拓丰碑1—2期</h1>', html)
+        self.assertIn("<span><b>4</b> 个榜单</span>", html)
+        self.assertEqual(html.count('<div class="t3-grid">'), 2)
         self.assertLess(
-            html.index("<h3>影拓丰碑1期</h3>"),
-            html.index("<h3>影拓丰碑2期</h3>"),
+            html.index('<h2 class="t3-group">影拓丰碑1期</h2>'),
+            html.index('<h2 class="t3-group">影拓丰碑2期</h2>'),
         )
-        self.assertIn("2 个榜单", html)
-        self.assertIn("1 个榜单", html)
+        self.assertEqual(html.count('<section class="b-block t3-card">'), 4)
+        # A board without a public run says so in its own card.
+        self.assertIn('<li class="t3-empty">暂无公开记录</li>', html)
+
+    def test_a_dungeons_cards_stand_under_its_name_alone(self) -> None:
+        cards = (
+            make_card("a-1", "榜单甲", "战争回响", with_run=True),
+            make_card("a-2", "榜单乙", "战争回响", with_run=True),
+        )
+
+        html = self.renderer.render_dungeon_top3(
+            dungeon_pick("战争回响", *cards), cards, query="战争回响"
+        )
+
+        self.assertIn('<h1 class="i-title">战争回响</h1>', html)
+        self.assertIn(">TOP 3<", html)
+        self.assertNotIn('class="t3-group"', html)
+        self.assertEqual(html.count('<div class="t3-grid">'), 1)
+
+    def test_the_lists_are_wide_pages(self) -> None:
+        from core.render import page_frame
+
+        for kind in ("roster", "dungeon-top3", "records"):
+            with self.subTest(kind=kind):
+                self.assertEqual(page_frame(kind), WIDE_FRAME)
 
     def test_missing_background_is_a_configuration_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

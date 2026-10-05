@@ -3013,6 +3013,35 @@ class HandlerTests(unittest.TestCase):
                 self.assertIn("--页", reply)
         self.assertEqual(received, [])
 
+    def test_a_number_after_the_roster_keyword_is_no_count(self) -> None:
+        # 阵容 counts a fixed first ten: a trailing number is read as part
+        # of the keyword like any other word, and the page takes no count.
+        boards: list[str] = []
+        drawn: list[dict] = []
+
+        async def ranking(boss_slug, **kwargs):
+            boards.append(boss_slug)
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        async def render_roster(ranking, **kwargs):
+            drawn.append(kwargs)
+            return capture("/tmp/roster.png")
+
+        self.plugin.data.get_boss_ranking = ranking
+        self.plugin.renderer.render_roster = render_roster
+
+        replies = [
+            self._zmdlog(text)
+            for text in ("zmdlog 阵容 三位一体", "zmdlog 阵容 三位一体 5")
+        ]
+
+        self.assertEqual(replies, [[("image", "/tmp/roster.png")]] * 2)
+        self.assertEqual(boards, ["dung01_group_bossrush02"] * 2)
+        self.assertEqual(
+            [sorted(kwargs) for kwargs in drawn], [["query", "web_base_url"]] * 2
+        )
+        self.assertEqual(drawn[1]["query"], "三位一体 5")
+
     def test_several_character_names_filter_the_whole_team(self) -> None:
         received: list[dict] = []
 

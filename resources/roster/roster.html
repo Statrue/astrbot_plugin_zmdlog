@@ -1,103 +1,86 @@
-{% extends "common/base.html" %}
-{% from "common/member-face.html" import render_member_face %}
+{# 阵容 (prototype 38726f7, approved): a board's usage by 职业 as one card
+   of six blocks, three a line — face, name, a yellow track, the share
+   within the slot — then the first ten records' common teams (count and
+   share, four faces with their names and 养成, the best 名次 and its DPS)
+   beside their main Cs. The count is fixed: 阵容 takes none. #}
+{% extends "shell/wide-base.html" %}
+{% from "shell/parts.html" import face %}
+{% from "shell/wide-parts.html" import bar %}
 
-{% block extra_styles %}{% include "roster/roster.css" %}{% endblock %}
+{% block styles %}{% include "shell/wide-table.css" %}{% include "roster/roster.css" %}{% endblock %}
+
+{% block giant %}ROSTER{% endblock %}
+
+{% block meta %}
+{% if page.header.subtitle not in page.header.title %}<span>{{ page.header.subtitle }}</span>{% endif %}
+<span><b>{{ page.row_count }}</b> 条公开记录</span>
+<span>{{ page.metric_label }} 口径</span>
+{% endblock %}
 
 {% block content %}
-<div class="section-heading">
-  <h2>职业位出场率</h2>
-  <span class="section-note">基于全部 {{ page.row_count }} 条公开排名 · 括号是带这个位的记录数 · 百分比是该位内部的占比</span>
-</div>
+{% set card_w = frame.width - 48 %}
+{% set col_l = ((card_w - 16) * 0.62)|round(1) %}
+{% set col_r = (card_w - 16 - col_l)|round(1) %}
 
-<section class="usage-grid" aria-label="职业位出场率">
-  {% for group in page.profession_usage %}
-  <div class="usage-column">
-    <h3 class="usage-title">{{ group.profession }} <em>{{ group.record_count }}/{{ page.row_count }}</em></h3>
-    {% if group.entries %}
-    <ul class="usage-list">
-      {% for entry in group.entries %}
-      <li class="usage-item">
-        <span class="avatar avatar--small">
-          {{ entry.character_initial }}
-          {% if entry.avatar_url %}
-          <img src="{{ entry.avatar_url }}" alt="" onerror="this.remove()">
-          {% endif %}
-        </span>
-        <span class="usage-text">
-          <span class="usage-name-row">
-            <strong>{{ entry.character_name }}</strong>
-            <em>{{ entry.percent }}</em>
-          </span>
-          <span class="usage-bar"><i style="width: {{ entry.bar_width }}%;"></i></span>
-        </span>
-      </li>
-      {% endfor %}
-    </ul>
-    {% if group.hidden_count %}<p class="usage-more">+{{ group.hidden_count }} 位角色</p>{% endif %}
-    {% else %}
-    <p class="usage-empty">—</p>
-    {% endif %}
+<section class="b-block">
+  {{ bar("职业位出场率", card_w, "全部 " ~ page.row_count ~ " 条记录 · 职业位内的占比") }}
+  <div class="b-body r-profs">
+    {% for group in page.profession_usage %}
+    <div class="r-prof">
+      <p class="r-prof-head"><strong>{{ group.profession }}</strong><small>{{ group.record_count }} 条</small></p>
+      {% if group.entries %}
+      <ol class="r-prof-rows">
+        {% for entry in group.entries %}
+        <li class="r-prof-row{% if loop.first %} is-top{% endif %}">
+          {{ face(entry, size="w-face-xs") }}
+          <span class="r-name">{{ entry.character_name }}</span>
+          <i class="w-track"><i style="width: {{ entry.bar_width }}%;"></i></i>
+          <b>{{ entry.percent }}</b>
+        </li>
+        {% endfor %}
+      </ol>
+      {% if group.hidden_count %}<p class="r-more">另有 {{ group.hidden_count }} 个</p>{% endif %}
+      {% else %}
+      <p class="w-empty">—</p>
+      {% endif %}
+    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
 </section>
 
 {% if page.sample_size %}
-<div class="roster-columns">
-  <section class="roster-block" aria-label="常见阵容">
-    <div class="section-heading">
-      <h2>前 {{ page.sample_size }} 名常见阵容</h2>
-      <span class="section-note">站位顺序不计 · 头像下的数字是 潜能+精炼，取该阵容名次最好的一场</span>
-    </div>
-    <ol class="combo-list">
+<div class="r-pair">
+  <section class="b-block">
+    {{ bar("前 " ~ page.sample_size ~ " 名常见阵容", col_l, "站位不计") }}
+    <div class="b-body w-table">
       {% for combo in page.combos %}
-      <li class="combo-item">
-        <div class="combo-head">
-          <span class="combo-count"><strong>{{ combo.count }}</strong>次 · {{ combo.percent }}</span>
-          <span class="combo-best">最佳 #{{ combo.best_rank }} · {{ page.metric_label }} {{ combo.best_dps }}</span>
-        </div>
-        <div class="combo-members">
-          {% for member in combo.members %}
-          <span class="combo-member">
-            {{ render_member_face(member, "avatar--small") }}
-            <span class="combo-member-text">
-              <strong>{{ member.character_name }}</strong>
-              {% if member.profession %}<em>{{ member.profession }}</em>{% endif %}
-            </span>
-          </span>
-          {% endfor %}
-        </div>
+      <div class="r-combo">
+        <span class="w-team-n"><b>{{ combo.count }}</b><small>次 · {{ combo.percent }}</small></span>
+        <span class="w-team-faces">{% for member in combo.members %}<span class="w-team-m r-m">{{ face(member, size="w-face-s") }}<em>{{ member.character_name }}</em>{% if member.investment %}<i class="r-inv">{{ member.investment.text }}</i>{% endif %}</span>{% endfor %}</span>
+        <span class="r-best"><small>最佳</small><b>#{{ combo.best_rank }}</b><small>{{ page.metric_label }} {{ combo.best_dps }}</small></span>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="b-block">
+    {{ bar("前 " ~ page.sample_size ~ " 名主 C", col_r) }}
+    <ol class="b-body r-mains">
+      {% for main in page.main_characters %}
+      <li class="r-main">
+        {{ face(main, lead=loop.first, size="w-face-s") }}
+        <span class="r-name">{{ main.character_name }}</span>
+        <b>{{ main.count }}<small>次</small></b>
+        <i class="w-track"><i style="width: {{ main.bar_width }}%;"></i></i>
       </li>
       {% endfor %}
     </ol>
   </section>
-
-  <section class="roster-block" aria-label="主 C 分布">
-    <div class="section-heading">
-      <h2>前 {{ page.sample_size }} 名主 C</h2>
-      <span class="section-note">主要角色出现次数</span>
-    </div>
-    <ul class="main-list">
-      {% for main in page.main_characters %}
-      <li class="main-item">
-        <span class="avatar avatar--small">
-          {{ main.character_initial }}
-          {% if main.avatar_url %}
-          <img src="{{ main.avatar_url }}" alt="" onerror="this.remove()">
-          {% endif %}
-        </span>
-        <span class="main-text">
-          <span class="usage-name-row">
-            <strong>{{ main.character_name }}</strong>
-            <em>{{ main.count }} 次 · {{ main.percent }}</em>
-          </span>
-          <span class="usage-bar usage-bar--ink"><i style="width: {{ main.bar_width }}%;"></i></span>
-        </span>
-      </li>
-      {% endfor %}
-    </ul>
-  </section>
 </div>
 {% else %}
-<div class="empty-ranking">该榜单暂无公开排名</div>
+<section class="b-block">
+  {{ bar("常见阵容", card_w) }}
+  <div class="b-body"><p class="w-empty">该榜单暂无公开排名</p></div>
+</section>
 {% endif %}
 {% endblock %}

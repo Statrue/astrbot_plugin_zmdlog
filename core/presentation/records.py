@@ -7,6 +7,7 @@ from .common import (
     PageHeader,
     _bar_width,
     _format_datetime,
+    _format_month_day,
     format_duration,
     format_number,
     metric_footer,
@@ -14,6 +15,13 @@ from .common import (
 
 MAX_CHANGES = 20
 MAX_RECORDS = 40
+
+
+def _month_day_time(value: str) -> str:
+    """月-日 时:分 — a window is a month at most, so the year is noise."""
+
+    full = _format_datetime(value)
+    return full[5:] if len(full) == len("2026-01-01 00:00") else full
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +45,6 @@ class NewRecordView:
     rank: int
     account_display_name: str
     character_name: str
-    roster_label: str
     duration: str
     dps: str
     fought_label: str
@@ -92,10 +99,7 @@ def build_records_page(
             query=query,
             matched_name=f"{window_label} · 新纪录与榜单活跃度",
             target_type="新纪录",
-            footer_note=(
-                metric_footer(metric)
-                + " · 新纪录由索引每次重读发现 · 活跃度按记录的战斗时间数"
-            ),
+            footer_note=metric_footer(metric),
             metric=metric,
         ),
         window_label=window_label,
@@ -104,11 +108,11 @@ def build_records_page(
             ChampionChangeView(
                 boss_name=event.boss_name,
                 dungeon_name=event.dungeon_name,
-                seen_label=_format_datetime(event.seen_at),
+                seen_label=_month_day_time(event.seen_at),
                 account_display_name=event.account_display_name,
                 character_name=event.character_name,
                 duration=format_duration(event.duration_ms),
-                dps=format_number(event.dps),
+                dps=format_number(round(event.dps)),
                 previous_account_display_name=event.previous_account_display_name,
                 previous_character_name=event.previous_character_name,
                 previous_duration=format_duration(event.previous_duration_ms),
@@ -123,11 +127,10 @@ def build_records_page(
                 rank=event.rank,
                 account_display_name=event.account_display_name,
                 character_name=event.character_name,
-                roster_label="、".join(event.roster),
                 duration=format_duration(event.duration_ms),
-                dps=format_number(event.dps),
-                fought_label=_format_datetime(event.battle_end_at),
-                seen_label=_format_datetime(event.seen_at),
+                dps=format_number(round(event.dps)),
+                fought_label=_format_month_day(event.battle_end_at),
+                seen_label=_month_day_time(event.seen_at),
             )
             for event in records[:MAX_RECORDS]
         ),

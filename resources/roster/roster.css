@@ -1,230 +1,162 @@
-.usage-grid {
+/* 阵容: usage by 职业 three blocks a line, then the common teams beside
+   the main Cs. The rows, tracks, faces and team parts are wide-table.css's. */
+
+/* ── 职业位出场率: six blocks, three a line ─────────────────────────── */
+.r-profs {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px 28px;
+  padding: 16px 22px 18px;
 }
-
-.usage-column {
-  min-width: 0;
-  padding: 0 0 10px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
-}
-
-.usage-title {
-  margin: 0;
-  padding: 7px 12px;
-  color: var(--on-dark);
-  background: var(--ink);
-  font-size: var(--fs-13);
-  font-weight: 800;
-  letter-spacing: 0.14em;
-}
-
-.usage-list,
-.main-list,
-.combo-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.usage-item,
-.main-item {
+.r-prof-head {
   display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px 0;
-}
-
-.avatar--small {
-  width: 30px;
-  height: 30px;
-  font-size: var(--fs-12);
-}
-
-.usage-text,
-.main-text,
-.combo-member-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.usage-name-row {
-  display: flex;
-  min-width: 0;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 2px solid var(--who-bg);
 }
-
-.usage-name-row strong {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: var(--fs-13);
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.usage-name-row em {
-  flex: 0 0 auto;
-  color: var(--steel);
-  font-family: var(--font-num);
-  font-size: var(--fs-12);
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-.usage-bar {
-  position: relative;
-  display: block;
-  height: 6px;
-  overflow: hidden;
-  background: var(--line-soft);
-}
-
-.usage-bar i {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: block;
-  height: 100%;
-  background: var(--action);
-}
-
-.usage-bar--ink i {
-  background: var(--steel);
-}
-
-.usage-more,
-.usage-empty {
-  margin: 8px 12px 0;
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-weight: 600;
-}
-
-.usage-empty {
-  padding: 10px 0;
-  text-align: center;
-  font-size: var(--fs-16);
-}
-
-/* ---------- bottom columns ---------- */
-
-.roster-columns {
-  display: grid;
-  grid-template-columns: 1.55fr 1fr;
-  gap: 24px;
-}
-
-.roster-block {
-  min-width: 0;
-}
-
-.combo-item {
-  margin-top: 10px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
-}
-
-.combo-item:first-child {
-  margin-top: 0;
-}
-
-.combo-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--line-soft);
-  background: var(--card-soft);
-}
-
-.combo-count {
-  color: var(--ink);
-  font-size: var(--fs-12);
-  font-weight: 700;
-}
-
-.combo-count strong {
-  margin-right: 2px;
-  font-family: var(--font-num);
-  font-size: var(--fs-18);
+.r-prof-head strong {
+  font-size: var(--fs-20);
   font-weight: 800;
 }
-
-.combo-item:first-child .combo-count strong {
-  padding: 0 6px;
-  background: var(--yellow);
-}
-
-.combo-best {
-  color: var(--steel);
+.r-prof-head small {
   font-family: var(--font-num);
-  font-size: var(--fs-12);
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: 600;
+  font-size: var(--fs-15);
+  color: var(--muted);
 }
-
-.combo-members {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  padding: 10px 14px 12px;
-}
-
-.combo-member {
+.r-prof-rows {
+  list-style: none;
   display: flex;
-  min-width: 0;
-  align-items: flex-start;
+  flex-direction: column;
   gap: 8px;
 }
+/* face · name · track · share; the name column fits four characters and
+   a longer name wraps rather than shift the tracks */
+.r-prof-row {
+  display: grid;
+  grid-template-columns: 32px 70px minmax(0, 1fr) 54px;
+  align-items: center;
+  gap: 8px;
+}
+.r-name {
+  min-width: 0;
+  font-size: var(--fs-17);
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.r-prof-row b {
+  text-align: right;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-17);
+  color: var(--ink);
+}
+.r-prof-row.is-top b {
+  font-size: var(--fs-20);
+}
+.r-more {
+  margin-top: 6px;
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.r-prof .w-empty {
+  padding: 4px 0;
+}
 
-.combo-member-text {
+/* ── the common teams beside the main Cs ─────────────────────────── */
+.r-pair {
+  display: grid;
+  grid-template-columns: 62fr 38fr;
+  gap: 16px;
+  align-items: start;
+}
+.r-combo {
+  display: grid;
+  grid-template-columns: 72px 280px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.r-combo:last-child {
+  border-bottom: 0;
+}
+.r-combo .w-team-n {
+  flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
 }
-
-.combo-member-text strong {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: var(--fs-13);
-  font-weight: 700;
-  text-overflow: ellipsis;
+.r-combo .w-team-faces {
+  gap: 4px;
+}
+.r-m {
+  width: 67px;
+}
+/* 养成 under the name, the site's 5+6 on a grey chip */
+.r-inv {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--cell);
+  font-style: normal;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-15);
+  color: var(--ink-2);
+}
+.r-best {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.r-best b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-24);
+  line-height: 1;
+}
+.r-best small {
+  font-size: var(--fs-15);
+  color: var(--muted);
   white-space: nowrap;
 }
 
-.combo-member-text em {
-  color: var(--muted);
-  font-size: var(--fs-10);
-  font-style: normal;
-  font-weight: 600;
+/* a main C: face, name and count over its track */
+.r-mains {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px;
 }
-
-.main-list {
-  padding: 4px 0 12px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+.r-main {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 6px;
+  align-items: center;
 }
-
-.main-item {
-  padding: 10px 14px 0;
+.r-main .i-face {
+  grid-row: span 2;
 }
-
-.usage-title em {
-  color: var(--muted);
+.r-main .r-name {
+  font-size: var(--fs-17);
+}
+.r-main b {
   font-family: var(--font-num);
-  font-size: var(--fs-11);
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: 800;
+  font-size: var(--fs-22);
+}
+.r-main b small {
+  margin-left: 2px;
+  font-family: var(--font-cjk);
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.r-main .w-track {
+  grid-column: 2 / span 2;
 }

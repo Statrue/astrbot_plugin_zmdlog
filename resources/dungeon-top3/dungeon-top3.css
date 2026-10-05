@@ -1,0 +1,101 @@
+/* 副本前三: a card a board, two abreast; a scope's dungeons each under
+   their own name. The faces are wide-table.css's. */
+
+.t3-group {
+  margin-bottom: -8px;
+  font-size: var(--fs-22);
+  font-weight: 900;
+  color: var(--ink);
+}
+.t3-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 16px;
+}
+/* two cards abreast end level, should a long name make one taller */
+.t3-card {
+  display: flex;
+  flex-direction: column;
+}
+.t3-runs {
+  flex: 1;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 20px 10px;
+}
+/* medal · face · who · time; the face column fixed, a long name wraps */
+.t3-run {
+  display: grid;
+  grid-template-columns: 30px 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+}
+.t3-run + .t3-run {
+  border-top: 1px solid var(--rule-soft);
+}
+.t3-run.is-1 {
+  --medal: var(--yellow);
+}
+.t3-run.is-2 {
+  --medal: var(--silver);
+}
+.t3-run.is-3 {
+  --medal: var(--bronze);
+}
+.t3-medal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-20);
+  color: var(--medal-ink);
+  background: var(--medal);
+}
+.t3-run .i-face {
+  justify-self: center;
+}
+.t3-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.t3-who strong {
+  font-size: var(--fs-17);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.t3-who small {
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.t3-time {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.t3-time b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-24);
+  color: var(--ink);
+}
+/* #1's time on the yellow stroke */
+.t3-run.is-1 .t3-time b {
+  padding: 0 4px;
+  background: linear-gradient(transparent 58%, var(--yellow) 58%);
+}
+.t3-time small {
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.t3-empty {
+  padding: 14px 0;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}

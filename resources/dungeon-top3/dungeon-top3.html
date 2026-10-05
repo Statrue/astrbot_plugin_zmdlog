@@ -1,26 +1,53 @@
-{% extends "common/base.html" %}
-{% from "common/top3-card.html" import render_top3_card %}
-{% from "common/top3-groups.html" import render_top3_groups %}
+{# 副本前三 (prototype 38726f7, approved): the dungeon is the title; a card a
+   board, two abreast, each its first three — the medal, the main C on the
+   yellow ring, the uploader over the main C's name, the time (a 危机合约
+   board's score before it), #1's time on the yellow stroke. A scope of
+   dungeons heads each dungeon's cards with its name.
+
+   Nothing the ranking alone may show: no slug, percentile, DPS, roster or
+   link (test_render pins it). #}
+{% extends "shell/wide-base.html" %}
+{% from "shell/parts.html" import face %}
+{% from "shell/wide-parts.html" import bar %}
+
+{% block styles %}{% include "shell/wide-table.css" %}{% include "dungeon-top3/dungeon-top3.css" %}{% endblock %}
+
+{% block giant %}TOP 3{% endblock %}
+
+{% block meta %}
+<span>各榜前三名</span>
+<span><b>{{ page.cards|length }}</b> 个榜单</span>
+{% endblock %}
 
 {% block content %}
-<section class="scope-list" aria-label="标准副本范围">
-  <strong class="scope-list-label">本次包含的标准副本</strong>
-  {% for dungeon_name in page.dungeon_names %}
-  <span class="scope-chip">{{ dungeon_name }}</span>
+{% set card_w = frame.width - 48 %}
+{% set col_w = ((card_w - 16) / 2)|round(1) %}
+{# one dungeon's boards are one grid, whatever the cards call it #}
+{% set groups = page.card_groups if page.group_by_dungeon else [{"dungeon_name": "", "cards": page.cards}] %}
+{% for group in groups %}
+{% if page.group_by_dungeon %}<h2 class="t3-group">{{ group.dungeon_name }}</h2>{% endif %}
+<div class="t3-grid">
+  {% for card in group.cards %}
+  <section class="b-block t3-card">
+    {{ bar(card.boss_name, col_w) }}
+    <ol class="b-body t3-runs">
+      {% for run in card.runs %}
+      <li class="t3-run is-{{ run.rank }}">
+        <span class="t3-medal">{{ run.rank }}</span>
+        {{ face(run, lead=true, size="w-face-s") }}
+        <span class="t3-who"><strong>{{ run.uploader_nickname }}</strong><small>{{ run.character_name }}</small></span>
+        {% if run.contract_score is not none %}
+        <span class="t3-time"><b>{{ run.contract_score }}</b><small>分 · {{ run.duration }}</small></span>
+        {% else %}
+        <span class="t3-time"><b>{{ run.duration }}</b></span>
+        {% endif %}
+      </li>
+      {% else %}
+      <li class="t3-empty">暂无公开记录</li>
+      {% endfor %}
+    </ol>
+  </section>
   {% endfor %}
-</section>
-
-<div class="section-heading">
-  <h2>范围内榜单</h2>
-  <span class="section-note">{{ page.cards|length }} 个榜单</span>
 </div>
-{% if page.group_by_dungeon %}
-{{ render_top3_groups(page.card_groups) }}
-{% else %}
-<section class="top3-grid" aria-label="副本榜单前三名">
-  {% for card in page.cards %}
-  {{ render_top3_card(card) }}
-  {% endfor %}
-</section>
-{% endif %}
+{% endfor %}
 {% endblock %}

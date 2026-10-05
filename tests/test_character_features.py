@@ -425,7 +425,8 @@ class RosterPageTests(unittest.TestCase):
         self.assertEqual(first.count, 3)
         self.assertEqual(first.percent, "60%")
         self.assertEqual(first.best_rank, 1)
-        self.assertEqual(first.best_dps, "130,000.5")
+        # Whole units, like every DPS on the wide pages.
+        self.assertEqual(first.best_dps, "130,000")
         self.assertEqual(
             [member.character_name for member in first.members],
             ["黎风", "洁尔佩塔", "佩丽卡", "卡缪"],
@@ -445,6 +446,32 @@ class RosterPageTests(unittest.TestCase):
         )
         self.assertEqual(page.sample_size, 10)
         self.assertEqual(page.row_count, 12)
+
+    def test_the_roster_is_a_wide_page_of_usage_teams_and_main_cs(self) -> None:
+        html = self.renderer.render_roster(
+            self.ranking, query="阵容 测试", web_base_url="https://zmdlogs.com"
+        )
+
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn("zmd-root--roster", html)
+        self.assertIn(">ROSTER<", html)
+        self.assertIn("<b>5</b> 条公开记录", html)
+        self.assertNotIn("scene-background", html)
+        # One card of six profession blocks, then the teams beside the
+        # main Cs; the first main C wears the yellow ring.
+        self.assertIn("<strong>职业位出场率</strong>", html)
+        self.assertEqual(html.count('<div class="r-prof">'), 6)
+        self.assertIn("<strong>前 5 名常见阵容</strong>", html)
+        self.assertIn("<strong>前 5 名主 C</strong>", html)
+        self.assertLess(
+            html.index("<strong>前 5 名常见阵容</strong>"),
+            html.index("<strong>前 5 名主 C</strong>"),
+        )
+        self.assertEqual(html.count('<div class="r-combo">'), 2)
+        self.assertIn("<b>#1</b>", html)
+        self.assertIn("DPS 130,000", html)
+        mains = html[html.index("<strong>前 5 名主 C</strong>"):]
+        self.assertEqual(mains.count("i-face is-lead"), 1)
 
     def test_template_does_not_leak_account_or_battle_ids(self) -> None:
         html = self.renderer.render_roster(
