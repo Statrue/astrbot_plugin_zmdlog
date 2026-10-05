@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from ..metrics import metric_label
 from ..standings import CharacterStandings
-from .boards import RosterEntryView, _build_roster
+from .boards import RosterEntryView, _build_roster, main_c_first
 from .common import (
     PageHeader,
     format_duration,
@@ -40,7 +40,6 @@ class CharacterStandingsPage:
     header: PageHeader
     # ``A`` or ``A · B``: the label every sentence on the page uses.
     character_name: str
-    character_names: tuple[str, ...]
     # 带 A / 同时带 A · B — the phrase the notes complete.
     team_label: str
     metric_label: str
@@ -69,7 +68,6 @@ def build_character_standings_page(
     """
 
     label = standings.character
-    names = standings.characters
     team_label = f"同时带 {label}" if standings.is_team else f"带 {label}"
     rows: list[StandingRowView] = []
     for board in standings.boards:
@@ -90,13 +88,7 @@ def build_character_standings_page(
                 dps=format_number(round(row.dps)),
                 account_display_name=row.account_display_name,
                 character_name=row.character_name,
-                # A stable sort: the main C first, the rest in record order.
-                roster=tuple(
-                    sorted(
-                        roster,
-                        key=lambda face: face.character_name != row.character_name,
-                    )
-                ),
+                roster=main_c_first(roster, row.character_name),
                 battle_id=row.battle_id,
             )
         )
@@ -116,7 +108,6 @@ def build_character_standings_page(
             metric=metric,
         ),
         character_name=label,
-        character_names=names,
         team_label=team_label,
         metric_label=metric_label(metric),
         appearances=standings.appearances,

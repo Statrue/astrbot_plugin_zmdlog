@@ -4,7 +4,7 @@ from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
 from ..models import BossRankingRow, PublicUserRankings
-from .boards import RosterEntryView, _build_roster
+from .boards import RosterEntryView, _build_roster, main_c_first
 from .common import (
     PageHeader,
     _format_date,
@@ -108,10 +108,7 @@ def build_account_page(
                 board_listed=(
                     listed_boards is None or row.boss_slug in listed_boards
                 ),
-                # A stable sort: the main C first, the rest in record order.
-                roster=tuple(
-                    sorted(roster, key=lambda face: face.character_name != main_c)
-                ),
+                roster=main_c_first(roster, main_c),
                 contract_score=(
                     format_number(row.contract_tag_score)
                     if row.contract_tag_score is not None

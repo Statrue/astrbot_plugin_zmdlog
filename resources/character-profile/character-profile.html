@@ -6,7 +6,7 @@
 {% from "shell/parts.html" import face %}
 {% from "shell/wide-parts.html" import bar %}
 
-{% block styles %}{% include "character-profile/character-profile.css" %}{% endblock %}
+{% block styles %}{% include "shell/wide-table.css" %}{% include "character-profile/character-profile.css" %}{% endblock %}
 
 {% block giant %}OPERATOR{% endblock %}
 
@@ -49,7 +49,7 @@
         <span class="c-share-icon">{% if row.icon_url %}<img src="{{ row.icon_url }}" alt="" onerror="this.remove()">{% endif %}</span>
         {% endif %}
         <span class="c-share-name">{{ row.label }}</span>
-        <i class="c-share-track"><i style="width: {{ row.bar_width }}%;"></i></i>
+        <i class="w-track"><i style="width: {{ row.bar_width }}%;"></i></i>
         <b class="c-share-pct">{{ row.share_label }}</b>
         <small class="c-share-n">{{ row.count }}</small>
       </li>

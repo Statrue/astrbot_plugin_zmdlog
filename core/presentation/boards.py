@@ -356,6 +356,15 @@ def _lead_first(
     return tuple(lead[:1] + rest)
 
 
+def main_c_first(
+    faces: tuple[RosterEntryView, ...], main_c: str
+) -> tuple[RosterEntryView, ...]:
+    """``faces`` with the main C's moved to the front, the rest in record
+    order."""
+
+    return tuple(sorted(faces, key=lambda face: face.character_name != main_c))
+
+
 def _normalised(text: str) -> str:
     return "".join(text.split()).replace("·", "").replace("・", "")
 

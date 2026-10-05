@@ -2,9 +2,9 @@
    its 冠军榜, 玩家排名, 阵容, 副本前三, 新纪录. A row is a grid whose
    columns each page sets on its own row class; this file is what every
    such table shares — the row and its head, the 名次 with its medal
-   underline, a face with a name, a count over a track, the time on its
-   yellow stroke, a team of faces, chips, and the figures card above a
-   table.
+   underline, a face with a name, a board over its dungeon, a date, a
+   count over a track, the time on its yellow stroke, a team of faces,
+   chips, and the figures card above a table.
 
    A column of faces gets a fixed width and the last text column
    minmax(0, 1fr): a 1fr face column has a min-content floor, so a row of
@@ -55,13 +55,14 @@
   font-size: var(--fs-15);
   color: var(--muted);
 }
-.w-tr.is-1 {
+/* a medal's colour, for whatever on the page draws one */
+.is-1 {
   --medal: var(--yellow);
 }
-.w-tr.is-2 {
+.is-2 {
   --medal: var(--silver);
 }
-.w-tr.is-3 {
+.is-3 {
   --medal: var(--bronze);
 }
 .w-tr.is-top .w-rank b {
@@ -90,6 +91,38 @@
   font-weight: 400;
   font-size: var(--fs-15);
   color: var(--muted);
+}
+
+/* a board with its dungeon under it, and a muted date */
+.w-board,
+.w-tr > .w-board {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+.w-board strong {
+  font-family: var(--font-cjk);
+  font-weight: 700;
+  font-size: var(--fs-17);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.w-board small {
+  font-family: var(--font-cjk);
+  font-weight: 400;
+  font-size: var(--fs-15);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.w-date,
+.w-tr > .w-date {
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: var(--fs-17);
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 /* a count over a yellow track */
@@ -220,6 +253,7 @@
 .w-time > small {
   font-size: var(--fs-15);
   color: var(--muted);
+  white-space: nowrap;
 }
 
 /* a team: a count, then four faces with their names */

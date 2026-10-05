@@ -29,10 +29,10 @@
   <div class="b-body w-table">
     {% for item in page.changes %}
     <div class="rc-change">
-      <span class="rc-when">{{ item.seen_label }}</span>
-      <span class="rc-board"><strong>{{ item.boss_name }}</strong><small>{{ item.dungeon_name }}</small></span>
+      <span class="w-date">{{ item.seen_label }}</span>
+      <span class="w-board"><strong>{{ item.boss_name }}</strong><small>{{ item.dungeon_name }}</small></span>
       <span class="rc-new"><i class="rc-medal">1</i><span><strong>{{ item.account_display_name }}</strong><small>主 C {{ item.character_name }}</small></span></span>
-      <span class="rc-time"><b>{{ item.duration }}</b><small>DPS {{ item.dps }}</small></span>
+      <span class="w-time"><b>{{ item.duration }}</b><small>DPS {{ item.dps }}</small></span>
       <svg class="rc-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10H15M10.5 5.5L15 10L10.5 14.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square"/></svg>
       <span class="rc-prev"><s>{{ item.previous_account_display_name }}</s><small>主 C {{ item.previous_character_name }} · {{ item.previous_duration }}</small></span>
     </div>
@@ -52,13 +52,13 @@
     {% endif %}
     {% for item in page.records %}
     <div class="w-tr rc-tr{% if item.rank <= 3 %} is-top is-{{ item.rank }}{% endif %}">
-      <span class="rc-when">{{ item.seen_label }}</span>
+      <span class="w-date">{{ item.seen_label }}</span>
       <span class="w-rank"><b>{{ "%02d"|format(item.rank) }}</b></span>
-      <span class="rc-board"><strong>{{ item.boss_name }}</strong><small>{{ item.dungeon_name }}</small></span>
-      <span class="rc-board"><strong>{{ item.account_display_name }}</strong><small>主 C {{ item.character_name }}</small></span>
+      <span class="w-board"><strong>{{ item.boss_name }}</strong><small>{{ item.dungeon_name }}</small></span>
+      <span class="w-board"><strong>{{ item.account_display_name }}</strong><small>主 C {{ item.character_name }}</small></span>
       <b>{{ item.duration }}</b>
       <span class="w-muted">{{ item.dps }}</span>
-      <span class="rc-when">{{ item.fought_label }}</span>
+      <span class="w-date">{{ item.fought_label }}</span>
     </div>
     {% else %}
     {{ empty("新上传的记录") }}
@@ -72,7 +72,7 @@
   <ol class="b-body rc-acts">
     {% for item in page.activity %}
     <li class="rc-act">
-      <span class="rc-board"><strong>{{ item.boss_name }}</strong><small>{{ item.dungeon_name }}</small></span>
+      <span class="w-board"><strong>{{ item.boss_name }}</strong><small>{{ item.dungeon_name }}</small></span>
       <i class="w-track"><i style="width: {{ item.bar_width }}%;"></i></i>
       <b>{{ item.count }}</b>
     </li>

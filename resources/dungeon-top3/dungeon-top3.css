@@ -35,15 +35,6 @@
 .t3-run + .t3-run {
   border-top: 1px solid var(--rule-soft);
 }
-.t3-run.is-1 {
-  --medal: var(--yellow);
-}
-.t3-run.is-2 {
-  --medal: var(--silver);
-}
-.t3-run.is-3 {
-  --medal: var(--bronze);
-}
 .t3-medal {
   display: flex;
   align-items: center;

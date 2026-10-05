@@ -223,7 +223,6 @@ class StandingsPageTests(unittest.TestCase):
         )
 
         self.assertEqual(page.character_name, "卡缪 · 洛茜")
-        self.assertEqual(page.character_names, ("卡缪", "洛茜"))
         self.assertEqual(page.team_label, "同时带 卡缪 · 洛茜")
         self.assertIn("同时带 卡缪 · 洛茜的队伍", html)
         # One yellow ring a row, its record's main C; the names asked about
