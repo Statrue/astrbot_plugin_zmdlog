@@ -170,7 +170,7 @@ _ATTRIBUTE_TYPE_LABELS = {
     44: "终结技充能效率",
     87: "源石技艺强度",
 }
-_UNKNOWN_STAT_LABEL = "属性未收录"
+_UNKNOWN_STAT_LABEL = "名称未收录"
 _SKILL_LEVEL_SLOTS = (
     ("普攻", "_attack1"),
     ("战技", "_normal_skill"),
@@ -681,7 +681,8 @@ def stat_label(name: str) -> str:
 
     A name with no Chinese in it that no table covers (an enum number not
     mapped yet, the enum's unnamed ``attribute_type_0``, an English enum
-    name) prints as 属性未收录 beside its value instead of as the key.
+    name) prints as 名称未收录, the term every raw id gets, beside its value
+    instead of as the key.
     """
 
     stripped = name.strip()

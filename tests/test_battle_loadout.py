@@ -676,9 +676,9 @@ class LoadoutPresentationTests(unittest.TestCase):
                 ("源石技艺强度", "44.9"),
                 ("智识", "111"),
                 ("终结技充能效率", "27.9%"),
-                ("属性未收录", "29.9%"),
-                ("属性未收录", "12"),
-                ("属性未收录", "12"),
+                ("名称未收录", "29.9%"),
+                ("名称未收录", "12"),
+                ("名称未收录", "12"),
             ],
         )
         # The card's gear lines (and the comparison built on them) read the
