@@ -38,9 +38,9 @@ def export_refusal(error: ZmdLogsAPIError) -> str | None:
     """
 
     if casts_unsupported(error):
-        return messages.NO_TIMELINE
+        return messages.NO_CASTS
     if error.status_code == 429:
-        return messages.TIMELINE_RATE_LIMITED
+        return messages.CASTS_RATE_LIMITED
     return None
 
 

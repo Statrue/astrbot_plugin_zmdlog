@@ -877,16 +877,3 @@ def _roster_identities(
         )
     return identities
 
-
-def _report_facts(battle: BattleDetailSummary, web_base_url: str) -> dict[str, str]:
-    """The identity line every battle page repeats: id, link, uploader, totals."""
-
-    return {
-        "battle_id": battle.battle_id,
-        "report_url": public_url(web_base_url, "battle", battle.battle_id),
-        "uploader_display_name": battle.uploader_display_name,
-        "duration": format_duration(battle.duration_ms),
-        "total_dps": format_number(battle.total_dps),
-        "total_damage": format_number(battle.total_damage),
-        "battle_date": _format_datetime(battle.battle_end_at),
-    }

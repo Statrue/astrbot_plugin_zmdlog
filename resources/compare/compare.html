@@ -108,11 +108,11 @@
 
 {% if page.loadouts %}
 <div class="section-heading">
-  <h2>配装与伤害来源</h2>
+  <h2>养成与伤害来源</h2>
   <span class="section-note">同一角色逐项对照，两边不同的项标黄线 · 下方为各自前三伤害来源</span>
 </div>
 {% for row in page.loadouts %}
-<section class="cmp-loadout{% if row.only %} is-only-{{ row.only }}{% endif %}" aria-label="{{ row.character_name }} 配装对比">
+<section class="cmp-loadout{% if row.only %} is-only-{{ row.only }}{% endif %}" aria-label="{{ row.character_name }} 养成对比">
   <header class="cmp-loadout-head">
     <span class="avatar">{{ row.character_initial }}{% if row.character_avatar_url %}<img src="{{ row.character_avatar_url }}" alt="" onerror="this.remove()">{% endif %}</span>
     <strong>{{ row.character_name }}</strong>

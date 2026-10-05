@@ -35,8 +35,8 @@ NO_BOARD_PROFILE_RECORDS = "{window}该榜没有带「{name}」的公开通关�
 # Battle pages that an older upload cannot fill.
 NO_BUILD = "这份战报没有记录阵容的养成。"
 NO_SKILL_STATS = "这份战报没有技能统计数据。"
-NO_TIMELINE = "这条战斗由旧版客户端上传，没有完整施法序列，画不了排轴。"
-TIMELINE_RATE_LIMITED = "排轴读取施法序列过于频繁，请稍后再试。"
+NO_CASTS = "这条战斗由旧版客户端上传，没有完整施法序列，画不了排轴。"
+CASTS_RATE_LIMITED = "排轴读取施法序列过于频繁，请稍后再试。"
 
 # 对比
 COMPARE_REFERENCE_NEEDED = "对比两场战报时，两个参数都要是 battleId 或战报链接。"
