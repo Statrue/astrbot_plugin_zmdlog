@@ -79,6 +79,12 @@ name, 战争回响's only before their common difficulty. Past twenty-five, the
 rest have no button and are typed. A ranking page offers no other board of
 its dungeon: those would crowd out its own views.
 
+A comparison is about two battles and is the site page of neither, so it
+has no jump button either; under it is one command button a side, left
+then right, 「shiki 的战报」 drawing that battle's 摘要 — the side by the
+name the page calls it, which tells two uploads by one person apart the
+page's way.
+
 A board notice carries a jump button for every battle it prints a link to,
 under the label ``core/watch`` gave it (``战报 1``). In the markdown the
 label takes the printed link's place, at the end of the line above it —
@@ -245,6 +251,8 @@ _SIBLING_LABELS = {
 ALL_ROWS_LABEL = "全部"
 NEXT_PAGE_LABEL = "下一页"
 SITE_REST_LABEL = "官网查看其余 {count} 条"
+# A comparison's button to one side's battle, by the name the page calls it.
+BATTLE_OF_LABEL = "{name} 的战报"
 _PNG_CONTENT_TYPE = "response-content-type=image%2Fpng"
 # URL characters that cannot end a markdown image: no space, no bracket or
 # parenthesis, no fragment (the content-type parameter must follow the query).
@@ -492,12 +500,15 @@ def result_keyboard(
     target (``_SIBLINGS``) share the second, as command buttons — callback
     buttons with ``callback``. A board's ranking puts its views first, its
     pages second and the jump last. A dungeon's podiums have no link and a
-    button per board instead, and no keyboard only without boards.
+    button per board instead, and no keyboard only without boards; a
+    comparison has a button per battle.
     ``command`` is the prefixed command name (``/zmdlog``).
     """
 
     if target.subject is PageSubject.DUNGEON:
         return _board_keyboard(target, command=command, callback=callback)
+    if target.subject is PageSubject.COMPARISON:
+        return _comparison_keyboard(target, command=command, callback=callback)
     url = _jump_url(target, web_base_url=web_base_url)
     if url is None:
         return None
@@ -609,6 +620,26 @@ def _board_keyboard(
         for number, ((slug, _), name) in enumerate(zip(boards, names), start=1)
     ]
     return _keyboard_rows(_fill_rows(buttons))
+
+
+def _comparison_keyboard(
+    target: PageTarget, *, command: str, callback: bool
+) -> dict[str, Any] | None:
+    """A comparison's two battles, each side's 摘要 on one row; None if none."""
+
+    if not target.battles:
+        return None
+    word = _BATTLE_WORDS[CandidateView.BATTLE]
+    buttons = [
+        command_button(
+            f"battle-{number}",
+            BATTLE_OF_LABEL.format(name=_fit_label(name)),
+            " ".join([command, word, battle_id]),
+            callback=callback,
+        )
+        for number, (battle_id, name) in enumerate(target.battles, start=1)
+    ]
+    return _keyboard_rows([buttons])
 
 
 def _drop_shared_parts(names: list[str]) -> list[str]:

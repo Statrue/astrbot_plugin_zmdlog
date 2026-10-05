@@ -1385,6 +1385,81 @@ class HandlerTests(unittest.TestCase):
         wild = run(collect(self.plugin.zmdlog(FakeEvent("/zmdlog 测试区"))))
         self.assertEqual(wild, [("image", path)])
 
+    def _comparison_page(self) -> str:
+        """Two battles by two uploaders, their comparison drawn as a capture."""
+
+        async def detail(battle_id):
+            payload = battle_detail_payload()
+            payload["battle"]["id"] = battle_id
+            payload["battle"]["uploaderNickname"] = (
+                "shiki" if battle_id.endswith("a") else "KevNe"
+            )
+            return parse_battle_detail(payload)
+
+        path = self._png(1920, 4000)
+
+        async def render_compare(first, second, **kwargs):
+            return capture(path)
+
+        self.plugin.data.get_battle_detail = detail
+        self.plugin.renderer.render_compare = render_compare
+        return path
+
+    def test_a_comparison_carries_a_button_to_each_sides_battle(self) -> None:
+        path = self._comparison_page()
+        typed = "/zmdlog 对比 btl_upload_aaaaaaaaaaaa btl_upload_bbbbbbbbbbbb"
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+
+        event, results = self._official(typed, api=api)
+
+        self.assertEqual(results, [])
+        self.assertTrue(event.stopped)
+        (_, payload), = api.calls
+        self.assertTrue(
+            payload["markdown"]["content"].startswith("![img #960px #2000px](")
+        )
+        # Each side's 摘要 by its uploader; no link, the comparison is
+        # neither battle's page on the site.
+        self.assertEqual(
+            [
+                [
+                    (button["render_data"]["label"], button["action"]["data"])
+                    for button in row["buttons"]
+                ]
+                for row in payload["keyboard"]["content"]["rows"]
+            ],
+            [
+                [
+                    ("shiki 的战报", "/zmdlog 战报 btl_upload_aaaaaaaaaaaa"),
+                    ("KevNe 的战报", "/zmdlog 战报 btl_upload_bbbbbbbbbbbb"),
+                ]
+            ],
+        )
+        # Every other platform, and the official bot with the switch on,
+        # get the picture and nothing else.
+        wild = run(collect(self.plugin.zmdlog(FakeEvent(typed))))
+        self.plugin.settings = dataclasses.replace(
+            self.plugin.settings, disable_qq_official_buttons=True
+        )
+        switched_api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+        _, switched = self._official(typed, api=switched_api)
+        for results in (wild, switched):
+            self.assertEqual(results, [("image", path)])
+        self.assertEqual(switched_api.calls, [])
+
+    def test_a_comparison_whose_buttons_fail_goes_as_its_picture(self) -> None:
+        path = self._comparison_page()
+        api = FakeBotApi(
+            http=FakeBotHttp(raw_url=self.RAW_URL), error=RuntimeError("rejected")
+        )
+
+        event, results = self._official(
+            "/zmdlog 对比 btl_upload_aaaaaaaaaaaa btl_upload_bbbbbbbbbbbb", api=api
+        )
+
+        self.assertEqual(results, [("image", path)])
+        self.assertFalse(event.stopped)
+
     def test_pages_about_no_one_thing_stay_native_pictures(self) -> None:
         async def render_help(*, command_prefix, official=False):
             return capture(self._png(1280, 9000), 1)
@@ -1876,8 +1951,18 @@ class HandlerTests(unittest.TestCase):
             (_, payload), = api.calls
             return payload
 
-        # 222's own record (5th) against the first, not 111's (3rd).
-        self.assertEqual(tap("222")["msg_type"], 7)
+        # 222's own record (5th) against the first, not 111's (3rd), with a
+        # button to each side's battle.
+        mine = tap("222")
+        self.assertEqual(mine["msg_type"], 2)
+        self.assertEqual(
+            [
+                button["render_data"]["label"]
+                for row in mine["keyboard"]["content"]["rows"]
+                for button in row["buttons"]
+            ],
+            ["测试账号（第 1 名） 的战报", "测试账号（第 5 名） 的战报"],
+        )
         self.assertEqual(
             compared, [("btl_upload_000000000001", "btl_upload_000000000005")]
         )

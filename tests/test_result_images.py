@@ -840,6 +840,90 @@ class DungeonBoardButtonTests(unittest.TestCase):
         )
 
 
+OTHER = "btl_upload_bbbbbbbbbbbb"
+
+
+def comparison(*battles) -> PageTarget:
+    return PageTarget(
+        PageSubject.COMPARISON,
+        BATTLE,
+        V.COMPARE,
+        battles=battles or ((BATTLE, "shiki"), (OTHER, "KevNe")),
+    )
+
+
+class ComparisonButtonTests(unittest.TestCase):
+    """对比: a button a side to that battle's 摘要, and nothing else."""
+
+    def test_each_side_opens_its_battle_by_the_uploaders_name(self) -> None:
+        keyboard = result_keyboard(comparison(), web_base_url=WEB, command=COMMAND)
+
+        (row,) = keyboard["content"]["rows"]
+        self.assertEqual(
+            [
+                (button["render_data"]["label"], button["action"]["data"])
+                for button in row["buttons"]
+            ],
+            [
+                ("shiki 的战报", f"{COMMAND} 战报 {BATTLE}"),
+                ("KevNe 的战报", f"{COMMAND} 战报 {OTHER}"),
+            ],
+        )
+        # No 在 ZMDLogs 打开: the comparison is neither battle's site page.
+        self.assertEqual({button["action"]["type"] for button in row["buttons"]}, {2})
+        self.assertEqual(jump_links(comparison()), [])
+        self.assertNotIn(WEB, repr(keyboard))
+
+    def test_every_command_draws_that_battles_summary(self) -> None:
+        for button in buttons_of(
+            result_keyboard(comparison(), web_base_url=WEB, command=COMMAND)
+        ):
+            with self.subTest(label=button["render_data"]["label"]):
+                route = parse_zmdlog_payload(
+                    button["action"]["data"].removeprefix(f"{COMMAND} ")
+                )
+
+                self.assertEqual(route.kind, RouteKind.BATTLE_QUERY)
+                self.assertIn(route.query, (BATTLE, OTHER))
+
+    def test_one_uploader_twice_keeps_the_pages_names(self) -> None:
+        target = comparison(
+            (BATTLE, "测试账号（第 1 名）"), (OTHER, "测试账号（第 2 名）")
+        )
+
+        self.assertEqual(
+            [button["render_data"]["label"] for button in board_buttons(target)],
+            ["测试账号（第 1 名） 的战报", "测试账号（第 2 名） 的战报"],
+        )
+
+    def test_a_long_name_is_cut_before_its_suffix(self) -> None:
+        long_name = "一个非常非常非常非常长的上传者名字"
+        (left, _) = board_buttons(comparison((BATTLE, long_name), (OTHER, "KevNe")))
+
+        self.assertEqual(
+            left["render_data"]["label"], "一个非常非常非常非常长的上传… 的战报"
+        )
+
+    def test_with_callbacks_each_side_answers_the_tap(self) -> None:
+        filled = board_buttons(comparison())
+        tapped = board_buttons(comparison(), callback=True)
+
+        self.assertEqual(
+            [button["action"]["data"] for button in tapped],
+            [button["action"]["data"] for button in filled],
+        )
+        self.assertEqual({button["action"]["type"] for button in tapped}, {1})
+
+    def test_a_comparison_without_battles_has_no_keyboard(self) -> None:
+        self.assertIsNone(
+            result_keyboard(
+                PageTarget(PageSubject.COMPARISON, BATTLE, V.COMPARE),
+                web_base_url=WEB,
+                command=COMMAND,
+            )
+        )
+
+
 class FakeTrend:
     """The rank trend as the account page asks it: whose trace is on record."""
 
@@ -1035,7 +1119,7 @@ class OutcomeTargetTests(unittest.TestCase):
 
     def test_pages_about_no_one_thing_carry_no_target(self) -> None:
         # Help, the statistics of every board and the index pages have no
-        # ZMDLogs counterpart; a comparison has two, and neither is it.
+        # ZMDLogs counterpart.
         for kind, query, options in (
             (RouteKind.HELP, "", {}),
             (RouteKind.CHARACTER_STATS, "", {}),
@@ -1043,11 +1127,6 @@ class OutcomeTargetTests(unittest.TestCase):
             (RouteKind.CHARACTER_STANDINGS, "", {}),
             (RouteKind.PLAYER_CHAMPIONS, "", {}),
             (RouteKind.RECORDS_QUERY, "", {}),
-            (
-                RouteKind.COMPARE_QUERY,
-                BATTLE,
-                {"compare_target": "btl_upload_bbbbbbbbbbbb"},
-            ),
         ):
             with self.subTest(kind=kind, query=query):
                 outcome = self._command(kind, query=query, **options)
@@ -1055,6 +1134,42 @@ class OutcomeTargetTests(unittest.TestCase):
                 self.assertIsNotNone(outcome.image_path)
                 self.assertEqual(outcome.image_scale, 2)
                 self.assertIsNone(outcome.target)
+
+    def test_a_comparison_carries_both_battles_by_the_pages_names(self) -> None:
+        # Two uploads by one person, named outright and fought the same
+        # minute: told apart by their places, as on the page.
+        outcome = self._command(
+            RouteKind.COMPARE_QUERY, query=BATTLE, compare_target=OTHER
+        )
+
+        self.assertEqual(outcome.image_scale, 2)
+        self.assertEqual(
+            outcome.target,
+            PageTarget(
+                PageSubject.COMPARISON,
+                BATTLE,
+                V.COMPARE,
+                battles=((BATTLE, "测试账号（左）"), (OTHER, "测试账号（右）")),
+            ),
+        )
+        # Picked by rank, each side is its uploader.
+        for rank, uploader in ((1, "shiki"), (2, "KevNe")):
+            payload = battle_detail_payload()
+            payload["battle"]["id"] = f"btl_upload_00000000000{rank}"
+            payload["battle"]["uploaderNickname"] = uploader
+            self.data.battles[payload["battle"]["id"]] = parse_battle_detail(payload)
+
+        outcome = self._command(
+            RouteKind.COMPARE_QUERY, query=BOARD_KEYWORD, battle_rank=1, compare_rank=2
+        )
+
+        self.assertEqual(
+            outcome.target.battles,
+            (
+                ("btl_upload_000000000001", "shiki"),
+                ("btl_upload_000000000002", "KevNe"),
+            ),
+        )
 
     def test_a_dungeon_carries_its_boards_and_the_metric_asked(self) -> None:
         # No page of its own on the site; what it offers is its boards.

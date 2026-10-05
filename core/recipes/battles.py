@@ -12,6 +12,7 @@ from ..crit import CritExpectation, CritHit, build_crit_expectation
 from ..messages import shorten
 from ..metrics import METRIC_DPS
 from ..models import BattleDetailSummary, BattleExport
+from ..presentation.compare import side_names
 
 if TYPE_CHECKING:
     from ..datasource import ZmdLogsDataSource
@@ -177,6 +178,18 @@ class CompareRecipe:
     rank_b: int | None = None
     # Which of the board's two rankings those ranks are on.
     metric: str = METRIC_DPS
+
+    @property
+    def names(self) -> tuple[str, str]:
+        """What the page calls each side, so a button calls it the same."""
+
+        return side_names(
+            self.first,
+            self.second,
+            rank_a=self.rank_a,
+            rank_b=self.rank_b,
+            metric=self.metric,
+        )
 
     async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_compare(

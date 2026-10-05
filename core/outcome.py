@@ -39,6 +39,8 @@ class PageSubject(str, Enum):
     BATTLE = "battle"
     BOARD = "board"
     CHARACTER = "character"
+    # 对比: two battles, neither of whose pages is this one.
+    COMPARISON = "comparison"
     DUNGEON = "dungeon"
 
 
@@ -55,7 +57,7 @@ class PageTarget:
     counterpart or its other views read too (``ranking_page`` is the page
     of a board's ranking drawn, a number or ``ALL_PAGES``, None for the
     first). A page about no one thing — help, the statistics of every
-    board, a comparison of two battles — has no target.
+    board — has no target.
 
     ``unavailable`` names the views of this target that drawing it showed
     cannot be drawn — an older upload without loadout, skill statistics or
@@ -67,6 +69,11 @@ class PageTarget:
     of its ``boards``, ``(slug, name)`` in the board list's order, and the
     ``metric`` the request asked for, which the podiums cannot show but a
     board can.
+
+    A comparison is about two battles and is neither one's page, so it
+    has no page on the site either; what it offers is each of its
+    ``battles``, ``(battleId, name)`` left side first, the name being what
+    the page calls that side. Its ``key`` is the first battle's id.
 
     A character page cut to one board (角色档案 ``--榜单``) names the board
     in ``boss_slug``; the site's character page reads it too.
@@ -89,6 +96,7 @@ class PageTarget:
     unavailable: frozenset[CandidateView] = frozenset()
     name: str = ""
     boards: tuple[tuple[str, str], ...] = ()
+    battles: tuple[tuple[str, str], ...] = ()
     boss_slug: str | None = None
     character_filter: str | None = None
     element_filter: str | None = None

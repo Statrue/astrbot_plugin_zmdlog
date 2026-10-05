@@ -1383,8 +1383,20 @@ class QueryService:
         )
         if recipe.refusal is not None:
             return Outcome(message=recipe.refusal)
-        # Two battles: neither one's ZMDLogs page is this page.
-        return Outcome.image(await recipe.draw(renderer))
+        # Two battles: neither one's ZMDLogs page is this page, so what it
+        # offers is each battle, by the name the page calls its side.
+        target = PageTarget(
+            PageSubject.COMPARISON,
+            recipe.first.battle_id,
+            CandidateView.COMPARE,
+            battles=tuple(
+                zip(
+                    (recipe.first.battle_id, recipe.second.battle_id),
+                    recipe.names,
+                )
+            ),
+        )
+        return Outcome.image(await recipe.draw(renderer), target=target)
 
     async def _battle_detail_if_available(
         self,
