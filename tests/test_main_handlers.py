@@ -2756,7 +2756,7 @@ class HandlerTests(unittest.TestCase):
         # ...and the page still renders without it.
         self.assertIsNone(received[-1]["battle"])
 
-    def test_the_battle_card_takes_the_export_when_it_can_get_one(self) -> None:
+    def test_a_battle_draws_its_summary_whatever_the_export_answers(self) -> None:
         received: list[dict] = []
 
         async def detail(battle_id):
@@ -2765,37 +2765,29 @@ class HandlerTests(unittest.TestCase):
         async def export(battle_id):
             return parse_battle_export(battle_export_payload())
 
+        async def old_upload(battle_id):
+            raise ZmdLogsAPIError(422, "battle_export_unsupported", "old")
+
+        async def offline(battle_id):
+            raise ZmdLogsClientError("offline")
+
         async def render_battle(battle, **kwargs):
             received.append(kwargs)
             return capture("/tmp/battle.png")
 
         self.plugin.data.get_battle_detail = detail
-        self.plugin.data.get_battle_export = export
         self.plugin.renderer.render_battle = render_battle
+        for answer in (export, old_upload, offline):
+            with self.subTest(export=answer.__name__):
+                self.plugin.data.get_battle_export = answer
 
-        (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
-        self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
-        self.assertEqual(received[-1]["export"].battle_id, "btl_upload_abcdef123456")
-        self.assertIsNone(received[-1]["export_note"])
+                (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
 
-        async def old_upload(battle_id):
-            raise ZmdLogsAPIError(422, "battle_export_unsupported", "old")
-
-        self.plugin.data.get_battle_export = old_upload
-        (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
-        self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
-        self.assertIsNone(received[-1]["export"])
-        self.assertIn("旧版客户端", received[-1]["export_note"])
-
-        async def offline(battle_id):
-            raise ZmdLogsClientError("offline")
-
-        self.plugin.data.get_battle_export = offline
-        (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
-        self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
-        self.assertEqual(
-            (received[-1]["export"], received[-1]["export_note"]), (None, None)
-        )
+                self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
+                # The 摘要 draws no casts; its foot names the battle's pages,
+                # itself lit — the only one on the V2 shell so far.
+                self.assertNotIn("export", received[-1])
+                self.assertEqual(received[-1]["views"], (("摘要", True),))
 
     # --- ranking pages -----------------------------------------------------------
 

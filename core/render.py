@@ -59,7 +59,7 @@ from .models import (
 )
 from .presentation import (
     build_account_page,
-    build_battle_page,
+    build_battle_summary_page,
     build_character_boss_page,
     build_character_champions_page,
     build_character_profile_page,
@@ -133,6 +133,7 @@ WIDE_FRAME = PageFrame(width=960, scale=2, v2=True)
 PAGE_FRAMES: dict[str, PageFrame] = {
     "ranking": LIST_FRAME,
     "help": WIDE_FRAME,
+    "battle": WIDE_FRAME,
 }
 
 
@@ -514,23 +515,21 @@ class TemplateRenderer:
         *,
         query: str,
         web_base_url: str,
-        export: BattleExport | None = None,
-        export_note: str | None = None,
-        suits: dict[str, str] | None = None,
         crit: CritExpectation | None = None,
+        views: tuple[tuple[str, bool], ...] = (),
         embed_fonts: bool = True,
     ) -> str:
-        page = build_battle_page(
+        """战报's 摘要; ``views`` is the strip of the battle's pages in its foot."""
+
+        page = build_battle_summary_page(
             battle,
             query=query,
             web_base_url=web_base_url,
-            export=export,
-            export_note=export_note,
-            suits=suits,
             crit=crit,
+            views=views,
         )
         return self._render(
-            "battle/battle.html",
+            "battle/summary.html",
             page,
             "battle",
             embed_fonts=embed_fonts,

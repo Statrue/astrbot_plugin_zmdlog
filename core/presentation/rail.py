@@ -79,7 +79,7 @@ class RailLegendView:
 
 @dataclass(frozen=True, slots=True)
 class TimelineView:
-    """The rail chart itself; embedded in the battle card and the 技能轴 page."""
+    """The rail chart itself, drawn on the 技能轴 page."""
 
     chart_height: int
     scale_label: str
@@ -107,18 +107,9 @@ class TimelinePage:
 
 
 # The rail runs down the page. The scale is chosen per fight so the chart
-# lands near a target height: a short section inside the battle card, a full
-# page for 技能轴. Labels slide down when two moves are closer than one text
-# line and are dropped when they would drift too far from their node.
-_RAIL_CARD_TARGET_PX = 560
-
-
-_RAIL_CARD_MIN_PPS = 6.0
-
-
-_RAIL_CARD_MAX_PPS = 24.0
-
-
+# lands near a target height, a full page for 技能轴. Labels slide down when
+# two moves are closer than one text line and are dropped when they would
+# drift too far from their node.
 _RAIL_PAGE_TARGET_PX = 1600
 
 

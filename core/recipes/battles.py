@@ -1,10 +1,12 @@
-"""战报 and 对比: one battle's card, and two battles of one boss side by side."""
+"""战报 and 对比: one battle's 摘要, and two battles of one boss side by side."""
 
 import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .. import messages
+from ..battle_views import view_strip
+from ..candidates import CandidateView
 from ..client import ZmdLogsAPIError
 from ..crit import CritExpectation, CritHit, build_crit_expectation
 from ..messages import shorten
@@ -44,12 +46,15 @@ def export_refusal(error: ZmdLogsAPIError) -> str | None:
 
 @dataclass(frozen=True, slots=True)
 class BattleRecipe:
-    """The battle card: the detail, and the cast sequence when there is one."""
+    """战报: the detail, and the cast sequence when there is one.
+
+    The 摘要 draws neither the casts nor the suits; the tool's text reads
+    both, and whether the export refused the upload decides which of the
+    battle's pages it offers (``core/battle_views``).
+    """
 
     battle: BattleDetailSummary
     export: BattleExport | None
-    # Why the 施法节奏 section is missing, when the export endpoint said so.
-    export_note: str | None
     suits: dict[str, str]
     query: str
     web_base_url: str
@@ -63,17 +68,19 @@ class BattleRecipe:
             self.battle,
             query=self.query,
             web_base_url=self.web_base_url,
-            export=self.export,
-            export_note=self.export_note,
-            suits=self.suits,
             crit=self.crit,
+            views=view_strip(
+                CandidateView.BATTLE,
+                self.battle,
+                casts_refused=self.casts_unsupported,
+            ),
         )
 
 
 async def prepare_battle(
     data: "ZmdLogsDataSource", battle_id: str, *, query: str, web_base_url: str
 ) -> BattleRecipe:
-    """The card's reads; a missing battle raises, the rest is best effort.
+    """战报's reads; a missing battle raises, the rest is best effort.
 
     Three upstream reads, each with its own latency, go out together:
     awaiting them in turn put the optional two in front of the payload.
@@ -89,7 +96,6 @@ async def prepare_battle(
     return BattleRecipe(
         battle=battle,
         export=export,
-        export_note=export_refusal(error) if error is not None else None,
         suits=await data.equip_suits_for(battle),
         query=query,
         web_base_url=web_base_url,

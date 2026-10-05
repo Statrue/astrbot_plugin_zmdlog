@@ -14,6 +14,7 @@ import logging
 import unittest
 from types import SimpleNamespace
 
+from core.battle_views import BATTLE_VIEWS
 from core.buttons import (
     MAX_BUTTON_DATA_CHARS,
     read_button_command,
@@ -272,7 +273,7 @@ def page(subject: PageSubject, view: CandidateView, **options) -> PageTarget:
 
 # What a label promises, and the route that draws it for each subject.
 LABELS = {
-    "战报": V.BATTLE,
+    "摘要": V.BATTLE,
     "配装": V.LOADOUT,
     "技能": V.SKILLS,
     "技能轴": V.TIMELINE,
@@ -305,18 +306,11 @@ class SiblingButtonTests(unittest.TestCase):
     def test_each_page_offers_its_other_views(self) -> None:
         c = COMMAND
         for target, expected in (
-            (
-                page(PageSubject.BATTLE, V.BATTLE),
-                [
-                    ("配装", f"{c} 配装 {BATTLE}"),
-                    ("技能", f"{c} 技能 {BATTLE}"),
-                    ("技能轴", f"{c} 技能轴 {BATTLE}"),
-                ],
-            ),
+            # A pre-1.3.0 battle view reaches the 摘要 under the strip's name.
             (
                 page(PageSubject.BATTLE, V.TIMELINE),
                 [
-                    ("战报", f"{c} 战报 {BATTLE}"),
+                    ("摘要", f"{c} 战报 {BATTLE}"),
                     ("配装", f"{c} 配装 {BATTLE}"),
                     ("技能", f"{c} 技能 {BATTLE}"),
                 ],
@@ -396,23 +390,53 @@ class SiblingButtonTests(unittest.TestCase):
 
     def test_every_page_with_a_target_has_a_list(self) -> None:
         for subject, view in EVERY_PAGE:
+            if (subject, view) == (PageSubject.BATTLE, V.BATTLE) and len(
+                BATTLE_VIEWS
+            ) == 1:
+                # The 摘要 alone on the strip: nothing to offer yet.
+                continue
             with self.subTest(subject=subject, view=view):
                 self.assertTrue(sibling_buttons(page(subject, view)))
+
+    def test_a_battles_pages_offer_the_others_on_its_strip(self) -> None:
+        # The buttons under a battle's picture are the pages its foot lists,
+        # by the same names, never a pre-1.3.0 view the strip does not name.
+        for entry in BATTLE_VIEWS:
+            with self.subTest(view=entry.view):
+                self.assertEqual(
+                    sibling_buttons(page(PageSubject.BATTLE, entry.view)),
+                    [
+                        (other.label, f"{COMMAND} {other.word} {BATTLE}")
+                        for other in BATTLE_VIEWS
+                        if other is not entry
+                    ],
+                )
+        summary = page(PageSubject.BATTLE, V.BATTLE)
+        for word in ("配装", "技能", "技能轴"):
+            self.assertNotIn(
+                word, [label for label, _ in sibling_buttons(summary)]
+            )
+        # The jump button stays: the battle is still on ZMDLogs.
+        self.assertEqual(jump_links(summary), [f"{WEB}/battle/{BATTLE}"])
 
     def test_a_view_the_target_lacks_gets_no_button(self) -> None:
         # An older upload has no loadout, skill statistics or casts; an
         # account the rank watch never polled has no trend.
         battle = page(
             PageSubject.BATTLE,
-            V.BATTLE,
-            unavailable=frozenset({V.LOADOUT, V.TIMELINE}),
+            V.TIMELINE,
+            unavailable=frozenset({V.LOADOUT}),
         )
         account = page(
             PageSubject.ACCOUNT, V.RANKING, unavailable=frozenset({V.TREND})
         )
 
         self.assertEqual(
-            sibling_buttons(battle), [("技能", f"{COMMAND} 技能 {BATTLE}")]
+            sibling_buttons(battle),
+            [
+                ("摘要", f"{COMMAND} 战报 {BATTLE}"),
+                ("技能", f"{COMMAND} 技能 {BATTLE}"),
+            ],
         )
         self.assertEqual(sibling_buttons(account), [])
         # The jump button stays: the page itself is still on ZMDLogs.

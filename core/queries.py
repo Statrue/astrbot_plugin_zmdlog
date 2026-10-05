@@ -26,6 +26,7 @@ from dataclasses import replace
 
 from . import messages
 from .account_binding import AccountBinding, to_binding_page
+from .battle_views import unavailable_views
 from .bindings import BoundAccount, UserBindings
 from .candidates import (
     MAX_CANDIDATES,
@@ -251,7 +252,7 @@ class QueryService:
         )
 
     async def render_battle_card(self, battle_id: str) -> Outcome:
-        """The battle card for an auto-expanded link."""
+        """The 摘要 for an auto-expanded link."""
 
         recipe = await prepare_battle(
             self._data, battle_id, query=battle_id, web_base_url=self._web_base_url
@@ -1410,10 +1411,11 @@ def _battle_target(
 
     Only what the page already read counts: without the detail the loadout
     and skill pages are assumed there, and only the export endpoint's own
-    refusal of an old upload rules the rail out (a rate limit passes).
+    refusal of an old upload rules the rail out (a rate limit passes). The
+    V2 pages answer for themselves (``core/battle_views``).
     """
 
-    unavailable = set()
+    unavailable = set(unavailable_views(battle, casts_refused=casts_refused))
     if battle is not None and not battle.roster:
         unavailable.add(CandidateView.LOADOUT)
     if battle is not None and not battle.skill_stats:
@@ -1426,7 +1428,7 @@ def _battle_target(
 
 
 def _card_target(recipe: BattleRecipe, battle_id: str) -> PageTarget:
-    """The battle card's target: it read the detail and asked for the casts."""
+    """The 摘要's target: it read the detail and asked for the casts."""
 
     return _battle_target(
         battle_id,

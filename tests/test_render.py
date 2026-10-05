@@ -225,7 +225,7 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertNotIn("不标主 C", listed)
         self.assertIn("<strong>主 C 未知</strong>", listed)
 
-    def test_battle_page_uses_compact_detail_fields_and_resolves_avatar(self) -> None:
+    def test_the_battle_summary_is_a_wide_page_on_the_new_shell(self) -> None:
         battle = parse_battle_detail(battle_detail_payload())
 
         html = self.renderer.render_battle(
@@ -234,85 +234,60 @@ class TemplateRendererTests(unittest.TestCase):
             web_base_url="https://zmdlogs.com",
         )
 
-        self.assertIn("“碾骨之拳”罗丹", html)
-        self.assertIn("110,061.2", html)
-        self.assertIn("97,325.01", html)
-        self.assertIn("26,428.42", html)
-        self.assertIn("81.2%", html)
-        self.assertIn(
-            "https://zmdlogs.com/images/character/luoxi.png",
-            html,
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn('id="zmd-root"', html)
+        self.assertIn("zmd-wide", html)
+        self.assertIn('class="zmd-main"', html)
+        self.assertIn(">BATTLE REPORT<", html)
+        self.assertIn('<h1 class="i-title">“碾骨之拳”罗丹</h1>', html)
+        self.assertIn("<span>危境再现·罗丹</span>", html)
+        self.assertIn(f"v{self.renderer.version}", html)
+        # The record band: who, when, and the three hero figures in whole
+        # units; the main C's face first, its portrait resolved.
+        self.assertIn("<strong>测试账号</strong>", html)
+        self.assertIn('<span class="b-date">2026-07-13 22:00</span>', html)
+        self.assertIn("<span>通关时间</span>", html)
+        self.assertIn("<b>0:20.833</b>", html)
+        self.assertIn("<span>总 DPS</span><b>110,061</b>", html)
+        self.assertIn("<span>总伤害</span><b>2,292,905</b>", html)
+        record = html[
+            html.index('class="b-record"'):html.index("<strong>伤害构成</strong>")
+        ]
+        self.assertLess(
+            record.index('class="i-face is-lead"'), record.index('class="i-face"')
         )
-        self.assertNotIn("ignored", html)
-        # Not a contract record: no 合约分数, and no contract section at all
-        # (the stylesheet's comments are inlined, so test the heading).
+        self.assertIn("https://zmdlogs.com/images/character/luoxi.png", record)
         self.assertNotIn("合约分数", html)
-        self.assertNotIn("<h2>危机合约</h2>", html)
+        # Nothing of the old whole card, its shell or its tables.
+        self.assertNotIn('id="zmd-page"', html)
+        self.assertNotIn("scene-background", html)
+        self.assertNotIn("战斗贡献", html)
+        self.assertNotIn("ignored", html)
 
-    def test_battle_page_lists_contract_tags_by_family_without_descriptions(
+    def test_damage_shares_are_one_row_a_character(self) -> None:
+        html = self.renderer.render_battle(
+            parse_battle_detail(battle_detail_payload()),
+            query="q",
+            web_base_url="https://zmdlogs.com",
+        )
+        shares = html[html.index("<strong>伤害构成</strong>"):]
+
+        # Highest DPS first, each in its colour; the main C's row is lead.
+        self.assertLess(shares.index(">洛茜<"), shares.index(">卡缪<"))
+        self.assertIn('class="b-sum-row c1 is-lead"', shares)
+        self.assertIn('class="b-sum-row c2"', shares)
+        self.assertIn("<small>DPS 97,325</small>", shares)
+        self.assertIn('style="width: 88.43%;"', shares)
+        self.assertIn("<b>88.4%</b>", shares)
+        self.assertIn("<b>11.6%</b>", shares)
+
+    def test_a_contract_record_leads_with_its_score_and_keeps_its_tags_off(
         self,
     ) -> None:
         payload = battle_detail_payload()
         tags = crisis_contract_tags()
-        # Upstream has no sprite for some tags (101603 改写：热量汲取 is null).
-        tags[-1]["iconUrl"] = None
         payload["battle"]["contractTags"] = tags
         payload["battle"]["contractTagScore"] = sum(tag["score"] for tag in tags)
-        battle = parse_battle_detail(payload)
-
-        html = self.renderer.render_battle(
-            battle,
-            query="btl_upload_526563531445",
-            web_base_url="https://zmdlogs.com",
-        )
-
-        self.assertIn("<h2>危机合约</h2>", html)
-        # A sprite covers the initial; without one the initial is the tile.
-        self.assertIn(
-            '<span class="contract-icon">折<img src="https://zmdlogs.com/images/'
-            'contract-tag/icon_activity_contract_tag_208.png"',
-            html,
-        )
-        self.assertIn('<span class="contract-icon">禁</span>', html)
-        self.assertNotIn("icon_activity_contract_tag_104", html)
-        self.assertIn("合约分数</span><strong>14 分</strong>", html)
-        self.assertIn("每条 1–3 分，合计即合约分数", html)
-        # The section is the record's preconditions, so it precedes the data.
-        self.assertLess(
-            html.index("<h2>危机合约</h2>"), html.index("<h2>战斗贡献</h2>")
-        )
-        # One block per family in canonical order, each with count and score.
-        self.assertLess(
-            html.index("<strong>队列</strong>"), html.index("<strong>改写</strong>")
-        )
-        self.assertLess(
-            html.index("<strong>改写</strong>"), html.index("<strong>环境</strong>")
-        )
-        self.assertIn("<strong>队列</strong><span>2 条 · 5 分</span>", html)
-        self.assertIn("<strong>改写</strong><span>2 条 · 3 分</span>", html)
-        self.assertIn("<strong>环境</strong><span>2 条 · 6 分</span>", html)
-        self.assertIn(
-            '<span class="contract-name">环境：禁锢</span>'
-            '<b class="contract-points">3</b>',
-            html,
-        )
-        self.assertIn(
-            "https://zmdlogs.com/images/contract-tag/icon_activity_contract_tag_208.png",
-            html,
-        )
-        # The description is a raw game template and never reaches the page:
-        # not its text, not a placeholder, not the colour markup.
-        self.assertNotIn("禁止闪避", html)
-        self.assertNotIn("dmg_scale", html)
-        self.assertNotIn("color=#cc9900", html)
-
-    def test_the_note_claims_the_total_only_when_the_total_is_drawn(self) -> None:
-        # 合计即合约分数 points at the 合约分数 row, which is drawn on its own
-        # condition. Tags without a score would leave the claim pointing at
-        # nothing, so the clause goes when the row does.
-        payload = battle_detail_payload()
-        payload["battle"]["contractTags"] = crisis_contract_tags()
-        payload["battle"]["contractTagScore"] = None
 
         html = self.renderer.render_battle(
             parse_battle_detail(payload),
@@ -320,10 +295,69 @@ class TemplateRendererTests(unittest.TestCase):
             web_base_url="https://zmdlogs.com",
         )
 
-        self.assertIn("<h2>危机合约</h2>", html)
-        self.assertIn("每条 1–3 分", html)
-        self.assertNotIn("合计即合约分数", html)
-        self.assertNotIn("合约分数</span>", html)
+        heroes = html[
+            html.index('class="b-heroes"'):html.index("<strong>伤害构成</strong>")
+        ]
+        self.assertLess(
+            heroes.index("<span>合约分数</span>"), heroes.index("<span>通关时间</span>")
+        )
+        self.assertIn('<div class="i-time"><b>14</b></div>', heroes)
+        # The tags are 数据's; the 摘要 carries the score alone.
+        self.assertNotIn("环境：禁锢", html)
+        self.assertNotIn("contract-tag", html)
+
+    def test_the_foot_lists_the_battles_pages_with_this_one_lit(self) -> None:
+        battle = parse_battle_detail(battle_detail_payload())
+
+        def strip(views) -> str:
+            html = self.renderer.render_battle(
+                battle, query="q", web_base_url="https://zmdlogs.com", views=views
+            )
+            foot = html[html.index('<footer class="i-foot">'):]
+            self.assertIn("数据来源 ZMDLogs", foot)
+            return foot
+
+        foot = strip((("摘要", True), ("数据", False), ("养成", False)))
+        self.assertIn(
+            '<span class="is-on">摘要</span><i>·</i><span>数据</span>'
+            "<i>·</i><span>养成</span>",
+            foot,
+        )
+        # The strip sits above the source line.
+        self.assertLess(foot.index('class="w-views"'), foot.index("数据来源"))
+        self.assertIn('<span class="is-on">摘要</span>', strip((("摘要", True),)))
+        # A page with no sibling list has no strip at all.
+        self.assertNotIn('class="w-views"', strip(()))
+
+    def test_the_shell_marks_a_build_as_the_game_does(self) -> None:
+        macros = self.renderer.environment.from_string(
+            '{% from "shell/wide-parts.html" import refine_star, level_pips %}'
+            "{{ refine_star(n) }}|{{ level_pips(level, cap) }}"
+        )
+
+        def star(n: int) -> tuple[int, int, int]:
+            svg = macros.render(n=n, level=1, cap=9).split("|")[0]
+            return (
+                svg.count('class="is-lit"'),
+                svg.count('class="is-lead"'),
+                svg.count('class="is-base"'),
+            )
+
+        # Rank k: the k-1 blades before it white, the k-th — the next to
+        # gain — yellow, the rest grey; at 6 every blade white, aglow.
+        self.assertEqual(star(1), (0, 1, 4))
+        self.assertEqual(star(3), (2, 1, 2))
+        self.assertEqual(star(5), (4, 1, 0))
+        self.assertEqual(star(6), (5, 0, 0))
+        self.assertIn('class="b-star is-max"', macros.render(n=6, level=1, cap=9))
+        self.assertNotIn("is-max", macros.render(n=5, level=1, cap=9))
+
+        # Level 3 of a skill capped at 5 by its 精炼: three filled, two
+        # open, four crossed out.
+        pips = macros.render(n=1, level=3, cap=5).split("|")[1]
+        self.assertEqual(pips.count('class="is-on"'), 3)
+        self.assertEqual(pips.count('<g class="is-x">'), 4)
+        self.assertEqual(pips.count('class="is-ring"'), 2 + 4)
 
     def test_every_font_size_is_a_scale_token(self) -> None:
         # Colours were tokens from the first commit; sizes drifted into
@@ -795,8 +829,9 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page_frame("ranking"), LIST_FRAME)
         self.assertEqual((LIST_FRAME.width, LIST_FRAME.scale), (540, 2))
         self.assertEqual((WIDE_FRAME.width, WIDE_FRAME.scale), (960, 2))
+        self.assertEqual(page_frame("battle"), WIDE_FRAME)
         # Pages not yet on the V2 shell keep the old frame.
-        self.assertEqual(page_frame("battle"), LEGACY_FRAME)
+        self.assertEqual(page_frame("loadout"), LEGACY_FRAME)
         self.assertEqual((LEGACY_FRAME.width, LEGACY_FRAME.scale), (1280, 1))
 
     async def test_capture_failure_keeps_rendered_html_for_fallback(self) -> None:

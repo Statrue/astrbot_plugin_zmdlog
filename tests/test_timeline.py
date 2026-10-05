@@ -1,4 +1,4 @@
-"""Tests for the 0.7.0 cast rail (技能轴 / 施法节奏) built from the export."""
+"""Tests for the 0.7.0 cast rail (技能轴) built from the export."""
 
 import unittest
 from pathlib import Path
@@ -15,7 +15,6 @@ from core.models import (
     parse_battle_export,
 )
 from core.presentation import (
-    build_battle_page,
     build_timeline_page,
     build_timeline_view,
 )
@@ -386,24 +385,22 @@ class RailViewTests(unittest.TestCase):
         self.assertEqual((first.top, first.height), (40, 20))
 
 
-class BattleCardIntegrationTests(unittest.TestCase):
+class TimelinePageTests(unittest.TestCase):
     def setUp(self) -> None:
         self.renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
         self.battle = parse_battle_detail(battle_detail_payload())
         self.export = parse_battle_export(battle_export_payload())
 
-    def test_card_embeds_the_rail_when_the_export_is_available(self) -> None:
-        page = build_battle_page(
-            self.battle, query="q", web_base_url=WEB, export=self.export
-        )
-        self.assertIsNotNone(page.timeline)
-        self.assertIsNone(page.timeline_note)
-        self.assertEqual(page.timeline.chart_height, 560)
+    def test_standalone_page_renders_the_same_rail_at_full_height(self) -> None:
+        page = build_timeline_page(self.export, query="技能轴 罗丹", web_base_url=WEB)
+        self.assertEqual(page.header.target_type, "技能轴")
+        self.assertEqual(page.timeline.chart_height, 1_000)
+        self.assertIsNone(page.buff_band)
 
-        html = self.renderer.render_battle(
-            self.battle, query="q", web_base_url=WEB, export=self.export
+        html = self.renderer.render_timeline(
+            self.export, query="技能轴 罗丹", web_base_url=WEB
         )
-        self.assertIn("<h2>施法节奏</h2>", html)
+        self.assertNotIn("<h2>BUFF 覆盖</h2>", html)
         self.assertIn('class="rail-chart"', html)
         self.assertIn("rail-bar is-ultimate", html)
         self.assertIn("rail-bar is-normal", html)
@@ -416,33 +413,6 @@ class BattleCardIntegrationTests(unittest.TestCase):
         self.assertIn("<small>×2</small>", html)
         self.assertIn("已隐藏 1 条冲刺、闪避等移动动作", html)
         self.assertNotIn("chr_0028_wulfa_dash", html)
-
-    def test_card_prints_the_reason_or_nothing_without_an_export(self) -> None:
-        html = self.renderer.render_battle(
-            self.battle, query="q", web_base_url=WEB, export_note="旧版客户端上传"
-        )
-        self.assertIn("<h2>施法节奏</h2>", html)
-        self.assertIn('class="rail-note">旧版客户端上传', html)
-        self.assertNotIn('class="rail-chart"', html)
-
-        # Buffs have their own section now; without an export or a note the
-        # 施法节奏 section is simply absent.
-        html = self.renderer.render_battle(self.battle, query="q", web_base_url=WEB)
-        self.assertIn("<h2>BUFF 覆盖</h2>", html)
-        self.assertNotIn("<h2>施法节奏</h2>", html)
-        self.assertNotIn('class="rail-chart"', html)
-        self.assertNotIn('class="rail-note"', html)
-
-    def test_standalone_page_renders_the_same_rail_at_full_height(self) -> None:
-        page = build_timeline_page(self.export, query="技能轴 罗丹", web_base_url=WEB)
-        self.assertEqual(page.header.target_type, "技能轴")
-        self.assertEqual(page.timeline.chart_height, 1_000)
-        self.assertIsNone(page.buff_band)
-
-        html = self.renderer.render_timeline(
-            self.export, query="技能轴 罗丹", web_base_url=WEB
-        )
-        self.assertNotIn("<h2>BUFF 覆盖</h2>", html)
         # With the detail at hand the page gains the band above the rail.
         page = build_timeline_page(
             self.export, query="q", web_base_url=WEB, battle=self.battle

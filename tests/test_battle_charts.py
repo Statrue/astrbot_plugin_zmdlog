@@ -334,9 +334,9 @@ class ChartViewTests(unittest.TestCase):
         )
         # Colour index follows the card's DPS order.
         self.assertEqual([item.colour_index for item in view.series], [1, 2])
-        self.assertEqual(view.series[0].final_dps, "97,325.01")
+        self.assertEqual(view.series[0].final_dps, "97,325")
         self.assertEqual(view.series[0].damage_share, "88.4%")
-        self.assertEqual(view.team_dps, "110,061.2")
+        self.assertEqual(view.team_dps, "110,061")
         self.assertEqual(view.bucket_label, "1 秒")
         # Axis top is the peak (450k) rounded up, printed high to low.
         self.assertEqual(view.axis_labels[0], "50万")
@@ -401,56 +401,32 @@ class ChartViewTests(unittest.TestCase):
 
 
 class ChartTemplateTests(unittest.TestCase):
+    """The 摘要's DPS 曲线: its key, its lines, left out without telemetry."""
+
     def setUp(self) -> None:
         self.renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
         self.battle = parse_battle_detail(battle_detail_payload())
 
-    def test_card_draws_both_charts(self) -> None:
+    def test_the_summary_draws_the_curve_and_its_key(self) -> None:
         html = self.renderer.render_battle(self.battle, query="q", web_base_url=WEB)
+        curve = html[html.index("<strong>DPS 曲线</strong>"):]
 
-        self.assertIn("<h2>DPS 曲线</h2>", html)
-        self.assertIn('class="curve-line share-line--1"', html)
-        self.assertIn("curve-line is-team", html)
-        self.assertIn("<h2>BUFF 覆盖</h2>", html)
-        self.assertIn('class="buff-band"', html)
-        self.assertIn("buff-span is-atk is-team", html)
-        self.assertIn("buff-zone is-amp", html)
-        self.assertIn(">攻击提升<", html)
-        self.assertIn(">卡缪 → 全队<", html)
-        # A raw-key buff prints its effect only, with no empty name element.
-        self.assertNotIn("<b></b>", html)
-        self.assertNotIn("buff_wpn_sword_0021_up", html)
-        self.assertNotIn("ignored", html)
+        self.assertIn('<span class="b-bar-aside">峰值 450,000</span>', curve)
+        # The key carries each line's final DPS, the team's first.
+        self.assertIn('<li class="is-team"><i></i>全队<b>110,061</b></li>', curve)
+        self.assertIn('<li><i class="c1"></i>洛茜<b>97,325</b></li>', curve)
+        self.assertIn('<li><i class="c2"></i>卡缪<b>12,736</b></li>', curve)
+        self.assertIn('class="b-line c1"', curve)
+        self.assertIn('class="b-line is-team"', curve)
+        # The main C's line has a halo; no other line does.
+        self.assertEqual(curve.count('class="b-line-halo"'), 1)
+        # Every y label and every time tick.
+        self.assertEqual(curve.count('class="b-ylabel"'), 5)
+        self.assertIn(">0s<", curve)
+        # The BUFF band is 排轴's, not the 摘要's.
+        self.assertNotIn("BUFF 覆盖", html)
 
-    def test_legend_swatches_carry_the_line_colours(self) -> None:
-        # A generic `.curve-legend i` rule outranks the one-class colour keys
-        # from battle.css; the stylesheet must restate the colours with two
-        # classes or every swatch renders grey (a real regression). Bar, swatch
-        # and line all read the same series token, so one character is one
-        # colour on the whole card.
-        resources = Path(__file__).parents[1] / "resources"
-        charts_css = (resources / "common" / "battle-charts.css").read_text(
-            encoding="utf-8"
-        )
-        battle_css = (resources / "battle" / "battle.css").read_text(encoding="utf-8")
-
-        for index in range(1, 7):
-            with self.subTest(index=index):
-                token = rf"var\(--series-{index}\);"
-                self.assertRegex(
-                    charts_css,
-                    rf"\.curve-legend \.share-seg--{index}\s*\{{\s*background:"
-                    rf"\s*{token}",
-                )
-                self.assertRegex(
-                    charts_css, rf"\.share-line--{index}\s*\{{\s*stroke:\s*{token}"
-                )
-                self.assertRegex(
-                    battle_css,
-                    rf"\.share-seg--{index}\s*\{{\s*background:\s*{token}",
-                )
-
-    def test_card_omits_the_sections_without_telemetry(self) -> None:
+    def test_the_summary_omits_the_curve_without_telemetry(self) -> None:
         payload = battle_detail_payload()
         payload["timelineEvents"] = []
         payload["characterStates"] = []
@@ -459,13 +435,12 @@ class ChartTemplateTests(unittest.TestCase):
             parse_battle_detail(payload), query="q", web_base_url=WEB
         )
 
-        # The stylesheet names both sections in its comments, so assert on the
-        # markup rather than on the words.
-        self.assertNotIn("<h2>DPS 曲线</h2>", html)
-        self.assertNotIn('class="buff-band"', html)
-        self.assertNotIn('class="curve-panel"', html)
-        # The card itself still renders.
-        self.assertIn("战斗贡献", html)
+        # The stylesheet names the section in its comments, so assert on
+        # the markup rather than on the words.
+        self.assertNotIn("<strong>DPS 曲线</strong>", html)
+        self.assertNotIn('class="b-curve-box"', html)
+        # The page itself still renders.
+        self.assertIn("<strong>伤害构成</strong>", html)
 
 
 if __name__ == "__main__":

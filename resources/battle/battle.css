@@ -1,335 +1,403 @@
-/* ---------- 危机合约: the record's own tags, by family ---------- */
+/* A battle's pages on the wide shell: the record band, the DPS curve, the
+   time ruler and 暴击期望's bell, shared by 摘要 and its 详细视图; then
+   what only the 摘要 draws. */
 
-.contract-groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+/* ── the record: one ranking-style card ─────────────────────────── */
+.b-record {
+  filter: drop-shadow(0 6px 9px var(--lift-22)) drop-shadow(0 0 0.6px var(--lift-28));
+}
+.b-who {
+  min-height: 52px;
+  padding-right: 24px;
+}
+.b-who .i-arrow {
+  background: var(--yellow);
+  color: var(--medal-ink);
+}
+.b-who .i-name {
+  margin-left: 16px;
+}
+.b-date {
+  flex: none;
+  margin-left: auto;
+  padding-left: 16px;
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: var(--fs-20);
+  letter-spacing: 0.03em;
+  color: var(--who-ink-2);
+}
+.b-run {
+  padding: 18px 28px 18px 22px;
+}
+/* the hatching lasts past the faces and is gone before the figures */
+.b-run::before {
+  -webkit-mask-image:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0, #000 8%, #000 26%, transparent 40%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.08) 0, #000 26%, #000 74%, rgba(0, 0, 0, 0.08) 100%);
+  mask-image:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0, #000 8%, #000 26%, transparent 40%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.08) 0, #000 26%, #000 74%, rgba(0, 0, 0, 0.08) 100%);
+}
+.b-run .i-team {
   gap: 12px;
 }
-
-.contract-group {
-  min-width: 0;
-  border: 1px solid var(--line);
-  background: var(--card);
+.b-run .i-face {
+  width: 64px;
+  height: 64px;
 }
-
-.contract-group-head {
+.b-heroes {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: flex-end;
+  gap: 40px;
+}
+.b-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line-soft);
-  background: var(--card-soft);
 }
-
-.contract-group-head strong {
-  color: var(--ink);
-  font-size: var(--fs-13);
-  font-weight: 900;
-  letter-spacing: 0.06em;
-}
-
-.contract-group-head span {
+.b-hero > span {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--fs-17);
+  letter-spacing: 0.04em;
   color: var(--muted);
+}
+.b-hero > b {
   font-family: var(--font-num);
-  font-size: var(--fs-11);
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-.contract-tags {
-  margin: 0;
-  padding: 6px 12px 8px;
-  list-style: none;
-}
-
-.contract-tag {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
-}
-
-.contract-tag + .contract-tag {
-  border-top: 1px solid var(--line-soft);
-}
-
-/* The sprites are white on transparent (one is yellow), drawn for the
-   game's dark UI: on paper they vanish, so each sits on a charcoal tile.
-   The initial underneath shows when there is no sprite. */
-.contract-icon {
-  position: relative;
-  display: inline-flex;
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  color: var(--on-dark);
-  background: var(--charcoal);
-  font-size: var(--fs-11);
   font-weight: 800;
+  font-size: var(--fs-30);
+  line-height: 1;
+  color: var(--ink);
+}
+.b-hero--main .i-time b {
+  font-size: var(--fs-46);
+}
+.b-hero--main .i-time::before {
+  height: 17px;
 }
 
-/* The sprite's own fill hides the initial: unlike a portrait it is
-   transparent, and the letter would show through the glyph. */
-.contract-icon img {
+/* ── the DPS curve: lines in a 100 × 100 box, the scale on the right ── */
+.b-curve-box {
+  position: relative;
+  height: 300px;
+}
+.b-curve-box svg {
   position: absolute;
   inset: 0;
-  display: block;
-  box-sizing: border-box;
   width: 100%;
   height: 100%;
-  padding: 3px;
-  background: var(--charcoal);
-  object-fit: contain;
+  overflow: visible;
 }
-
-.contract-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: var(--fs-13);
-  font-weight: 700;
-  text-overflow: ellipsis;
+.b-ygrid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--grid);
+}
+.b-ylabel {
+  position: absolute;
+  left: calc(100% + 10px);
+  transform: translateY(-50%);
+  font-family: var(--font-num);
+  font-size: var(--fs-15);
+  color: var(--muted);
   white-space: nowrap;
 }
+.b-xgrid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--grid-soft);
+}
+.b-xgrid.is-major {
+  background: var(--grid-major);
+}
+.b-line {
+  fill: none;
+  stroke: var(--c);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.b-line-halo {
+  fill: none;
+  stroke: var(--line-halo);
+  stroke-width: 5.5;
+  stroke-linejoin: round;
+}
+.b-line.is-team {
+  stroke: var(--ink);
+  stroke-width: 3.5;
+}
 
-/* 合约是数据，不是行动：分数保持中性，黄色只留给榜首与筛选 */
-.contract-points {
-  flex: 0 0 auto;
-  min-width: 22px;
-  padding: 1px 6px;
-  color: var(--ink);
-  background: var(--line-soft);
+/* a time or damage ruler under a chart: labels centred on their ticks,
+   the first one flush with the start */
+.b-ruler {
+  position: relative;
+  height: 22px;
+}
+.b-ruler span {
+  position: absolute;
+  transform: translateX(-50%);
   font-family: var(--font-num);
-  font-size: var(--fs-11);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  text-align: center;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+  font-weight: 600;
+  font-size: var(--fs-17);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.b-ruler span.is-major {
+  font-weight: 700;
+  color: var(--ink);
+}
+.b-ruler span:first-child {
+  transform: none;
 }
 
-/* ---------- participants as comparable rows ---------- */
-
-.participant-list,
-.crit-list {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--card);
+/* ── 暴击期望: the bell, ±1σ hatched, the expected and actual marks ── */
+.b-dist-plot {
+  position: relative;
+  height: 200px;
+  border-bottom: 2px solid var(--axis);
+}
+.b-dist-plot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.b-dist-area {
+  fill: var(--bell-fill);
+}
+.b-dist-line {
+  fill: none;
+  stroke: var(--who-bg);
+  stroke-width: 2.5;
+}
+.b-dist-sd {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(135deg, var(--bell-hatch) 0 5px, transparent 5px 11px);
+}
+.b-dist-mark {
+  position: absolute;
+  top: -8px;
+  bottom: 0;
+  width: 0;
+}
+.b-dist-mark em {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  transform: translate(-50%, -4px);
+  font-style: normal;
+  font-weight: 700;
+  font-size: var(--fs-17);
+  white-space: nowrap;
+}
+.b-dist-mark.is-expected {
+  border-left: 2px dashed var(--mark-expected);
+}
+.b-dist-mark.is-expected em {
+  color: var(--ink-2);
+}
+.b-dist-mark.is-actual {
+  width: 4px;
+  margin-left: -2px;
+  background: var(--yellow);
+  box-shadow: 0 0 0 1px var(--mark-edge);
+}
+.b-dist-mark.is-actual em {
+  padding: 0 6px;
+  background: var(--yellow);
+  color: var(--medal-ink);
+}
+/* Marks too close for two centred labels: each leans away from the other. */
+.b-dist-plot.is-close.is-below .is-actual em,
+.b-dist-plot.is-close.is-above .is-expected em {
+  transform: translate(calc(-100% + 2px), -4px);
+}
+.b-dist-plot.is-close.is-below .is-expected em,
+.b-dist-plot.is-close.is-above .is-actual em {
+  transform: translate(0, -4px);
+}
+.b-dist-ruler {
+  margin-top: 8px;
+}
+.b-dist-ruler span:last-child {
+  transform: translateX(-100%);
 }
 
-.participant-row {
+/* ── 摘要: 伤害构成, one row a character ─────────────────────────── */
+.b-sum-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.b-sum-row {
   display: grid;
-  grid-template-columns: 6px 44px minmax(0, 0.9fr) minmax(0, 1.6fr);
-  gap: 14px;
+  grid-template-columns: 52px 170px 1fr 86px;
   align-items: center;
-  padding: 11px 16px 11px 0;
+  gap: 14px;
 }
-
-.participant-row + .participant-row {
-  border-top: 1px solid var(--line-soft);
-}
-
-.participant-row:nth-child(even) {
-  background: var(--card-soft);
-}
-
-.participant-key {
-  display: block;
-  align-self: stretch;
-}
-
-.participant-avatar {
+.b-sum-row .i-face {
   width: 44px;
   height: 44px;
-  font-size: var(--fs-16);
+  margin: 0;
 }
-
-.participant-id,
-.crit-id {
+/* the yellow ring marks the main C; the halo is the record band's */
+.b-sum-row .i-face.is-lead::before,
+.b-sum-row .i-face.is-lead::after {
+  display: none;
+}
+.b-sum-row p {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
-
-.participant-id strong,
-.crit-id strong {
-  display: block;
-  overflow: hidden;
-  color: var(--ink);
+.b-sum-row p span {
+  font-weight: 700;
   font-size: var(--fs-17);
-  font-weight: 900;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.participant-id span,
-.crit-id span {
-  display: block;
-  overflow: hidden;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.participant-stats {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0;
-}
-
-.participant-stats > div,
-.crit-stats > div {
-  min-width: 0;
-}
-
-.participant-stats dt,
-.crit-stats dt {
-  color: var(--muted);
-  font-size: var(--fs-10);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-
-.participant-stats dd,
-.crit-stats dd {
-  overflow: hidden;
-  margin: 3px 0 0;
   color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.b-sum-row small {
   font-family: var(--font-num);
-  font-size: var(--fs-16);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-}
-
-/* The headline figure of a row: DPS per character, the team's 实际偏差. */
-.participant-stats > div:first-child dd,
-.crit-row.is-team .crit-stats > div:last-child dd {
-  display: inline-block;
-  padding: 0 4px;
-  margin-left: -4px;
-  background: linear-gradient(transparent 55%, var(--action) 55%, var(--action) 95%, transparent 95%);
-}
-
-/* ---------- 暴击期望: the participant rows' rhythm, the team last ---------- */
-
-.crit-row {
-  display: grid;
-  grid-template-columns: 6px minmax(0, 0.9fr) minmax(0, 2fr);
-  gap: 14px;
-  align-items: center;
-  padding: 10px 16px 10px 0;
-}
-
-.crit-row + .crit-row {
-  border-top: 1px solid var(--line-soft);
-}
-
-.crit-row.is-team {
-  border-top-color: var(--line);
-  background: var(--card-soft);
-}
-
-/* Dashed, like the team line of the DPS curve: solid ink is a character's key. */
-.crit-row.is-team .participant-key {
-  background: repeating-linear-gradient(var(--ink) 0 5px, transparent 5px 9px);
-}
-
-.crit-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0;
-}
-
-.battle-id-row {
-  margin-top: 16px;
-}
-
-/* contribution split */
-.share-panel {
-  padding: 14px 18px 12px 20px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
-}
-
-.share-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.share-row + .share-row {
-  margin-top: 10px;
-}
-
-.share-label {
-  flex: 0 0 74px;
+  font-weight: 600;
+  font-size: var(--fs-15);
   color: var(--muted);
-  font-size: var(--fs-12);
-  font-weight: 700;
-  letter-spacing: 0.06em;
 }
-
-.share-bar {
-  display: flex;
-  flex: 1;
-  height: 14px;
+.b-sum-track {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--track);
   overflow: hidden;
-  background: var(--line-soft);
-  transform: skewX(-12deg);
 }
-
-.share-seg {
+.b-sum-track i {
   display: block;
   height: 100%;
-  background: var(--faint);
+  min-width: 4px;
+  border-radius: 6px;
+  background: var(--c);
+}
+.b-sum-row > b {
+  text-align: right;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-22);
+  color: var(--ink-2);
+}
+.b-sum-row.is-lead > b {
+  font-size: var(--fs-28);
+  color: var(--ink);
 }
 
-.share-seg--1 { background: var(--series-1); }
-.share-seg--2 { background: var(--series-2); }
-.share-seg--3 { background: var(--series-3); }
-.share-seg--4 { background: var(--series-4); }
-.share-seg--5 { background: var(--series-5); }
-.share-seg--6 { background: var(--series-6); }
+/* ── 摘要: 暴击期望 — the verdict and its figures beside the bell ──── */
+.b-sum-crit {
+  display: grid;
+  grid-template-columns: 230px 1fr;
+  align-items: center;
+  gap: 28px;
+}
+.b-sum-crit .b-dist {
+  margin: 40px 0 0;
+}
+.b-sum-crit .b-dist-plot {
+  height: 150px;
+}
+.b-sum-luck {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+.b-sum-luck > span {
+  font-size: var(--fs-17);
+  color: var(--ink-2);
+}
+.b-sum-luck > b {
+  align-self: flex-start;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-48);
+  line-height: 1;
+  color: var(--ink);
+}
+.b-sum-luck.is-up > b {
+  padding: 2px 10px;
+  background: var(--yellow);
+  color: var(--medal-ink);
+}
+.b-sum-luck dl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.b-sum-luck dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.b-sum-luck dt {
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.b-sum-luck dd {
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-17);
+  color: var(--ink);
+}
+.b-sum-cover {
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
 
-.share-legend {
+/* ── 摘要: the DPS curve, its key carrying each line's final DPS ──── */
+.b-sum-curve {
+  padding-right: 70px;
+}
+.b-sum-curve .b-curve-box {
+  height: 230px;
+}
+.b-sum-curve .b-ruler {
+  margin-top: 8px;
+}
+.b-sum-keys {
+  list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 22px;
-  margin: 12px 0 0 88px;
-  padding: 0;
-  list-style: none;
-  font-size: var(--fs-12);
-  font-weight: 700;
+  gap: 6px 18px;
+  margin-bottom: 14px;
+  font-size: var(--fs-15);
+  color: var(--ink-2);
 }
-
-.share-legend li {
+.b-sum-keys li {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-
-.share-legend span {
-  color: var(--muted);
-  font-family: var(--font-num);
-  font-size: var(--fs-13);
-  font-weight: 800;
+.b-sum-keys i {
+  width: 18px;
+  height: 3px;
+  background: var(--c);
 }
-
-.share-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  transform: skewX(-12deg);
+.b-sum-keys .is-team i {
+  height: 4px;
+  background: var(--ink);
+}
+.b-sum-keys b {
+  margin-left: 6px;
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-17);
+  color: var(--ink);
 }

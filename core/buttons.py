@@ -49,7 +49,8 @@ other pages (``_SIBLINGS``), built like a pick's: the key and the view word,
 and a board's metric — a board's battle too, since 战报 reads its rank off
 the board the metric names. A page the drawing showed this thing does not
 have — an old upload's loadout, an account's trend before any is recorded —
-gets no button.
+gets no button. A battle's pages are the ones its picture's foot lists, by
+the same names (``core/battle_views``).
 
 A board's ranking has a keyboard of its own, three rows with the jump
 button last. The first is its views: 阵容, 角色统计, 第一名战报 and
@@ -100,6 +101,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode, urljoin
 
+from .battle_views import BATTLE_VIEWS
 from .candidates import (
     CandidateView,
     PendingCandidates,
@@ -169,8 +171,15 @@ _CHARACTER_WORDS = {
     CandidateView.CHARACTER_STATS: "角色统计",
     CandidateView.CHARACTER_STANDINGS: "角色排名",
 }
+# ... and for a battle: its V2 pages by the words core/battle_views gives
+# them, the pre-1.3.0 ones as a board's.
+_BATTLE_WORDS = {
+    **_BOARD_WORDS,
+    **{entry.view: entry.word for entry in BATTLE_VIEWS},
+}
 _SUBJECT_WORDS = {
     PageSubject.ACCOUNT: _ACCOUNT_WORDS,
+    PageSubject.BATTLE: _BATTLE_WORDS,
     PageSubject.CHARACTER: _CHARACTER_WORDS,
 }
 _BATTLE_VIEWS = frozenset(
@@ -182,16 +191,22 @@ _BATTLE_VIEWS = frozenset(
     }
 )
 # What each page with a target offers besides its jump button: the other
-# views of the same thing, at most three, settled per page. The four
-# battle pages are one family, the board's pages another, an account and
-# its trend a third. A page about no one thing has no entry, and no button;
+# views of the same thing, at most three, settled per page. A battle's
+# pages are one family, the board's pages another, an account and its
+# trend a third. A page about no one thing has no entry, and no button;
 # nor does a dungeon's, whose buttons are its boards.
+#
+# A battle's V2 pages (摘要 and the 详细视图) offer exactly the others its
+# foot lists — core/battle_views decides which exist, the target which this
+# battle can draw. The pre-1.3.0 views below keep their old buttons until
+# each is replaced; they reach the 摘要 but it does not reach them.
 _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = {
-    (PageSubject.BATTLE, CandidateView.BATTLE): (
-        CandidateView.LOADOUT,
-        CandidateView.SKILLS,
-        CandidateView.TIMELINE,
-    ),
+    **{
+        (PageSubject.BATTLE, entry.view): tuple(
+            other.view for other in BATTLE_VIEWS if other is not entry
+        )
+        for entry in BATTLE_VIEWS
+    },
     (PageSubject.BATTLE, CandidateView.LOADOUT): (
         CandidateView.BATTLE,
         CandidateView.SKILLS,
@@ -235,6 +250,7 @@ _SITE_PAGE_LABELS = {SitePage.BINDING: "去 ZMDLogs 生成绑定码"}
 # A sibling's label is its command word, except where that word alone would
 # not say which page it opens.
 _SIBLING_LABELS = {
+    **{(PageSubject.BATTLE, entry.view): entry.label for entry in BATTLE_VIEWS},
     (PageSubject.BOARD, CandidateView.BATTLE): "第一名战报",
     (PageSubject.BOARD, CandidateView.COMPARE): "对比第一名",
     (PageSubject.ACCOUNT, CandidateView.TREND): "名次趋势",

@@ -1,0 +1,88 @@
+"""A battle's pages on the V2 shell: 摘要 and the 详细视图 beside it.
+
+A battle draws its 摘要 by default and opens its 详细视图 — 数据, 排轴 and
+养成 (ADR 0003) — each as its own command. Every one of those pages lists
+the others in its foot, its own lit, and on the QQ official bot offers them
+as buttons under the picture; a view the battle lacks the data for is left
+out of both, so neither ever sends a reader to a page that would answer
+"这份战报没有…".
+
+This table is the one place that decides which views exist and when a
+battle can draw one: the strip on the page (``view_strip``), the buttons
+(``core/buttons``) and the views a result names unavailable (``queries``)
+all read it. A view joins it when its page is migrated, in the order the
+strip prints it; until then it is not offered anywhere, even where its
+pre-1.3.0 page still answers its old command.
+
+What a battle "can draw" is judged only on what the page that is drawing
+already read — the detail, and whether the cast export refused the upload
+as too old — never on a read made for the purpose.
+"""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from .candidates import CandidateView
+from .models import BattleDetailSummary
+
+
+@dataclass(frozen=True, slots=True)
+class BattleView:
+    """One page of a battle: its name on the strip and the command that draws it.
+
+    ``drawable`` answers from the detail (None when the page did not read
+    it, so the view is assumed there) and whether the cast export refused
+    the upload as one with no casts.
+    """
+
+    view: CandidateView
+    label: str
+    word: str
+    drawable: Callable[[BattleDetailSummary | None, bool], bool]
+
+
+def _always(battle: BattleDetailSummary | None, casts_refused: bool) -> bool:
+    return True
+
+
+# The strip's order. #42–#44 add 数据, 排轴 and 养成 here as each lands.
+BATTLE_VIEWS: tuple[BattleView, ...] = (
+    BattleView(CandidateView.BATTLE, "摘要", "战报", _always),
+)
+
+
+def battle_view(view: CandidateView) -> BattleView | None:
+    """The V2 page ``view`` names; None for a view not (yet) on the strip."""
+
+    return next((entry for entry in BATTLE_VIEWS if entry.view is view), None)
+
+
+def unavailable_views(
+    battle: BattleDetailSummary | None, *, casts_refused: bool = False
+) -> frozenset[CandidateView]:
+    """The views on the strip this battle cannot draw."""
+
+    return frozenset(
+        entry.view
+        for entry in BATTLE_VIEWS
+        if not entry.drawable(battle, casts_refused)
+    )
+
+
+def view_strip(
+    current: CandidateView,
+    battle: BattleDetailSummary | None,
+    *,
+    casts_refused: bool = False,
+) -> tuple[tuple[str, bool], ...]:
+    """``(label, is_current)`` of every view this battle can draw, in order.
+
+    The page being drawn is always on it: it is drawn, so it is drawable.
+    """
+
+    missing = unavailable_views(battle, casts_refused=casts_refused)
+    return tuple(
+        (entry.label, entry.view is current)
+        for entry in BATTLE_VIEWS
+        if entry.view is current or entry.view not in missing
+    )

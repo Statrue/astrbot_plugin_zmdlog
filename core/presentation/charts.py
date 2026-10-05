@@ -1,8 +1,10 @@
-"""DPS curve and BUFF coverage band, shared by the battle pages."""
+"""DPS curve, BUFF coverage band and 暴击期望's bell, shared by the battle pages."""
 
+import math
 import re
 from dataclasses import dataclass
 
+from ..crit import CritTotals
 from ..models import (
     BattleDetailSummary,
     BattleParticipant,
@@ -27,9 +29,10 @@ class RailTickView:
 @dataclass(frozen=True, slots=True)
 class CurveSeriesView:
     character_name: str
-    # 1-6, matching the participant colour keys used everywhere on the card.
+    # 1-6, matching the colour the character wears on every battle page.
     colour_index: int
     polyline: str
+    # Whole units, as the V2 pages print every DPS.
     final_dps: str
     damage_share: str
 
@@ -129,13 +132,13 @@ def build_dps_curve_view(
                 character_name=series.character_name,
                 colour_index=colours.get(series.character_name, 6),
                 polyline=polyline(series),
-                final_dps=format_number(round(series.final_dps, 2)),
+                final_dps=format_number(round(series.final_dps)),
                 damage_share=_share(series.total_damage, total_damage),
             )
             for series in curve.series
         ),
         team_polyline=polyline(curve.team),
-        team_dps=format_number(round(curve.team.final_dps, 2)),
+        team_dps=format_number(round(curve.team.final_dps)),
         axis_labels=tuple(
             _format_axis_value(axis_max * (4 - index) / 4) for index in range(5)
         ),
@@ -146,9 +149,9 @@ def build_dps_curve_view(
 
 
 def colour_keys(participants: tuple[BattleParticipant, ...]) -> dict[str, int]:
-    """Each character's colour key (``share-seg--N``), by the card's order.
+    """Each character's colour key (the class ``cN``), by DPS order.
 
-    Every section of the battle card draws a character in this one colour;
+    Every chart of a battle's pages draws a character in this one colour;
     ``participants`` must already be in the display order, highest DPS first.
     """
 
@@ -291,3 +294,99 @@ def polyline_points(points, *, duration_ms: int, axis_max: float) -> str:
         f"{100 - min(point.dps, axis_max) / axis_max * 100:.2f}"
         for point in points
     )
+
+
+@dataclass(frozen=True, slots=True)
+class CritBellView:
+    """暴击期望's distribution, drawn as the bell its mean and spread describe.
+
+    The curve is SVG in a ``width`` × ``height`` box the template stretches;
+    everything placed over it is a percent of the plot's width.
+    """
+
+    width: int
+    height: int
+    line: str
+    area: str
+    expected_left: float
+    actual_left: float
+    # ±1σ around the expectation.
+    spread_left: float
+    spread_width: float
+    # ``(left, label)``, six of them from edge to edge.
+    ticks: tuple[tuple[float, str], ...]
+    # The two marks stand so close that their labels, centred, would
+    # overlap; each label then leans away from the other.
+    marks_close: bool
+    actual_below: bool
+
+
+_BELL_WIDTH = 1000
+_BELL_HEIGHT = 260
+_BELL_STEPS = 160
+# The peak sits this far under the top, so the curve's stroke is not cut.
+_BELL_HEADROOM = 16
+# Labels about 40 px wide on a plot about 600 px wide: closer than this,
+# centred, they touch.
+_BELL_CLOSE_PERCENT = 8.0
+
+
+def build_crit_bell(totals: CritTotals) -> CritBellView | None:
+    """The team's damage as a normal curve, and where the run landed on it.
+
+    A normal approximation of the site's exact histogram: the expected
+    total and its standard deviation are all :mod:`core.crit` computes,
+    and over the thousands of hits of a run the two hardly differ. The
+    axis runs four deviations either side, widened to keep the actual
+    total half a deviation inside it. None when there is no spread to
+    draw (every analysed hit certain to crit or not).
+    """
+
+    mean = totals.expected_damage
+    spread = totals.standard_deviation
+    actual = totals.actual_damage
+    if spread <= 0 or mean <= 0:
+        return None
+    low = min(mean - 4 * spread, actual - 0.5 * spread)
+    high = max(mean + 4 * spread, actual + 0.5 * spread)
+    span = high - low
+
+    def x(value: float) -> float:
+        return (value - low) / span * _BELL_WIDTH
+
+    def percent(value: float) -> float:
+        return round((value - low) / span * 100, 2)
+
+    points = []
+    for step in range(_BELL_STEPS + 1):
+        value = low + span * step / _BELL_STEPS
+        density = math.exp(-0.5 * ((value - mean) / spread) ** 2)
+        y = _BELL_HEIGHT - density * (_BELL_HEIGHT - _BELL_HEADROOM)
+        points.append(f"{x(value):.1f},{y:.1f}")
+    expected_left = percent(mean)
+    actual_left = percent(actual)
+    return CritBellView(
+        width=_BELL_WIDTH,
+        height=_BELL_HEIGHT,
+        line="M" + " L".join(points),
+        area=(
+            f"M0,{_BELL_HEIGHT} L" + " L".join(points)
+            + f" L{_BELL_WIDTH},{_BELL_HEIGHT} Z"
+        ),
+        expected_left=expected_left,
+        actual_left=actual_left,
+        spread_left=percent(mean - spread),
+        spread_width=round(percent(mean + spread) - percent(mean - spread), 2),
+        ticks=tuple(
+            (round(index * 20.0, 2), _wan(low + span * index / 5))
+            for index in range(6)
+        ),
+        marks_close=abs(actual_left - expected_left) < _BELL_CLOSE_PERCENT,
+        actual_below=actual < mean,
+    )
+
+
+def _wan(value: float) -> str:
+    """A damage total on the bell's ruler, in 万 to one decimal: ``638.6万``."""
+
+    return f"{format_number(round(value / 10_000, 1))}万"

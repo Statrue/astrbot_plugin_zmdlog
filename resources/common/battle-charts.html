@@ -1,46 +1,8 @@
 {#
-  Two horizontal-time charts that stack on the battle card. Both use the same
-  three columns (side | track | gutter), so the tick lines of one fall exactly
-  under the other and a buff bar can be read against the curve above it.
+  The BUFF band on a horizontal time axis, for the 技能轴 page. It shares
+  battle-charts.css's three columns (side | track | gutter) with the
+  comparison's curve.
 #}
-{% macro render_dps_curve(curve) -%}
-<section class="curve-panel" aria-label="DPS 曲线">
-  <div class="hchart-row">
-    <div class="curve-side">
-      <ul class="curve-legend">
-        <li class="is-team"><i></i><b>全队</b><span>{{ curve.team_dps }}</span></li>
-        {% for series in curve.series %}
-        <li><i class="share-seg--{{ series.colour_index }}"></i><b>{{ series.character_name }}</b><span>{{ series.final_dps }}</span><em>{{ series.damage_share }}</em></li>
-        {% endfor %}
-      </ul>
-      <div class="curve-axis">
-        {% for label in curve.axis_labels %}<span>{{ label }}</span>{% endfor %}
-      </div>
-    </div>
-    <div class="curve-box">
-      {% for label in curve.axis_labels %}{% if not loop.first and not loop.last %}<i class="curve-grid" style="top: {{ loop.index0 * 25 }}%;"></i>{% endif %}{% endfor %}
-      {% for tick in curve.ticks %}{% if not loop.first %}<i class="hchart-grid{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;"></i>{% endif %}{% endfor %}
-      <svg class="curve-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <polyline class="curve-line is-team" points="{{ curve.team_polyline }}" vector-effect="non-scaling-stroke"/>
-        {% for series in curve.series %}
-        <polyline class="curve-line share-line--{{ series.colour_index }}" points="{{ series.polyline }}" vector-effect="non-scaling-stroke"/>
-        {% endfor %}
-      </svg>
-    </div>
-    <div class="hchart-gutter"></div>
-  </div>
-  <div class="hchart-row hchart-row--ruler">
-    <div class="hchart-side-note">峰值 {{ curve.peak_label }} · 每 {{ curve.bucket_label }}一桶</div>
-    <div class="hchart-ruler">
-      {% for tick in curve.ticks %}
-      <span class="hchart-tick{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;">{{ tick.label }}</span>
-      {% endfor %}
-    </div>
-    <div class="hchart-gutter"></div>
-  </div>
-</section>
-{%- endmacro %}
-
 {% macro render_buff_band(band) -%}
 <section class="buff-band" aria-label="BUFF 覆盖">
   <div class="hchart-row hchart-row--ruler">

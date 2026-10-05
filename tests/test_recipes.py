@@ -12,7 +12,6 @@ import logging
 import unittest
 from types import SimpleNamespace
 
-from core import messages
 from core.candidates import CandidateStore
 from core.client import ZmdLogsAPIError, ZmdLogsClientError
 from core.datasource import ZmdLogsDataSource
@@ -291,8 +290,8 @@ class SamePictureTests(unittest.TestCase):
         self._assert_same_call("battle")
 
     def test_a_battle_whose_export_the_endpoint_refused(self) -> None:
-        # The command's card said why its 施法节奏 section was missing; the
-        # tool's picture said nothing. Both now carry the note.
+        # The tool's picture is the command's 摘要, foot and all, whatever
+        # the export answered.
         async def old_upload(battle_id):
             raise ZmdLogsAPIError(422, "battle_export_unsupported", "old")
 
@@ -302,9 +301,9 @@ class SamePictureTests(unittest.TestCase):
         run(self.tools.battle("btl_upload_abcdef123456"))
 
         self._assert_same_call("battle")
-        kwargs = self.tool_renderer.kwargs["battle"]
-        self.assertIsNone(kwargs["export"])
-        self.assertEqual(kwargs["export_note"], messages.NO_TIMELINE)
+        self.assertEqual(
+            self.tool_renderer.kwargs["battle"]["views"], (("摘要", True),)
+        )
 
     def test_a_comparison(self) -> None:
         first, second = "btl_upload_abcdef123456", "btl_upload_bbbbbbbbbbbb"

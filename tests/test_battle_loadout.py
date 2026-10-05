@@ -847,17 +847,6 @@ class LoadoutTemplateTests(unittest.TestCase):
         self.assertIn("技能 3090", html)
         self.assertIn("占全队 88.4%", html)
 
-    def test_battle_card_gains_the_loadout_section(self) -> None:
-        html = self.renderer.render_battle(
-            self.battle, query="战报 罗丹", web_base_url="https://zmdlogs.com"
-        )
-
-        self.assertIn("阵容与配装", html)
-        self.assertIn("点剑 · 护手", html)
-        self.assertIn("精炼 3", html)
-        self.assertIn("普攻 12 · 战技 12 · 连携 9 · 终结 12", html)
-        self.assertIn("终结技", html)
-
     def test_pages_without_loadout_data_still_render(self) -> None:
         payload = battle_detail_payload()
         payload["battle"]["roster"] = []
@@ -867,7 +856,7 @@ class LoadoutTemplateTests(unittest.TestCase):
         html = self.renderer.render_battle(
             battle, query="q", web_base_url="https://zmdlogs.com"
         )
-        self.assertNotIn("阵容与配装", html)
+        self.assertIn("<strong>伤害构成</strong>", html)
         html = self.renderer.render_loadout(
             battle, query="q", web_base_url="https://zmdlogs.com"
         )

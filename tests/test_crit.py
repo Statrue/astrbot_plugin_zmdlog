@@ -1,4 +1,4 @@
-"""暴击期望: the per-hit crit maths, the lenient parse, the card and the tool line."""
+"""暴击期望: the per-hit crit maths, the lenient parse, the 摘要 and the tool line."""
 
 import asyncio
 import logging
@@ -6,9 +6,10 @@ import math
 import unittest
 from pathlib import Path
 
-from core.crit import CritHit, CritRoll, build_crit_expectation
+from core.crit import CritHit, CritRoll, CritTotals, build_crit_expectation
 from core.matcher import AliasConfig, MatcherCache
 from core.models import parse_battle_detail
+from core.presentation import build_crit_bell
 from core.recipes import prepare_battle
 from core.render import TemplateRenderer
 from core.settings import PluginSettings
@@ -292,7 +293,7 @@ class _HtmlRenderer:
 
 
 def card_html(payload: dict) -> str:
-    """The battle card as the command draws it, recipe and all."""
+    """The 摘要 as the command draws it, recipe and all."""
 
     battle_id = payload["battle"]["id"]
     data = FakeData(battles={battle_id: parse_battle_detail(payload)})
@@ -306,47 +307,128 @@ def card_html(payload: dict) -> str:
     return asyncio.run(draw())
 
 
-class CritCardTests(unittest.TestCase):
-    def test_the_section_sits_between_the_roster_stats_and_the_curve(self) -> None:
+def crit_section(html: str) -> str:
+    """The 摘要's 暴击期望 section, up to the curve after it."""
+
+    return html[
+        html.index("<strong>暴击期望</strong>"):html.index("<strong>DPS 曲线</strong>")
+    ]
+
+
+class CritSummaryTests(unittest.TestCase):
+    """暴击期望 on the 摘要: the verdict, three figures and the bell."""
+
+    def test_the_section_sits_between_the_shares_and_the_curve(self) -> None:
         html = card_html(crit_battle_payload())
 
-        roster, crit, curve = (
-            html.index(f"<h2>{title}</h2>")
-            for title in ("本场角色", "暴击期望", "DPS 曲线")
+        shares, crit, curve = (
+            html.index(f"<strong>{title}</strong>")
+            for title in ("伤害构成", "暴击期望", "DPS 曲线")
         )
-        self.assertLess(roster, crit)
+        self.assertLess(shares, crit)
         self.assertLess(crit, curve)
-        self.assertIn("固定本场技能与命中，只算暴击带来的直接伤害波动", html)
 
-    def test_one_row_per_character_then_the_team(self) -> None:
-        html = card_html(crit_battle_payload())
-        section = html[html.index('class="crit-list"'):html.index("<h2>DPS 曲线</h2>")]
+    def test_a_lucky_run_says_how_far_above_on_yellow(self) -> None:
+        section = crit_section(card_html(crit_battle_payload()))
 
-        for label in ("实际总伤", "期望总伤", "期望 DPS", "实际偏差"):
-            self.assertIn(f"<dt>{label}</dt>", section)
-        # 洛茜 first, as in the participant list; her colour key comes along.
-        self.assertLess(section.index(">洛茜<"), section.index(">卡缪<"))
-        self.assertLess(section.index(">卡缪<"), section.index(">全队<"))
-        self.assertIn("share-seg--1", section)
-        # The team: 2,012,905 expected over 20.833 s is 96,621 DPS.
-        self.assertIn("<dd>2,292,905</dd>", section)
-        self.assertIn("<dd>2,012,905</dd>", section)
-        self.assertIn("<dd>96,621</dd>", section)
-        self.assertIn("<dd>+13.91%</dd>", section)
+        # 2,292,905 dealt against 2,012,905 expected over 20.833 s.
+        self.assertIn('class="b-sum-luck is-up"', section)
+        self.assertIn("<span>高于期望</span>", section)
+        self.assertIn("<b>13.91%</b>", section)
+        for label, value in (
+            ("实际总伤", "2,292,905"),
+            ("期望总伤", "2,012,905"),
+            ("期望 DPS", "96,621"),
+        ):
+            self.assertIn(f"<dt>{label}</dt><dd>{value}</dd>", section)
         self.assertNotIn("已覆盖", section)
+        # The bell, both marks on it, and a damage ruler of six ticks.
+        self.assertIn('class="b-dist-mark is-expected"', section)
+        self.assertIn('class="b-dist-mark is-actual"', section)
+        ruler = section[section.index('class="b-ruler b-dist-ruler"'):]
+        self.assertEqual(ruler.count("万</span>"), 6)
+
+    def test_an_unlucky_run_says_how_far_below(self) -> None:
+        payload = crit_battle_payload()
+        for event in payload["timelineEvents"]:
+            if event.get("hitContext") and event.get("tsMsFromStart") == 1_000:
+                # 洛茜's 900,000 did not crit: a crit would have added 450,000.
+                event["hitContext"] = verified(isCritical=False, critRate=0.05)
+
+        section = crit_section(card_html(payload))
+
+        self.assertIn('class="b-sum-luck"', section)
+        self.assertIn("<span>低于期望</span>", section)
+        # Half a deviation apart: the two labels lean away from each other.
+        self.assertIn('class="b-dist-plot is-close is-below"', section)
+        # 2,292,905 against 2,292,905 + 22,500 + 5,000.
+        self.assertIn("<b>1.19%</b>", section)
 
     def test_partial_coverage_is_stated(self) -> None:
-        html = card_html(crit_battle_payload(cover_last=False))
+        section = crit_section(card_html(crit_battle_payload(cover_last=False)))
 
-        self.assertIn("已覆盖 97.1% 伤害", html)
+        self.assertIn("已覆盖 97.1% 伤害", section)
 
     def test_an_older_upload_has_no_section(self) -> None:
         html = card_html(battle_detail_payload())
 
         # The stylesheet names the section in comments; assert on markup.
-        self.assertNotIn("<h2>暴击期望</h2>", html)
-        self.assertNotIn('class="crit-list"', html)
-        self.assertIn("<h2>DPS 曲线</h2>", html)
+        self.assertNotIn("<strong>暴击期望</strong>", html)
+        self.assertNotIn('class="b-dist-plot', html)
+        self.assertIn("<strong>DPS 曲线</strong>", html)
+
+
+def team_totals(actual: int, *, spread: float = 10_000) -> CritTotals:
+    return CritTotals(
+        character=None,
+        actual_damage=actual,
+        expected_damage=1_000_000,
+        standard_deviation=spread,
+        expected_dps=50_000,
+        coverage=1.0,
+        analysed_hits=100,
+        discarded_hits=0,
+    )
+
+
+class CritBellTests(unittest.TestCase):
+    """The bell's geometry: four deviations either side of the expectation."""
+
+    def test_the_expectation_is_the_middle_and_one_deviation_is_hatched(self) -> None:
+        bell = build_crit_bell(team_totals(980_000))
+
+        self.assertEqual(bell.expected_left, 50.0)
+        # Two deviations below, on an axis eight deviations wide.
+        self.assertEqual(bell.actual_left, 25.0)
+        self.assertEqual((bell.spread_left, bell.spread_width), (37.5, 25.0))
+        self.assertEqual(
+            bell.ticks,
+            (
+                (0.0, "96万"),
+                (20.0, "97.6万"),
+                (40.0, "99.2万"),
+                (60.0, "100.8万"),
+                (80.0, "102.4万"),
+                (100.0, "104万"),
+            ),
+        )
+        self.assertTrue(bell.actual_below)
+        self.assertFalse(bell.marks_close)
+
+    def test_marks_close_together_lean_their_labels_apart(self) -> None:
+        bell = build_crit_bell(team_totals(1_005_000))
+
+        self.assertTrue(bell.marks_close)
+        self.assertFalse(bell.actual_below)
+
+    def test_a_far_run_widens_the_axis_to_keep_it_inside(self) -> None:
+        bell = build_crit_bell(team_totals(1_100_000))
+
+        self.assertLess(bell.actual_left, 100)
+        self.assertLess(bell.expected_left, 50)
+
+    def test_no_spread_draws_no_bell(self) -> None:
+        self.assertIsNone(build_crit_bell(team_totals(1_000_000, spread=0)))
 
 
 class CritToolTextTests(unittest.TestCase):

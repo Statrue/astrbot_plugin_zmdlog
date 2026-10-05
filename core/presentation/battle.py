@@ -1,4 +1,10 @@
-"""The battle card and its loadout / skill pages."""
+"""A battle's pages: its 摘要, the full model 对比 reads, loadout and skills.
+
+The 摘要 (``build_battle_summary_page``) is what 战报 draws: the record
+band and three charts, each left out when the upload lacks its data.
+``build_battle_page`` is the whole battle as one model — every figure the
+old card drew — which 对比 builds on and the 详细视图 will.
+"""
 
 from dataclasses import dataclass
 
@@ -17,14 +23,15 @@ from ..loadout import (
 from ..models import (
     BattleDetailSummary,
     BattleEquip,
-    BattleExport,
     BattleParticipant,
     BattleWeapon,
 )
 from .charts import (
     BuffBandView,
+    CritBellView,
     DpsCurveView,
     build_buff_band_view,
+    build_crit_bell,
     build_dps_curve_view,
     colour_keys,
 )
@@ -43,13 +50,6 @@ from .common import (
     format_duration,
     format_number,
     public_url,
-)
-from .rail import (
-    _RAIL_CARD_MAX_PPS,
-    _RAIL_CARD_MIN_PPS,
-    _RAIL_CARD_TARGET_PX,
-    TimelineView,
-    build_timeline_view,
 )
 
 
@@ -239,10 +239,6 @@ class BattlePage:
     rdps_ranking_label: str = ""
     loadouts: tuple[LoadoutView, ...] = ()
     skill_stats_available: bool = False
-    # The cast rail, when the public export was available; otherwise a short
-    # reason (old upload, rate limit) or nothing at all.
-    timeline: TimelineView | None = None
-    timeline_note: str | None = None
     # Both read from the battle's own per-hit telemetry; None when the upload
     # carried none (older parsers) or nothing survived parsing.
     dps_curve: DpsCurveView | None = None
@@ -261,18 +257,12 @@ def build_battle_page(
     *,
     query: str,
     web_base_url: str,
-    export: BattleExport | None = None,
-    export_note: str | None = None,
     suits: dict[str, str] | None = None,
     crit: CritExpectation | None = None,
 ) -> BattlePage:
-    """Build the battle card; ``export`` adds the cast rail when available."""
+    """The whole battle as one model, participants highest DPS first."""
 
-    timer_is_official = (
-        battle.time_source == "game_timer"
-        and battle.official_timer_start_seen is True
-        and battle.official_timer_end_seen is True
-    )
+    timer_is_official = _official_timer(battle)
     total_damage = battle.total_damage
     # Highest DPS first, mirroring the site's contribution breakdown.
     participants = sorted(
@@ -319,18 +309,6 @@ def build_battle_page(
             suits=suits,
         ),
         skill_stats_available=bool(battle.skill_stats),
-        timeline=(
-            build_timeline_view(
-                export,
-                web_base_url=web_base_url,
-                target_height=_RAIL_CARD_TARGET_PX,
-                min_pps=_RAIL_CARD_MIN_PPS,
-                max_pps=_RAIL_CARD_MAX_PPS,
-            )
-            if export is not None
-            else None
-        ),
-        timeline_note=export_note if export is None else None,
         dps_curve=build_dps_curve_view(battle, tuple(participants)),
         buff_band=build_buff_band_view(battle),
         crit=_build_crit_view(crit, tuple(participants)),
@@ -380,6 +358,194 @@ def build_battle_page(
             )
             for participant in participants
         ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ViewTabView:
+    """One entry of the strip of a battle's pages in the foot."""
+
+    label: str
+    current: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SummaryCharacterView:
+    """One character of the 摘要: a face in the record band, a 伤害构成 row."""
+
+    character_name: str
+    character_initial: str
+    avatar_url: str | None
+    # 1-6 by DPS, the colour the character wears in every chart.
+    colour_index: int
+    dps: str
+    damage_share: str
+    # The track's fill, a percent of the team's damage.
+    share_percent: float
+
+
+@dataclass(frozen=True, slots=True)
+class CurveKeyView:
+    """One line of the DPS 曲线's key and the DPS it ends at."""
+
+    label: str
+    # None for the team's line, drawn in ink.
+    colour_index: int | None
+    dps: str
+
+
+@dataclass(frozen=True, slots=True)
+class CritSummaryView:
+    """暴击期望 at a glance: how far off the run landed, and the bell."""
+
+    # Above (or at) the expectation: the figure goes on yellow.
+    above: bool
+    # Unsigned; ``above`` says which way.
+    deviation: str
+    actual_damage: str
+    expected_damage: str
+    expected_dps: str
+    # Only when part of the team's skill damage carried no crit roll.
+    coverage_note: str | None
+    bell: CritBellView
+
+
+@dataclass(frozen=True, slots=True)
+class BattleSummaryPage:
+    """战报's default page: the record band, 伤害构成, 暴击期望, DPS 曲线.
+
+    No per-character table — the numbers live on 数据. A chart whose data
+    the upload lacks is None, and the page leaves its section out.
+    """
+
+    header: PageHeader
+    battle_id: str
+    report_url: str
+    uploader_display_name: str
+    duration: str
+    total_dps: str
+    total_damage: str
+    battle_date: str
+    timer_label: str
+    integrity_label: str
+    # "rDPS 榜记录" when this upload made the board's rDPS ranking.
+    rdps_ranking_label: str
+    contract_score: str | None
+    # Highest DPS first; the first is the main C.
+    characters: tuple[SummaryCharacterView, ...]
+    crit: CritSummaryView | None
+    dps_curve: DpsCurveView | None
+    curve_keys: tuple[CurveKeyView, ...]
+    views: tuple[ViewTabView, ...]
+
+
+def build_battle_summary_page(
+    battle: BattleDetailSummary,
+    *,
+    query: str,
+    web_base_url: str,
+    crit: CritExpectation | None = None,
+    views: tuple[tuple[str, bool], ...] = (),
+) -> BattleSummaryPage:
+    """The 摘要; ``views`` is the strip, ``(label, is_current)`` in order."""
+
+    participants = tuple(
+        sorted(battle.participants, key=lambda item: item.dps, reverse=True)
+    )
+    total_damage = battle.total_damage
+    curve = build_dps_curve_view(battle, participants)
+    return BattleSummaryPage(
+        header=PageHeader(
+            title=battle.boss_name,
+            subtitle=battle.dungeon_name,
+            query=query,
+            matched_name=battle.battle_id,
+            target_type="公开战报",
+            footer_note="公开战报 · DPS / rDPS",
+        ),
+        battle_id=battle.battle_id,
+        report_url=public_url(web_base_url, "battle", battle.battle_id),
+        uploader_display_name=battle.uploader_display_name,
+        duration=format_duration(battle.duration_ms),
+        total_dps=format_number(round(battle.total_dps)),
+        total_damage=format_number(total_damage),
+        battle_date=_format_datetime(battle.battle_end_at),
+        timer_label=(
+            "官方计时" if _official_timer(battle) else "计时待核验"
+        ),
+        integrity_label=(
+            "结构校验通过" if battle.integrity_verified else "结构校验未通过"
+        ),
+        rdps_ranking_label="rDPS 榜记录" if battle.rdps_ranking_eligible else "",
+        contract_score=(
+            format_number(battle.contract_tag_score)
+            if battle.contract_tag_score is not None
+            else None
+        ),
+        characters=tuple(
+            SummaryCharacterView(
+                character_name=participant.character_name,
+                character_initial=_initial(participant.character_name),
+                avatar_url=_safe_asset_url(
+                    participant.character_avatar_url, base_url=web_base_url
+                ),
+                colour_index=index,
+                dps=format_number(round(participant.dps)),
+                damage_share=(
+                    _share(participant.total_damage, total_damage)
+                    if total_damage > 0
+                    else "—"
+                ),
+                share_percent=_bar_width(participant.total_damage, total_damage),
+            )
+            for index, participant in enumerate(participants, start=1)
+        ),
+        crit=_crit_summary(crit),
+        dps_curve=curve,
+        curve_keys=(
+            (
+                CurveKeyView(label="全队", colour_index=None, dps=curve.team_dps),
+                *(
+                    CurveKeyView(
+                        label=series.character_name,
+                        colour_index=series.colour_index,
+                        dps=series.final_dps,
+                    )
+                    for series in curve.series
+                ),
+            )
+            if curve is not None
+            else ()
+        ),
+        views=tuple(ViewTabView(label, current) for label, current in views),
+    )
+
+
+def _official_timer(battle: BattleDetailSummary) -> bool:
+    return (
+        battle.time_source == "game_timer"
+        and battle.official_timer_start_seen is True
+        and battle.official_timer_end_seen is True
+    )
+
+
+def _crit_summary(crit: CritExpectation | None) -> CritSummaryView | None:
+    """The team's row of 暴击期望, or None with no rolls or no spread to draw."""
+
+    if crit is None:
+        return None
+    bell = build_crit_bell(crit.team)
+    if bell is None:
+        return None
+    team = _crit_row(crit.team, label="全队", colour_index=None, is_team=True)
+    return CritSummaryView(
+        above=crit.team.relative_difference >= 0,
+        deviation=f"{abs(crit.team.relative_difference):.2%}",
+        actual_damage=team.actual_damage,
+        expected_damage=team.expected_damage,
+        expected_dps=team.expected_dps,
+        coverage_note=team.coverage_note,
+        bell=bell,
     )
 
 

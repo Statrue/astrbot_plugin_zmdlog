@@ -640,12 +640,12 @@ class ZmdLogsDataSource:
     async def battle_export_for_card(
         self, battle_id: str
     ) -> tuple[BattleExport | None, ZmdLogsAPIError | None]:
-        """The cast sequence for the battle card, or the API's reason without.
+        """The cast sequence for 战报, or the API's reason without.
 
-        Best effort: the card must never fail because the export did. An
-        upstream refusal (an old upload, a rate limit) comes back for the
-        card to explain; an outage is logged and the section is simply left
-        out.
+        Best effort: the 摘要 must never fail because the export did. An
+        upstream refusal (an old upload, a rate limit) comes back so the
+        page can tell an upload with no casts from one merely refused; an
+        outage is logged and the casts are simply left out.
         """
 
         try:

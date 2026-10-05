@@ -1,0 +1,130 @@
+{# 战报's 摘要: the record as one ranking-style card, then the run at a
+   glance — who carried, how the crits fell, how the damage came in. Charts,
+   each with one figure to anchor it; the numbers themselves are 数据's.
+   A chart whose data the upload lacks is left out, heading and all. #}
+{% extends "shell/wide-base.html" %}
+{% from "shell/parts.html" import arrow, face %}
+{% from "shell/wide-parts.html" import cut, bar, view_strip %}
+
+{% block styles %}{% include "battle/battle.css" %}{% endblock %}
+
+{% block giant %}BATTLE REPORT{% endblock %}
+
+{% block meta %}
+{% if page.header.subtitle and page.header.subtitle not in page.header.title %}<span>{{ page.header.subtitle }}</span>{% endif %}
+<span>{{ page.timer_label }}</span>
+<span>{{ page.integrity_label }}</span>
+{% if page.rdps_ranking_label %}<span>{{ page.rdps_ranking_label }}</span>{% endif %}
+{% endblock %}
+
+{% block views %}{{ view_strip(page.views) }}{% endblock %}
+
+{% block content %}
+{% set card_w = frame.width - 48 %}
+<section class="b-record">
+  <div class="i-layer i-layer--who b-who" style="clip-path: {{ cut(card_w) }};">
+    {{ arrow() }}
+    <span class="i-name"><i class="i-bracket">[</i><strong>{{ page.uploader_display_name }}</strong><i class="i-bracket">]</i></span>
+    <span class="b-date">{{ page.battle_date }}</span>
+  </div>
+  <div class="i-layer i-layer--run b-run">
+    <div class="i-team">
+      {% for character in page.characters %}{{ face(character, lead=loop.first) }}{% endfor %}
+    </div>
+    <div class="b-heroes">
+      {% if page.contract_score %}
+      <div class="b-hero b-hero--main"><span>合约分数</span><div class="i-time"><b>{{ page.contract_score }}</b></div></div>
+      <div class="b-hero"><span>通关时间</span><b>{{ page.duration }}</b></div>
+      {% else %}
+      <div class="b-hero b-hero--main"><span>通关时间</span><div class="i-time"><b>{{ page.duration }}</b></div></div>
+      {% endif %}
+      <div class="b-hero"><span>总 DPS</span><b>{{ page.total_dps }}</b></div>
+      <div class="b-hero"><span>总伤害</span><b>{{ page.total_damage }}</b></div>
+    </div>
+  </div>
+</section>
+
+{% if page.characters %}
+{# who carried: one row a character — face, name and DPS, a thin track, the share #}
+<section class="b-block b-share">
+  {{ bar("伤害构成", card_w) }}
+  <div class="b-body b-sum-rows">
+    {% for character in page.characters %}
+    <div class="b-sum-row c{{ character.colour_index }}{% if loop.first %} is-lead{% endif %}">
+      {{ face(character, lead=loop.first) }}
+      <p><span>{{ character.character_name }}</span><small>DPS {{ character.dps }}</small></p>
+      <i class="b-sum-track"><i style="width: {{ character.share_percent }}%;"></i></i>
+      <b>{{ character.damage_share }}</b>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if page.crit %}
+{# how the crits fell: the bell and where the run landed on it #}
+{% set crit = page.crit %}
+{% set bell = crit.bell %}
+<section class="b-block b-crit">
+  {{ bar("暴击期望", card_w) }}
+  <div class="b-body b-sum-crit">
+    <div class="b-sum-luck{% if crit.above %} is-up{% endif %}">
+      <span>{{ "高于期望" if crit.above else "低于期望" }}</span>
+      <b>{{ crit.deviation }}</b>
+      <dl>
+        <div><dt>实际总伤</dt><dd>{{ crit.actual_damage }}</dd></div>
+        <div><dt>期望总伤</dt><dd>{{ crit.expected_damage }}</dd></div>
+        <div><dt>期望 DPS</dt><dd>{{ crit.expected_dps }}</dd></div>
+      </dl>
+      {% if crit.coverage_note %}<small class="b-sum-cover">{{ crit.coverage_note }}</small>{% endif %}
+    </div>
+    <div class="b-dist">
+      <div class="b-dist-plot{% if bell.marks_close %} is-close{% if bell.actual_below %} is-below{% else %} is-above{% endif %}{% endif %}">
+        <i class="b-dist-sd" style="left: {{ bell.spread_left }}%; width: {{ bell.spread_width }}%;"></i>
+        <svg viewBox="0 0 {{ bell.width }} {{ bell.height }}" preserveAspectRatio="none" aria-hidden="true">
+          <path class="b-dist-area" d="{{ bell.area }}"/>
+          <path class="b-dist-line" d="{{ bell.line }}" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <i class="b-dist-mark is-expected" style="left: {{ bell.expected_left }}%;"><em>期望</em></i>
+        <i class="b-dist-mark is-actual" style="left: {{ bell.actual_left }}%;"><em>实际</em></i>
+      </div>
+      <div class="b-ruler b-dist-ruler">
+        {% for left, label in bell.ticks %}<span style="left: {{ left }}%;">{{ label }}</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if page.dps_curve %}
+{# how the damage came in: the curve, its peak the one figure #}
+{% set curve = page.dps_curve %}
+<section class="b-block b-curve">
+  {{ bar("DPS 曲线", card_w, "峰值 " ~ curve.peak_label) }}
+  <div class="b-body b-sum-curve">
+    <ul class="b-sum-keys">
+      {% for key in page.curve_keys %}
+      <li{% if key.colour_index is none %} class="is-team"{% endif %}><i{% if key.colour_index is not none %} class="c{{ key.colour_index }}"{% endif %}></i>{{ key.label }}<b>{{ key.dps }}</b></li>
+      {% endfor %}
+    </ul>
+    <div class="b-curve-box">
+      {% for label in curve.axis_labels %}
+      <i class="b-ygrid" style="top: {{ loop.index0 * 25 }}%;"></i>
+      <span class="b-ylabel" style="top: {{ loop.index0 * 25 }}%;">{{ label }}</span>
+      {% endfor %}
+      {% for tick in curve.ticks %}{% if not loop.first %}<i class="b-xgrid{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;"></i>{% endif %}{% endfor %}
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {% for series in curve.series|reverse %}
+        {% if series.colour_index == 1 %}<polyline class="b-line-halo" points="{{ series.polyline }}" vector-effect="non-scaling-stroke"/>{% endif %}
+        <polyline class="b-line c{{ series.colour_index }}" points="{{ series.polyline }}" vector-effect="non-scaling-stroke"/>
+        {% endfor %}
+        <polyline class="b-line is-team" points="{{ curve.team_polyline }}" vector-effect="non-scaling-stroke"/>
+      </svg>
+    </div>
+    <div class="b-ruler">
+      {% for tick in curve.ticks %}<span{% if tick.major %} class="is-major"{% endif %} style="left: {{ tick.top }}%;">{{ tick.label }}</span>{% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
