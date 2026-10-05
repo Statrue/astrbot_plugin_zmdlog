@@ -3,9 +3,9 @@
 A binding is the one piece of user data the plugin keeps: the platform
 user key (``aiocqhttp:12345``), the public ``accountId`` and nickname
 snapshot of every account that user proved control of, and when. Nothing
-else — no QQ nickname, no site credentials, not the chats it was used in —
-and every account here was verified with a binding code the site issued to
-whoever was logged into it (``ACCOUNT_BINDING_CODE_API``).
+else — no QQ nickname, no site credentials — and every account here was
+verified with a binding code the site issued to whoever was logged into it
+(``ACCOUNT_BINDING_CODE_API``).
 
 The book also remembers the digests of the codes already redeemed: the
 site's lookup does not consume a code, so within its ten-minute life a
