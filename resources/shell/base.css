@@ -39,6 +39,9 @@
   --ground-b: #f3f4f5;
   --ground-c: #eceef0;
   --giant-ink: #ffffff;
+  /* the machine's halftone dots and the white beam across it */
+  --halftone: #3a3a3a;
+  --beam: #ffffff;
   --magenta: #ff1f8f;
   --mint: #00f0a8;
   /* the dark foot */

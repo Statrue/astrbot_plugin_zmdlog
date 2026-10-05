@@ -9,19 +9,20 @@
     <img class="i-art" src="{{ sky_art }}" alt="">
     <svg class="i-shards" viewBox="0 0 540 112" preserveAspectRatio="xMidYMax slice">
       <defs>
-        <pattern id="dots-big" width="4.6" height="4.6" patternUnits="userSpaceOnUse"><circle cx="2.3" cy="2.3" r="1.1" fill="#3a3a3a"/></pattern>
-        <pattern id="dots-small" width="4.6" height="4.6" patternUnits="userSpaceOnUse" x="2.3" y="2.3"><circle cx="2.3" cy="2.3" r="0.6" fill="#3a3a3a"/></pattern>
+        <pattern id="dots-big" width="4.6" height="4.6" patternUnits="userSpaceOnUse"><circle cx="2.3" cy="2.3" r="1.1" style="fill: var(--halftone)"/></pattern>
+        <pattern id="dots-small" width="4.6" height="4.6" patternUnits="userSpaceOnUse" x="2.3" y="2.3"><circle cx="2.3" cy="2.3" r="0.6" style="fill: var(--halftone)"/></pattern>
         <radialGradient id="fade-core" cx="336" cy="40" r="34" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".7" stop-color="#fff" stop-opacity=".2"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
         <radialGradient id="fade-rim" cx="336" cy="40" r="56" gradientUnits="userSpaceOnUse"><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset=".62" stop-color="#fff" stop-opacity=".4"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
         <mask id="m-core"><rect width="540" height="112" fill="url(#fade-core)"/></mask>
         <mask id="m-rim"><rect width="540" height="112" fill="url(#fade-rim)"/></mask>
       </defs>
+      {# the masks' white is alpha, not a colour of the page #}
       {# halftone: big dots at the heart, small ones on the rim, both fading out #}
       <rect width="540" height="112" fill="url(#dots-big)" mask="url(#m-core)"/>
       <rect width="540" height="112" fill="url(#dots-small)" mask="url(#m-rim)"/>
       {# a white beam across the machine, thin, as on the banner #}
-      <polygon points="262,112 434,0 446,0 274,112" fill="#fff" opacity=".9"/>
-      <polygon points="281,112 453,0 455,0 283,112" fill="#fff" opacity=".7"/>
+      <polygon points="262,112 434,0 446,0 274,112" style="fill: var(--beam)" opacity=".9"/>
+      <polygon points="281,112 453,0 455,0 283,112" style="fill: var(--beam)" opacity=".7"/>
     </svg>
   </div>
   <span class="i-giant" aria-hidden="true">{{ giant }}</span>
