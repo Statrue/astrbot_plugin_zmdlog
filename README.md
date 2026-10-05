@@ -230,7 +230,7 @@ AstrBot 接入大模型并开启函数调用后，群友直接用自然语言问
 | `rank_watch_interval_seconds` | `900` | 通报合并发送的间隔：每个聊天每隔这么久最多收到一张通告图，最低 120 |
 | `rank_watch_rank_threshold` | `10` | 通报的前 N 名：新纪录进入前 N 名才通报，被挤出前 N 名的标「跌出前 N」 |
 | `bindings_enabled` | `true` | 账号绑定（绑定 / 我的 / 对比 … 我）；关闭后已有绑定仍可查看和解除 |
-| `disable_qq_official_buttons` | `false` | 关掉 QQ 官方机器人（`qq_official`）的按钮与纯文本回复：候选列表、结果图、绑定提示和榜单通报都不带按钮，文字回复回到适配器默认的 markdown |
+| `disable_qq_official_buttons` | `false` | 关掉 QQ 官方机器人（`qq_official`）的按钮与纯文本回复：候选列表、结果图和绑定提示都不带按钮，榜单通报的图片按普通图片发，文字回复回到适配器默认的 markdown |
 | `qq_official_callbacks` | `false` | QQ 官方机器人的按钮点一下直接出图（回调按钮）。插件在运行时给内置 `qq_official` 适配器打一个最小补丁（订阅按钮回调事件），不改 AstrBot 本体，每次加载重新打；改动后重启官方机器人平台（或 AstrBot）生效。与 qqoffice_expand 不兼容，检测到它启用就不装回调、按钮照旧填指令；官方机器人若因此连不上（4013/4014），关掉此项。`disable_qq_official_buttons` 打开时不起作用 |
 
 ## 🔍 它是怎么工作的

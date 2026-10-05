@@ -172,7 +172,7 @@ def notices(
     watchlist: WatchList | None = None,
     top_n: int = 10,
     snap: BoardSnapshot | None = None,
-    announced=frozenset(),
+    announced=None,
 ):
     """What one read gives every chat, through the seam."""
 
@@ -274,6 +274,31 @@ class NoticeEntryTests(unittest.TestCase):
             [(1, "n1", True, [("a", 1, 2), ("b", 2, 3), ("c", 4, 5)])],
         )
 
+    def test_off_a_snapshot_only_what_was_announced_before_it_is_back(
+        self,
+    ) -> None:
+        held = snapshot("a1", "c1", whole=True)
+        # b was announced long before the snapshot: it came back.
+        self.assertEqual(
+            told(
+                None,
+                standing("a1", "b1", "c1"),
+                snap=held,
+                announced={"btl_b1": stamp(1)},
+            ),
+            [],
+        )
+        # b was announced after it: found, never sent, then a restart.
+        self.assertEqual(
+            told(
+                None,
+                standing("a1", "b1", "c1"),
+                snap=held,
+                announced={"btl_b1": stamp(0.001)},
+            ),
+            [(2, "b1", False, [("c", 2, 3)])],
+        )
+
     def test_a_threshold_return_or_a_deletion_is_no_record(self) -> None:
         # b was deleted (or fell under 60% of the median): c moved up.
         self.assertEqual(told(standing("a1", "b1", "c1"), standing("a1", "c1")), [])
@@ -282,7 +307,7 @@ class NoticeEntryTests(unittest.TestCase):
             told(
                 standing("a1", "c1"),
                 standing("a1", "b1", "c1"),
-                announced=frozenset({"btl_b1"}),
+                announced={"btl_b1": stamp(1)},
             ),
             [],
         )
@@ -723,6 +748,38 @@ class NoticeHookTests(unittest.TestCase):
         restarted = self._life()
 
         self.assertEqual(self._queued(restarted), ["btl_n1"])
+
+    def test_a_record_found_and_never_sent_is_found_again_after_a_restart(
+        self,
+    ) -> None:
+        first = self._life()
+        run_async(first.run_notice_cycle())
+
+        # A re-read finds n1 — the event log announces it on disk — and the
+        # send fails, so the snapshot stays where it was.
+        reads = iter((standing("a1", "b1"), standing("n1", "a1", "b1")))
+
+        async def get_boss_rankings(slug, *, metric):
+            return next(reads)
+
+        async def failing(origin, batch):
+            return False
+
+        async def scenario():
+            source = self._source(get_boss_rankings)
+            watcher = self._watcher(source)
+            watcher.notify = failing
+            await source.ranking_index.get(SLUG)
+            await source.ranking_index._refresh(SLUG, "dps")
+            await watcher.run_notice_cycle()
+            await source.close()
+            return watcher
+
+        self.assertEqual(self._queued(run_async(scenario())), ["btl_n1"])
+
+        # Announced after the snapshot was kept, n1 is still news to it.
+        self.boards["dps"] = standing("n1", "a1", "b1")
+        self.assertEqual(self._queued(self._life()), ["btl_n1"])
 
 
 def run_async(coro):

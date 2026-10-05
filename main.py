@@ -16,15 +16,15 @@ try:  # StarTools.get_data_dir is missing on older AstrBot releases.
 except ImportError:  # pragma: no cover - depends on host AstrBot version
     StarTools = None
 
-try:  # Plain lives under different api surfaces across AstrBot releases.
-    from astrbot.api.message_components import Image, Plain
+try:  # Image lives under different api surfaces across AstrBot releases.
+    from astrbot.api.message_components import Image
 except ImportError:  # pragma: no cover - depends on host AstrBot version
     try:
-        from astrbot.core.message.components import Image, Plain
+        from astrbot.core.message.components import Image
     except ImportError:
-        # Only board notices, tool pictures and button-less pushes need
-        # these; every query must keep working without them.
-        Image = Plain = None
+        # Only board notices and tool pictures need it; every query must
+        # keep working without it.
+        Image = None
 
 from . import qq_official
 from .core import facts, messages

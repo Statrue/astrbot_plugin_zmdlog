@@ -669,17 +669,20 @@ def _with_official_names(
     A row keeps the name it had when its official name already is, or would
     become, another row's name too: the page would show two rows under one
     name that a reader could not tell apart, where the fold kept them apart.
+    Another category's row counts: 对比 prints no category chip, and the
+    game files a mechanic (庄方宜's 青霆剑) under the skill that leaves it.
     """
 
     renamed = {
         key: _with_official_name(key[1], _agreed_name(official_names.get(key, ())))
         for key in folded
     }
-    claims = Counter((category, name) for (category, _), name in renamed.items())
+    claims = Counter(renamed.values())
+    printed = {name for _, name in folded}
     rows: list[SkillDamageRow] = []
     for (category, cleaned), row in folded.items():
         name = renamed[(category, cleaned)]
-        clash = claims[(category, name)] > 1 or (category, name) in folded
+        clash = claims[name] > 1 or name in printed
         if name != cleaned and not clash:
             row = replace(row, name=name)
         rows.append(row)

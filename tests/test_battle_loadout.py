@@ -480,6 +480,29 @@ class SkillNamingTests(unittest.TestCase):
             [("焚灭", 1), ("焚灭·余烬", 1), ("焚灭 · 实体", 1)],
         )
 
+    def test_a_game_name_another_category_already_prints_is_not_taken(
+        self,
+    ) -> None:
+        def stat(key: str, name: str, total: int):
+            row = BattleSkillStat("庄方宜", name, 1, total, float(total), total, key)
+            return replace(row, display_group_name="惊霆诀")
+
+        # The 青霆剑 strikes are a mechanic row the game files under the
+        # 战技 that leaves them behind; 对比 prints no category chip, so
+        # renamed they would read as a second 惊霆诀.
+        (group,) = group_skill_damage(
+            (
+                stat("chr_0030_zhuangfy_normal_skill", "惊霆诀", 600),
+                stat(
+                    "buff_chr_0030_zhuangfy_sword_triggerd",
+                    "buff_chr_0030_zhuangfy_sword_triggerd",
+                    100,
+                ),
+            )
+        )
+
+        self.assertEqual([row.name for row in group.rows], ["惊霆诀", "青霆剑"])
+
 
 class GearHelperTests(unittest.TestCase):
     def test_item_ids_resolve_to_the_catalog_suit_or_to_nothing(self) -> None:

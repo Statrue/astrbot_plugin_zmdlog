@@ -214,7 +214,7 @@ class ZmdLogsDataSource:
         announced = (
             self.event_log.announced(METRIC_DPS)
             if current.metric == METRIC_DPS
-            else frozenset()
+            else {}
         )
         if previous is not None:
             self._record_safely(

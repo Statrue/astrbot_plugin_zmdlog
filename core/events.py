@@ -271,22 +271,24 @@ class EventLog:
         self.events = prune_events((*self.events, *fresh), now=self._clock())
         self._store.save(events_payload(self.events))
 
-    def announced(self, metric: str) -> frozenset[str]:
-        """The battle ids already announced as new on ``metric``'s boards.
+    def announced(self, metric: str) -> dict[str, str]:
+        """The battle ids already announced as new on ``metric``'s boards,
+        each with when it was.
 
         Upstream drops a record below 60% of the board's median damage, so
         a borderline one leaves and re-enters as the median moves; it is
         new once — per ranking, since the rDPS board lists it separately.
         This is the one judgement of "new upload or back again": the board
         notices (``core/board_changes``) ask it too, before the read that
-        brings a record is recorded here.
+        brings a record is recorded here; the stamp is for a notice compared
+        with a snapshot kept before the record was found.
         """
 
-        return frozenset(
-            event.battle_id
-            for event in self.events
+        return {
+            event.battle_id: event.seen_at
+            for event in reversed(self.events)
             if event.kind == NEW_RECORD and event.metric == metric
-        )
+        }
 
     def recent(
         self,

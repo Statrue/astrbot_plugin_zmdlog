@@ -37,6 +37,9 @@ notice say who pushed whom down.
   event log never announced as new: upstream drops a record below 60% of
   the median and lists it again when the median moves, and a record that
   comes back is not an upload (:meth:`core.events.EventLog.announced`).
+  Against a snapshot, only what was announced before it was kept is back:
+  the log saves a record the moment a read finds it, and one found after
+  the snapshot but never sent must still be news after a restart.
   A deletion adds no battle id, so the rows it moves up are no news.
 * **A snapshot holds the top N only**, so a record not in it may have risen
   from below N when one above was deleted. Such a record ranks below every
@@ -75,7 +78,7 @@ What one entry holds is fixed by the page that draws a chat's batch of them
 ``core/rank_watch``.
 """
 
-from collections.abc import Collection, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from .metrics import METRIC_DPS
@@ -194,7 +197,7 @@ def board_changes(
     seen_at: str,
     last_ranks: Mapping[str, int],
     watch: NoticeWatch | None = None,
-    announced: Collection[str] = frozenset(),
+    announced: Mapping[str, str] | None = None,
 ) -> BoardChanges | None:
     """The changes one read of a board brings; ``None`` for an rDPS read.
 
@@ -203,8 +206,8 @@ def board_changes(
     ``last_ranks`` each account's rank at the last point of its trend on
     this board. ``watch`` is the board watch's side of the read, without
     which there are no notices; ``announced`` the battle ids the event log
-    has already announced as new DPS records. The trend points come out in
-    rank order, the entries best first.
+    has already announced as new DPS records, each with when it was. The
+    trend points come out in rank order, the entries best first.
     """
 
     if current.metric != METRIC_DPS:
@@ -215,7 +218,7 @@ def board_changes(
     if watch is not None:
         snapshot = snapshot_of(current, top_n=watch.top_n, checked_at=seen_at)
         notices = _notices(
-            previous, current, watch=watch, seen_at=seen_at, announced=announced
+            previous, current, watch=watch, seen_at=seen_at, announced=announced or {}
         )
     return BoardChanges(
         boss_slug=current.boss_slug,
@@ -270,7 +273,7 @@ def _notices(
     *,
     watch: NoticeWatch,
     seen_at: str,
-    announced: Collection[str],
+    announced: Mapping[str, str],
 ) -> dict[str, tuple[NoticeEntry, ...]]:
     origins = tuple(
         origin
@@ -282,6 +285,7 @@ def _notices(
     if previous is not None:
         known = tuple(row.battle_id for row in previous.rows)
         whole = True
+        back = frozenset(announced)
     else:
         held = watch.snapshot
         if held is None or not snapshot_is_fresh(
@@ -289,7 +293,15 @@ def _notices(
         ):
             return {}
         known, whole = held.battle_ids, held.whole
-    new = _new_records(current.rows, known, whole=whole, announced=announced)
+        # A record announced since the snapshot was kept — in its second
+        # too, as it is not in it — was found, queued and never sent before
+        # the restart: still news to the snapshot.
+        back = frozenset(
+            battle_id
+            for battle_id, at in announced.items()
+            if not later_or_same(at, held.checked_at)
+        )
+    new = _new_records(current.rows, known, whole=whole, back=back)
     entries = _entries(current, new, top_n=watch.top_n, seen_at=seen_at)
     if not entries:
         return {}
@@ -301,7 +313,7 @@ def _new_records(
     known: tuple[str, ...],
     *,
     whole: bool,
-    announced: Collection[str],
+    back: frozenset[str],
 ) -> frozenset[str]:
     """The battle ids on ``rows`` that are uploads the baseline lacked."""
 
@@ -316,7 +328,7 @@ def _new_records(
         row.battle_id
         for place, row in enumerate(rows)
         if row.battle_id not in known_ids
-        and row.battle_id not in announced
+        and row.battle_id not in back
         and (whole or place < lowest_known)
     )
 
