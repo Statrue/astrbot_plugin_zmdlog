@@ -109,3 +109,31 @@ its board rank. `--页 全部` draws the first thirty on one picture, with a
 strip sending the rest to the site; the picture never says a next page
 exists. Only the board ranking has pages; 阵容 counts its first ten.
 _Avoid_: 前 N 名, top
+
+### Notices
+
+**顶屁股通告**:
+The picture a chat is pushed for the boards it watches (关注): every new DPS record
+that entered a watched board's top N (`rank_watch_rank_threshold`, 10) in
+one interval, one card a board, each record with whom it pushed down. One
+picture per chat per `rank_watch_interval_seconds`; never a text message.
+_Avoid_: 名次通报, 名次变化, 提醒
+
+**新纪录** (in a notice):
+A battle id the board did not list before the read and the event log never
+announced: a record that fell under the 60%-of-median threshold and came
+back, or one that rose because a record above it was deleted, is not one.
+_Avoid_: 新上榜, 刷新
+
+**被顶下去的**:
+The accounts a new record moved one place down from inside the top N, each
+with its place before and after it; one pushed past N is **跌出前 N**.
+Counted against the board as it stood just before and just after that one
+record. The uploader's own account is never among them.
+_Avoid_: 被超过, 期间上方新增纪录 (the account notice's wording, gone with it)
+
+**新冠军**:
+A new record at #1 whose account did not hold #1 just before it — first
+place changed hands. A board's first record is one; a holder beating their
+own #1 is a plain NEW!.
+_Avoid_: 榜首易主, 新第一

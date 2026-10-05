@@ -96,10 +96,10 @@ rather than a decorator. All of them run through one error guard,
   per message); `qq_official_webhook`, `qq_official_v2`, the wild bot and every
   other platform get byte for byte the messages they got before, and so does
   the official bot with `disable_qq_official_buttons` on (its notices are still
-  pushed by the plugin, see `qq_official`). Every button path falls
-  back to that same output when its send fails — the plain pick list, the
-  native picture, the plain notice — and reports a failure only when the
-  fallback fails too.
+  pushed by the plugin, as native pictures, see `qq_official`). Every button
+  path falls back to that same output when its send fails — the plain pick
+  list, the native picture — and reports a failure only when the fallback
+  fails too.
 - **Every board ranking is read through `core/ranking_index.RankingIndex`**,
   never from the client directly.
 - **DPS by default, rDPS on request, never mixed.** `core/metrics.py` is the one
@@ -111,13 +111,15 @@ rather than a decorator. All of them run through one error guard,
   the renderer so the command path and the tool path draw the same page; a
   filter or a section can no longer exist on one path only.
 - **Image-only output, with two carve-outs.** Any query or help result is one
-  PNG; a render failure returns a short error text, never a text fallback of the
-  data. The carve-outs: rank-watch notices and the 关注 / 取关 / 别名 / 绑定
-  replies are text (configuration actions and pushes, not query results; on
-  the QQ official bot a notice carries a jump button per battle it names),
-  and the LLM tools send the picture *and* return text, because the text is what
-  the model reasons over — except the board tool's 全部, which has no page
-  since 榜单 became a pick list of dungeons (#17) and answers in text alone.
+  PNG, and so is a board notice (the 顶屁股通告, one per chat per interval;
+  on the QQ official bot a markdown picture with no keyboard); a render
+  failure returns a short error text, never a text fallback of the data, and
+  a notice that cannot be drawn is not sent and waits for the next interval.
+  The carve-outs: the 关注 / 取关 / 别名 / 绑定 replies are text
+  (configuration actions, not query results), and the LLM tools send the
+  picture *and* return text, because the text is what the model reasons
+  over — except the board tool's 全部, which has no page since 榜单 became a
+  pick list of dungeons (#17) and answers in text alone.
 - **Rendering is gated twice**: concurrent captures capped, and the callers
   waiting for a slot capped too, with only the wait under `render_timeout_ms` —
   wrapping the capture itself would trip on a legitimately slow page. An
@@ -211,12 +213,18 @@ rather than a decorator. All of them run through one error guard,
   text, never a fifth tool; `core/facts.py` returns **computed** facts, never a
   raw array; and 循环 DPS or 专武收益 need a damage calculator and belong to
   `astrbot_plugin_zmdlore`, not here.
-- **A notice claims only what its board reads prove.** Until #53 the board
-  notice is the top-3 text notice: a new record on a watched board, and nothing
-  about whom it overtook. The account notice and its weak 期间上方新增纪录
-  wording went with account watches (#51). A notice may name who was pushed
-  down only once it diffs against a persisted previous board state, as #53's
-  will — never from one board read.
+- **A notice claims only what two states of the board prove — and with two
+  states it may say who pushed whom.** The old account notice could only say
+  期间上方新增纪录: one read of an account's rank cannot tell who overtook
+  it, and the row now above it is usually a bystander. The 顶屁股通告
+  (#53) compares a board read with the board just before it — the index's
+  held copy, or after a restart the top-N snapshot on disk — so
+  `core/board_changes` knows which battle ids are new uploads and exactly
+  which accounts each one moved down, and the page says 被顶下去的 and 新冠军
+  outright. Keep the precondition, not the old wording: causal claims only
+  from a diff of two states of one board, never from one read, and off a
+  partial baseline (a snapshot holds the top N) only for a record that
+  provably came above a record it holds — the module docstring says why.
 - **Config is validated once at load** by `core/settings.load_settings`, which
   replaces every unusable value with its default and warns once, so a typo
   cannot fail every keyword query and a bad TTL or base URL cannot fail the
@@ -275,7 +283,11 @@ when the user settled the question.
   绑定 / 解绑 / 主账号 / 我的 / `对比 … 我` answer wherever the person asks.
   Whether that key is one person's in both places on the official bot is a
   pending field test (below). 关注 is not a binding command and stayed open
-  in private chats throughout (2026-09-30, #11 withdrawn).
+  in private chats throughout (2026-09-30, #11 withdrawn). The reason has
+  changed and the conclusion has not: a watch names boards, never a person
+  (account watches went with #51), and a notice reads the same whoever
+  asked for it, so a private chat is a chat like any other and gets the
+  same 顶屁股通告 picture (#53).
 - **The per-chat board of bound members is gone** (2026-10-05, #37), shipped
   2026-09-15 (`d5736c5`) and too little used to keep. With it went the only
   reader of which chats a person used a binding command in, so `bindings.json`
@@ -333,8 +345,8 @@ when the user settled the question.
   badge.
 - **The QQ official bot answers a private chat as it answers a group**
   (2026-09-28, reversing "no buttons in private chats"): pick-list buttons,
-  the markdown picture and its buttons, callbacks and notice buttons all go to
-  `post_c2c_message` as they go to `post_group_message`. The prototype tested
+  the markdown picture and its buttons, callbacks and the notice picture all
+  go to `post_c2c_message` as they go to `post_group_message`. The prototype tested
   groups only; each private path was field-tested as its ticket shipped.
 - **Buttons stop at the plugin's own replies** (2026-09-28). The four LLM
   tools' pictures stay native pictures with no keyboard, and the auto-expand
@@ -354,8 +366,8 @@ when the user settled the question.
   the bind reply carries no "this group only" caveat.
 - **Field results the official-bot code relies on without a test**
   (2026-09-27/28): zmdlogs.com links in the bot's text go out and are
-  clickable despite the platform's URL whitelist, so notices keep their
-  printed links; a markdown picture keeps showing after its `raw_url` expires
+  clickable despite the platform's URL whitelist; a markdown picture keeps
+  showing after its `raw_url` expires
   (the platform re-stores it). The button path costs one chunked upload,
   1.5–3 s; a slow page is slow in fetch and render (#14), not in the buttons.
   The prototype that measured all of this is the branch
