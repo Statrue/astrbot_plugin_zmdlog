@@ -244,6 +244,12 @@ class RoundTripTests(unittest.TestCase):
             (CandidateView.COMPARE, RouteKind.COMPARE_QUERY, {"compare_rank": 5}),
             (CandidateView.COMPARE, RouteKind.COMPARE_QUERY,
              {"battle_rank": 3, "compare_rank": 1}),
+            # A rank on a board is a rank on the board the metric names.
+            (CandidateView.BATTLE, RouteKind.BATTLE_QUERY,
+             {"battle_rank": 2, "metric": "rdps"}),
+            (CandidateView.TIMELINE, RouteKind.TIMELINE_QUERY, {"metric": "rdps"}),
+            (CandidateView.COMPARE, RouteKind.COMPARE_QUERY,
+             {"compare_rank": 4, "metric": "rdps"}),
         )
         for view, kind, options in cases:
             with self.subTest(view=view, options=options):
@@ -252,6 +258,28 @@ class RoundTripTests(unittest.TestCase):
                 route = self._assert_round_trip(entry, entry.choices[0])
 
                 self.assertIs(route.kind, kind)
+
+    def test_a_compare_against_me_is_written_with_me(self) -> None:
+        # The account is not on the button: whoever sends it, or taps it,
+        # is the 我 it compares.
+        for options, tail, rank in (
+            ({"compare_rank": 1}, "我", 1),
+            ({"compare_rank": 3, "metric": "rdps"}, "我 3 --口径 rdps", 3),
+        ):
+            with self.subTest(options=options):
+                entry = entry_for(
+                    CandidateView.COMPARE,
+                    board_choice(),
+                    compare_self=True,
+                    **options,
+                )
+
+                command = pick_command(entry, entry.choices[0], command=COMMAND)
+
+                self.assertEqual(command, f"{COMMAND} 对比 {SLUG} {tail}")
+                route = parse_button(command)
+                self.assertTrue(route.compare_self)
+                self.assertEqual(route.compare_rank, rank)
 
     def test_trend_writes_its_range_only_off_its_own_default(self) -> None:
         # 趋势 defaults to 30 days, not to the whole history.

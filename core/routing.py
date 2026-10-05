@@ -1,7 +1,7 @@
 """Command routing primitives for the ``zmdlog`` entry point."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 from .elements import normalize_element
@@ -21,6 +21,7 @@ DEFAULT_STATS_POTENTIAL = "all"
 # The trend page reads a local trace, so a month is a sensible default view.
 DEFAULT_TREND_RANGE = "30d"
 
+_RANKS_START_AT_ONE = "战报名次从 1 开始。"
 _BATTLE_RANK_RE = re.compile(r"^(?:第|#)?([0-9]{1,3})(?:名)?$")
 
 # Every spelling of a window that people and models actually type; the
@@ -119,8 +120,8 @@ OPTION_USAGE = {
     ),
     "profession": "--职业 仅适用于不带角色名的角色排名，例如：角色排名 --职业 突击。",
     "metric": (
-        "--口径 仅适用于具体榜单、阵容、角色统计、角色排名、玩家排名和新纪录，"
-        "例如：罗丹 --口径 rdps。"
+        "--口径 仅适用于具体榜单、阵容、角色统计、角色排名、玩家排名、新纪录，"
+        "以及按名次查的战报和对比，例如：罗丹 --口径 rdps、战报 罗丹 1 --口径 rdps。"
     ),
     "board": "--榜单 仅适用于角色档案，例如：角色档案 莱万汀 --榜单 罗丹。",
 }
@@ -258,6 +259,9 @@ class RouteRequest:
     # board when the query is a board keyword.
     compare_target: str | None = None
     compare_rank: int | None = None
+    # 对比 <榜单> 我 [名次]: one side is the asker's own best record on the
+    # board, the other the record at ``compare_rank``.
+    compare_self: bool = False
     # 角色档案 only: the board keyword ``--榜单`` cut the profile to.
     board_query: str | None = None
 
@@ -307,19 +311,26 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder)
 
     if command in {"对比", "比较"}:
-        options.reject_except()
-        return _parse_compare(remainder)
+        options.reject_except("metric")
+        route = _parse_compare(remainder)
+        if route.compare_target is not None:
+            _reject_metric_on_references(options)
+        return replace(route, metric=options.metric)
 
     battle_kind = _BATTLE_STYLE_COMMANDS.get(command)
     if battle_kind is not None:
-        options.reject_except()
+        options.reject_except("metric")
         if not separator or not remainder:
             raise RouteParseError(
                 "请提供 battleId、战报链接，或榜单关键词"
                 f"（可加名次，如：{command} 罗丹 3）。"
             )
         query, battle_rank = _split_battle_rank(remainder)
-        return RouteRequest(battle_kind, query, battle_rank=battle_rank)
+        if _REFERENCE_RE.match(query):
+            _reject_metric_on_references(options)
+        return RouteRequest(
+            battle_kind, query, battle_rank=battle_rank, metric=options.metric
+        )
 
     if command in {"趋势", "名次趋势"}:
         options.reject_except("range")
@@ -600,9 +611,19 @@ def _board_watch_argument(remainder: str) -> str | None:
 
 _COMPARE_USAGE = (
     "用法：对比 <榜单关键词> [名次A] [名次B]（默认第 1 名对第 2 名），"
+    "对比 <榜单关键词> 我 [名次]（自己的最好记录对第 N 名，默认第 1 名），"
     "或 对比 <battleId或链接> <battleId或链接>。"
 )
 _REFERENCE_RE = re.compile(r"^(?:https?://\S+|btl_[A-Za-z0-9_-]+)$")
+# 对比 <榜单> 我: the asker's own record is one side.
+_SELF_MARKER = "我"
+
+
+def _reject_metric_on_references(options: RouteOptions) -> None:
+    """A battle named outright has no rank to read off either board."""
+
+    if "metric" in options.present:
+        raise RouteParseError(OPTION_USAGE["metric"])
 
 
 def _parse_compare(remainder: str) -> RouteRequest:
@@ -611,11 +632,15 @@ def _parse_compare(remainder: str) -> RouteRequest:
     Ranks are read off the tail: one rank means "the leader against that
     rank", none means the top two. Two references are recognised by shape
     (link or battle id), so a board keyword can never be mistaken for one.
+    ``对比 <榜单> 我 [名次]`` puts the asker's own record against one rank,
+    the first by default; who the asker is, is the query service's to say.
     """
 
     tokens = remainder.split()
     if not tokens:
         raise RouteParseError(_COMPARE_USAGE)
+    if _SELF_MARKER in tokens:
+        return _parse_compare_self(tokens)
     if len(tokens) == 1 and _REFERENCE_RE.match(tokens[0]):
         # One battle id is not a board keyword; it would otherwise go
         # upstream as one and come back as "no such board".
@@ -634,7 +659,7 @@ def _parse_compare(remainder: str) -> RouteRequest:
     if not tokens:
         raise RouteParseError(_COMPARE_USAGE)
     if any(rank < 1 for rank in ranks):
-        raise RouteParseError("战报名次从 1 开始。")
+        raise RouteParseError(_RANKS_START_AT_ONE)
     if len(ranks) == 2:
         first, second = ranks
     elif len(ranks) == 1:
@@ -648,6 +673,29 @@ def _parse_compare(remainder: str) -> RouteRequest:
         " ".join(tokens),
         battle_rank=first,
         compare_rank=second,
+    )
+
+
+def _parse_compare_self(tokens: list[str]) -> RouteRequest:
+    """``<榜单> 我 [名次]``: the marker is last but for one optional rank."""
+
+    rank = 1
+    if tokens[-1] != _SELF_MARKER:
+        match = _BATTLE_RANK_RE.match(tokens[-1])
+        if match is None or len(tokens) < 2 or tokens[-2] != _SELF_MARKER:
+            raise RouteParseError(_COMPARE_USAGE)
+        rank = int(match.group(1))
+        tokens = tokens[:-1]
+    board = tokens[:-1]
+    if not board:
+        raise RouteParseError(_COMPARE_USAGE)
+    if rank < 1:
+        raise RouteParseError(_RANKS_START_AT_ONE)
+    return RouteRequest(
+        RouteKind.COMPARE_QUERY,
+        " ".join(board),
+        compare_rank=rank,
+        compare_self=True,
     )
 
 
@@ -666,7 +714,7 @@ def _split_battle_rank(remainder: str) -> tuple[str, int]:
         return remainder, 1
     rank = int(match.group(1))
     if rank < 1:
-        raise RouteParseError("战报名次从 1 开始。")
+        raise RouteParseError(_RANKS_START_AT_ONE)
     return " ".join(tokens[:-1]), rank
 
 

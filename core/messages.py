@@ -41,6 +41,12 @@ TIMELINE_RATE_LIMITED = "技能轴接口请求过于频繁，请稍后再试。"
 # 对比
 COMPARE_REFERENCE_NEEDED = "对比两场战报时，两个参数都要是 battleId 或战报链接。"
 COMPARE_SAME_BATTLE = "两边是同一场战报，没有可比的。"
+# 对比 <榜单> 我: the primary account of whoever asks or picks, never another.
+# ``{ranking}`` is ``metrics.board_qualifier``: empty on the DPS board.
+COMPARE_SELF_NO_RECORD = "你的主账号 {name} 在「{board}」{ranking}上没有公开记录。"
+COMPARE_SELF_IS_RANK = (
+    "你的主账号 {name} 就是「{board}」{ranking}第 {rank} 名，没有可比的。"
+)
 COMPARE_CROSS_BOSS = (
     "两场不是同一个首领（{first} / {second}），每个首领的排轴都不同，不做跨榜单对比。"
 )
@@ -61,11 +67,9 @@ ALIAS_ADMIN_ONLY = "只有机器人管理员可以修改别名。"
 
 # 绑定 / 我的. A binding is only ever made with a code the site
 # issued to whoever was logged into the account; there is no other way in.
-# Every one of these commands answers in group chats only: the bot adds
-# nobody as a friend (the user's rule, 2026-09-15), so a private chat is
-# not a place it is used from.
+# A binding is the person's, so every binding command answers in a private
+# chat as in a group (2026-10-05).
 BINDINGS_DISABLED = "本机器人未开启账号绑定功能。"
-BINDING_GROUP_ONLY = "绑定相关指令（绑定 / 解绑 / 主账号 / 我的）只能在群聊里用。"
 NO_SENDER = "无法识别发送者，绑定功能在这里不可用。"
 HOW_TO_GET_A_CODE = (
     "登录 ZMDLogs，在 账号菜单 → 机器人绑定（/account/binding）生成绑定码，"

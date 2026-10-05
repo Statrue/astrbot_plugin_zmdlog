@@ -30,7 +30,6 @@ from .bindings import (
 from .client import ZmdLogsAPIError, ZmdLogsClient, ZmdLogsClientError
 from .logs import LogSink
 from .messages import shorten
-from .origins import is_group_origin
 from .outcome import Outcome, SitePage
 from .persistence import JsonStore
 from .routing import RouteKind, RouteRequest
@@ -89,13 +88,11 @@ class AccountBinding:
     ) -> Outcome:
         """Maintain one user's bindings, in text; nothing is rendered.
 
-        Group chats only, like every binding command: the bot adds nobody
-        as a friend, so a private chat is not a place it is used from. A
-        reply that sends the user to the site for a code says so.
+        In a private chat as in a group: a binding is the person's, keyed
+        on the sender, never on the chat. A reply that sends the user to
+        the site for a code says so.
         """
 
-        if not is_group_origin(origin):
-            return Outcome(message=messages.BINDING_GROUP_ONLY)
         if not requester_key:
             return Outcome(message=messages.NO_SENDER)
         if route.kind is RouteKind.BIND:

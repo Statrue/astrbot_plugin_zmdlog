@@ -1015,6 +1015,11 @@ class HandlerTests(unittest.TestCase):
         for private, text in (
             (False, "/zmdlog 我的"),
             (False, "/zmdlog 绑定"),
+            # Asked before any board lookup, in a group or a private chat.
+            (False, "/zmdlog 对比 三位一体 我"),
+            (True, "/zmdlog 对比 三位一体 我 3"),
+            (True, "/zmdlog 我的"),
+            (True, "/zmdlog 绑定"),
         ):
             with self.subTest(text=text):
                 api = FakeBotApi()
@@ -2049,12 +2054,6 @@ class HandlerTests(unittest.TestCase):
         # A binding is the person's, not the chat's: another group knows it.
         (kind, result), = self._zmdlog("zmdlog 我的 2", origin=OTHER_GROUP)
         self.assertEqual((kind, result), ("image", "/tmp/account.png"))
-        # The bot adds nobody as a friend: every binding command is group-only.
-        for text in ("zmdlog 我的", "zmdlog 绑定 ZMD-AAAA-BBBB", "zmdlog 解绑 全部"):
-            with self.subTest(text=text):
-                (kind, reply), = self._zmdlog(text, origin="aiocqhttp:FriendMessage:1")
-                self.assertEqual(kind, "plain")
-                self.assertIn("只能在群聊里用", reply)
         (kind, reply), = self._zmdlog("zmdlog 解绑 全部")
         self.assertIn("已解除全部 2 个绑定", reply)
 
@@ -2086,6 +2085,262 @@ class HandlerTests(unittest.TestCase):
 
                 self.assertEqual(searched[-1:], [text])
                 self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+
+    def test_every_binding_command_works_in_a_private_chat(self) -> None:
+        # The same person in a private chat is the same key as in a group
+        # (aiocqhttp's sender is the QQ number either way), so a binding
+        # made in one answers in the other.
+        from astrbot_plugin_zmdlog.core.models import AccountSearchHit
+
+        self._enable_binding_storage()
+        ranking = parse_boss_ranking(ranking_payload_with_rows())
+        uploader = ranking.rows[2]
+        codes = {
+            "ZMD-7K4M-QX2E": AccountSearchHit("usr_1234567890abcdef", "测试账号"),
+            "ZMD-AAAA-BBBB": AccountSearchHit(
+                uploader.account_id, uploader.account_display_name
+            ),
+        }
+
+        async def lookup(code):
+            return codes[code]
+
+        async def account(requested_id):
+            return parse_public_user_rankings(public_user_rankings_payload())
+
+        async def ranking_read(boss_slug, **kwargs):
+            return ranking
+
+        async def detail(battle_id):
+            payload = battle_detail_payload()
+            payload["battle"]["id"] = battle_id
+            return parse_battle_detail(payload)
+
+        self.plugin.client.get_binding_code_account = lookup
+        self.plugin.data.get_public_user_rankings = account
+        self.plugin.data.get_boss_ranking = ranking_read
+        self.plugin.data.get_battle_detail = detail
+        private = "aiocqhttp:FriendMessage:111"
+
+        (kind, reply), = self._zmdlog("zmdlog 绑定 ZMD-7K4M-QX2E", origin=private)
+        self.assertEqual(kind, "plain")
+        self.assertIn("已绑定 测试账号", reply)
+        (_, reply), = self._zmdlog("zmdlog 绑定 ZMD-AAAA-BBBB", origin=private)
+        self.assertIn("2. 公开账号3", reply)
+        (kind, reply), = self._zmdlog("zmdlog 主账号 2", origin=private)
+        self.assertIn("主账号已改为 公开账号3", reply)
+        (kind, result), = self._zmdlog("zmdlog 我的", origin=private)
+        self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+        (kind, result), = self._zmdlog("zmdlog 对比 三位一体 我", origin=private)
+        self.assertEqual((kind, result), ("image", "/tmp/compare.png"))
+        # Made in private, known in the group.
+        (kind, result), = self._zmdlog("zmdlog 我的")
+        self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+        (kind, reply), = self._zmdlog("zmdlog 解绑 全部", origin=private)
+        self.assertIn("已解除全部 2 个绑定", reply)
+        self.assertIsNone(self.plugin.bindings.bindings_for("aiocqhttp:111"))
+
+    # --- 对比 <榜单> 我 [名次] ------------------------------------------------------
+
+    def _bind_for_compare(self, *hits) -> list[dict]:
+        """Bind ``hits`` (account id, name) in order to the default sender,
+        with the board and the details stubbed; what the compare page got."""
+
+        from astrbot_plugin_zmdlog.core.models import AccountSearchHit
+
+        self._enable_binding_storage()
+        codes = iter(hits)
+
+        async def lookup(code):
+            account_id, name = next(codes)
+            return AccountSearchHit(account_id, name)
+
+        async def detail(battle_id):
+            payload = battle_detail_payload()
+            payload["battle"]["id"] = battle_id
+            return parse_battle_detail(payload)
+
+        received: list[dict] = []
+
+        async def render_compare(first, second, **kwargs):
+            received.append({"ids": (first.battle_id, second.battle_id), **kwargs})
+            return capture("/tmp/compare.png")
+
+        self.plugin.client.get_binding_code_account = lookup
+        self.plugin.data.get_battle_detail = detail
+        self.plugin.renderer.render_compare = render_compare
+        for code in ("ZMD-AAAA-BBBB", "ZMD-CCCC-DDDD")[: len(hits)]:
+            (_, reply), = self._zmdlog(f"zmdlog 绑定 {code}")
+            self.assertIn("已绑定", reply)
+        return received
+
+    def test_compare_me_puts_the_askers_best_record_against_a_rank(self) -> None:
+        reads: list[dict] = []
+
+        async def ranking(boss_slug, **kwargs):
+            reads.append(kwargs)
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        self.plugin.data.get_boss_ranking = ranking
+        received = self._bind_for_compare(
+            ("usr_00000000000000000000000000000003", "公开账号3")
+        )
+
+        # Against the first place by default; the better rank is drawn first.
+        (kind, result), = self._zmdlog("zmdlog 对比 三位一体 我")
+        self.assertEqual((kind, result), ("image", "/tmp/compare.png"))
+        self.assertEqual(
+            received[-1]["ids"], ("btl_upload_000000000001", "btl_upload_000000000003")
+        )
+        self.assertEqual((received[-1]["rank_a"], received[-1]["rank_b"]), (1, 3))
+        self.assertEqual(reads[-1].get("metric", "dps"), "dps")
+
+        # Against any rank, behind the asker's as well as ahead of it.
+        (kind, result), = self._zmdlog("zmdlog 对比 三位一体 我 5")
+        self.assertEqual((kind, result), ("image", "/tmp/compare.png"))
+        self.assertEqual(
+            received[-1]["ids"], ("btl_upload_000000000003", "btl_upload_000000000005")
+        )
+        self.assertEqual((received[-1]["rank_a"], received[-1]["rank_b"]), (3, 5))
+
+        (kind, reply), = self._zmdlog("zmdlog 对比 三位一体 我 3")
+        self.assertEqual(kind, "plain")
+        self.assertIn("公开账号3 就是「危境再现·三位一体」第 3 名", reply)
+        (kind, reply), = self._zmdlog("zmdlog 对比 三位一体 我 9")
+        self.assertEqual(kind, "plain")
+        self.assertIn("没有第 9 名", reply)
+
+    def test_compare_me_reads_the_primary_account_only(self) -> None:
+        async def ranking(boss_slug, **kwargs):
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        self.plugin.data.get_boss_ranking = ranking
+        received = self._bind_for_compare(
+            ("usr_1234567890abcdef", "测试账号"),
+            ("usr_00000000000000000000000000000003", "公开账号3"),
+        )
+
+        # The primary has no record here; the second account's is not used.
+        (kind, reply), = self._zmdlog("zmdlog 对比 三位一体 我")
+        self.assertEqual(kind, "plain")
+        self.assertIn("测试账号", reply)
+        self.assertIn("没有公开记录", reply)
+        self.assertEqual(received, [])
+
+        (_, reply), = self._zmdlog("zmdlog 主账号 2")
+        self.assertIn("主账号已改为", reply)
+        (kind, result), = self._zmdlog("zmdlog 对比 三位一体 我")
+        self.assertEqual((kind, result), ("image", "/tmp/compare.png"))
+        self.assertEqual(
+            received[-1]["ids"], ("btl_upload_000000000001", "btl_upload_000000000003")
+        )
+
+    def test_compare_me_without_a_binding_says_how_to_bind(self) -> None:
+        self._enable_binding_storage()
+        looked_up: list[str] = []
+
+        async def ranking(boss_slug, **kwargs):
+            looked_up.append(boss_slug)
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        self.plugin.data.get_boss_ranking = ranking
+
+        (kind, reply), = self._zmdlog("zmdlog 对比 三位一体 我")
+
+        self.assertEqual(kind, "plain")
+        self.assertIn("还没有绑定账号", reply)
+        self.assertIn("zmdlog 绑定 ZMD-XXXX-XXXX", reply)
+        self.assertEqual(looked_up, [], "refused before any board lookup")
+
+    def test_compare_me_from_a_pick_list_is_whoever_picks(self) -> None:
+        # 我 is whoever acts: a list kept only that 我 was asked for, so a
+        # quoted pick compares the picker's record, as a tapped button does.
+        from astrbot_plugin_zmdlog.core.models import AccountSearchHit
+
+        async def ranking(boss_slug, **kwargs):
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        self.plugin.data.get_boss_ranking = ranking
+        board = hot_bosses_payload()[0]
+        self.cards = parse_hot_bosses(
+            [board, {**board, "bossSlug": "dung01_group_bossrush03",
+                     "bossKey": "bossrush03", "bossName": "危境再现·双子"}]
+        )
+        received = self._bind_for_compare(
+            ("usr_00000000000000000000000000000003", "公开账号3")
+        )
+
+        (kind, listing), = self._zmdlog("zmdlog 对比 测试区 我 2")
+        self.assertEqual(kind, "plain")
+        self.assertIn("战报对比匹配到 2 个榜单", listing)
+        (kind, result), = self._zmdlog("zmdlog 1", quoted=listing)
+        self.assertEqual((kind, result), ("image", "/tmp/compare.png"))
+        self.assertEqual((received[-1]["rank_a"], received[-1]["rank_b"]), (2, 3))
+
+        # Someone unbound picking is told how to bind.
+        (kind, reply), = self._zmdlog("zmdlog 1", quoted=listing, sender="999")
+        self.assertEqual(kind, "plain")
+        self.assertIn("还没有绑定账号", reply)
+
+        async def lookup(code):
+            return AccountSearchHit("usr_00000000000000000000000000000005", "公开账号5")
+
+        self.plugin.client.get_binding_code_account = lookup
+        self._zmdlog("zmdlog 绑定 ZMD-EEEE-FFFF", sender="222")
+        (kind, result), = self._zmdlog("zmdlog 1", quoted=listing, sender="222")
+        self.assertEqual((kind, result), ("image", "/tmp/compare.png"))
+        self.assertEqual((received[-1]["rank_a"], received[-1]["rank_b"]), (2, 5))
+
+    def test_the_rdps_option_picks_ranks_off_the_rdps_board(self) -> None:
+        reads: list[dict] = []
+        rdps_payload = ranking_payload_with_rows()
+        rdps_payload["metric"] = "rdps"
+        # Only two records could compute rDPS; on that board they are 1 and 2.
+        rdps_payload["rows"] = [
+            {**rdps_payload["rows"][4], "rank": 1},
+            {**rdps_payload["rows"][2], "rank": 2},
+        ]
+
+        async def ranking(boss_slug, **kwargs):
+            reads.append(kwargs)
+            if kwargs.get("metric") == "rdps":
+                return parse_boss_ranking(rdps_payload, metric="rdps")
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        self.plugin.data.get_boss_ranking = ranking
+        received = self._bind_for_compare(
+            ("usr_00000000000000000000000000000003", "公开账号3")
+        )
+
+        (kind, result), = self._zmdlog("zmdlog 对比 三位一体 我 --口径 rdps")
+        self.assertEqual((kind, result), ("image", "/tmp/compare.png"))
+        self.assertEqual(reads[-1]["metric"], "rdps")
+        self.assertEqual(
+            received[-1]["ids"], ("btl_upload_000000000005", "btl_upload_000000000003")
+        )
+        self.assertEqual((received[-1]["rank_a"], received[-1]["rank_b"]), (1, 2))
+        self.assertEqual(received[-1]["metric"], "rdps")
+
+        (kind, result), = self._zmdlog("zmdlog 对比 三位一体 1 2 --口径 rdps")
+        self.assertEqual((kind, result), ("image", "/tmp/compare.png"))
+        self.assertEqual(
+            received[-1]["ids"], ("btl_upload_000000000005", "btl_upload_000000000003")
+        )
+
+        drawn: list[str] = []
+
+        async def render_battle(battle, **kwargs):
+            drawn.append(battle.battle_id)
+            return capture("/tmp/battle.png")
+
+        self.plugin.renderer.render_battle = render_battle
+        (kind, result), = self._zmdlog("zmdlog 战报 三位一体 1 --口径 rdps")
+        self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
+        self.assertEqual(reads[-1]["metric"], "rdps")
+        self.assertEqual(drawn[-1], "btl_upload_000000000005")
+        (kind, result), = self._zmdlog("zmdlog 战报 三位一体 1")
+        self.assertEqual(reads[-1].get("metric", "dps"), "dps")
+        self.assertEqual(drawn[-1], "btl_upload_000000000001")
 
     def test_the_v2_adapter_knows_a_person_by_the_official_key(self) -> None:
         # Its sender id is the same member_openid, so a binding made on one

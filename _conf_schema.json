@@ -73,7 +73,7 @@
     "hint": "例如填 10 时，从第 3 掉到第 5 会通报，从第 87 掉到第 90 不会。"
   },
   "bindings_enabled": {
-    "description": "开启账号绑定（绑定 / 我的）",
+    "description": "开启账号绑定（绑定 / 我的 / 对比 … 我）",
     "type": "bool",
     "default": true,
     "hint": "用户在 ZMDLogs 网站的 账号菜单 → 机器人绑定 生成绑定码，发 /zmdlog 绑定 ZMD-XXXX-XXXX 即可把自己和公开账号对上号；只保存公开 accountId、公开昵称和平台用户 ID，不保存任何凭据。关闭后已有绑定仍可查看和解除，只是不能再绑。"

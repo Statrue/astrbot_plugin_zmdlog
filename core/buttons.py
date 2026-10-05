@@ -46,10 +46,10 @@ URL, asked to answer as ``image/png`` — by default it answers
 
 Beside the jump button, up to three command buttons open the same thing's
 other pages (``_SIBLINGS``), built like a pick's: the key and the view word,
-and a board's metric. A page the drawing showed this thing does not have —
-an old upload's loadout, an unwatched account's trend — gets no button, and
-neither does a board's battle under a non-DPS board, since 战报 takes no
-metric and would open the DPS board's first place instead.
+and a board's metric — a board's battle too, since 战报 reads its rank off
+the board the metric names. A page the drawing showed this thing does not
+have — an old upload's loadout, an unwatched account's trend — gets no
+button.
 
 A dungeon's podiums are the one picture with no page on the site, so no
 jump button; under it instead is a command button per board of the dungeon
@@ -309,10 +309,14 @@ def pick_command(
         return " ".join(parts)
     if entry.view in _BATTLE_VIEWS and entry.battle_rank != 1:
         parts.append(str(entry.battle_rank))
-    if entry.view is CandidateView.COMPARE and (
-        (entry.battle_rank, entry.compare_rank) != (1, 2)
-    ):
-        parts += [str(entry.battle_rank), str(entry.compare_rank)]
+    if entry.view is CandidateView.COMPARE:
+        if entry.compare_self:
+            # Its sender, or its tapper, is the 我 it compares.
+            parts.append("我")
+            if entry.compare_rank != 1:
+                parts.append(str(entry.compare_rank))
+        elif (entry.battle_rank, entry.compare_rank) != (1, 2):
+            parts += [str(entry.battle_rank), str(entry.compare_rank)]
     if entry.ranking_top is not None:
         parts += ["--top", str(entry.ranking_top)]
     if entry.character_filter is not None:
@@ -532,12 +536,11 @@ def _sibling_commands(
     """``(view, label, command)`` of every other view ``target``'s page offers.
 
     A board keeps its metric: the other views of an rDPS board are its rDPS
-    views, and one that takes no metric (战报) is left off rather than open
-    the DPS board's battle. Its length (``--top``) goes wherever it means the
-    same, the board's lists; its statistics window and potential belong to
-    the statistics page. A character is named by its name, and its window
-    goes to its 角色统计, which reads the same one. A battle or an account
-    command takes no option.
+    views, its 第 1 名战报 the rDPS board's first place. Its length
+    (``--top``) goes wherever it means the same, the board's lists; its
+    statistics window and potential belong to the statistics page. A
+    character is named by its name, and its window goes to its 角色统计,
+    which reads the same one. A battle or an account command takes no option.
     """
 
     words = _SUBJECT_WORDS.get(target.subject, _BOARD_WORDS)
@@ -551,8 +554,6 @@ def _sibling_commands(
     offered = []
     for view in _SIBLINGS.get((target.subject, target.view), ()):
         if view in target.unavailable:
-            continue
-        if other_metric and view in _BATTLE_VIEWS:
             continue
         parts = [command, words[view], target.name or target.key]
         if target.ranking_top is not None and view in _LISTING_VIEWS:

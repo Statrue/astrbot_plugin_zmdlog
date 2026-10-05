@@ -278,21 +278,16 @@ class ServiceTests(unittest.TestCase):
         again = self._service(self.client)
         self.assertEqual(again.bindings_for(USER).primary.account_id, "usr_a")
 
-    def test_every_binding_command_answers_in_group_chats_only(self) -> None:
-        # The bot adds nobody as a friend, so a private chat is refused
-        # before the code is even looked at, bound or not.
-        for text in ("绑定 ZMD-7K4M-QX2E", "解绑", "主账号"):
-            for origin in (PRIVATE, ""):
-                with self.subTest(text=text, origin=origin):
-                    reply = self._handle(text, origin=origin)
-                    self.assertEqual(reply, messages.BINDING_GROUP_ONLY)
-        self.assertEqual(self.client.codes, [], "no lookup for a refused chat")
-        self.assertIsNone(self.service.bindings_for(USER))
-
-        self.assertIn("已绑定", self._handle("绑定 ZMD-7K4M-QX2E"))
-        refused = self._handle("解绑", origin=PRIVATE)
-        self.assertEqual(refused, messages.BINDING_GROUP_ONLY)
-        self.assertIsNotNone(self.service.bindings_for(USER), "still bound")
+    def test_every_binding_command_answers_in_a_private_chat_too(self) -> None:
+        # A binding is the person's, wherever they ask (2026-10-05).
+        self.assertIn("已绑定", self._handle("绑定 ZMD-7K4M-QX2E", origin=PRIVATE))
+        self.assertIn("已绑定", self._handle("绑定 ZMD-AAAA-BBBB", origin=""))
+        self.assertIn("主账号已改为 cpu0", self._handle("主账号 2", origin=PRIVATE))
+        self.assertIn("已解绑 CPU 0", self._handle("解绑 2", origin=PRIVATE))
+        self.assertEqual(
+            [entry.account_id for entry in self.service.bindings_for(USER).accounts],
+            ["usr_b"],
+        )
 
     def test_a_spent_code_is_refused_for_another_user(self) -> None:
         self._handle("绑定 ZMD-7K4M-QX2E")

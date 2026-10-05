@@ -723,7 +723,12 @@ class ZmdLogBotPlugin(Star):
             return
 
         outcome, _ = await self._run_guarded(
-            lambda: self.queries.render_pick(entry, choice),
+            lambda: self.queries.render_pick(
+                entry,
+                choice,
+                requester_key=self._event_user_key(event),
+                command=self._command_prefix(event) + "zmdlog",
+            ),
             api_error_message=board_api_error_message,
             failure_label="candidate",
         )

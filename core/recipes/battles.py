@@ -8,6 +8,7 @@ from .. import messages
 from ..client import ZmdLogsAPIError
 from ..crit import CritExpectation, CritHit, build_crit_expectation
 from ..messages import shorten
+from ..metrics import METRIC_DPS
 from ..models import BattleDetailSummary, BattleExport
 
 if TYPE_CHECKING:
@@ -123,6 +124,8 @@ class CompareRecipe:
     # The board ranks the two were picked by, when they were.
     rank_a: int | None = None
     rank_b: int | None = None
+    # Which of the board's two rankings those ranks are on.
+    metric: str = METRIC_DPS
 
     async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_compare(
@@ -133,6 +136,7 @@ class CompareRecipe:
             rank_a=self.rank_a,
             rank_b=self.rank_b,
             suits=self.suits,
+            metric=self.metric,
         )
 
 
@@ -145,6 +149,7 @@ async def prepare_compare(
     web_base_url: str,
     rank_a: int | None = None,
     rank_b: int | None = None,
+    metric: str = METRIC_DPS,
 ) -> CompareRecipe:
     """Both details, fetched together; the caller has ruled out one id twice."""
 
@@ -167,4 +172,5 @@ async def prepare_compare(
         web_base_url=web_base_url,
         rank_a=rank_a,
         rank_b=rank_b,
+        metric=metric,
     )

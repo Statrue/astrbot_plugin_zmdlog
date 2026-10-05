@@ -75,6 +75,42 @@ class CompareRoutingTests(unittest.TestCase):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
 
+    def test_me_stands_for_the_askers_record_against_one_rank(self) -> None:
+        route = parse_zmdlog_payload("对比 罗丹 我")
+        self.assertEqual(route.kind, RouteKind.COMPARE_QUERY)
+        self.assertTrue(route.compare_self)
+        self.assertEqual((route.query, route.compare_rank), ("罗丹", 1))
+        route = parse_zmdlog_payload("对比 危境再现 罗丹 我 第3名 --口径 rDPS")
+        self.assertEqual(
+            (route.query, route.compare_rank, route.metric, route.compare_self),
+            ("危境再现 罗丹", 3, "rdps", True),
+        )
+        self.assertFalse(parse_zmdlog_payload("对比 罗丹 3").compare_self)
+        for payload in ("对比 我", "对比 我 3", "对比 罗丹 我 0", "对比 罗丹 我 1 2"):
+            with self.subTest(payload=payload):
+                with self.assertRaises(RouteParseError):
+                    parse_zmdlog_payload(payload)
+
+    def test_ranks_on_a_board_take_the_metric_and_references_do_not(self) -> None:
+        route = parse_zmdlog_payload("对比 罗丹 1 3 --口径 rdps")
+        self.assertEqual((route.battle_rank, route.compare_rank), (1, 3))
+        self.assertEqual(route.metric, "rdps")
+        battle = parse_zmdlog_payload("战报 罗丹 2 --口径 rdps")
+        self.assertEqual(
+            (battle.kind, battle.query, battle.battle_rank, battle.metric),
+            (RouteKind.BATTLE_QUERY, "罗丹", 2, "rdps"),
+        )
+        self.assertEqual(parse_zmdlog_payload("配装 罗丹 --口径 rdps").metric, "rdps")
+        # A battle named outright is on both boards or neither; no metric.
+        for payload in (
+            "对比 btl_upload_aaaaaaaaaaaa btl_upload_bbbbbbbbbbbb --口径 rdps",
+            "战报 btl_upload_aaaaaaaaaaaa --口径 rdps",
+            "技能轴 https://zmdlogs.com/battle/btl_upload_aaaaaaaaaaaa --口径 rdps",
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(RouteParseError, "--口径"):
+                    parse_zmdlog_payload(payload)
+
     def test_pick_list_names_the_compare_view_and_keeps_both_ranks(self) -> None:
         choice = MatchChoice(
             target=MatchTarget(
@@ -130,6 +166,23 @@ class ComparePageTests(unittest.TestCase):
         self.assertEqual(facts["主 C"].delta_label, "同一主 C")
         self.assertEqual(facts["主 C DPS"].delta_label, "相同")
         self.assertEqual(facts["主 C DPS"].better, "")
+
+    def test_ranks_off_the_rdps_board_say_so(self) -> None:
+        # DPS by default, rDPS on request, never mixed: an rDPS rank must
+        # not read as the DPS board's.
+        page = build_compare_page(
+            self.first,
+            self.second,
+            query="对比 罗丹 我 --口径 rdps",
+            web_base_url=WEB,
+            rank_a=1,
+            rank_b=4,
+            metric="rdps",
+        )
+
+        self.assertEqual(
+            [side.rank_label for side in page.sides], ["rDPS 第 1 名", "rDPS 第 4 名"]
+        )
 
     def test_roster_is_the_union_in_a_order(self) -> None:
         rows = {row.character_name: row for row in self.page.roster}

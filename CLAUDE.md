@@ -243,11 +243,15 @@ when the user settled the question.
 - **Only a binding code binds** (shipped 2026-09-15). The unverified bookmark of
   the 2026-08 design is gone for good; unverified binding was judged an
   unacceptable impersonation surface and that judgement stands.
-- **Every binding command is group-only** (2026-09-15): the bot adds nobody as a
-  friend, so a private chat is not a place any of this is used from. 关注 is
-  not a binding command and stays open in private chats (2026-09-30, #11
-  withdrawn): it ties no person to a group, so there was no reason to close
-  it, and existing private entries keep their notices.
+- **Binding commands answer in private chats too** (2026-10-05, #36),
+  reversing "every binding command is group-only" (2026-09-15). That rule's
+  reason — the bot adds nobody as a friend, so a private chat is not a place
+  any of this is used from — was judged no reason to restrict: a binding is
+  the person's, keyed on the platform user key and never on the chat, so
+  绑定 / 解绑 / 主账号 / 我的 / `对比 … 我` answer wherever the person asks.
+  Whether that key is one person's in both places on the official bot is a
+  pending field test (below). 关注 is not a binding command and stayed open
+  in private chats throughout (2026-09-30, #11 withdrawn).
 - **The per-chat board of bound members is gone** (2026-10-05, #37), shipped
   2026-09-15 (`d5736c5`) and too little used to keep. With it went the only
   reader of which chats a person used a binding command in, so `bindings.json`
@@ -330,6 +334,15 @@ when the user settled the question.
   1.5–3 s; a slow page is slow in fetch and render (#14), not in the buttons.
   The prototype that measured all of this is the branch
   `prototype/qq-official-buttons` on GitHub — a record, never to be merged.
+- **待实测: is one person's c2c `user_openid` their group `member_openid`?**
+  (#36, 2026-10-05). AstrBot's `qq_official` adapter takes a private
+  message's sender from `author.user_openid` and a group message's from
+  `author.member_openid`, and the binding key is `qq_official:<that id>`. To
+  check: bind in a group, then send the bot `/zmdlog 我的` in a private chat
+  (and the reverse). 还没有绑定账号 means the two ids differ, and a binding made
+  in one place is not known in the other — README tells users to bind again
+  where it is not known. Record the result here; build no compatibility code
+  for a mismatch.
 - **When AstrBot ships keyboards** (#9809, #7868 or #9355), check whether it
   sends command buttons (action type 2) as well as callbacks; only then can
   `qq_official`'s own sends go, since the pick list and the sibling views

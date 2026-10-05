@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from ..metrics import METRIC_DPS, is_rdps, metric_label
 from ..models import (
     BattleDetailSummary,
 )
@@ -113,11 +114,14 @@ def build_compare_page(
     rank_a: int | None = None,
     rank_b: int | None = None,
     suits: dict[str, str] | None = None,
+    metric: str = METRIC_DPS,
 ) -> ComparePage:
     """Two battles side by side: summary facts, rosters, curves, gear.
 
     Built from the same per-battle views the card uses, so every number here
     is the number the 战报 card would print for that fight on its own.
+    ``metric`` names the ranking the ranks were read off: an rDPS rank says
+    so, and never reads as the DPS board's.
     """
 
     page_a = build_battle_page(
@@ -130,8 +134,8 @@ def build_compare_page(
     # because every boss has its own rotation and a cross-boss page would
     # compare two different games.
     sides = (
-        _compare_side("A", a, page_a, rank_a),
-        _compare_side("B", b, page_b, rank_b),
+        _compare_side("A", a, page_a, _rank_label(rank_a, metric)),
+        _compare_side("B", b, page_b, _rank_label(rank_b, metric)),
     )
     return ComparePage(
         header=PageHeader(
@@ -154,11 +158,11 @@ def _compare_side(
     label: str,
     battle: BattleDetailSummary,
     page: BattlePage,
-    rank: int | None,
+    rank_label: str | None,
 ) -> CompareSideView:
     return CompareSideView(
         label=label,
-        rank_label=f"第 {rank} 名" if rank is not None else None,
+        rank_label=rank_label,
         battle_id=battle.battle_id,
         report_url=page.report_url,
         uploader_display_name=page.uploader_display_name,
@@ -167,6 +171,14 @@ def _compare_side(
         total_dps=page.total_dps,
         total_damage=page.total_damage,
     )
+
+
+def _rank_label(rank: int | None, metric: str) -> str | None:
+    if rank is None:
+        return None
+    if is_rdps(metric):
+        return f"{metric_label(metric)} 第 {rank} 名"
+    return f"第 {rank} 名"
 
 
 def _compare_facts(

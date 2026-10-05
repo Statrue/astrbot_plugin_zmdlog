@@ -349,13 +349,14 @@ class SiblingButtonTests(unittest.TestCase):
             )
         ]
 
-        # No 第 1 名战报: 战报 takes no --口径, so it would open the DPS
-        # board's first place under an rDPS page — the two never mix.
+        # 第 1 名战报 is the rDPS board's first place under an rDPS page —
+        # the two never mix.
         self.assertEqual(
             commands,
             [
                 f"{COMMAND} 阵容 {SLUG} --口径 rdps",
                 f"{COMMAND} 角色统计 {SLUG} --口径 rdps",
+                f"{COMMAND} 战报 {SLUG} --口径 rdps",
             ],
         )
 

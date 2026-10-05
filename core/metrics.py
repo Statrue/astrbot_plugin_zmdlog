@@ -46,5 +46,12 @@ def metric_label(metric: str) -> str:
     return "rDPS" if metric == METRIC_RDPS else "DPS"
 
 
+def board_qualifier(metric: str) -> str:
+    """What follows a board's name in text to say which ranking is meant:
+    nothing for DPS, the default, and ``的 rDPS 榜`` on request."""
+
+    return f"的 {metric_label(metric)} 榜" if is_rdps(metric) else ""
+
+
 def is_rdps(metric: str) -> bool:
     return metric == METRIC_RDPS

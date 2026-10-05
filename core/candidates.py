@@ -7,6 +7,7 @@ import unicodedata
 from dataclasses import dataclass
 from enum import Enum
 
+from .bindings import BoundAccount
 from .matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
 
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -85,6 +86,11 @@ class PendingCandidates:
     # 角色档案's character, by its catalog name: whose profile a pick draws,
     # cut to the board picked.
     profile_character: str = ""
+    # 对比 <榜单> 我: one side is 我's own record. Who 我 is, is whoever
+    # acts — asks, picks or taps — so a list keeps the flag, never an account.
+    compare_self: bool = False
+    # That person's primary account, set for the request being drawn only.
+    me: BoundAccount | None = None
 
 
 class CandidateStore:
@@ -116,6 +122,7 @@ class CandidateStore:
         origin: str = "",
         metric: str = "dps",
         profile_character: str = "",
+        compare_self: bool = False,
         limit: int | None = MAX_CANDIDATES,
         now: float | None = None,
     ) -> PendingCandidates:
@@ -140,6 +147,7 @@ class CandidateStore:
             origin=origin,
             metric=metric,
             profile_character=profile_character,
+            compare_self=compare_self,
         )
         self._entries[code] = entry
         return entry

@@ -26,6 +26,7 @@ from dataclasses import replace
 
 from . import messages
 from .account_binding import AccountBinding, to_binding_page
+from .bindings import BoundAccount, UserBindings
 from .candidates import (
     MAX_CANDIDATES,
     CandidateStore,
@@ -63,13 +64,13 @@ from .matcher import (
     fold_text,
 )
 from .messages import shorten
-from .metrics import METRIC_DPS
+from .metrics import METRIC_DPS, board_qualifier
 from .models import (
     BattleDetailSummary,
+    BossRanking,
     CharacterType,
     HotBossCard,
 )
-from .origins import is_group_origin
 from .outcome import Outcome, PageSubject, PageTarget
 from .rank_watch import RankWatcher
 from .recipes import (
@@ -175,7 +176,8 @@ class QueryService:
         self._candidates = candidates
         self._board_matcher = board_matcher
         self._watcher = watcher
-        # The binding book behind 我的; None where the host has none.
+        # The binding book behind 我的 and 对比 … 我; None where the host has
+        # none.
         self._bindings = bindings
         self._web_base_url = settings.web_base_url
         self._logger = logger
@@ -194,11 +196,20 @@ class QueryService:
         """Answer one parsed command.
 
         ``origin`` keys any pick list it posts; ``requester_key`` is the
-        sender, which only 我的 reads.
+        sender, whose bindings 我的 and ``对比 … 我`` read.
         ``official`` says the chat is the QQ official bot's, which only the
         help page reads.
         """
 
+        if route.compare_self:
+            # Who 我 is, is settled before the board: someone unbound is
+            # told how to bind without a board lookup that could only fail.
+            mine = self._primary_account(
+                requester_key, command=f"{command_prefix}zmdlog"
+            )
+            if isinstance(mine, Outcome):
+                return mine
+            return await self._dispatch_keyword(route, origin=origin, me=mine)
         direct = await self._dispatch_direct(
             route,
             command_prefix=command_prefix,
@@ -214,9 +225,21 @@ class QueryService:
         self,
         entry: PendingCandidates,
         choice: MatchChoice,
+        *,
+        requester_key: str = "",
+        command: str = "/zmdlog",
     ) -> Outcome:
-        """Draw the page a quoted pick-list reply selected."""
+        """Draw the page a quoted pick-list reply selected.
 
+        ``requester_key`` is whoever picked, the 我 of a ``对比 … 我`` list;
+        ``command`` the prefixed command a how-to-bind reply names.
+        """
+
+        if entry.compare_self:
+            me = self._primary_account(requester_key, command=command)
+            if isinstance(me, Outcome):
+                return me
+            entry = replace(entry, me=me)
         if entry.view is CandidateView.DUNGEONS:
             # Drawn as its typed name is: the one board of a one-board
             # dungeon is a ranking page, sibling buttons and all.
@@ -415,11 +438,23 @@ class QueryService:
 
     # --- routes that carry a board keyword -------------------------------------------
 
-    async def _dispatch_keyword(self, route: RouteRequest, *, origin: str) -> Outcome:
-        """Resolve the keyword against the board index, then draw the view."""
+    async def _dispatch_keyword(
+        self,
+        route: RouteRequest,
+        *,
+        origin: str,
+        me: BoundAccount | None = None,
+    ) -> Outcome:
+        """Resolve the keyword against the board index, then draw the view.
+
+        ``me`` is the asker's primary account for ``对比 … 我``. A pick list
+        keeps only that 我 was asked for: whoever picks is 我 then.
+        """
 
         view = route_view(route)
         pending = pending_from_route(route)
+        if me is not None:
+            pending = replace(pending, me=me)
         try:
             cards = await self._data.list_hot_bosses()
         except ZmdLogsClientError:
@@ -498,6 +533,7 @@ class QueryService:
                 battle_rank=pending.battle_rank,
                 compare_rank=pending.compare_rank,
                 metric=pending.metric,
+                compare_self=pending.compare_self,
             )
             return self._pick_list(entry)
         if choice is None:
@@ -707,22 +743,12 @@ class QueryService:
 
         ``我的`` is the primary account, ``我的 2`` / ``我的 <昵称>`` another
         one of the sender's own; the selector is resolved inside that list,
-        never against the whole site. Group chats only, like every binding
-        command.
+        never against the whole site. In a private chat as in a group.
         """
 
-        bindings = self._bindings
-        if bindings is None or (
-            not bindings.enabled and bindings.book.total_users == 0
-        ):
-            return Outcome(message=messages.BINDINGS_DISABLED)
-        if not is_group_origin(origin):
-            return Outcome(message=messages.BINDING_GROUP_ONLY)
-        if not requester_key:
-            return Outcome(message=messages.NO_SENDER)
-        mine = bindings.bindings_for(requester_key)
-        if mine is None:
-            return to_binding_page(messages.NOT_BOUND.format(command=command))
+        mine = self._own_bindings(requester_key, command=command)
+        if isinstance(mine, Outcome):
+            return mine
         if not selector.strip():
             account = mine.primary
         else:
@@ -745,6 +771,34 @@ class QueryService:
         assert account is not None
         query = "我的" if not selector.strip() else f"我的 {selector.strip()}"
         return await self._render_account(account.account_id, query=query)
+
+    def _own_bindings(
+        self, requester_key: str, *, command: str
+    ) -> UserBindings | Outcome:
+        """The sender's bindings, or the reply for why there are none."""
+
+        bindings = self._bindings
+        if bindings is None or (
+            not bindings.enabled and bindings.book.total_users == 0
+        ):
+            return Outcome(message=messages.BINDINGS_DISABLED)
+        if not requester_key:
+            return Outcome(message=messages.NO_SENDER)
+        mine = bindings.bindings_for(requester_key)
+        if mine is None:
+            return to_binding_page(messages.NOT_BOUND.format(command=command))
+        return mine
+
+    def _primary_account(
+        self, requester_key: str, *, command: str
+    ) -> BoundAccount | Outcome:
+        """Whom ``对比 … 我`` means: the sender's primary account, no other."""
+
+        mine = self._own_bindings(requester_key, command=command)
+        if isinstance(mine, Outcome):
+            return mine
+        assert mine.primary is not None
+        return mine.primary
 
     async def _render_trend(
         self,
@@ -1106,6 +1160,13 @@ class QueryService:
             metric=pending.metric,
             ranking_top=pending.ranking_top,
         )
+        if pending.view is CandidateView.COMPARE and pending.compare_self:
+            if pending.me is None:
+                # Every path that draws one sets it; never compare nobody.
+                return Outcome(message=messages.NO_SENDER)
+            return await self._render_compare_self(
+                ranking, pending.me, rank=pending.compare_rank, query=query
+            )
         if pending.view is CandidateView.COMPARE:
             wanted = (pending.battle_rank, pending.compare_rank)
             rows = {
@@ -1120,6 +1181,7 @@ class QueryService:
                 query=query,
                 rank_a=wanted[0],
                 rank_b=wanted[1],
+                metric=pending.metric,
             )
         if pending.view in _BATTLE_VIEWS:
             row = next(
@@ -1227,6 +1289,47 @@ class QueryService:
             await recipe.draw(renderer), target=_card_target(recipe, battle_id)
         )
 
+    async def _render_compare_self(
+        self, ranking: BossRanking, me: BoundAccount, *, rank: int, query: str
+    ) -> Outcome:
+        """``对比 … 我``: the asker's best record on the board against one rank.
+
+        The best record is the account's highest row on the ranking the
+        metric names; the primary account's only, so one without a row is
+        told so rather than compared through another account. The better
+        rank is drawn first, as the two-rank form draws the leader first.
+        """
+
+        name = shorten(me.display_name)
+        ranking_name = board_qualifier(ranking.metric)
+        mine = next(
+            (row for row in ranking.rows if row.account_id == me.account_id), None
+        )
+        if mine is None:
+            return Outcome(
+                message=messages.COMPARE_SELF_NO_RECORD.format(
+                    name=name, board=ranking.boss_name, ranking=ranking_name
+                )
+            )
+        if mine.rank == rank:
+            return Outcome(
+                message=messages.COMPARE_SELF_IS_RANK.format(
+                    name=name, board=ranking.boss_name, ranking=ranking_name, rank=rank
+                )
+            )
+        other = next((row for row in ranking.rows if row.rank == rank), None)
+        if other is None:
+            return Outcome(message=_no_such_rank(ranking, rank))
+        first, second = sorted((mine, other), key=lambda row: row.rank)
+        return await self._render_compare(
+            first.battle_id,
+            second.battle_id,
+            query=query,
+            rank_a=first.rank,
+            rank_b=second.rank,
+            metric=ranking.metric,
+        )
+
     async def _render_compare(
         self,
         battle_id_a: str,
@@ -1235,8 +1338,12 @@ class QueryService:
         query: str,
         rank_a: int | None = None,
         rank_b: int | None = None,
+        metric: str = METRIC_DPS,
     ) -> Outcome:
-        """Two battles side by side; both details are fetched concurrently."""
+        """Two battles side by side; both details are fetched concurrently.
+
+        ``metric`` names the ranking the two ranks were read off.
+        """
 
         if battle_id_a == battle_id_b:
             return Outcome(message=messages.COMPARE_SAME_BATTLE)
@@ -1249,6 +1356,7 @@ class QueryService:
             web_base_url=self._web_base_url,
             rank_a=rank_a,
             rank_b=rank_b,
+            metric=metric,
         )
         if recipe.refusal is not None:
             return Outcome(message=recipe.refusal)
@@ -1347,6 +1455,7 @@ def pending_from_route(route: RouteRequest) -> PendingCandidates:
         battle_rank=route.battle_rank,
         compare_rank=route.compare_rank if route.compare_rank is not None else 2,
         metric=route.metric,
+        compare_self=route.compare_self,
     )
 
 
@@ -1377,10 +1486,10 @@ def _not_found_message(query: str, view: CandidateView) -> str:
     return f"没有找到与「{shown}」匹配的榜单或副本。"
 
 
-def _no_such_rank(ranking, rank: int) -> str:
+def _no_such_rank(ranking: BossRanking, rank: int) -> str:
     return (
-        f"「{ranking.boss_name}」公开排名共 {len(ranking.rows)} 条，"
-        f"没有第 {rank} 名。"
+        f"「{ranking.boss_name}」{board_qualifier(ranking.metric)}"
+        f"公开排名共 {len(ranking.rows)} 条，没有第 {rank} 名。"
     )
 
 

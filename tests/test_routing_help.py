@@ -126,9 +126,10 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 (
                     "!zmdlog 战报 | 配装 | 技能 | 技能轴 "
-                    "<battleId、链接或榜单关键词 [名次]>"
+                    "<battleId、链接或榜单关键词 [名次]> [--口径 rdps]"
                 ),
-                "!zmdlog 对比 <榜单关键词 [名次 名次] 或 两个battleId>",
+                "!zmdlog 对比 <榜单关键词 [名次 名次] 或 两个battleId> [--口径 rdps]",
+                "!zmdlog 对比 <榜单关键词> 我 [名次] [--口径 rdps]",
                 "!zmdlog 关注 [<账号> | 榜单 <关键词>]",
                 "!zmdlog 趋势 <账号> [--范围 7d|14d|30d|all]",
                 "!zmdlog 绑定 <绑定码>",
@@ -224,7 +225,7 @@ class HelpTests(unittest.TestCase):
             for command in section.commands
         ]
         with_option = [c for c in commands if "--口径 rdps" in c]
-        self.assertEqual(len(with_option), 6)
+        self.assertEqual(len(with_option), 9)
         self.assertTrue(all("--口径 rdps" not in c for c in commands if "账号" in c))
 
 

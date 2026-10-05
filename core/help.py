@@ -167,6 +167,7 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                     HelpCommand(
                         command=(
                             f"{command} 战报 | 配装 | 技能 | 技能轴 {battle_argument}"
+                            " [--口径 rdps]"
                         ),
                         answers="这一场怎么打的？用的什么？技能打了多少？什么时候放的？",
                         description=(
@@ -177,10 +178,18 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                     HelpCommand(
                         command=(
                             f"{command} 对比 "
-                            "<榜单关键词 [名次 名次] 或 两个battleId>"
+                            "<榜单关键词 [名次 名次] 或 两个battleId> [--口径 rdps]"
                         ),
                         answers="这两场差在哪？",
                         description="默认第 1 名对第 2 名；两场须是同一首领。",
+                    ),
+                    HelpCommand(
+                        command=f"{command} 对比 <榜单关键词> 我 [名次] [--口径 rdps]",
+                        answers="我跟第一名差在哪？",
+                        description=(
+                            "拿主账号在该榜的最好记录对比第 N 名，"
+                            "默认第 1 名；要先绑定。"
+                        ),
                     ),
                 ),
             ),
@@ -206,7 +215,7 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
             ),
             HelpSection(
                 title="绑定",
-                summary="把自己和 ZMDLogs 账号对上号，仅群聊",
+                summary="把自己和 ZMDLogs 账号对上号，群聊私聊都行",
                 commands=(
                     HelpCommand(
                         command=f"{command} 绑定 <绑定码>",

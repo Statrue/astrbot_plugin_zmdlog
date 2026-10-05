@@ -589,6 +589,7 @@ class TemplateRenderer:
         rank_a: int | None = None,
         rank_b: int | None = None,
         suits: dict[str, str] | None = None,
+        metric: str = "dps",
         embed_fonts: bool = True,
     ) -> str:
         page = build_compare_page(
@@ -599,6 +600,7 @@ class TemplateRenderer:
             rank_a=rank_a,
             rank_b=rank_b,
             suits=suits,
+            metric=metric,
         )
         return self._render(
             "compare/compare.html",
