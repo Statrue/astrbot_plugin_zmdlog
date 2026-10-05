@@ -22,8 +22,8 @@ except ImportError:  # pragma: no cover - depends on host AstrBot version
     try:
         from astrbot.core.message.components import Image, Plain
     except ImportError:
-        # Only board notices and tool pictures need these; every query must
-        # keep working without them.
+        # Only board notices, tool pictures and button-less pushes need
+        # these; every query must keep working without them.
         Image = Plain = None
 
 from . import qq_official
@@ -31,7 +31,6 @@ from .core import facts, messages
 from .core.account_binding import AccountBinding
 from .core.alias_admin import AliasAdmin
 from .core.buttons import (
-    notice_message,
     pick_list_message,
     read_button_command,
     result_image_message,
@@ -70,6 +69,7 @@ from .core.queries import (
 from .core.rank_watch import RankWatcher
 from .core.render import (
     LongImageRenderer,
+    RenderedImage,
     RenderError,
     TemplateConfigurationError,
     read_plugin_version,
@@ -85,7 +85,7 @@ from .core.routing import (
 )
 from .core.settings import load_settings
 from .core.toolbox import ToolService
-from .core.watch import Notice
+from .core.watch import NoticeBatch
 
 _NO_RESULT = "本次查询未产生结果。"
 _UNPARSABLE = "指令参数无法解析，请检查后重试。"
@@ -183,7 +183,6 @@ class ZmdLogBotPlugin(Star):
             logger=logger,
         )
         self.watcher = RankWatcher(
-            client=self.client,
             data=self.data,
             settings=settings,
             data_dir=self.data_dir,
@@ -248,8 +247,8 @@ class ZmdLogBotPlugin(Star):
         """Start the rank watcher on every plugin load.
 
         ``on_astrbot_loaded`` fires once per process, so a plugin installed from
-        the market or reloaded after a config change would never poll if that
-        were the only start path. ``RankWatcher.start`` is idempotent, and the
+        the market or reloaded after a config change would never send a notice if
+        that were the only start path. ``RankWatcher.start`` is idempotent, and the
         loop sleeps a full interval before its first cycle, so starting here
         cannot race platform startup.
         """
@@ -588,23 +587,39 @@ class ZmdLogBotPlugin(Star):
         )
         if keyboard is None:
             return False
+        return await self._send_markdown_image(
+            chat, outcome.image_path, scale=outcome.image_scale, keyboard=keyboard
+        )
+
+    async def _send_markdown_image(
+        self,
+        chat: qq_official.Chat,
+        path: str,
+        *,
+        scale: int,
+        keyboard: dict | None,
+    ) -> bool:
+        """Upload the PNG at ``path`` and send it as a markdown image.
+
+        ``keyboard`` goes under it, if any. False when it did not go out:
+        the picture cannot be sized, or the upload or the send failed.
+        """
+
         try:
-            size = read_png_dimensions(Path(outcome.image_path))
+            size = read_png_dimensions(Path(path))
         except RenderError as exc:
             logger.warning(
                 "ZmdLogBot cannot size a result image: %s", type(exc).__name__
             )
             return False
-        upload = await qq_official.upload_image(
-            chat, outcome.image_path, logger=logger
-        )
+        upload = await qq_official.upload_image(chat, path, logger=logger)
         if upload is None:
             return False
         if upload.raw_url is None:
             logger.warning("ZmdLogBot QQ official image upload returned no link.")
             return False
         message = result_image_message(
-            upload.raw_url, size=size, scale=outcome.image_scale, keyboard=keyboard
+            upload.raw_url, size=size, scale=scale, keyboard=keyboard
         )
         if message is None:
             logger.warning("ZmdLogBot QQ official image link is unusable.")
@@ -749,23 +764,28 @@ class ZmdLogBotPlugin(Star):
                     return code
         return None
 
-    async def _send_notice(self, origin: str, notice: Notice) -> bool:
-        """Deliver one rank-watch notice; the only push path in the plugin.
+    async def _send_notice(self, origin: str, batch: NoticeBatch) -> bool:
+        """Draw one chat's batch of board notices and push it: the only push.
 
-        The caller only advances a baseline past what this reports as sent,
-        so every failure path has to answer False rather than swallow.
-        That is why a notice to the QQ official bot is sent by the plugin's
-        own hand: AstrBot reports some pushes there sent that it skipped
+        The caller clears the batch, and moves the board snapshots, only past
+        what this reports as sent, so every failure path — a picture that
+        could not be drawn included — has to answer False rather than
+        swallow. A notice to the QQ official bot is sent by the plugin's own
+        hand: AstrBot reports some pushes there sent that it skipped
         (``qq_official`` says which, and until when). Everywhere else it is
-        the notice's text alone.
+        the picture, through AstrBot.
         """
 
+        picture = await self._draw_notice(batch)
+        if picture is None:
+            return False
+        path, scale = picture
         chat = qq_official.chat_to_push(self.context, origin)
         if chat is not None:
-            delivery = self._push_official_notice(chat, notice)
-        elif Plain is not None:
+            delivery = self._push_official_notice(chat, path, scale)
+        elif Image is not None:
             delivery = self.context.send_message(
-                origin, MessageChain([Plain(notice.text)])
+                origin, MessageChain([Image.fromFileSystem(path)])
             )
         else:
             logger.warning(
@@ -795,30 +815,54 @@ class ZmdLogBotPlugin(Star):
             return False
         return True
 
-    async def _push_official_notice(
-        self, chat: qq_official.Chat, notice: Notice
-    ) -> bool:
-        """Push ``notice`` with a jump button per battle it names.
+    async def _draw_notice(
+        self, batch: NoticeBatch
+    ) -> tuple[str, int | None] | None:
+        """The 顶屁股通告 of ``batch``: its PNG, and its scale when known.
 
-        As plain text, links and all, when it names none, when the buttons
-        are switched off, or when the message with them did not go out;
-        False only when the plain text did not go out either. A send the
-        platform took but that still raised is sent twice: told twice beats
-        never told.
+        AstrBot's own renderer stands in when Chromium cannot, as for any
+        page; its picture has no known scale. None when neither drew it.
         """
 
-        message = (
-            None
-            if self.settings.disable_qq_official_buttons
-            else notice_message(notice)
-        )
-        if message is not None and await qq_official.send_markdown(
-            chat, message, logger=logger
+        try:
+            image: RenderedImage = await self._require_renderer().render_notice(
+                batch.entries,
+                window_start=batch.window_start,
+                window_end=batch.window_end,
+                top_n=batch.top_n,
+                web_base_url=self.web_base_url,
+            )
+        except RenderError as exc:
+            logger.error(
+                "ZmdLogBot board notice rendering failed: %s", type(exc).__name__
+            )
+            fallback = await self._render_with_astrbot(exc)
+            return None if fallback is None else (fallback, None)
+        except Exception as exc:
+            logger.error(
+                "ZmdLogBot could not draw a board notice: %s", type(exc).__name__
+            )
+            return None
+        return image.path, image.scale
+
+    async def _push_official_notice(
+        self, chat: qq_official.Chat, path: str, scale: int | None
+    ) -> bool:
+        """Push the notice picture the way a result picture goes out.
+
+        A markdown image, but with no keyboard: a notice carries no buttons.
+        The native picture when the switch turns the QQ official extras off,
+        when the scale is unknown, or when the markdown one did not go out;
+        False only when that failed too.
+        """
+
+        if (
+            scale is not None
+            and not self.settings.disable_qq_official_buttons
+            and await self._send_markdown_image(chat, path, scale=scale, keyboard=None)
         ):
             return True
-        return await qq_official.send_text(
-            chat, notice.text, logger=logger, what="board notice"
-        )
+        return await qq_official.send_image(chat, path, logger=logger)
 
     @staticmethod
     def _event_origin(event: AstrMessageEvent) -> str:

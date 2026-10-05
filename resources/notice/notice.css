@@ -258,10 +258,17 @@
   font-size: var(--fs-20);
   color: var(--comic-down);
 }
-.notice-move i {
-  margin-right: 4px;
-  font-style: normal;
-  font-size: var(--fs-13);
+/* The ▼ is drawn, not typed: no bundled face has the glyph (the fonts are
+   subsets, resources/common/ASSETS.md), and a server without a system
+   symbol font would print a box. Sized as the 13 px glyph was. */
+.notice-down {
+  display: inline-block;
+  width: 10px;
+  height: 8px;
+  margin-right: 5px;
+  vertical-align: 3px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 .notice-out {
   grid-column: 4;

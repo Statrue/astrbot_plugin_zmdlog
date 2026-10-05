@@ -1,34 +1,61 @@
-"""Board watch: the 关注 / 取关 commands, the polling loop and its files.
+"""Board watch: the 关注 / 取关 commands, the notice batches and their files.
 
-One :class:`RankWatcher` per plugin owns the watch list, the board baselines
-and the loop that polls them. A chat watches boards only — a list of them,
-or 全部榜单 less an exclusion list (``core/watchlist``) — and is told when a
-watched board's top three gains a record. Accounts are not watched: every
-account's rank trend is recorded from the ranking index's board reads
-(``core/history``), and bindings play no part in notices. It is free of
-AstrBot: the chat an event came from, the sender's identity and the way a
-notice is delivered all arrive as parameters, so the whole machine can be
-driven from tests with fakes.
+One :class:`RankWatcher` per plugin owns the watch list, the board snapshots
+and the loop that sends what the board reads found. A chat watches boards
+only — a list of them, or 全部 less an exclusion list (``core/watchlist``)
+— and is sent a 顶屁股通告 picture when a new record enters a watched
+board's top N (``rank_watch_rank_threshold``). It is free of AstrBot: the
+chat an event came from, the sender's identity and the way a batch is drawn
+and delivered all arrive as parameters, so the whole machine can be driven
+from tests with fakes.
 
-Two rules run through every cycle:
+Nothing here reads upstream for the watch. The ranking index re-reads every
+board on its own schedule, and the data source hands each DPS read to
+:func:`core.board_changes.board_changes` with what this watch brings
+(:meth:`RankWatcher.notice_watch`: who watches, N, the board's snapshot);
+the entries that come out are queued here per chat
+(:meth:`RankWatcher.collect`). Under 全部 a board the site opens later is
+watched from its first read.
 
-* One fresh ``hot-bosses`` read per cycle covers every watched board, and
-  under 全部榜单 it is also what says which boards there are — so a board
-  the site opens later is watched from the first cycle that sees it.
-* Results are merged onto the *live* state, never installed wholesale:
-  关注 / 取关 can run while a cycle is awaiting, and installing the map the
-  cycle started from would drop a baseline just seeded and notify a chat
-  that has since unfollowed.
+Every ``rank_watch_interval_seconds`` (plus up to a tenth of it at random,
+so the pushes do not land on the same second every time) each chat with
+entries waiting is sent one picture of all of them
+(:meth:`RankWatcher.run_notice_cycle`). Three rules run through it:
+
+* **Cleared only once delivered.** A chat's entries leave its queue when the
+  send reports them delivered; a failed send keeps them, and the next
+  interval sends them again with whatever came since. Entries older than
+  the snapshot age (max(3 × interval, 1 h)) are dropped unsent: a chat that
+  cannot be reached for that long gets a fresh start, not a backlog.
+* **A snapshot moves only past what was delivered.** At the end of each
+  interval a board's snapshot becomes the latest read of it — unless some
+  chat still has an entry of that board waiting. A restart loses the
+  queues, which live in memory, but not the snapshot, so the first read
+  after it finds the waiting records again. The cost is that a board
+  several chats watch is told twice to the chats that did get it when
+  another was unreachable across a restart. Told twice beats never told.
+* **The watch list is read live.** 关注 / 取关 can run while a batch is
+  being sent, so a chat is sent only the entries of boards it still
+  watches, and a snapshot is kept only for a board somebody watches.
 """
 
 import asyncio
 import random
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import messages
+from .board_changes import (
+    BoardChanges,
+    BoardSnapshot,
+    NoticeEntry,
+    NoticeWatch,
+    snapshot_is_fresh,
+)
 from .candidates import CandidateStore, CandidateView
-from .client import ZmdLogsClient, ZmdLogsClientError
+from .client import ZmdLogsClientError
 from .datasource import ZmdLogsDataSource
 from .logs import LogSink
 from .matcher import (
@@ -43,16 +70,10 @@ from .outcome import Outcome
 from .persistence import JsonStore
 from .routing import RouteKind, RouteRequest
 from .settings import PluginSettings
-from .timestamps import utc_now_text
+from .timestamps import parse_timestamp, utc_now_text
 from .watch import (
-    BoardSnapshot,
-    Notice,
-    board_snapshot_is_usable,
+    NoticeBatch,
     board_snapshot_payload,
-    build_board_snapshot,
-    find_top_run_changes,
-    format_board_notice,
-    join_board_notices,
     parse_board_snapshot_payload,
 )
 from .watchlist import (
@@ -67,28 +88,27 @@ from .watchlist import (
 WATCHLIST_FILE = "watchlist.json"
 BOARD_SNAPSHOT_FILE = "board-snapshot.json"
 
-# Returns whether the chat actually received the notice. A cycle only
-# advances a baseline past what it managed to deliver.
-Notify = Callable[[str, Notice], Awaitable[bool]]
+# Draws and sends one chat's batch; returns whether the chat received it.
+# Entries leave the queue, and snapshots move, only past what it delivered.
+Notify = Callable[[str, NoticeBatch], Awaitable[bool]]
 BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
 
 class RankWatcher:
-    """Watch lists, board baselines and the loop that feeds them."""
+    """Watch lists, board snapshots, the queues and the loop that sends them."""
 
     def __init__(
         self,
         *,
-        client: ZmdLogsClient,
-        data: ZmdLogsDataSource,
+        data: ZmdLogsDataSource | None,
         settings: PluginSettings,
         data_dir: Path | None,
         board_matcher: BoardMatcher,
         candidates: CandidateStore,
         notify: Notify,
         logger: LogSink,
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        self._client = client
         self._data = data
         self._settings = settings
         self._board_matcher = board_matcher
@@ -96,6 +116,7 @@ class RankWatcher:
         # Public so the host can swap the delivery path (tests capture it).
         self.notify = notify
         self._logger = logger
+        self._now = now
         self.enabled = settings.rank_watch_enabled
         warn = logger.warning
         self.watchlist_store = JsonStore(
@@ -109,12 +130,21 @@ class RankWatcher:
         self.board_snapshots: dict[str, BoardSnapshot] = (
             parse_board_snapshot_payload(self.board_snapshot_store.load())
         )
+        # Board slug → its top N at the latest read this process made: what
+        # its snapshot becomes once nothing of the board is waiting.
+        self._latest: dict[str, BoardSnapshot] = {}
+        # Chat origin → the entries waiting for its next picture, in the
+        # order they were found.
+        self._pending: dict[str, list[NoticeEntry]] = {}
+        self._window_start = self._stamp()
         self._task: asyncio.Task[None] | None = None
+        if data is not None:
+            data.board_watch = self
 
     # --- lifecycle ---------------------------------------------------------------
 
     def start(self) -> None:
-        """Start polling; idempotent, and a no-op without a data directory."""
+        """Start the loop; idempotent, and a no-op without a data directory."""
 
         task = self._task
         if not self.enabled or (task is not None and not task.done()):
@@ -140,17 +170,17 @@ class RankWatcher:
             self._logger.warning("ZmdLogBot rank watch task ended with an error.")
 
     async def _loop(self) -> None:
-        """Poll forever; one failed cycle must never end the loop."""
+        """Send every interval; one failed cycle must never end the loop."""
 
         while True:
             interval = self._settings.rank_watch_interval_seconds
             await asyncio.sleep(interval + random.uniform(0.0, interval * 0.1))
             try:
-                await self.run_board_cycle()
+                await self.run_notice_cycle()
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self._logger.exception("ZmdLogBot board watch cycle failed")
+                self._logger.exception("ZmdLogBot board notice cycle failed")
 
     # --- 关注 / 取关 ------------------------------------------------------------
 
@@ -177,10 +207,12 @@ class RankWatcher:
             return Outcome(message=messages.NO_ORIGIN)
         kind = route.kind
         if kind is RouteKind.WATCH_LIST:
-            # Reviewing and pruning stay available when polling is switched
+            # Reviewing and pruning stay available when notices are switched
             # off; only adding is refused.
             return Outcome(
-                message=format_watchlist(self.watchlist.chat(origin), command=command)
+                message=format_watchlist(
+                    self.watchlist.chat(origin), command=command, top_n=self._top_n
+                )
             )
         if kind is RouteKind.UNWATCH_ALL:
             return Outcome(
@@ -200,7 +232,7 @@ class RankWatcher:
             return Outcome(message=messages.WATCH_DISABLED)
         if kind is RouteKind.WATCH_ALL:
             return Outcome(
-                message=await self._watch_all(origin, requester_key, command=command)
+                message=self._watch_all(origin, requester_key, command=command)
             )
         return await self._add_board(route.query, origin, requester_key)
 
@@ -210,7 +242,7 @@ class RankWatcher:
         """Resolve a board keyword the way queries do, then remember it.
 
         Dungeon and scope hits are flattened to their boards: the watch is on
-        one board's top three, so several boards become a pick list. A
+        one board's top N, so several boards become a pick list. A
         keyword that names no board — an account's name included, since
         accounts are no longer watched — is a board that was not found.
         """
@@ -265,7 +297,7 @@ class RankWatcher:
                 return f"已经关注了全部榜单，「{label}」也在其中。"
             if not self._save_chat(origin, chat.including(boss_slug)):
                 return messages.WATCHLIST_WRITE_FAILED
-            self._seed_board_snapshots((card,))
+            self._seed_snapshots((boss_slug,))
             return f"已恢复关注榜单「{label}」，不再排除它。"
         updated, added = chat.with_board(
             _watched(card, requester_key)
@@ -279,15 +311,13 @@ class RankWatcher:
         )
         if not added:
             return f"榜单「{label}」已经在关注列表里（第 {position} 位）。"
-        self._seed_board_snapshots((card,))
+        self._seed_snapshots((boss_slug,))
         return (
             f"已关注榜单「{label}」，序号 {position}。"
-            "前三名有新纪录时会在这里通报。"
+            f"新纪录进入前 {self._top_n} 名时会在这里通报。"
         )
 
-    async def _watch_all(
-        self, origin: str, requester_key: str, *, command: str
-    ) -> str:
+    def _watch_all(self, origin: str, requester_key: str, *, command: str) -> str:
         """关注 全部: every board, the ones the site opens later too."""
 
         chat = self.watchlist.chat(origin)
@@ -301,19 +331,10 @@ class RankWatcher:
         updated = chat.following_all(added_by=requester_key, added_at=utc_now_text())
         if not self._save_chat(origin, updated):
             return messages.WATCHLIST_WRITE_FAILED
-        # Seeding is a courtesy: a board without a baseline is seeded by the
-        # first cycle that reads it, which only delays its first notice.
-        try:
-            cards = await self._data.list_hot_bosses()
-        except ZmdLogsClientError as exc:
-            self._logger.warning(
-                "ZmdLogBot could not seed board baselines: %s", type(exc).__name__
-            )
-        else:
-            self._seed_board_snapshots(cards)
+        self._seed_snapshots(tuple(self._latest))
         return (
             "已关注全部榜单，以后新出的榜单也会自动包含。"
-            "任一榜单前三名有新纪录时会在这里通报；"
+            f"任一榜单有新纪录进入前 {self._top_n} 名时会在这里通报；"
             f"不想看的榜单用 {command} 取关 <榜单关键词> 排除。"
         )
 
@@ -439,25 +460,56 @@ class RankWatcher:
             choices = ()
         return cards, matcher.expand_to_boards(choices)
 
-    # --- baselines -----------------------------------------------------------------
+    # --- what the board reads find ----------------------------------------------
 
-    def _seed_board_snapshots(self, cards: tuple[HotBossCard, ...]) -> None:
-        """Record the current top so the first notice needs one more cycle.
+    @property
+    def _top_n(self) -> int:
+        return self._settings.rank_watch_rank_threshold
 
-        Only where there is no baseline yet: another chat may already be
-        waiting on the existing one.
+    def notice_watch(self, boss_slug: str) -> NoticeWatch | None:
+        """What a read of ``boss_slug`` is compared with; None while off."""
+
+        if not self.enabled or not self.watchlist_store.available:
+            return None
+        return NoticeWatch(
+            watchlist=self.watchlist,
+            top_n=self._top_n,
+            snapshot=self.board_snapshots.get(boss_slug),
+            snapshot_max_age_seconds=self._settings.rank_snapshot_max_age_seconds,
+        )
+
+    def collect(self, changes: BoardChanges) -> None:
+        """Queue a read's entries per chat and keep its top N for the snapshot."""
+
+        if changes.snapshot is not None:
+            self._latest[changes.boss_slug] = changes.snapshot
+        for origin, entries in changes.notices.items():
+            self._pending.setdefault(origin, []).extend(entries)
+
+    def pending(self, origin: str) -> tuple[NoticeEntry, ...]:
+        """The entries waiting for ``origin``'s next picture."""
+
+        return tuple(self._pending.get(origin, ()))
+
+    def _seed_snapshots(self, slugs: tuple[str, ...]) -> None:
+        """Snapshot newly watched boards now, not at the interval's end.
+
+        Only boards read since the start and not snapshotted yet — another
+        chat may already be waiting on an existing snapshot. A courtesy: a
+        board without one is snapshotted at the interval's end, and only a
+        restart before then would lose what was found meanwhile.
         """
 
-        missing = [card for card in cards if card.boss_slug not in self.board_snapshots]
-        if not missing:
-            return
-        snapshots = dict(self.board_snapshots)
-        checked_at = utc_now_text()
-        for card in missing:
-            snapshots[card.boss_slug] = build_board_snapshot(
-                card, checked_at=checked_at
-            )
-        self._save_board_snapshots(snapshots)
+        stamp = self._stamp()
+        missing = {
+            slug: replace(self._latest[slug], checked_at=stamp)
+            for slug in slugs
+            if slug in self._latest
+            and slug not in self.board_snapshots
+            and self.watchlist.watches(slug)
+        }
+        if missing:
+            self._save_board_snapshots({**self.board_snapshots, **missing})
 
     # --- persistence -------------------------------------------------------------
 
@@ -479,7 +531,7 @@ class RankWatcher:
             )
 
     def _save_chat(self, origin: str, chat: ChatWatch) -> bool:
-        """Store one chat's watch; baselines nobody watches any more go."""
+        """Store one chat's watch; snapshots nobody watches any more go."""
 
         updated = self.watchlist.with_chat(origin, chat)
         if not self.watchlist_store.save(updated.to_payload()):
@@ -497,119 +549,104 @@ class RankWatcher:
         return True
 
     def _save_board_snapshots(self, snapshots: dict[str, BoardSnapshot]) -> None:
-        """Persist the baseline; a silent failure would replay old notices."""
-
         self.board_snapshots = snapshots
         self.board_snapshot_store.save(board_snapshot_payload(snapshots))
 
     # --- cycle ------------------------------------------------------------------
 
-    async def run_board_cycle(self) -> None:
-        """One fresh ``hot-bosses`` read covers every watched board.
+    async def run_notice_cycle(self) -> None:
+        """Send every chat its waiting entries as one picture; move snapshots.
 
-        The read bypasses the query cache on purpose: that cache may serve a
-        stale payload or the on-disk snapshot, and diffing an *older* top list
-        against the baseline would announce records that merely fell out of
-        the top as new.
+        The module docstring has the rules. The window a picture names runs
+        from the previous cycle to this one, or from the oldest entry it
+        carries when a failed send held that one over.
         """
 
-        if not self.watchlist.chats:
-            if self.board_snapshots:
-                self._save_board_snapshots({})
-            return
-        try:
-            cards, _ = await self._client.list_hot_bosses_with_payload()
-        except ZmdLogsClientError as exc:
-            self._logger.warning(
-                "ZmdLogBot board watch skipped this cycle: %s",
-                type(exc).__name__,
+        now = self._now().replace(microsecond=0)
+        stamp = now.isoformat()
+        window_start, self._window_start = self._window_start, stamp
+        self._drop_expired(now)
+        for origin in tuple(self._pending):
+            chat = self.watchlist.chat(origin)
+            queue = [
+                entry for entry in self._pending[origin] if chat.covers(entry.boss_slug)
+            ]
+            if not queue:
+                del self._pending[origin]
+                continue
+            self._pending[origin] = queue
+            batch = NoticeBatch(
+                entries=tuple(queue),
+                window_start=min(
+                    (window_start, *(entry.seen_at for entry in queue)),
+                    key=_instant,
+                ),
+                window_end=stamp,
+                top_n=self._top_n,
             )
-            return
-        catalog = tuple(card.boss_slug for card in cards)
-        watched = self.watchlist.origins_by_board(catalog)
-        by_slug = {card.boss_slug: card for card in cards}
-        checked_at = utc_now_text()
-        snapshots: dict[str, BoardSnapshot] = {}
-        pending: dict[str, list[tuple[str, Notice]]] = {}
-        for boss_slug, origins in watched.items():
-            card = by_slug.get(boss_slug)
-            if card is None:
-                # Gone from the index: keep the baseline, announce nothing.
+            if not await self.notify(origin, batch):
                 continue
-            previous = self.board_snapshots.get(boss_slug)
-            snapshots[boss_slug] = build_board_snapshot(card, checked_at=checked_at)
-            if not board_snapshot_is_usable(
-                previous,
-                now=checked_at,
-                max_age_seconds=self._settings.rank_snapshot_max_age_seconds,
-            ):
-                # A first sighting — a board just opened, or watched under
-                # 全部榜单 for the first time — or a baseline too old to
-                # compare against: seed quietly instead of announcing it.
-                continue
-            change = find_top_run_changes(previous, card)
-            if change is None:
-                continue
-            notice = format_board_notice(
-                change, web_base_url=self._settings.web_base_url
-            )
-            for origin in origins:
-                pending.setdefault(origin, []).append((boss_slug, notice))
-        # 关注 / 取关 may have run while the request was in flight, so merge
-        # on top of the current state and forget whatever is unwatched now.
-        watching = self.watchlist.origins_by_board(catalog)
-        undelivered = await self._deliver(pending, watching)
-        merged = dict(self.board_snapshots)
-        merged.update(
+            # What was found while the send was out queued up behind it.
+            waiting = self._pending.get(origin, [])
+            del waiting[: len(batch.entries)]
+            if not waiting:
+                self._pending.pop(origin, None)
+        self._advance_snapshots(stamp)
+
+    def _drop_expired(self, now: datetime) -> None:
+        max_age = self._settings.rank_snapshot_max_age_seconds
+        for origin, queue in tuple(self._pending.items()):
+            kept = [
+                entry
+                for entry in queue
+                if (seen := parse_timestamp(entry.seen_at)) is not None
+                and (now - seen).total_seconds() <= max_age
+            ]
+            if len(kept) < len(queue):
+                self._logger.warning(
+                    "ZmdLogBot dropped %s board notices it could not deliver in time.",
+                    len(queue) - len(kept),
+                )
+            if kept:
+                self._pending[origin] = kept
+            else:
+                del self._pending[origin]
+
+    def _advance_snapshots(self, stamp: str) -> None:
+        """Every watched board's snapshot moves to its latest read, stamped
+        now, unless an entry of it is still waiting. Unwatched boards' go,
+        and so do snapshots too old to be compared with any more — a board
+        the site stopped listing, one upstream has failed to serve for an
+        hour: either way its next read is a new start."""
+
+        waiting = {
+            entry.boss_slug for queue in self._pending.values() for entry in queue
+        }
+        watches = self.watchlist.watches
+        max_age = self._settings.rank_snapshot_max_age_seconds
+        snapshots = {
+            slug: snapshot
+            for slug, snapshot in self.board_snapshots.items()
+            if watches(slug)
+            and snapshot_is_fresh(snapshot, now=stamp, max_age_seconds=max_age)
+        }
+        snapshots.update(
             {
-                boss_slug: snapshot
-                for boss_slug, snapshot in snapshots.items()
-                if boss_slug not in undelivered
+                slug: replace(latest, checked_at=stamp)
+                for slug, latest in self._latest.items()
+                if watches(slug) and slug not in waiting
             }
         )
-        self._save_board_snapshots(
-            {
-                slug: snapshot
-                for slug, snapshot in merged.items()
-                if self.watchlist.watches(slug)
-            }
-        )
+        if snapshots or self.board_snapshots:
+            self._save_board_snapshots(snapshots)
 
-    async def _deliver(
-        self,
-        pending: dict[str, list[tuple[str, Notice]]],
-        watching: dict[str, tuple[str, ...]],
-    ) -> set[str]:
-        """Send one merged message per chat; return the boards that did not land.
+    def _stamp(self) -> str:
+        """Now, to the second, as every board read is stamped
+        (``utc_now_text``): kept to the microsecond, a snapshot would read
+        as later than a read made after it within the same second — a
+        snapshot from the future, which is never fresh."""
 
-        Delivery has to happen *before* the baseline moves. Saving first and
-        sending second loses the event for good when a send fails: the next
-        cycle compares against the top that was already stored and sees
-        nothing to report, and a watch that silently drops the one thing it
-        exists to report is worse than no watch. A board whose message did
-        not arrive keeps its old baseline, so the next cycle computes the
-        same change and tries again; ``board_snapshot_is_usable`` bounds
-        that, because a baseline that stops advancing is eventually too old
-        to compare against and is re-seeded silently.
-
-        The cost is that a board several chats watch can be announced twice
-        when only one of those chats was unreachable. Told twice beats never
-        told.
-        """
-
-        undelivered: set[str] = set()
-        for origin, entries in pending.items():
-            wanted = tuple(
-                (key, notice)
-                for key, notice in entries
-                if origin in watching.get(key, ())
-            )
-            if not wanted:
-                continue
-            notice = join_board_notices(tuple(notice for _, notice in wanted))
-            if not await self.notify(origin, notice):
-                undelivered.update(key for key, _ in wanted)
-        return undelivered
+        return self._now().replace(microsecond=0).isoformat()
 
 
 def _watched(card: HotBossCard, requester_key: str) -> WatchedBoard:
@@ -628,3 +665,8 @@ def _no_board(query: str) -> str:
 
 def _in(data_dir: Path | None, file_name: str) -> Path | None:
     return None if data_dir is None else data_dir / file_name
+
+
+def _instant(stamp: str) -> float:
+    parsed = parse_timestamp(stamp)
+    return parsed.timestamp() if parsed is not None else float("inf")

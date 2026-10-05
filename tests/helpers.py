@@ -1,6 +1,8 @@
 """Shared model and API payload builders for tests."""
 
+import copy
 import logging
+import re
 
 from core.models import HotBossCard, HotBossRun, parse_boss_ranking
 
@@ -979,3 +981,37 @@ def character_profile_payload(
             bossCount=len(boards),
         )
     return payload
+
+
+_RECORD_RE = re.compile(r"([a-z]+)(\d+)")
+
+
+def standing(
+    *records: str,
+    slug: str = "dung01_group_bossrush02",
+    metric: str = "dps",
+    score: int | None = None,
+):
+    """A ranking of ``records`` in rank order, each ``<account><n>``.
+
+    ``a1`` and ``a2`` are two records of account a; a record keeps its
+    battle id wherever it ranks, as upstream's do. ``score`` gives every
+    row a contract score.
+    """
+
+    payload = ranking_payload_with_rows()
+    payload["bossSlug"] = slug
+    payload["metric"] = metric
+    template = payload["rows"][0]
+    rows = []
+    for rank, record in enumerate(records, start=1):
+        account, _ = _RECORD_RE.fullmatch(record).groups()
+        row = copy.deepcopy(template)
+        row["rank"] = rank
+        row["battleId"] = f"btl_{record}"
+        row["accountId"] = f"usr_{account}"
+        row["accountDisplayName"] = f"昵称 {account}"
+        row["contractTagScore"] = score
+        rows.append(row)
+    payload["rows"] = rows
+    return parse_boss_ranking(payload, metric=metric)

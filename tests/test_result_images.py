@@ -82,6 +82,14 @@ class ResultImageMessageTests(unittest.TestCase):
                 )
                 self.assertIs(message.keyboard, KEYBOARD)
 
+    def test_a_notice_picture_has_nothing_under_it(self) -> None:
+        message = result_image_message(
+            RAW_URL, size=(1920, 3000), scale=2, keyboard=None
+        )
+
+        self.assertTrue(message.markdown.startswith("![img #960px #1500px]("))
+        self.assertIsNone(message.keyboard)
+
     def test_a_half_pixel_is_declared_taller_never_shorter(self) -> None:
         # 5001 device pixels at 2x is 2500.5 CSS pixels. 2500 would declare a
         # shape a hair shorter than the picture, the one error that crops.

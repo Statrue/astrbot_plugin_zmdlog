@@ -166,7 +166,7 @@ def _record(
     score = record.contract_tag_score
     return NoticeRecordView(
         rank=entry.rank,
-        champion=entry.is_champion,
+        champion=entry.champion,
         uploader=record.account_display_name,
         face=_face(record, web_base_url=web_base_url),
         time=format_duration(record.duration_ms),

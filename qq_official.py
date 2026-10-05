@@ -20,10 +20,11 @@ the 1–10000 AstrBot draws its own from. Any exception is a failed send,
 reported by its type alone — the caller then answers the way it would on
 any other platform.
 
-A board notice answers nothing, and is pushed from here as well
-(``chat_to_push``). AstrBot 4.28.1 skips a push to a group its adapter has seen
-no message from since it started, and reports it sent all the same (AstrBot
-#9831): after every restart, the notices due before anyone spoke were lost.
+A board notice — the 顶屁股通告 picture — answers nothing, and is pushed
+from here as well (``chat_to_push``). AstrBot 4.28.1 skips a push to a
+group its adapter has seen no message from since it started, and reports
+it sent all the same (AstrBot #9831): after every restart, the notices due
+before anyone spoke were lost.
 Sent here, a push that fails says so. Delete this path once AstrBot ships
 PR #10152.
 
@@ -237,11 +238,12 @@ def chat_to_push(context: Any, origin: str) -> Chat | None:
 async def send_markdown(chat: Chat, message: ButtonMessage, *, logger: LogSink) -> bool:
     """Send ``message`` into ``chat``; False when it did not go out."""
 
-    payload = {
+    payload: dict[str, Any] = {
         "msg_type": _MSG_TYPE_MARKDOWN,
         "markdown": {"content": message.markdown},
-        "keyboard": message.keyboard,
     }
+    if message.keyboard is not None:
+        payload["keyboard"] = message.keyboard
     return await _post(chat, payload, what="button message", logger=logger)
 
 

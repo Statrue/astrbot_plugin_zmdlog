@@ -12,8 +12,9 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
-from .board_changes import board_changes
+from .board_changes import BoardChanges, NoticeWatch, board_changes
 from .cache import AsyncTTLCache, CacheState
 from .client import ZmdLogsAPIError, ZmdLogsClient, ZmdLogsClientError
 from .events import EventLog
@@ -78,6 +79,14 @@ EQUIP_CATALOG_TTL_SECONDS = STATIC_CATALOG_TTL_SECONDS
 CATALOG_REFRESH_MIN_INTERVAL_SECONDS = 10 * 60.0
 _EQUIP_CATALOG_KEY = "equip_suits"
 _CHARACTER_TYPES_KEY = "character_types"
+
+
+class BoardWatch(Protocol):
+    """The board watch as a board read sees it (``core/rank_watch``)."""
+
+    def notice_watch(self, boss_slug: str) -> NoticeWatch | None: ...
+
+    def collect(self, changes: BoardChanges) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +177,10 @@ class ZmdLogsDataSource:
                 compact=True,
             )
         )
+        # The board watch (``core/rank_watch``), once one attaches itself:
+        # it brings who watches each board to every DPS read, and collects
+        # the notices the read gives.
+        self.board_watch: BoardWatch | None = None
         # Every board ranking is read through the index; see ranking_index.py.
         self.ranking_index = RankingIndex(
             fetch_ranking=self._fetch_boss_ranking,
@@ -192,21 +205,35 @@ class ZmdLogsDataSource:
 
         The one place a board change is discovered (``core/board_changes``).
         Each consumer runs on its own: one that fails is logged and the
-        other still sees the read.
+        others still see the read.
         """
 
+        # Asked before the read is recorded: a record this read brings is
+        # announced by it, and must still count as new for the notices. Only
+        # a DPS read has notices.
+        announced = (
+            self.event_log.announced(METRIC_DPS)
+            if current.metric == METRIC_DPS
+            else frozenset()
+        )
         if previous is not None:
             self._record_safely(
                 "record events", self.event_log.record, previous, current
             )
+        watch = self.board_watch
         changes = board_changes(
             previous,
             current,
             seen_at=utc_now_text(),
             last_ranks=self.rank_trend.last_ranks(current.boss_slug),
+            watch=None if watch is None else watch.notice_watch(current.boss_slug),
+            announced=announced,
         )
-        if changes is not None:
-            self._record_safely("rank trend", self.rank_trend.apply, changes)
+        if changes is None:
+            return
+        self._record_safely("rank trend", self.rank_trend.apply, changes)
+        if watch is not None:
+            self._record_safely("board notices", watch.collect, changes)
 
     def _record_safely(self, what: str, record, *args) -> None:
         try:

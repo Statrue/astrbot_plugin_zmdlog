@@ -412,18 +412,22 @@ def _text(value: Any) -> str:
     return value if isinstance(value, str) else ""
 
 
-def format_watchlist(chat: ChatWatch, *, command: str = "/zmdlog") -> str:
+def format_watchlist(
+    chat: ChatWatch, *, command: str = "/zmdlog", top_n: int
+) -> str:
     """One chat's watch as text; the numbers are what 取关 addresses.
 
     ``command`` carries the resolved prefix so a hint can be copied as
-    written, instead of naming a bare subcommand that does nothing alone.
-    Exclusions are not numbered: a number under 全部榜单 would have nothing
-    to address.
+    written, instead of naming a bare subcommand that does nothing alone;
+    ``top_n`` is how far down a board a new record is news. Exclusions
+    are not numbered: a number under 全部榜单 would have nothing to
+    address.
     """
 
     if chat.all_boards is not None:
         lines = [
-            "当前关注：全部榜单（以后新出的榜单也包含，前三名有新纪录时通报）。"
+            "当前关注：全部榜单（以后新出的榜单也包含，"
+            f"新纪录进入前 {top_n} 名时通报）。"
         ]
         if chat.excluded:
             lines.append(
@@ -442,12 +446,12 @@ def format_watchlist(chat: ChatWatch, *, command: str = "/zmdlog") -> str:
             for index, board in enumerate(chat.boards, start=1)
         ]
         return (
-            "当前关注的榜单（前三名有新纪录时通报，"
+            f"当前关注的榜单（新纪录进入前 {top_n} 名时通报，"
             "取消用 取关 <序号或榜单关键词>）：\n" + "\n".join(lines)
         )
     return (
         "还没有关注任何榜单。"
         f"用 {command} 关注 <榜单关键词> 关注一张榜，"
         f"或 {command} 关注 全部（以后新出的榜单也会包含）；"
-        "关注的榜单前三名有新纪录时会在这里通报。"
+        f"关注的榜单有新纪录进入前 {top_n} 名时会在这里通报。"
     )

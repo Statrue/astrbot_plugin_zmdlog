@@ -224,7 +224,6 @@ class WatchPickListTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.store = CandidateStore()
         self.watcher = RankWatcher(
-            client=TwoHitClient(),
             data=TwoBoardData(),
             settings=PluginSettings(rank_watch_enabled=True),
             data_dir=Path(directory.name),

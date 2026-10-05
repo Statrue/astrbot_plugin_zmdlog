@@ -26,6 +26,7 @@ from tests.helpers import (
     hot_bosses_payload,
     public_user_rankings_payload,
     ranking_payload_with_rows,
+    standing,
 )
 
 try:
@@ -44,6 +45,7 @@ if astrbot is not None:
     # handlers catch are the package's, not the ``core.*`` modules the rest of
     # the suite imports from the repo root. Use the same identities here.
     from astrbot_plugin_zmdlog import main as plugin_main
+    from astrbot_plugin_zmdlog.core.board_changes import NoticeEntry
     from astrbot_plugin_zmdlog.core.characters import CharacterFilterScope
     from astrbot_plugin_zmdlog.core.client import (
         ZmdLogsAPIError,
@@ -57,15 +59,8 @@ if astrbot is not None:
         parse_public_user_rankings,
     )
     from astrbot_plugin_zmdlog.core.render import RenderedImage, RenderError
-    from astrbot_plugin_zmdlog.core.timestamps import utc_now_text
     from astrbot_plugin_zmdlog.core.toolbox import ToolAnswer
-    from astrbot_plugin_zmdlog.core.watch import (
-        BoardSnapshot,
-        Notice,
-        NoticeLink,
-        build_board_snapshot,
-    )
-    from astrbot_plugin_zmdlog.core.watchlist import ChatWatch, WatchedBoard
+    from astrbot_plugin_zmdlog.core.watch import NoticeBatch
 
 GROUP = "aiocqhttp:GroupMessage:1"
 OTHER_GROUP = "aiocqhttp:GroupMessage:2"
@@ -1497,79 +1492,92 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(switched_api.calls, [])
         self.assertEqual(switched_api._http.paths, [])
 
-    # --- rank notices ----------------------------------------------------------
+    # --- board notices -----------------------------------------------------------
 
-    NOTICE = "【名次变化】\n*CPU* 在 罗丹 从 #3 降到 #5\n期间上方新增纪录：…"
-    BATTLE = "https://zmdlogs.com/battle/btl_upload_new000000001"
+    def _notice_picture(self, *, fail: bool = False) -> str:
+        """The 顶屁股通告 as the renderer draws it: 960 wide at 2x."""
 
-    def _notify(self, origin: str, notice=None) -> bool:
-        """Deliver one notice the way a watch cycle does; by default one
-        that names no battle."""
+        path = self._png(1920, 2400)
+        self.drawn: list[tuple] = []
 
-        return run(self.plugin.watcher.notify(origin, notice or Notice(self.NOTICE)))
+        async def render_notice(entries, **kwargs):
+            if fail:
+                raise RenderError("capture failed")
+            self.drawn.append((entries, kwargs))
+            return capture(path, 2)
 
-    def _notice_with_battle(self) -> "Notice":
-        return Notice(
-            f"{self.NOTICE}\n{self.BATTLE}", (NoticeLink(self.BATTLE, "战报 1"),)
+        self.plugin.renderer.render_notice = render_notice
+        return path
+
+    def _notify(self, origin: str) -> bool:
+        """Deliver one chat's batch the way the notice cycle does."""
+
+        record = parse_boss_ranking(ranking_payload_with_rows()).rows[0]
+        batch = NoticeBatch(
+            entries=(
+                NoticeEntry(
+                    boss_slug=self.TRIO,
+                    boss_name="三位一体",
+                    dungeon_name="危境再现",
+                    seen_at="2026-10-05T02:38:00+00:00",
+                    rank=1,
+                    record=record,
+                    champion=True,
+                ),
+            ),
+            window_start="2026-10-05T02:30:00+00:00",
+            window_end="2026-10-05T02:45:00+00:00",
+            top_n=10,
         )
+        return run(self.plugin.watcher.notify(origin, batch))
 
     def _official_platform(self, api, *, scenes=None) -> None:
         self.plugin.context.platforms["default"] = platform_instance(
             "default", "qq_official", api=api, scenes=scenes
         )
 
-    def test_an_official_notice_is_pushed_by_the_plugin_itself(self) -> None:
-        # Right after a restart the adapter has seen no session, and AstrBot
-        # would skip the push while reporting it sent.
-        for origin, scene, key, openid in (
-            ("default:GroupMessage:G1", "group", "group_openid", "G1"),
-            ("default:FriendMessage:U1", "c2c", "openid", "U1"),
-            # A member's origin under 隔离对话, kept from before core/origins:
-            # AstrBot's own push reached the group, and so does this one.
-            ("default:GroupMessage:M1_G1", "group", "group_openid", "G1"),
-        ):
-            with self.subTest(origin):
-                api = FakeBotApi()
-                self._official_platform(api)
-                self.plugin.context.pushed.clear()
+    def test_a_notice_is_one_picture_of_the_batch(self) -> None:
+        path = self._notice_picture()
+        self.plugin.context.platforms["aiocqhttp"] = platform_instance(
+            "aiocqhttp", "aiocqhttp"
+        )
 
-                delivered = self._notify(origin)
+        self.assertTrue(self._notify(GROUP))
 
-                self.assertTrue(delivered)
-                self.assertEqual(self.plugin.context.pushed, [])
-                (sent_scene, payload), = api.calls
-                self.assertEqual(sent_scene, scene)
-                self.assertEqual(payload[key], openid)
-                # Pushed, not a reply: nothing it answers.
-                self.assertNotIn("msg_id", payload)
-                self.assertNotIn("event_id", payload)
-                # Word for word, and as plain text: a nickname's * stays a *.
-                self.assertEqual(payload["msg_type"], 0)
-                self.assertEqual(payload["content"], self.NOTICE)
+        ((entries, kwargs),) = self.drawn
+        self.assertEqual([entry.rank for entry in entries], [1])
+        self.assertEqual(
+            kwargs,
+            {
+                "window_start": "2026-10-05T02:30:00+00:00",
+                "window_end": "2026-10-05T02:45:00+00:00",
+                "top_n": 10,
+                "web_base_url": self.plugin.web_base_url,
+            },
+        )
+        ((session, chain),) = self.plugin.context.pushed
+        self.assertEqual(session, GROUP)
+        (image,) = chain.chain
+        self.assertEqual(type(image).__name__, "Image")
+        self.assertIn(Path(path).name, str(image.file))
 
-    def test_an_official_notice_that_did_not_go_out_is_reported_undelivered(
-        self,
-    ) -> None:
-        class StalledApi(FakeBotApi):
-            async def post_group_message(self, **payload):
-                await asyncio.Event().wait()
+    def test_a_notice_that_cannot_be_drawn_is_not_delivered(self) -> None:
+        self._notice_picture(fail=True)
+        api = FakeBotApi()
+        self._official_platform(api)
+        # Nor AstrBot's own renderer.
+        self.plugin.settings = dataclasses.replace(
+            self.plugin.settings, fallback_to_astrbot_renderer=False
+        )
 
-        failing = FakeBotApi(error=RuntimeError("40034105"))
-        for label, api in (("send raised", failing), ("send stalled", StalledApi())):
-            with self.subTest(label):
-                self._official_platform(api)
-                with mock.patch.object(
-                    plugin_main, "_NOTICE_SEND_TIMEOUT_SECONDS", 0.05
-                ):
-                    self.assertFalse(self._notify("default:GroupMessage:G1"))
-                # Not handed to AstrBot, which would report it sent.
-                self.assertEqual(self.plugin.context.pushed, [])
-        with self.subTest("no such platform"):
-            self.plugin.context.platforms.clear()
-            self.assertFalse(self._notify("default:GroupMessage:G1"))
+        self.assertFalse(self._notify(GROUP))
+        self.assertFalse(self._notify("default:GroupMessage:G1"))
+        self.assertEqual(self.plugin.context.pushed, [])
+        self.assertEqual(api.calls, [])
 
     def test_every_other_platform_pushes_through_astrbot(self) -> None:
-        api = FakeBotApi()
+        self._notice_picture()
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
         context = self.plugin.context
         context.platforms["aiocqhttp"] = platform_instance("aiocqhttp", "aiocqhttp")
         context.platforms["hook"] = platform_instance(
@@ -1590,50 +1598,53 @@ class HandlerTests(unittest.TestCase):
 
                 self.assertTrue(self._notify(origin))
 
-                (session, chain), = context.pushed
+                ((session, chain),) = context.pushed
                 self.assertEqual(session, origin)
                 self.assertEqual(
-                    [component.text for component in chain.chain], [self.NOTICE]
-                )
-                # A notice naming a battle goes the same way, text only.
-                context.pushed.clear()
-                self.assertTrue(self._notify(origin, self._notice_with_battle()))
-                (_, chain), = context.pushed
-                self.assertEqual(
-                    [component.text for component in chain.chain],
-                    [f"{self.NOTICE}\n{self.BATTLE}"],
+                    [type(component).__name__ for component in chain.chain],
+                    ["Image"],
                 )
         self.assertEqual(api.calls, [])
+        with self.subTest("no such platform"):
+            context.platforms.clear()
+            self.assertFalse(self._notify(GROUP))
 
-    def test_an_official_notice_carries_a_button_per_battle(self) -> None:
-        for origin, scene in (
-            ("default:GroupMessage:G1", "group"),
-            ("default:FriendMessage:U1", "c2c"),
+    def test_an_official_notice_is_a_markdown_picture_without_buttons(self) -> None:
+        # Pushed by the plugin itself: right after a restart the adapter has
+        # seen no session, and AstrBot would skip the push while reporting
+        # it sent.
+        self._notice_picture()
+        for origin, scene, key, openid in (
+            ("default:GroupMessage:G1", "group", "group_openid", "G1"),
+            ("default:FriendMessage:U1", "c2c", "openid", "U1"),
+            # A member's origin under 隔离对话, kept from before core/origins:
+            # AstrBot's own push reached the group, and so does this one.
+            ("default:GroupMessage:M1_G1", "group", "group_openid", "G1"),
         ):
             with self.subTest(origin):
-                api = FakeBotApi()
+                api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
                 self._official_platform(api)
 
-                self.assertTrue(self._notify(origin, self._notice_with_battle()))
+                self.assertTrue(self._notify(origin))
 
-                (sent_scene, payload), = api.calls
+                self.assertEqual(self.plugin.context.pushed, [])
+                ((sent_scene, payload),) = api.calls
                 self.assertEqual(sent_scene, scene)
+                self.assertEqual(payload[key], openid)
+                # Pushed, not a reply: nothing it answers.
                 self.assertNotIn("msg_id", payload)
+                self.assertNotIn("event_id", payload)
                 self.assertEqual(payload["msg_type"], 2)
-                markdown = payload["markdown"]["content"]
-                # The nickname's * is escaped, and the label stands in for
-                # the link the plain notice prints.
-                self.assertIn(r"\*CPU\*", markdown)
-                self.assertTrue(markdown.endswith("· 战报 1"))
-                self.assertNotIn(self.BATTLE, markdown)
-                ((button,),) = [
-                    row["buttons"] for row in payload["keyboard"]["content"]["rows"]
-                ]
-                self.assertEqual(button["render_data"]["label"], "战报 1")
-                self.assertEqual(button["action"]["type"], 0)
-                self.assertEqual(button["action"]["data"], self.BATTLE)
+                self.assertTrue(
+                    payload["markdown"]["content"].startswith(
+                        "![img #960px #1200px]("
+                    )
+                )
+                self.assertNotIn("keyboard", payload)
 
-    def test_an_official_notice_whose_buttons_fail_goes_as_plain_text(self) -> None:
+    def test_an_official_notice_falls_back_to_the_native_picture(self) -> None:
+        self._notice_picture()
+
         class NoMarkdownApi(FakeBotApi):
             async def post_group_message(self, **payload):
                 self.calls.append(("group", payload))
@@ -1641,41 +1652,53 @@ class HandlerTests(unittest.TestCase):
                     raise RuntimeError("markdown refused")
                 return {"id": "sent"}
 
-        api = NoMarkdownApi()
+        api = NoMarkdownApi(http=FakeBotHttp(raw_url=self.RAW_URL))
         self._official_platform(api)
 
-        notice = self._notice_with_battle()
-        self.assertTrue(self._notify("default:GroupMessage:G1", notice))
+        self.assertTrue(self._notify("default:GroupMessage:G1"))
 
-        self.assertEqual([payload["msg_type"] for _, payload in api.calls], [2, 0])
-        # The plain notice, links and all.
-        self.assertEqual(api.calls[1][1]["content"], f"{self.NOTICE}\n{self.BATTLE}")
+        self.assertEqual([payload["msg_type"] for _, payload in api.calls], [2, 7])
         self.assertEqual(self.plugin.context.pushed, [])
-        with self.subTest("the plain text fails too"):
-            failing = FakeBotApi(error=RuntimeError("40034105"))
+        with self.subTest("the native picture fails too"):
+            failing = FakeBotApi(
+                error=RuntimeError("40034105"),
+                http=FakeBotHttp(raw_url=self.RAW_URL),
+            )
             self._official_platform(failing)
 
-            self.assertFalse(
-                self._notify("default:GroupMessage:G1", self._notice_with_battle())
-            )
+            self.assertFalse(self._notify("default:GroupMessage:G1"))
             self.assertEqual(
-                [payload["msg_type"] for _, payload in failing.calls], [2, 0]
+                [payload["msg_type"] for _, payload in failing.calls], [2, 7]
             )
+            self.assertEqual(self.plugin.context.pushed, [])
+        with self.subTest("the send stalls"):
 
-    def test_with_buttons_disabled_an_official_notice_is_plain_text(self) -> None:
+            class StalledApi(FakeBotApi):
+                async def post_group_message(self, **payload):
+                    await asyncio.Event().wait()
+
+            self._official_platform(
+                StalledApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+            )
+            with mock.patch.object(plugin_main, "_NOTICE_SEND_TIMEOUT_SECONDS", 0.05):
+                self.assertFalse(self._notify("default:GroupMessage:G1"))
+            self.assertEqual(self.plugin.context.pushed, [])
+
+    def test_with_the_switch_on_an_official_notice_is_the_native_picture(
+        self,
+    ) -> None:
+        self._notice_picture()
         self.plugin.settings = dataclasses.replace(
             self.plugin.settings, disable_qq_official_buttons=True
         )
-        api = FakeBotApi()
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
         self._official_platform(api)
 
-        notice = self._notice_with_battle()
-        self.assertTrue(self._notify("default:GroupMessage:G1", notice))
+        self.assertTrue(self._notify("default:GroupMessage:G1"))
 
-        # Pushed by the plugin still, as it was before buttons: plain text.
-        (_, payload), = api.calls
-        self.assertEqual(payload["msg_type"], 0)
-        self.assertEqual(payload["content"], f"{self.NOTICE}\n{self.BATTLE}")
+        # Pushed by the plugin still, as a plain picture.
+        ((_, payload),) = api.calls
+        self.assertEqual(payload["msg_type"], 7)
         self.assertEqual(self.plugin.context.pushed, [])
 
     # --- QQ official: button callbacks -------------------------------------------
@@ -2008,30 +2031,6 @@ class HandlerTests(unittest.TestCase):
         )
         self.cards = parse_hot_bosses(payload)
 
-    def _hot_bosses_with_run(self, battle_id: str, nickname: str, *, slug=None):
-        payload = hot_bosses_payload()
-        payload.append(
-            dict(
-                payload[0],
-                bossSlug=self.RODAN,
-                bossKey="bossrush01",
-                bossName="“碾骨之拳”罗丹",
-                dungeonName="危境再现·罗丹",
-            )
-        )
-        target = next(
-            entry for entry in payload if entry["bossSlug"] == (slug or self.TRIO)
-        )
-        target["topSpeedRuns"] = [
-            {
-                "battleId": battle_id,
-                "durationMs": 9_771,
-                "uploaderNickname": nickname,
-                "characterName": "诀",
-            }
-        ]
-        return parse_hot_bosses(payload), payload
-
     def _watch_slugs(self, origin: str = GROUP) -> list[str]:
         catalog = (self.TRIO, self.RODAN)
         return [
@@ -2044,10 +2043,13 @@ class HandlerTests(unittest.TestCase):
 
     def test_a_board_is_followed_by_its_keyword_listed_and_unfollowed(self) -> None:
         self._enable_watch_storage()
+        # The index has read the board: following it snapshots it at once.
+        self.plugin.data._board_read(None, standing("a1", slug=self.RODAN))
 
         (kind, reply), = self._zmdlog("zmdlog 关注 罗丹")
         self.assertEqual(kind, "plain")
         self.assertIn(f"已关注榜单「{self.RODAN_LABEL}」，序号 1", reply)
+        self.assertIn("新纪录进入前 10 名时会在这里通报", reply)
         self.assertIn(self.RODAN, self.plugin.watcher.board_snapshots)
         self.assertTrue(self.plugin.watcher.board_snapshot_store.path.exists())
 
@@ -2203,168 +2205,43 @@ class HandlerTests(unittest.TestCase):
             self.plugin._event_origin(FakeEvent("x", origin=GROUP)), GROUP
         )
 
-    def test_board_watch_cycle_reports_a_new_top_run_once(self) -> None:
-        self._enable_watch_storage()
-        slug = self.TRIO
-        (_, reply), = self._zmdlog("zmdlog 关注 三位一体")
-        self.assertIn("已关注榜单", reply)
-        fresh = self._hot_bosses_with_run("btl_upload_new000000001", "shiki")
-        sent: list[tuple[str, Notice]] = []
-
-        async def fetch():
-            return fresh
-
-        async def send(origin, notice):
-            sent.append((origin, notice))
-            return True
-
-        self.plugin.client.list_hot_bosses_with_payload = fetch
-        self.plugin.watcher.notify = send
-
-        run(self.plugin.watcher.run_board_cycle())
-
-        self.assertEqual(len(sent), 1)
-        origin, notice = sent[0]
-        self.assertEqual(origin, GROUP)
-        self.assertIn("前三名有新纪录", notice.text)
-        self.assertIn("第 1 名 · shiki · 主C 诀 · 用时 0:09.771", notice.text)
-        url = "https://zmdlogs.com/battle/btl_upload_new000000001"
-        self.assertIn(url, notice.text)
-        self.assertEqual(notice.links, (NoticeLink(url, "战报 1"),))
-        self.assertEqual(
-            self.plugin.watcher.board_snapshots[slug].runs[0].battle_id,
-            "btl_upload_new000000001",
-        )
-
-        run(self.plugin.watcher.run_board_cycle())
-        self.assertEqual(len(sent), 1)
-
-    def test_every_board_is_reported_except_the_excluded(self) -> None:
+    def test_a_new_record_on_a_watched_board_is_pushed_at_the_interval(
+        self,
+    ) -> None:
+        # The whole path: the index's read of a board reaches the watcher
+        # through the data source, and the interval's end draws and pushes.
         self._enable_watch_storage()
         for text in ("zmdlog 关注 全部", "zmdlog 取关 罗丹"):
             self._zmdlog(text)
-        reads = iter(
-            (
-                self._hot_bosses_with_run("btl_upload_new000000003", "甲"),
-                self._hot_bosses_with_run(
-                    "btl_upload_new000000004", "乙", slug=self.RODAN
-                ),
-            )
+        self._notice_picture()
+        self.plugin.context.platforms["aiocqhttp"] = platform_instance(
+            "aiocqhttp", "aiocqhttp"
         )
-        sent: list[tuple[str, Notice]] = []
+        read = self.plugin.data._board_read
+        read(standing("a1", "b1"), standing("n1", "a1", "b1"))
+        read(
+            standing("a1", slug=self.RODAN), standing("m1", "a1", slug=self.RODAN)
+        )
+        # An rDPS read is never news.
+        read(standing("a1", metric="rdps"), standing("r1", "a1", metric="rdps"))
 
-        async def fetch():
-            return next(reads)
+        run(self.plugin.watcher.run_notice_cycle())
 
-        async def send(origin, notice):
-            sent.append((origin, notice))
-            return True
-
-        self.plugin.client.list_hot_bosses_with_payload = fetch
-        self.plugin.watcher.notify = send
-
-        run(self.plugin.watcher.run_board_cycle())
-        run(self.plugin.watcher.run_board_cycle())
-
-        (origin, notice), = sent
+        ((entries, kwargs),) = self.drawn
+        self.assertEqual(
+            [(entry.boss_slug, entry.record.battle_id) for entry in entries],
+            [(self.TRIO, "btl_n1")],
+        )
+        self.assertTrue(entries[0].champion)
+        self.assertEqual(kwargs["top_n"], 10)
+        ((origin, _),) = self.plugin.context.pushed
         self.assertEqual(origin, GROUP)
-        self.assertIn("三位一体", notice.text)
-        self.assertNotIn(self.RODAN, self.plugin.watcher.board_snapshots)
-
-    def test_a_failed_send_keeps_the_baseline_so_the_next_cycle_retries(self) -> None:
-        # Saving the snapshot first and sending second lost the event for
-        # good: the next cycle compared against the ranks already stored and
-        # saw nothing to report.
-        self._enable_watch_storage()
-        slug = self.TRIO
-        self.plugin.watcher.watchlist = self.plugin.watcher.watchlist.with_chat(
-            GROUP,
-            ChatWatch().with_board(
-                WatchedBoard(
-                    boss_slug=slug,
-                    boss_name="危境再现·三位一体",
-                    dungeon_name="危境再现 · 测试区",
-                    added_by="aiocqhttp:111",
-                    added_at="2026-08-22T10:00:00+00:00",
-                )
-            )[0],
-        )
-        seed, _ = self._hot_bosses_with_run("btl_upload_old000000001", "老王")
-        self.plugin.watcher.board_snapshots = {
-            slug: build_board_snapshot(seed[0], checked_at=utc_now_text())
-        }
-        fresh = self._hot_bosses_with_run("btl_upload_new000000009", "新人")
-        sent: list[tuple[str, Notice]] = []
-        delivered = [False]
-
-        async def fetch():
-            return fresh
-
-        async def send(origin, notice):
-            sent.append((origin, notice))
-            return delivered[0]
-
-        self.plugin.client.list_hot_bosses_with_payload = fetch
-        self.plugin.watcher.notify = send
-
-        run(self.plugin.watcher.run_board_cycle())
-        self.assertEqual(len(sent), 1)
-        # The send failed, so the baseline still holds the old run.
         self.assertEqual(
-            self.plugin.watcher.board_snapshots[slug].runs[0].battle_id,
-            "btl_upload_old000000001",
+            self.plugin.watcher.board_snapshots[self.TRIO].battle_ids,
+            ("btl_n1", "btl_a1", "btl_b1"),
         )
-
-        delivered[0] = True
-        run(self.plugin.watcher.run_board_cycle())
-        self.assertEqual(len(sent), 2)
-        self.assertEqual(sent[0][1], sent[1][1])
-        # Delivered this time, so the baseline finally moves on.
-        self.assertEqual(
-            self.plugin.watcher.board_snapshots[slug].runs[0].battle_id,
-            "btl_upload_new000000009",
-        )
-        run(self.plugin.watcher.run_board_cycle())
-        self.assertEqual(len(sent), 2)
-
-    def test_a_stale_board_baseline_is_reseeded_silently(self) -> None:
-        self._enable_watch_storage()
-        slug = self.TRIO
-        self.plugin.watcher.watchlist = self.plugin.watcher.watchlist.with_chat(
-            GROUP,
-            ChatWatch().with_board(
-                WatchedBoard(
-                    boss_slug=slug,
-                    boss_name="危境再现·三位一体",
-                    dungeon_name="危境再现 · 测试区",
-                    added_by="aiocqhttp:111",
-                    added_at="2026-08-22T10:00:00+00:00",
-                )
-            )[0],
-        )
-        self.plugin.watcher.board_snapshots = {
-            slug: BoardSnapshot(runs=(), checked_at="2020-01-01T00:00:00+00:00")
-        }
-        fresh = self._hot_bosses_with_run("btl_upload_new000000002", "shiki")
-        sent: list[tuple[str, Notice]] = []
-
-        async def fetch():
-            return fresh
-
-        async def send(origin, notice):
-            sent.append((origin, notice))
-            return True
-
-        self.plugin.client.list_hot_bosses_with_payload = fetch
-        self.plugin.watcher.notify = send
-
-        run(self.plugin.watcher.run_board_cycle())
-
-        self.assertEqual(sent, [])
-        self.assertEqual(
-            self.plugin.watcher.board_snapshots[slug].runs[0].battle_id,
-            "btl_upload_new000000002",
-        )
+        run(self.plugin.watcher.run_notice_cycle())
+        self.assertEqual(len(self.plugin.context.pushed), 1)
 
     # --- 趋势 -----------------------------------------------------------------
 

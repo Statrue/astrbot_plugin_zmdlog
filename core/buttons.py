@@ -20,7 +20,7 @@ A 角色档案 pick names the character by its name, as its sibling buttons
 do, and the board by its slug after ``--榜单``.
 
 A list gets one button per row while five fit. Only 榜单's list is longer,
-and it shares the five rows as a notice does; a dungeon then shows the part
+and it shares the five rows, five to a row; a dungeon then shows the part
 of its name after the phase (灼痛疤痕), since half a row cuts a name before
 the part that tells the 1期 dungeons apart. Past twenty-five picks, the rest
 have no button and are picked by quoting the list.
@@ -85,14 +85,9 @@ then right, 「shiki 的战报」 drawing that battle's 摘要 — the side by t
 name the page calls it, which tells two uploads by one person apart the
 page's way.
 
-A board notice carries a jump button for every battle it prints a link to,
-under the label ``core/watch`` gave it (``战报 1``). In the markdown the
-label takes the printed link's place, at the end of the line above it —
-the line that says whose record it is — so text and button name each
-battle the same way; the plain text keeps its links. The keyboard holds
-five rows of five: a full merge names at most nine battles (three boards'
-top three), one per row while five fit; a notice naming more than
-twenty-five goes as plain text.
+A board notice (the 顶屁股通告 picture) goes out as a result picture does,
+a markdown image, but with no keyboard under it: nobody asked for buttons
+on a push, and when they are wanted they are decided here.
 
 With callbacks on (a default-off switch; ``qq_official`` explains the
 patch), a command button whose command draws a page becomes a *callback*
@@ -131,7 +126,6 @@ from .routing import (
     parse_zmdlog_payload,
     ranking_page_count,
 )
-from .watch import Notice
 
 # Measured on the QQ client: fifteen characters show in full. The row number
 # goes in front of the name and is not counted.
@@ -266,7 +260,8 @@ class ButtonMessage:
     """A markdown body and the keyboard that goes under it."""
 
     markdown: str
-    keyboard: dict[str, Any]
+    # None for a message with nothing under it (a notice picture).
+    keyboard: dict[str, Any] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -418,9 +413,9 @@ def result_image_message(
     *,
     size: tuple[int, int],
     scale: int,
-    keyboard: dict[str, Any],
+    keyboard: dict[str, Any] | None,
 ) -> ButtonMessage | None:
-    """A result picture as a markdown image, ``keyboard`` under it.
+    """A result picture as a markdown image, ``keyboard`` under it, if any.
 
     ``raw_url`` is where the platform stored the uploaded PNG, ``size`` its
     pixels and ``scale`` the device pixels per CSS pixel it was captured at.
@@ -457,34 +452,6 @@ def site_page_message(
         return None
     button = jump_button("open", _SITE_PAGE_LABELS[page], url)
     return ButtonMessage(markdown=escape_markdown(text), keyboard=keyboard([button]))
-
-
-def notice_message(notice: Notice) -> ButtonMessage | None:
-    """A board notice as markdown, a jump button per battle it prints.
-
-    None when it prints no battle a button can open, or more than a keyboard
-    holds; the plain notice, links and all, is all there is then.
-    """
-
-    links = [link for link in notice.links if safe_http_url(link.url) is not None]
-    if not links or len(links) > MAX_KEYBOARD_ROWS * MAX_ROW_BUTTONS:
-        return None
-    labels = {link.url: link.label for link in links}
-    lines: list[str] = []
-    for line in notice.text.split("\n"):
-        label = labels.get(line)
-        if label is None:
-            lines.append(escape_markdown(line))
-        elif lines:
-            lines[-1] += f" · {escape_markdown(label)}"
-        else:
-            lines.append(escape_markdown(label))
-    buttons = [
-        jump_button(f"battle-{number}", link.label, link.url)
-        for number, link in enumerate(links, start=1)
-    ]
-    rows = _fill_rows(buttons)
-    return ButtonMessage(markdown="\n".join(lines), keyboard=_keyboard_rows(rows))
 
 
 def result_keyboard(

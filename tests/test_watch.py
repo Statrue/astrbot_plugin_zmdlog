@@ -1,26 +1,26 @@
-"""Tests for the board watch: watch lists, their file, board diffs, notice text."""
+"""Tests for the board watch: watch lists, their file, the notice cycle.
 
+The cycle is driven the way the data source drives it — a board read goes
+through :func:`core.board_changes.board_changes` with what the watcher
+brings, and :meth:`RankWatcher.collect` queues what comes out — with a fake
+clock and a fake sender standing in for the interval and the platform.
+"""
+
+import asyncio
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from core.board_changes import BoardSnapshot, board_changes
 from core.candidates import CandidateStore
-from core.models import HotBossCard, HotBossRun
 from core.persistence import load_json, save_json
-from core.rank_watch import WATCHLIST_FILE, RankWatcher
+from core.rank_watch import BOARD_SNAPSHOT_FILE, WATCHLIST_FILE, RankWatcher
 from core.settings import PluginSettings
 from core.watch import (
-    BoardSnapshot,
-    BoardTopRun,
-    Notice,
-    NoticeLink,
-    board_snapshot_is_usable,
+    NoticeBatch,
     board_snapshot_payload,
-    build_board_snapshot,
-    find_top_run_changes,
-    format_board_notice,
-    join_board_notices,
     parse_board_snapshot_payload,
 )
 from core.watchlist import (
@@ -32,6 +32,7 @@ from core.watchlist import (
     format_watchlist,
     parse_watchlist,
 )
+from tests.helpers import standing
 
 GROUP = "aiocqhttp:GroupMessage:1"
 OTHER_GROUP = "aiocqhttp:GroupMessage:2"
@@ -41,16 +42,6 @@ ADDED_AT = "2026-08-22T10:00:00+00:00"
 # What 隔离对话 made of GROUP for members 111 and 222.
 MEMBER_111 = "aiocqhttp:GroupMessage:111_1"
 MEMBER_222 = "aiocqhttp:GroupMessage:222_1"
-
-
-def battle_url(index: int) -> str:
-    return f"https://zmdlogs.com/battle/btl_upload_{index}"
-
-
-def link(index: int) -> "NoticeLink":
-    """The one link of a single-battle notice, numbered as its own message."""
-
-    return NoticeLink(battle_url(index), "战报 1")
 
 
 def board_entry(
@@ -82,26 +73,6 @@ def every_board(*excluded: str, added_by: str = "aiocqhttp:111") -> ChatWatch:
     return chat
 
 
-def card(slug: str, *runs: tuple[str, str, str, int]) -> HotBossCard:
-    """A hot-bosses card from (battleId, nickname, character, durationMs) runs."""
-
-    return HotBossCard(
-        boss_slug=slug,
-        boss_key=f"key-{slug}",
-        boss_name=f"首领 {slug}",
-        dungeon_name=f"副本 {slug}",
-        top_speed_runs=tuple(
-            HotBossRun(
-                battle_id=battle_id,
-                duration_ms=duration_ms,
-                uploader_nickname=nickname,
-                character_name=character,
-            )
-            for battle_id, nickname, character, duration_ms in runs
-        ),
-    )
-
-
 class _ListLogger:
     """A LogSink that keeps what it was told to warn about."""
 
@@ -128,7 +99,6 @@ def watcher_on(root: Path, warnings: list[str] | None = None) -> RankWatcher:
     """A watcher that only loads its files; the collaborators stay idle."""
 
     return RankWatcher(
-        client=None,
         data=None,
         settings=PluginSettings(),
         data_dir=root,
@@ -479,11 +449,12 @@ class WatchListFileTests(unittest.TestCase):
 
 class WatchListTextTests(unittest.TestCase):
     def test_an_empty_list_says_how_to_follow(self) -> None:
-        text = format_watchlist(ChatWatch(), command="/zmdlog")
+        text = format_watchlist(ChatWatch(), command="/zmdlog", top_n=10)
 
         self.assertIn("还没有关注任何榜单", text)
         self.assertIn("/zmdlog 关注 <榜单关键词>", text)
         self.assertIn("/zmdlog 关注 全部", text)
+        self.assertIn("前 10 名", text)
         self.assertNotIn("账号", text)
 
     def test_an_explicit_list_is_numbered(self) -> None:
@@ -493,22 +464,23 @@ class WatchListTextTests(unittest.TestCase):
             )
         )
 
-        text = format_watchlist(chat, command="/zmdlog")
+        text = format_watchlist(chat, command="/zmdlog", top_n=10)
 
         self.assertIn("当前关注的榜单", text)
         self.assertIn("1. 影拓丰碑4期 · 山中见犼 · 苦难", text)
         self.assertIn("取关 <序号或榜单关键词>", text)
 
     def test_every_board_shows_its_exclusions(self) -> None:
-        self.assertIn("当前关注：全部榜单", format_watchlist(every_board()))
-        self.assertNotIn("已排除", format_watchlist(every_board()))
+        self.assertIn("当前关注：全部榜单", format_watchlist(every_board(), top_n=10))
+        self.assertNotIn("已排除", format_watchlist(every_board(), top_n=10))
 
-        text = format_watchlist(every_board("slug_a", "slug_b"))
+        text = format_watchlist(every_board("slug_a", "slug_b"), top_n=8)
 
         self.assertIn(
             "已排除：\n- 副本 slug_a · 首领 slug_a\n- 副本 slug_b · 首领 slug_b",
             text,
         )
+        self.assertIn("新纪录进入前 8 名时通报", text)
 
 
 class BoardLabelTests(unittest.TestCase):
@@ -524,159 +496,243 @@ class BoardLabelTests(unittest.TestCase):
         self.assertEqual(board_label("危机合约", "破潮之像"), "危机合约 · 破潮之像")
 
 
-class BoardDiffTests(unittest.TestCase):
-    def test_first_sighting_and_an_unchanged_top_are_silent(self) -> None:
-        current = card(
-            "slug_a", ("btl_a", "甲", "诀", 9771), ("btl_b", "乙", "洛茜", 10000)
+SLUG_A = "dung01_group_bossrush02"
+SLUG_B = "dung01_group_bossrush01"
+START = datetime(2026, 10, 5, 2, 30, tzinfo=UTC)
+
+
+class NoticeCycleTests(unittest.TestCase):
+    """The interval: entries queued per chat, one picture each, sent or kept.
+
+    GROUP watches boards A and B, OTHER_GROUP board A alone. Every read is
+    a board read by the index, at the fake clock's time; every cycle the
+    interval's end.
+    """
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        watchlist = (
+            WatchList.empty()
+            .with_chat(GROUP, explicit(SLUG_A, SLUG_B))
+            .with_chat(OTHER_GROUP, explicit(SLUG_A))
         )
-        baseline = build_board_snapshot(current, checked_at=CHECKED)
+        save_json(self.root / WATCHLIST_FILE, watchlist.to_payload())
+        self.clock = [START]
+        self.sent: list[tuple[str, NoticeBatch]] = []
+        self.refuse: set[str] = set()
+        self.warnings: list[str] = []
+        self.watcher = self._start()
 
-        self.assertIsNone(find_top_run_changes(None, current))
-        self.assertIsNone(find_top_run_changes(baseline, current))
-        self.assertEqual([run.battle_id for run in baseline.runs], ["btl_a", "btl_b"])
-        self.assertEqual(baseline.runs[0].uploader_nickname, "甲")
-        self.assertEqual(baseline.checked_at, CHECKED)
+    def _start(self) -> RankWatcher:
+        """A watcher on the test's directory, as a (re)start loads one."""
 
-    def test_a_new_record_reports_the_entry_and_who_fell_out(self) -> None:
-        previous = build_board_snapshot(
-            card(
-                "slug_a",
-                ("btl_a", "甲", "诀", 9771),
-                ("btl_b", "乙", "洛茜", 10000),
-                ("btl_c", "丙", "卡缪", 11000),
-            ),
-            checked_at=CHECKED,
+        async def send(origin: str, batch: NoticeBatch) -> bool:
+            self.sent.append((origin, batch))
+            return origin not in self.refuse
+
+        return RankWatcher(
+            data=None,
+            settings=PluginSettings(),
+            data_dir=self.root,
+            board_matcher=None,
+            candidates=CandidateStore(),
+            notify=send,
+            logger=_ListLogger(self.warnings),
+            now=lambda: self.clock[0],
         )
-        current = card(
-            "slug_a",
-            ("btl_new", "丁", "黎风", 9000),
-            ("btl_a", "甲", "诀", 9771),
-            ("btl_b", "乙", "洛茜", 10000),
+
+    def _later(self, minutes: float) -> None:
+        self.clock[0] += timedelta(minutes=minutes)
+
+    def _at(self, minutes: float) -> str:
+        return (START + timedelta(minutes=minutes)).isoformat()
+
+    def _read(self, previous, current, watcher: RankWatcher | None = None) -> None:
+        """One read of a board, handed on the way the data source does."""
+
+        watcher = watcher or self.watcher
+        changes = board_changes(
+            previous,
+            current,
+            seen_at=self.clock[0].isoformat(),
+            last_ranks={},
+            watch=watcher.notice_watch(current.boss_slug),
         )
+        watcher.collect(changes)
 
-        change = find_top_run_changes(previous, current)
+    def _cycle(self, watcher: RankWatcher | None = None) -> dict[str, NoticeBatch]:
+        """One interval's end: what each chat was sent."""
 
+        before = len(self.sent)
+        asyncio.run((watcher or self.watcher).run_notice_cycle())
+        return dict(self.sent[before:])
+
+    @staticmethod
+    def _records(batch: NoticeBatch) -> list[str]:
+        return [entry.record.battle_id.removeprefix("btl_") for entry in batch.entries]
+
+    def _snapshot(self, watcher: RankWatcher | None = None) -> tuple[str, ...]:
+        return (watcher or self.watcher).board_snapshots[SLUG_A].battle_ids
+
+    def test_one_picture_a_chat_an_interval(self) -> None:
+        a0, a1 = standing("a1", "b1"), standing("n1", "a1", "b1")
+        a2 = standing("n1", "a1", "m1", "b1")
+        b0, b1 = standing("c1", slug=SLUG_B), standing("c1", "x1", slug=SLUG_B)
+        self._later(3)
+        self._read(a0, a1)
+        self._later(3)
+        self._read(a1, a2)
+        self._later(3)
+        self._read(b0, b1)
+        self._later(6)
+
+        sent = self._cycle()
+
+        self.assertEqual(list(sent), [GROUP, OTHER_GROUP])
+        self.assertEqual(self._records(sent[GROUP]), ["n1", "m1", "x1"])
+        self.assertEqual(self._records(sent[OTHER_GROUP]), ["n1", "m1"])
         self.assertEqual(
-            [(entry.rank, entry.run.battle_id) for entry in change.new_runs],
-            [(1, "btl_new")],
+            (sent[GROUP].window_start, sent[GROUP].window_end),
+            (self._at(0), self._at(15)),
         )
+        self.assertEqual(sent[GROUP].top_n, 10)
+        # Delivered: nothing waits, the snapshot moved to the latest read,
+        # and the next interval has nothing to send.
+        self.assertEqual(self.watcher.pending(GROUP), ())
+        self.assertEqual(self._snapshot(), ("btl_n1", "btl_a1", "btl_m1", "btl_b1"))
         self.assertEqual(
-            [
-                (entry.rank, entry.run.uploader_nickname)
-                for entry in change.dropped_runs
-            ],
-            [(3, "丙")],
+            self.watcher.board_snapshots[SLUG_A].checked_at, self._at(15)
         )
-        self.assertEqual(change.boss_name, "首领 slug_a")
+        self._later(15)
+        self.assertEqual(self._cycle(), {})
 
-    def test_a_deleted_record_is_not_news(self) -> None:
-        previous = build_board_snapshot(
-            card("slug_a", ("btl_a", "甲", "诀", 9771), ("btl_b", "乙", "洛茜", 10000)),
-            checked_at=CHECKED,
-        )
+    def test_a_failed_send_is_sent_again_and_holds_the_snapshot(self) -> None:
+        self._read(None, standing("a1", "b1"))
+        self._later(15)
+        self.assertEqual(self._cycle(), {})
+        self.assertEqual(self._snapshot(), ("btl_a1", "btl_b1"))
 
-        shrunken = card("slug_a", ("btl_b", "乙", "洛茜", 10000))
+        self.refuse.add(GROUP)
+        self._later(5)
+        self._read(standing("a1", "b1"), standing("n1", "a1", "b1"))
+        self._later(10)
+        failed = self._cycle()
 
-        self.assertIsNone(find_top_run_changes(previous, shrunken))
-
-    def test_board_baseline_freshness(self) -> None:
-        fresh = BoardSnapshot(runs=(), checked_at=CHECKED)
-
-        self.assertTrue(
-            board_snapshot_is_usable(fresh, now=AFTER, max_age_seconds=86_400)
-        )
-        self.assertFalse(
-            board_snapshot_is_usable(fresh, now=AFTER, max_age_seconds=3_600)
-        )
-        self.assertFalse(
-            board_snapshot_is_usable(None, now=AFTER, max_age_seconds=86_400)
-        )
-        self.assertFalse(
-            board_snapshot_is_usable(
-                BoardSnapshot(runs=(), checked_at=None),
-                now=AFTER,
-                max_age_seconds=86_400,
-            )
-        )
-
-
-class BoardNoticeTests(unittest.TestCase):
-    def test_notice_lists_new_runs_with_links_then_the_displaced(self) -> None:
-        previous = build_board_snapshot(
-            card(
-                "slug_a",
-                ("btl_a", "甲", "诀", 9771),
-                ("btl_b", "乙", "洛茜", 10000),
-                ("btl_c", "丙", "卡缪", 11000),
-            ),
-            checked_at=CHECKED,
-        )
-        current = card(
-            "slug_a",
-            ("btl_new1", "丁", "黎风", 9000),
-            ("btl_new2", "戊", "余烬", 9500),
-            ("btl_a", "甲", "诀", 9771),
-        )
-
-        notice = format_board_notice(
-            find_top_run_changes(previous, current), web_base_url="https://zmdlogs.com"
-        )
-
-        text = notice.text
-        self.assertIn("「副本 slug_a · 首领 slug_a」前三名有新纪录", text)
-        self.assertIn("第 1 名 · 丁 · 主C 黎风 · 用时 0:09.000", text)
-        self.assertIn("第 2 名 · 戊 · 主C 余烬 · 用时 0:09.500", text)
-        self.assertIn(
-            "跌出前三：乙（原第 2 · 主C 洛茜）、丙（原第 3 · 主C 卡缪）", text
-        )
-        self.assertNotIn("超", text)
-        # Each new run's battle, as the text prints it; the displaced get none.
-        urls = [
-            "https://zmdlogs.com/battle/btl_new1",
-            "https://zmdlogs.com/battle/btl_new2",
-        ]
-        self.assertEqual([link.url for link in notice.links], urls)
-        self.assertEqual([link.label for link in notice.links], ["战报 1", "战报 2"])
-        for url in urls:
-            self.assertIn(url, text.splitlines())
-
-    def test_a_new_record_on_an_empty_board_has_nobody_to_displace(self) -> None:
-        previous = BoardSnapshot(runs=(), checked_at=CHECKED)
-        notice = format_board_notice(
-            find_top_run_changes(previous, card("slug_a", ("btl_a", "甲", "诀", 9771))),
-            web_base_url="https://zmdlogs.com",
-        )
-
-        self.assertIn("第 1 名 · 甲", notice.text)
-        self.assertNotIn("跌出前三", notice.text)
-
-    def test_board_notices_merge_per_chat(self) -> None:
-        notices = tuple(
-            Notice(f"🏁 榜单{index}\n{battle_url(index)}", (link(index),))
-            for index in range(5)
-        )
-
-        merged = join_board_notices(notices)
-
-        self.assertEqual(merged.text.count("🏁"), 3)
-        self.assertIn("另有 2 个关注的榜单也有新纪录。", merged.text)
+        self.assertEqual(list(failed), [GROUP, OTHER_GROUP])
         self.assertEqual(
-            [entry.label for entry in merged.links], ["战报 1", "战报 2", "战报 3"]
+            [entry.record.battle_id for entry in self.watcher.pending(GROUP)],
+            ["btl_n1"],
         )
-        self.assertEqual(join_board_notices(notices[:1]), notices[0])
+        # GROUP still waits for n1, so the board's snapshot stays put: a
+        # restart now would find n1 again.
+        self.assertEqual(self._snapshot(), ("btl_a1", "btl_b1"))
+
+        self.refuse.clear()
+        self._later(5)
+        self._read(standing("n1", "a1", "b1"), standing("n1", "m1", "a1", "b1"))
+        self._later(10)
+        resent = self._cycle()
+
+        self.assertEqual(self._records(resent[GROUP]), ["n1", "m1"])
+        self.assertEqual(self._records(resent[OTHER_GROUP]), ["m1"])
+        # The picture covers the oldest entry it carries.
+        self.assertEqual(resent[GROUP].window_start, self._at(20))
+        self.assertEqual(resent[OTHER_GROUP].window_start, self._at(30))
+        self.assertEqual(self._snapshot(), ("btl_n1", "btl_m1", "btl_a1", "btl_b1"))
+        self._later(15)
+        self.assertEqual(self._cycle(), {})
+
+    def test_a_restart_finds_what_was_waiting_through_the_snapshot(self) -> None:
+        self._read(None, standing("a1", "b1"))
+        self._later(15)
+        self._cycle()
+        self._later(5)
+        self._read(standing("a1", "b1"), standing("n1", "a1", "b1"))
+        # The bot stops before the interval ends: the queue is gone.
+        self._later(5)
+        restarted = self._start()
+        self.assertEqual(restarted.pending(GROUP), ())
+
+        self._read(None, standing("n1", "a1", "b1"), watcher=restarted)
+        self._later(5)
+        sent = self._cycle(restarted)
+
+        self.assertEqual(self._records(sent[GROUP]), ["n1"])
+        self.assertEqual(self._records(sent[OTHER_GROUP]), ["n1"])
+        (entry,) = sent[GROUP].entries
+        self.assertTrue(entry.champion)
+        self.assertEqual(
+            [(pushed.before, pushed.after) for pushed in entry.pushed],
+            [(1, 2), (2, 3)],
+        )
+
+    def test_after_a_long_stop_a_board_starts_over_silently(self) -> None:
+        self._read(None, standing("a1", "b1"))
+        self._later(15)
+        self._cycle()
+        # Longer than max(3 × 15 minutes, 1 hour).
+        self._later(61)
+        restarted = self._start()
+
+        self._read(None, standing("n1", "a1", "b1"), watcher=restarted)
+        self._later(15)
+
+        self.assertEqual(self._cycle(restarted), {})
+        self.assertEqual(self._snapshot(restarted), ("btl_n1", "btl_a1", "btl_b1"))
+
+    def test_a_snapshot_no_read_renews_is_dropped_once_too_old(self) -> None:
+        # Board B is watched but has not been read since the start: its
+        # snapshot is kept while it can still be compared with, no longer.
+        self.watcher._save_board_snapshots(
+            {SLUG_B: BoardSnapshot(("btl_c1",), self._at(0))}
+        )
+        self._later(60)
+        self._cycle()
+        self.assertIn(SLUG_B, self.watcher.board_snapshots)
+        self._later(15)
+        self._cycle()
+        self.assertNotIn(SLUG_B, self.watcher.board_snapshots)
+
+    def test_a_board_unwatched_before_the_send_is_not_sent(self) -> None:
+        self._read(standing("a1"), standing("n1", "a1"))
+        self.assertTrue(self.watcher._save_chat(OTHER_GROUP, ChatWatch()))
+        self._later(15)
+
+        self.assertEqual(list(self._cycle()), [GROUP])
+        self.assertEqual(self.watcher.pending(OTHER_GROUP), ())
+
+    def test_a_chat_unreachable_too_long_is_dropped_and_the_snapshot_moves(
+        self,
+    ) -> None:
+        self.refuse.add(GROUP)
+        self._read(standing("a1"), standing("n1", "a1"))
+        attempts = 0
+        for _ in range(5):
+            self._later(15)
+            attempts += GROUP in self._cycle()
+
+        # Tried for the snapshot age, an hour, then given up on.
+        self.assertEqual(attempts, 4)
+        self.assertEqual(self.watcher.pending(GROUP), ())
+        self.assertIn("could not deliver", self.warnings[-1])
+        self.assertEqual(self._snapshot(), ("btl_n1", "btl_a1"))
 
 
-class BoardSnapshotPayloadTests(unittest.TestCase):
+class BoardSnapshotFileTests(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+
     def test_round_trip_and_garbage(self) -> None:
-        snapshots = {
-            "slug_a": build_board_snapshot(
-                card("slug_a", ("btl_a", "甲", "诀", 9771)), checked_at=CHECKED
-            )
-        }
+        snapshots = {"slug_a": BoardSnapshot(("btl_a", "btl_b"), CHECKED, whole=True)}
 
-        self.assertEqual(
-            parse_board_snapshot_payload(board_snapshot_payload(snapshots)), snapshots
-        )
+        payload = board_snapshot_payload(snapshots)
+
+        self.assertEqual(payload["version"], 2)
+        self.assertEqual(parse_board_snapshot_payload(payload), snapshots)
         self.assertEqual(parse_board_snapshot_payload(None), {})
         self.assertEqual(parse_board_snapshot_payload({"boards": []}), {})
         parsed = parse_board_snapshot_payload(
@@ -684,21 +740,58 @@ class BoardSnapshotPayloadTests(unittest.TestCase):
                 "boards": {
                     "slug_a": {
                         "checkedAt": CHECKED,
-                        "runs": [
-                            {"battleId": "btl_a", "durationMs": "x"},
-                            {"nope": 1},
-                            "junk",
-                        ],
+                        "battleIds": ["btl_a", 3, "", None],
                     },
-                    "slug_b": {"runs": "junk"},
-                    "slug_c": {"checkedAt": None, "runs": []},
+                    "slug_b": {"battleIds": "junk"},
+                    "slug_c": {"checkedAt": None, "battleIds": []},
                 }
             }
         )
-        self.assertEqual(parsed["slug_a"].runs, (BoardTopRun("btl_a", "", "", 0),))
-        self.assertEqual(parsed["slug_a"].checked_at, CHECKED)
+        self.assertEqual(parsed["slug_a"], BoardSnapshot(("btl_a",), CHECKED))
         self.assertNotIn("slug_b", parsed)
-        self.assertEqual(parsed["slug_c"], BoardSnapshot(runs=(), checked_at=None))
+        # A stamp that does not read: a snapshot too old to compare with.
+        self.assertEqual(parsed["slug_c"], BoardSnapshot((), ""))
+
+    def test_the_old_top_three_file_is_read_as_a_partial_snapshot(self) -> None:
+        run = {"uploaderNickname": "甲", "characterName": "诀", "durationMs": 9771}
+        old = {
+            "version": 1,
+            "boards": {
+                "slug_a": {
+                    "checkedAt": CHECKED,
+                    "runs": [
+                        dict(run, battleId="btl_a"),
+                        dict(run, battleId="btl_b"),
+                        "junk",
+                    ],
+                },
+                "slug_b": {"runs": "junk"},
+            },
+        }
+        (self.root / BOARD_SNAPSHOT_FILE).write_text(json.dumps(old), encoding="utf-8")
+
+        watcher = watcher_on(self.root)
+
+        # Its top three: never the whole board, whatever their number.
+        self.assertEqual(
+            watcher.board_snapshots,
+            {"slug_a": BoardSnapshot(("btl_a", "btl_b"), CHECKED, whole=False)},
+        )
+
+    def test_a_missing_file_is_empty_and_a_corrupt_one_is_set_aside(self) -> None:
+        warnings: list[str] = []
+
+        self.assertEqual(watcher_on(self.root, warnings).board_snapshots, {})
+        self.assertEqual(warnings, [])
+
+        (self.root / BOARD_SNAPSHOT_FILE).write_text("{not json", encoding="utf-8")
+        corrupt = watcher_on(self.root, warnings)
+
+        self.assertEqual(corrupt.board_snapshots, {})
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("board snapshot", warnings[0])
+        (aside,) = [path.name for path in self.root.iterdir()]
+        self.assertTrue(aside.startswith(f"{BOARD_SNAPSHOT_FILE}.corrupt-"))
 
 
 class TimestampOrderTests(unittest.TestCase):

@@ -16,13 +16,17 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
-from core.board_changes import board_changes
+from core.board_changes import BoardSnapshot, NoticeWatch, board_changes
+from core.candidates import CandidateStore
 from core.datasource import RANK_HISTORY_FILE, ZmdLogsDataSource
 from core.history import MAX_POINT_AGE_SECONDS, RankPoint
 from core.models import parse_boss_ranking
-from core.persistence import JsonStore
+from core.persistence import JsonStore, save_json
 from core.rank_trend import RankTrend
-from tests.helpers import ranking_payload_with_rows
+from core.rank_watch import WATCHLIST_FILE, RankWatcher
+from core.settings import PluginSettings
+from core.watchlist import ChatWatch, WatchedBoard, WatchList
+from tests.helpers import ranking_payload_with_rows, standing
 
 SLUG = "dung01_group_bossrush02"
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
@@ -141,6 +145,280 @@ class BoardChangeTests(unittest.TestCase):
                 last_ranks={"usr_a": 1},
             )
         )
+
+
+GROUP = "aiocqhttp:GroupMessage:1"
+OTHER_GROUP = "aiocqhttp:GroupMessage:2"
+CONTRACT_SLUG = "indie_group_ccdg"
+def watching(slug: str = SLUG, *, origin: str = GROUP) -> WatchList:
+    chat, _ = ChatWatch().with_board(
+        WatchedBoard(slug, "首领", "副本", "aiocqhttp:111", stamp(1))
+    )
+    return WatchList.empty().with_chat(origin, chat)
+
+
+def snapshot(*records: str, days_ago: float = 0.01, whole: bool = False):
+    return BoardSnapshot(
+        battle_ids=tuple(f"btl_{record}" for record in records),
+        checked_at=stamp(days_ago),
+        whole=whole,
+    )
+
+
+def notices(
+    previous,
+    current,
+    *,
+    watchlist: WatchList | None = None,
+    top_n: int = 10,
+    snap: BoardSnapshot | None = None,
+    announced=frozenset(),
+):
+    """What one read gives every chat, through the seam."""
+
+    changes = board_changes(
+        previous,
+        current,
+        seen_at=stamp(),
+        last_ranks={},
+        watch=NoticeWatch(
+            watchlist=watching(current.boss_slug) if watchlist is None else watchlist,
+            top_n=top_n,
+            snapshot=snap,
+            snapshot_max_age_seconds=3600.0,
+        ),
+        announced=announced,
+    )
+    return changes.notices
+
+
+def told(previous, current, **kwargs):
+    """The one chat's entries as (rank, record, champion, pushed) tuples."""
+
+    found = notices(previous, current, **kwargs)
+    if not found:
+        return []
+    (entries,) = found.values()
+    return [
+        (
+            entry.rank,
+            entry.record.battle_id.removeprefix("btl_"),
+            entry.champion,
+            [
+                (
+                    pushed.record.account_id.removeprefix("usr_"),
+                    pushed.before,
+                    pushed.after,
+                )
+                for pushed in entry.pushed
+            ],
+        )
+        for entry in entries
+    ]
+
+
+class NoticeEntryTests(unittest.TestCase):
+    """The seam: before/after, the watch list and the snapshot → notice entries."""
+
+    def test_a_new_record_entering_the_top_n_is_one_entry(self) -> None:
+        found = notices(standing("a1", "b1", "c1"), standing("a1", "n1", "b1", "c1"))
+
+        ((origin, (entry,)),) = found.items()
+        self.assertEqual(origin, GROUP)
+        self.assertEqual(
+            (entry.boss_slug, entry.seen_at, entry.rank, entry.record.battle_id),
+            (SLUG, stamp(), 2, "btl_n1"),
+        )
+        self.assertFalse(entry.champion)
+        # Everyone it moved down, best first, before and after it.
+        self.assertEqual(
+            [(p.record.account_display_name, p.before, p.after) for p in entry.pushed],
+            [("昵称 b", 2, 3), ("昵称 c", 3, 4)],
+        )
+
+    def test_first_place_changing_hands_is_a_new_champion(self) -> None:
+        self.assertEqual(
+            told(standing("a1", "b1"), standing("n1", "a1", "b1")),
+            [(1, "n1", True, [("a", 1, 2), ("b", 2, 3)])],
+        )
+        # The holder beating their own #1 is a plain new record: nobody's
+        # place changed hands, and their own account did not move.
+        self.assertEqual(
+            told(standing("a1", "b1"), standing("a2", "a1", "b1")),
+            [(1, "a2", False, [("b", 2, 3)])],
+        )
+        # A board's first record: the place had no holder, now it has one.
+        self.assertEqual(told(standing(), standing("n1")), [(1, "n1", True, [])])
+
+    def test_a_new_record_outside_the_top_n_is_not_news(self) -> None:
+        self.assertEqual(
+            told(standing("a1", "b1"), standing("a1", "b1", "n1"), top_n=2), []
+        )
+        self.assertEqual(
+            told(standing("a1", "b1"), standing("a1", "b1", "n1"), top_n=3),
+            [(3, "n1", False, [])],
+        )
+
+    def test_whom_it_pushed_and_who_fell_out_of_the_top_n(self) -> None:
+        # c was third, outside the top 2, so it was not pushed out of it.
+        self.assertEqual(
+            told(standing("a1", "b1", "c1"), standing("n1", "a1", "b1", "c1"), top_n=2),
+            [(1, "n1", True, [("a", 1, 2), ("b", 2, 3)])],
+        )
+        # An account is pushed once, by its best record.
+        self.assertEqual(
+            told(
+                standing("a1", "b1", "a2", "c1"),
+                standing("n1", "a1", "b1", "a2", "c1"),
+            ),
+            [(1, "n1", True, [("a", 1, 2), ("b", 2, 3), ("c", 4, 5)])],
+        )
+
+    def test_a_threshold_return_or_a_deletion_is_no_record(self) -> None:
+        # b was deleted (or fell under 60% of the median): c moved up.
+        self.assertEqual(told(standing("a1", "b1", "c1"), standing("a1", "c1")), [])
+        # b came back over the threshold: it was announced when it was new.
+        self.assertEqual(
+            told(
+                standing("a1", "c1"),
+                standing("a1", "b1", "c1"),
+                announced=frozenset({"btl_b1"}),
+            ),
+            [],
+        )
+        # A deletion and an upload in one read: counted on the board as it
+        # stood after the deletion.
+        self.assertEqual(
+            told(standing("a1", "b1", "c1"), standing("a1", "n1", "c1")),
+            [(2, "n1", False, [("c", 2, 3)])],
+        )
+
+    def test_an_rdps_read_gives_no_entry(self) -> None:
+        self.assertIsNone(
+            board_changes(
+                standing("a1", metric="rdps"),
+                standing("n1", "a1", metric="rdps"),
+                seen_at=stamp(),
+                last_ranks={},
+                watch=NoticeWatch(watching(), top_n=10),
+            )
+        )
+
+    def test_several_new_records_on_one_board_are_one_entry_each(self) -> None:
+        # In rank order, best first; each counts what it pushed on the board
+        # as it stood just before it, the better new record already there.
+        self.assertEqual(
+            told(
+                standing("a1", "b1", "c1", "d1"),
+                standing("n1", "a1", "m1", "b1", "c1", "d1"),
+                top_n=4,
+            ),
+            [
+                (1, "n1", True, [("a", 1, 2), ("b", 2, 3), ("c", 3, 4), ("d", 4, 5)]),
+                (3, "m1", False, [("b", 3, 4), ("c", 4, 5)]),
+            ],
+        )
+
+    def test_a_contract_board_entry_carries_the_score(self) -> None:
+        found = notices(
+            standing("a1", slug=CONTRACT_SLUG, score=40),
+            standing("n1", "a1", slug=CONTRACT_SLUG, score=47),
+        )
+
+        ((entry,),) = found.values()
+        self.assertEqual(entry.boss_slug, CONTRACT_SLUG)
+        self.assertEqual(entry.record.contract_tag_score, 47)
+        self.assertEqual(entry.rank, 1)
+
+    def test_only_the_chats_watching_the_board_are_told(self) -> None:
+        before, after = standing("a1"), standing("n1", "a1")
+        self.assertEqual(notices(before, after, watchlist=watching("other")), {})
+        self.assertEqual(notices(before, after, watchlist=WatchList.empty()), {})
+
+        every = ChatWatch().following_all(added_by="aiocqhttp:111", added_at=stamp(1))
+        excluding = every.excluding(
+            WatchedBoard(SLUG, "首领", "副本", "aiocqhttp:111", stamp(1))
+        )
+        watchlist = (
+            WatchList.empty()
+            .with_chat(GROUP, every)
+            .with_chat(OTHER_GROUP, excluding)
+            .with_chat("aiocqhttp:GroupMessage:3", watching("other").chat(GROUP))
+        )
+        self.assertEqual(list(notices(before, after, watchlist=watchlist)), [GROUP])
+
+    def test_a_first_read_without_a_snapshot_is_no_change(self) -> None:
+        changes = board_changes(
+            None,
+            standing("n1", "a1", "b1"),
+            seen_at=stamp(),
+            last_ranks={},
+            watch=NoticeWatch(watching(), top_n=2),
+        )
+
+        self.assertEqual(changes.notices, {})
+        # What the watch keeps from the read: its top N, to compare a
+        # restart against.
+        self.assertEqual(
+            changes.snapshot,
+            BoardSnapshot(("btl_n1", "btl_a1"), checked_at=stamp(), whole=False),
+        )
+        whole = board_changes(
+            None,
+            standing("a1"),
+            seen_at=stamp(),
+            last_ranks={},
+            watch=NoticeWatch(watching(), top_n=2),
+        )
+        self.assertTrue(whole.snapshot.whole)
+
+    def test_a_restart_compares_its_first_read_with_the_snapshot(self) -> None:
+        self.assertEqual(
+            told(
+                None,
+                standing("n1", "a1", "b1", "c1"),
+                top_n=2,
+                snap=snapshot("a1", "b1"),
+            ),
+            [(1, "n1", True, [("a", 1, 2), ("b", 2, 3)])],
+        )
+        # The snapshot holds the top N only: c, below it, is not new for
+        # having risen into the top N when b was deleted.
+        self.assertEqual(
+            told(None, standing("a1", "c1"), top_n=2, snap=snapshot("a1", "b1")), []
+        )
+        # The top three the old file kept are the same kind of baseline: a
+        # record below them is not known to be new.
+        self.assertEqual(
+            told(
+                None,
+                standing("a1", "b1", "c1", "d1"),
+                snap=snapshot("a1", "b1", "c1"),
+            ),
+            [],
+        )
+        # A snapshot that held the whole board knows every record on it.
+        self.assertEqual(
+            told(None, standing("a1", "n1"), snap=snapshot("a1", whole=True)),
+            [(2, "n1", False, [])],
+        )
+
+    def test_a_stale_snapshot_is_a_silent_new_start(self) -> None:
+        changes = board_changes(
+            None,
+            standing("n1", "a1"),
+            seen_at=stamp(),
+            last_ranks={},
+            watch=NoticeWatch(
+                watching(),
+                top_n=10,
+                snapshot=snapshot("a1", days_ago=1),
+                snapshot_max_age_seconds=3600.0,
+            ),
+        )
+
+        self.assertEqual(changes.notices, {})
+        self.assertEqual(changes.snapshot.battle_ids, ("btl_n1", "btl_a1"))
 
 
 class RankTrendTests(unittest.TestCase):
@@ -360,6 +638,91 @@ class RefreshHookTests(unittest.TestCase):
         self.assertEqual(self._ranks(moved, "usr_a"), [1, 2])
         self.assertEqual(self._ranks(moved, "usr_b"), [2, 3])
         self.assertEqual(self._ranks(moved, "usr_new"), [1])
+
+
+class NoticeHookTests(unittest.TestCase):
+    """The data source hands every DPS read to the board watch as well."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.data_dir = Path(directory.name)
+        save_json(self.data_dir / WATCHLIST_FILE, watching().to_payload())
+        self.boards = {"dps": standing("a1", "b1"), "rdps": standing(metric="rdps")}
+
+    def _source(self, get_boss_rankings) -> ZmdLogsDataSource:
+        return ZmdLogsDataSource(
+            SimpleNamespace(get_boss_rankings=get_boss_rankings),
+            data_dir=self.data_dir,
+            logger=logging.getLogger("test"),
+        )
+
+    def _watcher(self, source: ZmdLogsDataSource) -> RankWatcher:
+        """The plugin's watcher, which attaches itself to the data source."""
+
+        return RankWatcher(
+            data=source,
+            settings=PluginSettings(),
+            data_dir=self.data_dir,
+            board_matcher=None,
+            candidates=CandidateStore(),
+            notify=None,
+            logger=logging.getLogger("test"),
+        )
+
+    def _life(self) -> RankWatcher:
+        """One process: a fresh index reads the board once in each metric."""
+
+        async def get_boss_rankings(slug, *, metric):
+            return self.boards[metric]
+
+        async def scenario():
+            source = self._source(get_boss_rankings)
+            watcher = self._watcher(source)
+            await source.ranking_index.get(SLUG)
+            await source.ranking_index.get(SLUG, metric="rdps")
+            await source.close()
+            return watcher
+
+        return run_async(scenario())
+
+    @staticmethod
+    def _queued(watcher: RankWatcher) -> list[str]:
+        return [entry.record.battle_id for entry in watcher.pending(GROUP)]
+
+    def test_a_record_found_by_a_re_read_is_queued(self) -> None:
+        reads = iter((standing("a1", "b1"), standing("n1", "a1", "b1")))
+
+        async def get_boss_rankings(slug, *, metric):
+            return next(reads)
+
+        async def scenario():
+            source = self._source(get_boss_rankings)
+            watcher = self._watcher(source)
+            await source.ranking_index.get(SLUG)
+            await source.ranking_index._refresh(SLUG, "dps")
+            await source.close()
+            return source, watcher
+
+        source, watcher = run_async(scenario())
+
+        # The event log announced n1 on that same read; the notice still
+        # counts it, having asked before the read was recorded.
+        self.assertEqual(self._queued(watcher), ["btl_n1"])
+        self.assertIn("btl_n1", source.event_log.announced("dps"))
+
+    def test_a_restart_compares_its_first_read_with_the_snapshot(self) -> None:
+        first = self._life()
+        self.assertEqual(self._queued(first), [])
+        # The interval ends: the board's top N is kept on disk.
+        run_async(first.run_notice_cycle())
+
+        self.boards["dps"] = standing("n1", "a1", "b1")
+        # rDPS reads are never news, a new record there included.
+        self.boards["rdps"] = standing("r1", metric="rdps")
+        restarted = self._life()
+
+        self.assertEqual(self._queued(restarted), ["btl_n1"])
 
 
 def run_async(coro):

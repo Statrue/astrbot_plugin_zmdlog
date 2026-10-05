@@ -77,7 +77,7 @@
           <li>
             {{ face(pushed.face, "is-small") }}
             <b>{{ pushed.name }}</b>
-            <span class="notice-move"><i>▼</i>{{ pushed.before }} → {{ pushed.after }}</span>
+            <span class="notice-move"><i class="notice-down" aria-hidden="true"></i>{{ pushed.before }} → {{ pushed.after }}</span>
             {% if pushed.fell_out %}<em class="notice-out">跌出前 {{ page.top_n }}</em>{% endif %}
           </li>
           {% endfor %}

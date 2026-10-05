@@ -214,6 +214,7 @@ class TemplateRendererTests(unittest.TestCase):
                     PushedAccount(record=row(after, who), before=before, after=after)
                     for who, before, after in pushed
                 ),
+                champion=rank == 1,
             )
 
         return (
@@ -282,6 +283,12 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertEqual(html.count("被顶下去的"), 3)
         self.assertIn("華鳥風月", html)
         self.assertIn("10 → 11", html)
+        # The ▼ before it is drawn: no bundled face has the glyph.
+        moves = re.findall(r'<span class="notice-move">(.*?)</span>', html)
+        self.assertEqual(len(moves), 5)
+        for move in moves:
+            self.assertIn('class="notice-down"', move)
+            self.assertNotIn("▼", move)
         self.assertEqual(html.count("跌出前 10"), 1)
         # The uploader is named; the main C's face says who, not a word.
         self.assertIn("dusk・&amp;華鳥風月", html)

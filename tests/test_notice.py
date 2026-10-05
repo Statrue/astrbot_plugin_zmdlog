@@ -52,6 +52,7 @@ def entry(
     dungeon: str = "战争回响",
     seen_at: str = "2026-10-05T02:38:00+00:00",
     pushed: tuple[tuple[str, int, int], ...] = (),
+    champion: bool | None = None,
     **record_fields,
 ) -> NoticeEntry:
     return NoticeEntry(
@@ -65,6 +66,8 @@ def entry(
             PushedAccount(record=row(after, who), before=before, after=after)
             for who, before, after in pushed
         ),
+        # The board diff decides it; a #1 taken from someone else, here.
+        champion=rank == 1 if champion is None else champion,
     )
 
 
@@ -122,6 +125,8 @@ class NoticePageTests(unittest.TestCase):
         self.assertTrue(champion.champion)
         self.assertFalse(other.champion)
         self.assertEqual((champion.rank, other.rank), (1, 4))
+        # The board diff decides it: a holder beating their own #1 is NEW!.
+        self.assertFalse(only_record(build(entry(1, champion=False))).champion)
 
     def test_a_record_shows_its_time_and_dps_and_its_main_c_face(self) -> None:
         record = only_record(build(entry(3, dps=179_934.87, duration_ms=12_743)))
