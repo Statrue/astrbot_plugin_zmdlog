@@ -247,6 +247,26 @@ are affixes, `equips[]` (4 pieces: 护手 / 护甲 / 配件 ×2) and
 with ratio stats as fractions (e.g. `0.1495`) and occasionally untranslated
 names `Main` / `副能力`.
 
+**A stat `name` can be the game's attribute enum by number,
+`attribute_type_N`, instead of the Chinese label** (live, 2026-10-05). Over the
+gear of 180 board battles it appears on parsers v48–v57 and on none older,
+mixed with Chinese names inside one battle, one character and even one piece
+(`btl_upload_c5cf4810aa09`). Numbers seen: 0, 3, 40, 41, 42, 44, 87. They are
+the ids of `/api/game-data/attribute_type` (below), which names 3 `Def`,
+39–42 `Str` / `Agi` / `Wisd` / `Will`, 44 `AttributeType44` with icon
+`icon_ultimate_sp_gain_scalar` and 87 `PhySpellUp` with `icon_originium_arts`.
+The values agree with the Chinese spellings of the same survey: every
+`_3` value is a main-slot 防御力 value (21 / 42 / 56), `_44` values
+(0.160179, 0.266964, …) are 终结技充能效率 values, `_87`'s 53.82 / 44.85 /
+26.91 are 源石技艺强度 values, and 40–42 take the value table the four
+primary attributes (力量 / 敏捷 / 智识 / 意志) share, so the values alone cannot
+tell them apart — the catalog name does (**inferred** that the battle's
+numbers are the catalog's ids; nothing states it). 39 (`Str`, 力量) was not
+seen and is mapped from the catalog alone. `attribute_type_0` (`AttributeType0`, no icon) carries
+values of several different stats (0.299, 0.269123, 35, 23) and names none.
+`core/loadout.stat_label` maps the numbers above and prints any other
+non-Chinese name as 属性未收录.
+
 **`suitName` is not a property of the item and must never be used as an
 identity or as the truth.** Surveyed over 270 battles: 17 of 129 item ids come
 back under more than one suit, `item_equip_t4_suit_usp02_body_03` alone under
@@ -574,7 +594,10 @@ Returns `{schemaVersion: 1, battleId, parserVersion, rulesVersion, dungeon{dunge
 `roster` is the detail roster minus profession / avatar / element /
 accountDisplayName. `casts[]` =
 `{tsMsFromStart, endMsFromStart|null, characterKey, skillKey, skillName, skillSource: "unknown"|"Summon", recoversEnergy}`
-and includes normal-attack segments and summoned entities' casts;
+and includes normal-attack segments and summoned entities' casts; a
+summon's `skillName` can be its raw key
+(`chr_0011_seraph_normal_skill_abentity_onfield`, `Summon`, v57 — `abentity`
+is the keys' short spelling of `abilityentity`, **inferred**);
 `tsMsFromStart` can be negative (before the timer), `endMsFromStart` null or
 past `durationMs`, 10–110 casts per speed run.
 
@@ -612,7 +635,10 @@ Sibling modules: `character` (33), `weapon` (79), `enemy` (92), `dungeon` (94),
 **not worth using**: their ids are internal `abilityentity_*` keys with mostly
 empty `decodedName`, they do not match the `roleSkillStats` keys the plugin
 prints, and `attribute_type` is English enum names (`MaxHp`,
-`AttributeType11`) rather than the Chinese labels the battle payload already carries.
+`AttributeType11`) rather than the Chinese labels the battle payload usually carries.
+`/api/game-data/attribute_type` lists the same 94 entries keyed by number,
+`{id: "3", name: "Def", slug, icon, …}`: the numbers newer uploads write as
+`attribute_type_N` in gear stats (`roster[]` above).
 
 ## `GET /api/battles/users/search?query=&limit=`
 

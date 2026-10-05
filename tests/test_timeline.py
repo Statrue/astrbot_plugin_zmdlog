@@ -197,6 +197,34 @@ class RailFoldingTests(unittest.TestCase):
         )
         self.assertEqual((events[0].start_ms, events[0].end_ms), (1_000, 2_400))
 
+    def test_an_unnamed_summon_reads_as_the_entity_its_skill_left(self) -> None:
+        # 赛希's 战技 as btl_upload_c5cf4810aa09 (parser v57) recorded it:
+        # the summon's name is its raw key, ``abentity`` the keys' short
+        # spelling of ``abilityentity``.
+        seraph = "chr_0011_seraph"
+        payload = battle_export_payload()
+        payload["casts"] = [
+            cast(f"{seraph}_normal_skill", "分布式拒绝服务", 1_000, 1_600,
+                 character=seraph),
+            cast(f"{seraph}_normal_skill_abentity_onfield",
+                 f"{seraph}_normal_skill_abentity_onfield", 1_000, 9_000,
+                 character=seraph, source="Summon"),
+            cast(f"{seraph}_combo_skill_abilityrange",
+                 f"{seraph}_combo_skill_abilityrange", 4_000, 6_000,
+                 character=seraph, source="Summon"),
+        ]
+
+        timeline = build_timeline(parse_battle_export(payload))
+        (lane,) = (lane for lane in timeline.lanes if lane.character_key == seraph)
+
+        self.assertEqual(
+            [event.name for event in lane.summon_events],
+            ["战技 · 实体在场", "连携技 · 范围"],
+        )
+        view = repr(view_of(payload))
+        self.assertNotIn("abentity", view)
+        self.assertNotIn("abilityrange", view)
+
     def test_a_caster_missing_from_the_roster_gets_a_lane(self) -> None:
         payload = battle_export_payload()
         payload["casts"][0]["characterKey"] = "chr_9999_ghost"

@@ -477,7 +477,7 @@ class SkillNamingTests(unittest.TestCase):
 
         self.assertEqual(
             [(row.name, row.merged_count) for row in group.rows],
-            [("焚灭", 1), ("焚灭·余烬", 1), ("焚灭 · abilityentity", 1)],
+            [("焚灭", 1), ("焚灭·余烬", 1), ("焚灭 · 实体", 1)],
         )
 
 
@@ -637,6 +637,55 @@ class LoadoutPresentationTests(unittest.TestCase):
         self.assertIsNone(kamiu.weapon.skill_label)
         self.assertIsNone(kamiu.weapon.level_label)
         self.assertEqual(kamiu.weapon.refine_label, "精炼 6")
+
+    def test_attribute_type_numbers_print_the_stat_they_stand_for(self) -> None:
+        # 险关手甲 as btl_upload_c5cf4810aa09 (parser v57) recorded it, then
+        # 涉渊护手's two other numbers from the same battle: the stat names are
+        # the game's attribute enum by number, beside pieces that still carry
+        # Chinese names. ``_0`` is the enum's unnamed zero (seen on v48–v57),
+        # ``_999`` any number not yet seen, and ``PhySpellUp`` the enum's
+        # English name in place of either.
+        def stat(slot: str, name: str, value: float) -> dict:
+            level = None if slot == "main" else 3
+            return {"slot": slot, "name": name, "value": value, "level": level}
+
+        payload = battle_detail_payload()
+        payload["battle"]["roster"][0]["equips"][0]["stats"] = [
+            stat("main", "attribute_type_3", 42.0),
+            stat("sub1", "attribute_type_40", 84.0),
+            stat("sub2", "attribute_type_42", 55.0),
+            stat("sub3", "attribute_type_87", 44.85),
+            stat("sub1", "attribute_type_41", 111.0),
+            stat("sub2", "attribute_type_44", 0.278571),
+            stat("sub3", "attribute_type_0", 0.299),
+            stat("sub3", "attribute_type_999", 12.0),
+            stat("sub3", "PhySpellUp", 12.0),
+        ]
+        battle = parse_battle_detail(payload)
+        web = "https://zmdlogs.com"
+
+        loadout = build_loadout_page(battle, query="q", web_base_url=web)
+        card = build_battle_page(battle, query="q", web_base_url=web)
+
+        self.assertEqual(
+            [(line.name, line.value) for line in loadout.loadouts[0].equips[0].stats],
+            [
+                ("防御力", "42"),
+                ("敏捷", "84"),
+                ("意志", "55"),
+                ("源石技艺强度", "44.9"),
+                ("智识", "111"),
+                ("终结技充能效率", "27.9%"),
+                ("属性未收录", "29.9%"),
+                ("属性未收录", "12"),
+                ("属性未收录", "12"),
+            ],
+        )
+        # The card's gear lines (and the comparison built on them) read the
+        # same view; no raw spelling survives anywhere on either page.
+        for page in (loadout, card):
+            self.assertNotIn("attribute_type", repr(page))
+            self.assertNotIn("PhySpellUp", repr(page))
 
     def test_the_catalog_names_a_suit_upstream_left_blank(self) -> None:
         # The same piece, once without the catalog and once with it. The

@@ -143,12 +143,34 @@ _KEY_TOKEN_LABELS = {
     "burning": "燃烧",
     "weakness": "脆弱",
     "phantom": "幻影",
+    # What a skill leaves on the field; keys spell the entity both ways.
+    "abentity": "实体",
+    "abilityentity": "实体",
+    "abilityrange": "范围",
+    "onfield": "在场",
     **_ELEMENT_LABELS,
 }
 _SIDE_LABELS = {"l": "左", "r": "右"}
 _CHINESE_ORDINALS = "零一二三四五六七八九"
 # Stat names the parser sometimes leaves untranslated.
 _STAT_LABELS = {"main": "主能力", "sub": "副能力"}
+# Newer uploads name a stat by the game's attribute enum, ``attribute_type_3``.
+# The numbers are the ids of upstream's ``/api/game-data/attribute_type``
+# catalog (``Def``, ``Str``, ``Agi``, ``Wisd``, ``Will``; 44 and 87 by their
+# icons, ``ultimate_sp_gain_scalar`` and ``originium_arts``). The catalog
+# carries no Chinese, so each label is what older uploads call the same
+# stat, matched on the values the two spellings share (UPSTREAM.md).
+_ATTRIBUTE_TYPE_RE = re.compile(r"^attribute_type_(\d+)$", re.IGNORECASE)
+_ATTRIBUTE_TYPE_LABELS = {
+    3: "防御力",
+    39: "力量",
+    40: "敏捷",
+    41: "智识",
+    42: "意志",
+    44: "终结技充能效率",
+    87: "源石技艺强度",
+}
+_UNKNOWN_STAT_LABEL = "属性未收录"
 _SKILL_LEVEL_SLOTS = (
     ("普攻", "_attack1"),
     ("战技", "_normal_skill"),
@@ -655,7 +677,21 @@ def element_label(element: str | None) -> str | None:
 
 
 def stat_label(name: str) -> str:
-    return _STAT_LABELS.get(name.strip().lower(), name.strip())
+    """A gear stat's name as the game prints it, never a raw enum spelling.
+
+    A name with no Chinese in it that no table covers (an enum number not
+    mapped yet, the enum's unnamed ``attribute_type_0``, an English enum
+    name) prints as 属性未收录 beside its value instead of as the key.
+    """
+
+    stripped = name.strip()
+    label = _STAT_LABELS.get(stripped.lower())
+    if label:
+        return label
+    match = _ATTRIBUTE_TYPE_RE.match(stripped)
+    if match:
+        return _ATTRIBUTE_TYPE_LABELS.get(int(match.group(1)), _UNKNOWN_STAT_LABEL)
+    return stripped if _CJK_RE.search(stripped) else _UNKNOWN_STAT_LABEL
 
 
 def suit_catalog_id(item_id: str | None) -> str | None:
