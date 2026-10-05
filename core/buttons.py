@@ -158,7 +158,7 @@ _BOARD_WORDS = {
     CandidateView.BATTLE: "战报",
     CandidateView.DATA: "数据",
     CandidateView.LOADOUT: "配装",
-    CandidateView.TIMELINE: "技能轴",
+    CandidateView.CAST: "排轴",
     CandidateView.COMPARE: "对比",
     CandidateView.WATCH_BOARD: "关注",
 }
@@ -189,7 +189,7 @@ _BATTLE_VIEWS = frozenset(
         CandidateView.BATTLE,
         CandidateView.DATA,
         CandidateView.LOADOUT,
-        CandidateView.TIMELINE,
+        CandidateView.CAST,
     }
 )
 # What each page with a target offers besides its jump button: the other
@@ -201,7 +201,7 @@ _BATTLE_VIEWS = frozenset(
 # A battle's V2 pages (摘要 and the 详细视图) offer exactly the others its
 # foot lists — core/battle_views decides which exist, the target which this
 # battle can draw. The pre-1.3.0 views below keep their old buttons until
-# each is replaced; they reach the 摘要 but it does not reach them.
+# each is replaced; they reach the V2 pages but are not reached from them.
 _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = {
     **{
         (PageSubject.BATTLE, entry.view): tuple(
@@ -212,12 +212,7 @@ _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = 
     (PageSubject.BATTLE, CandidateView.LOADOUT): (
         CandidateView.BATTLE,
         CandidateView.DATA,
-        CandidateView.TIMELINE,
-    ),
-    (PageSubject.BATTLE, CandidateView.TIMELINE): (
-        CandidateView.BATTLE,
-        CandidateView.LOADOUT,
-        CandidateView.DATA,
+        CandidateView.CAST,
     ),
     # 战报 on a board is its first place's battle, 对比 the tapper's own
     # best record against it.
@@ -705,7 +700,7 @@ def _jump_url(target: PageTarget, *, web_base_url: str) -> str | None:
         if target.boss_slug:
             query["boss"] = target.boss_slug
     elif target.subject is PageSubject.BATTLE:
-        resource = "axis" if target.view is CandidateView.TIMELINE else "battle"
+        resource = "axis" if target.view is CandidateView.CAST else "battle"
         url = public_url(web_base_url, resource, target.key)
     else:
         url = public_url(web_base_url, "boss", target.key)

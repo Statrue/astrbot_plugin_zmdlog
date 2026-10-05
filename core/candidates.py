@@ -30,7 +30,7 @@ class CandidateView(str, Enum):
     BATTLE = "battle"
     DATA = "data"
     LOADOUT = "loadout"
-    TIMELINE = "timeline"
+    CAST = "cast"
     COMPARE = "compare"
     # 关注 <关键词> that matched several boards: a pick adds one to the watch.
     WATCH_BOARD = "watch_board"
@@ -52,7 +52,7 @@ _VIEW_TITLES = {
     CandidateView.BATTLE: "的战报查询匹配到 {count} 个榜单",
     CandidateView.DATA: "的战报数据查询匹配到 {count} 个榜单",
     CandidateView.LOADOUT: "的配装查询匹配到 {count} 个榜单",
-    CandidateView.TIMELINE: "的技能轴查询匹配到 {count} 个榜单",
+    CandidateView.CAST: "的排轴查询匹配到 {count} 个榜单",
     CandidateView.COMPARE: "的战报对比匹配到 {count} 个榜单",
     CandidateView.WATCH_BOARD: "匹配到 {count} 个榜单，选一个关注",
     CandidateView.TREND: "匹配到 {count} 个公开账号，选一个看名次趋势",

@@ -58,10 +58,17 @@ def _has_skill_stats(
     return battle is None or bool(battle.skill_stats)
 
 
+def _has_casts(battle: BattleDetailSummary | None, casts_refused: bool) -> bool:
+    """An upload the export refused as too old has no casts, so no 排轴."""
+
+    return not casts_refused
+
+
 # The strip's order. #42–#44 add 数据, 排轴 and 养成 here as each lands.
 BATTLE_VIEWS: tuple[BattleView, ...] = (
     BattleView(CandidateView.BATTLE, "摘要", "战报", _always),
     BattleView(CandidateView.DATA, "数据", "数据", _has_skill_stats),
+    BattleView(CandidateView.CAST, "排轴", "排轴", _has_casts),
 )
 
 

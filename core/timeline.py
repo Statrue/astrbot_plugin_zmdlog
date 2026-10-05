@@ -1,4 +1,4 @@
-"""Skill timeline (技能轴) of one public battle, built from the export casts.
+"""The cast timeline of one public battle, built from the export casts.
 
 The public export lists every cast as an interval per character. This module
 turns that list into one rail per roster character: a time-ordered list of

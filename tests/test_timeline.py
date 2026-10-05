@@ -1,4 +1,4 @@
-"""Tests for the 0.7.0 cast rail (技能轴) built from the export."""
+"""Tests for the cast rail and the 排轴 page built from the export."""
 
 import unittest
 from pathlib import Path
@@ -15,13 +15,18 @@ from core.models import (
     parse_battle_export,
 )
 from core.presentation import (
-    build_timeline_page,
+    build_battle_cast_page,
     build_timeline_view,
 )
 from core.render import TemplateRenderer
 from core.routing import RouteKind, RouteParseError, parse_zmdlog_payload
 from core.timeline import build_timeline, classify_cast
-from tests.helpers import battle_detail_payload, battle_export_payload
+from tests.helpers import (
+    battle_detail_payload,
+    battle_export_payload,
+    buff,
+    effect,
+)
 
 WEB = "https://zmdlogs.com"
 
@@ -366,10 +371,12 @@ class RailViewTests(unittest.TestCase):
 
         view = view_of(payload)
 
-        self.assertEqual(view.chart_height, 3_857)
-        self.assertEqual(view.scale_label, "每格 5 秒")
-        self.assertEqual(view.ticks[12].label, "1:00")
-        self.assertEqual(view.ticks[-1].label, "6:25")
+        # Six pixels a second at the least: a six-minute fight is about
+        # twice the target height, its grid ten seconds a step.
+        self.assertEqual(view.chart_height, 2_314)
+        self.assertEqual(view.scale_label, "每格 10 秒")
+        self.assertEqual(view.ticks[6].label, "1:00")
+        self.assertEqual(view.ticks[-1].label, "6:20")
 
     def test_a_very_short_fight_keeps_a_minimum_height(self) -> None:
         payload = battle_export_payload()
@@ -385,22 +392,100 @@ class RailViewTests(unittest.TestCase):
         self.assertEqual((first.top, first.height), (40, 20))
 
 
-class TimelinePageTests(unittest.TestCase):
+class BattleCastPageTests(unittest.TestCase):
+    """排轴: BUFF 覆盖, then the cast rail, on the wide shell."""
+
     def setUp(self) -> None:
         self.renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
         self.battle = parse_battle_detail(battle_detail_payload())
         self.export = parse_battle_export(battle_export_payload())
 
-    def test_standalone_page_renders_the_same_rail_at_full_height(self) -> None:
-        page = build_timeline_page(self.export, query="技能轴 罗丹", web_base_url=WEB)
-        self.assertEqual(page.header.target_type, "技能轴")
-        self.assertEqual(page.timeline.chart_height, 1_000)
-        self.assertIsNone(page.buff_band)
+    def test_the_rail_aims_at_eleven_hundred_pixels(self) -> None:
+        # A short fight is capped at 40 px a second; a longer one is scaled
+        # to land near 1100 px, the page's target.
+        page = build_battle_cast_page(self.export, query="q", web_base_url=WEB)
+        self.assertEqual(page.rail.chart_height, 1_000)
 
-        html = self.renderer.render_timeline(
-            self.export, query="技能轴 罗丹", web_base_url=WEB
+        payload = battle_export_payload()
+        payload["durationMs"] = 110_000
+        page = build_battle_cast_page(
+            parse_battle_export(payload), query="q", web_base_url=WEB
         )
-        self.assertNotIn("<h2>BUFF 覆盖</h2>", html)
+        self.assertEqual(page.rail.chart_height, 1_100)
+
+    def test_buff_rows_alike_but_for_their_element_merge_into_one(self) -> None:
+        # Two buffs from one source on one target, at one value over the
+        # very same time: one row, the elements joined before the zone.
+        payload = battle_detail_payload()
+        payload["characterStates"] = [
+            {
+                "characterName": "洛茜",
+                "buffsReceived": [
+                    buff("buff_cold", "寒冷增幅", "卡缪", "洛茜", 2_000, 6_000,
+                         [effect("amp", "cryst", 0.47)]),
+                    buff("buff_nature", "自然增幅", "卡缪", "洛茜", 2_000, 6_000,
+                         [effect("amp", "natural", 0.47)]),
+                    # The same value from the same source at another time
+                    # stays its own row...
+                    buff("buff_fire", "灼热增幅", "卡缪", "洛茜", 9_000, 3_000,
+                         [effect("amp", "fire", 0.47)]),
+                    # ...and so does another value at the same time.
+                    buff("buff_pulse", "电磁增幅", "卡缪", "洛茜", 2_000, 6_000,
+                         [effect("amp", "pulse", 0.2)]),
+                ],
+                "debuffsApplied": [],
+            }
+        ]
+
+        page = build_battle_cast_page(
+            self.export,
+            battle=parse_battle_detail(payload),
+            query="q",
+            web_base_url=WEB,
+        )
+
+        self.assertEqual(
+            [
+                (row.effect_label, row.source_name, row.target_label)
+                for row in page.buff_band.rows
+            ],
+            [
+                ("寒冷/自然增幅 +47%", "卡缪", "洛茜"),
+                ("电磁增幅 +20%", "卡缪", "洛茜"),
+                ("灼热增幅 +47%", "卡缪", "洛茜"),
+            ],
+        )
+        merged = page.buff_band.rows[0]
+        self.assertEqual(merged.coverage_label, "29%")
+        self.assertEqual(len(merged.spans), 1)
+
+    def test_the_page_draws_the_band_then_the_rail(self) -> None:
+        html = self.renderer.render_battle_cast(
+            self.export,
+            battle=self.battle,
+            query="排轴 罗丹",
+            web_base_url=WEB,
+            views=(("摘要", False), ("排轴", True)),
+        )
+
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn('id="zmd-root"', html)
+        self.assertIn(">BATTLE REPORT<", html)
+        self.assertIn('<h1 class="i-title">“碾骨之拳”罗丹</h1>', html)
+        # The meta line: who, how fast, when.
+        self.assertIn("<span>测试账号</span>", html)
+        self.assertIn("<span><b>0:20.833</b> 通关</span>", html)
+        self.assertIn("<span>2026-07-13 22:00</span>", html)
+        # Time runs left to right in the band and down the rail; the switch
+        # falls on the rail's heading.
+        band = html.index("<strong>BUFF 覆盖</strong>")
+        rail = html.index("<strong>排轴</strong>")
+        self.assertLess(band, rail)
+        self.assertIn("4 条 · 右侧为覆盖率", html[band:rail])
+        self.assertIn("<b>攻击 +16%</b>", html[band:rail])
+        self.assertIn("<span>卡缪 → 全队</span>", html[band:rail])
+        self.assertIn("敌方减益", html[band:rail])
+        self.assertIn("次施法 · ", html[rail:])
         self.assertIn('class="rail-chart"', html)
         self.assertIn("rail-bar is-ultimate", html)
         self.assertIn("rail-bar is-normal", html)
@@ -413,41 +498,57 @@ class TimelinePageTests(unittest.TestCase):
         self.assertIn("<small>×2</small>", html)
         self.assertIn("已隐藏 1 条冲刺、闪避等移动动作", html)
         self.assertNotIn("chr_0028_wulfa_dash", html)
-        # With the detail at hand the page gains the band above the rail.
-        page = build_timeline_page(
-            self.export, query="q", web_base_url=WEB, battle=self.battle
-        )
-        self.assertIsNotNone(page.buff_band)
-        html = self.renderer.render_timeline(
-            self.export, query="技能轴 罗丹", web_base_url=WEB, battle=self.battle
-        )
-        self.assertIn("<h2>BUFF 覆盖</h2>", html)
-        self.assertLess(html.index("<h2>BUFF 覆盖</h2>"), html.index("<h2>技能轴</h2>"))
-        self.assertIn('class="rail-chart"', html)
         self.assertIn("每格 1 秒", html)
         self.assertIn("icon_chr_0028_wulfa.png", html)
         self.assertIn(">START<", html)
         self.assertIn(">END<", html)
+        # The foot's strip, this page lit.
+        foot = html[html.index('<footer class="i-foot">'):]
+        self.assertIn('<span>摘要</span><i>·</i><span class="is-on">排轴</span>', foot)
+        # Nothing of the old shell.
+        self.assertNotIn('id="zmd-page"', html)
+
+    def test_without_the_detail_the_rail_stands_alone(self) -> None:
+        page = build_battle_cast_page(self.export, query="q", web_base_url=WEB)
+        self.assertIsNone(page.buff_band)
+
+        html = self.renderer.render_battle_cast(
+            self.export, query="q", web_base_url=WEB
+        )
+
+        self.assertNotIn("<strong>BUFF 覆盖</strong>", html)
+        self.assertIn("<strong>排轴</strong>", html)
+        self.assertIn("<span><b>0:25.000</b> 通关</span>", html)
+        self.assertNotIn("测试账号", html)
 
 
-class TimelineRouteTests(unittest.TestCase):
-    def test_timeline_commands_share_the_battle_shape(self) -> None:
-        route = parse_zmdlog_payload("技能轴 罗丹 2")
-        self.assertEqual(route.kind, RouteKind.TIMELINE_QUERY)
+class CastRouteTests(unittest.TestCase):
+    def test_cast_shares_the_battle_shape(self) -> None:
+        route = parse_zmdlog_payload("排轴 罗丹 2")
+        self.assertEqual(route.kind, RouteKind.CAST_QUERY)
         self.assertEqual((route.query, route.battle_rank), ("罗丹", 2))
         self.assertEqual(
             parse_zmdlog_payload("排轴 btl_upload_abcdef123456").kind,
-            RouteKind.TIMELINE_QUERY,
+            RouteKind.CAST_QUERY,
         )
         self.assertEqual(
-            parse_zmdlog_payload("时间轴 罗丹").kind, RouteKind.TIMELINE_QUERY
+            parse_zmdlog_payload("排轴 罗丹 --口径 rdps").metric, "rdps"
         )
-        for payload in ("技能轴", "技能轴 罗丹 --页 3"):
+        for payload in ("排轴", "排轴 罗丹 --页 3"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
 
-    def test_pick_list_names_the_timeline_view(self) -> None:
+    def test_the_old_words_are_no_command(self) -> None:
+        # 技能轴 and 时间轴 went with the 1.3.0 views: like any other text,
+        # they are a smart query, with no alias and no hint.
+        for word in ("技能轴", "时间轴"):
+            with self.subTest(word=word):
+                route = parse_zmdlog_payload(f"{word} 罗丹")
+                self.assertEqual(route.kind, RouteKind.SMART_QUERY)
+                self.assertEqual(route.query, f"{word} 罗丹")
+
+    def test_pick_list_names_the_cast_view(self) -> None:
         choice = MatchChoice(
             target=MatchTarget(
                 target_type=TargetType.BOARD,
@@ -462,9 +563,9 @@ class TimelineRouteTests(unittest.TestCase):
         )
         store = CandidateStore()
 
-        entry = store.remember("榜", (choice, choice), view=CandidateView.TIMELINE)
+        entry = store.remember("榜", (choice, choice), view=CandidateView.CAST)
 
-        self.assertIn("技能轴查询匹配到 2 个榜单", format_candidates(entry))
+        self.assertIn("排轴查询匹配到 2 个榜单", format_candidates(entry))
 
 
 class ExportClientTests(unittest.IsolatedAsyncioTestCase):

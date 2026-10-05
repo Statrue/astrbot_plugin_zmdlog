@@ -150,7 +150,7 @@ class HelpTests(unittest.TestCase):
                 ),
                 "!zmdlog 账号 <昵称、accountId或主页链接>",
                 (
-                    "!zmdlog 战报 | 数据 | 配装 | 技能轴 "
+                    "!zmdlog 战报 | 数据 | 配装 | 排轴 "
                     "<battleId、链接或榜单关键词 [名次]> [--口径 rdps]"
                 ),
                 "!zmdlog 对比 <榜单关键词 [名次 名次] 或 两个battleId> [--口径 rdps]",

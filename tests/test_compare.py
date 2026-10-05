@@ -105,7 +105,7 @@ class CompareRoutingTests(unittest.TestCase):
         for payload in (
             "对比 btl_upload_aaaaaaaaaaaa btl_upload_bbbbbbbbbbbb --口径 rdps",
             "战报 btl_upload_aaaaaaaaaaaa --口径 rdps",
-            "技能轴 https://zmdlogs.com/battle/btl_upload_aaaaaaaaaaaa --口径 rdps",
+            "排轴 https://zmdlogs.com/battle/btl_upload_aaaaaaaaaaaa --口径 rdps",
         ):
             with self.subTest(payload=payload):
                 with self.assertRaisesRegex(RouteParseError, "--口径"):

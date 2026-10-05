@@ -343,8 +343,8 @@ class FakeRenderer:
     async def render_trend(self, history, **kwargs):
         return capture("/tmp/trend.png")
 
-    async def render_timeline(self, export, **kwargs):
-        return capture("/tmp/timeline.png")
+    async def render_battle_cast(self, export, **kwargs):
+        return capture("/tmp/cast.png")
 
     async def render_compare(self, first, second, **kwargs):
         return capture("/tmp/compare.png")
@@ -2730,9 +2730,9 @@ class HandlerTests(unittest.TestCase):
         (kind, reply), = self._zmdlog("zmdlog 绑定 测试账号")
         self.assertIn("绑定只认绑定码", reply)
 
-    # --- 技能轴 reads the export, not the detail --------------------------------
+    # --- 排轴 reads the export, and the detail beside it ------------------------
 
-    def test_timeline_uses_the_export_of_the_ranked_battle(self) -> None:
+    def test_cast_uses_the_export_of_the_ranked_battle(self) -> None:
         exported: list[str] = []
 
         async def ranking(boss_slug, **kwargs):
@@ -2747,29 +2747,66 @@ class HandlerTests(unittest.TestCase):
         async def detail(battle_id):
             return parse_battle_detail(battle_detail_payload())
 
-        async def render_timeline(export, **kwargs):
+        async def render_battle_cast(export, **kwargs):
             received.append(kwargs)
-            return capture("/tmp/timeline.png")
+            return capture("/tmp/cast.png")
 
         self.plugin.data.get_boss_ranking = ranking
         self.plugin.data.get_battle_export = export
         self.plugin.data.get_battle_detail = detail
-        self.plugin.renderer.render_timeline = render_timeline
+        self.plugin.renderer.render_battle_cast = render_battle_cast
 
-        (kind, result), = self._zmdlog("zmdlog 技能轴 三位一体 2")
-        self.assertEqual((kind, result), ("image", "/tmp/timeline.png"))
+        (kind, result), = self._zmdlog("zmdlog 排轴 三位一体 2")
+        self.assertEqual((kind, result), ("image", "/tmp/cast.png"))
         self.assertEqual(exported, ["btl_upload_000000000002"])
         # The detail rides along for the BUFF band when it can be fetched...
         self.assertEqual(received[-1]["battle"].battle_id, "btl_upload_abcdef123456")
+        # ...and the foot names the battle's pages, this one lit.
+        self.assertEqual(
+            received[-1]["views"], (("摘要", False), ("数据", False), ("排轴", True))
+        )
 
         async def offline(battle_id):
             raise ZmdLogsClientError("offline")
 
         self.plugin.data.get_battle_detail = offline
         (kind, result), = self._zmdlog("zmdlog 排轴 btl_upload_abcdef123456")
-        self.assertEqual((kind, result), ("image", "/tmp/timeline.png"))
+        self.assertEqual((kind, result), ("image", "/tmp/cast.png"))
         # ...and the page still renders without it.
         self.assertIsNone(received[-1]["battle"])
+
+    def test_the_old_timeline_words_are_answered_like_any_unknown_word(
+        self,
+    ) -> None:
+        # 技能轴 and 时间轴 went with the 1.3.0 views, without an alias or a
+        # hint: the smart query tries the boards, then the public nicknames.
+        searched: list[str] = []
+
+        async def search(query, *, limit):
+            searched.append(query)
+            return SimpleNamespace(
+                query=query,
+                has_more=False,
+                accounts=(
+                    SimpleNamespace(account_id="usr_a", account_display_name=query),
+                ),
+            )
+
+        async def account(account_id):
+            return parse_public_user_rankings(public_user_rankings_payload())
+
+        async def export(battle_id):
+            raise AssertionError("no cast export is read")
+
+        self.plugin.client.search_public_accounts = search
+        self.plugin.data.get_public_user_rankings = account
+        self.plugin.data.get_battle_export = export
+        for text in ("技能轴", "时间轴"):
+            with self.subTest(text=text):
+                (kind, result), = self._zmdlog(f"zmdlog {text}")
+
+                self.assertEqual(searched[-1:], [text])
+                self.assertEqual((kind, result), ("image", "/tmp/account.png"))
 
     def test_a_battle_draws_its_summary_whatever_the_export_answers(self) -> None:
         received: list[dict] = []
@@ -2799,11 +2836,15 @@ class HandlerTests(unittest.TestCase):
                 (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
 
                 self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
-                # The 摘要 draws no casts; its foot names the battle's pages
-                # on the V2 shell, itself lit.
+                # The 摘要 draws no casts; its foot names the battle's pages,
+                # itself lit, and 排轴 unless the export refused the upload
+                # as one with no casts.
                 self.assertNotIn("export", received[-1])
                 self.assertEqual(
-                    received[-1]["views"], (("摘要", True), ("数据", False))
+                    received[-1]["views"],
+                    (("摘要", True), ("数据", False))
+                    if answer is old_upload
+                    else (("摘要", True), ("数据", False), ("排轴", False)),
                 )
 
     def test_data_draws_the_numbers_with_its_own_view_lit(self) -> None:
@@ -2828,7 +2869,9 @@ class HandlerTests(unittest.TestCase):
         (kind, result), = self._zmdlog("zmdlog 数据 btl_upload_abcdef123456")
 
         self.assertEqual((kind, result), ("image", "/tmp/data.png"))
-        self.assertEqual(received[-1]["views"], (("摘要", False), ("数据", True)))
+        self.assertEqual(
+            received[-1]["views"], (("摘要", False), ("数据", True), ("排轴", False))
+        )
         # An upload without crit rolls has no 暴击期望 to draw.
         self.assertIsNone(received[-1]["crit"])
         # 数据 draws no casts and does not ask for them.
@@ -3096,7 +3139,7 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual((kind, result), ("image", "/tmp/loadout.png"))
         self.assertEqual(seen[-1], {})
 
-    def test_timeline_explains_old_uploads_and_rate_limits(self) -> None:
+    def test_cast_explains_old_uploads_and_rate_limits(self) -> None:
         answers = {
             "btl_upload_old000000001": ZmdLogsAPIError(
                 422, "battle_export_unsupported", "old"
@@ -3110,13 +3153,14 @@ class HandlerTests(unittest.TestCase):
 
         self.plugin.data.get_battle_export = export
 
-        (kind, reply), = self._zmdlog("zmdlog 技能轴 btl_upload_old000000001")
+        (kind, reply), = self._zmdlog("zmdlog 排轴 btl_upload_old000000001")
         self.assertEqual(kind, "plain")
         self.assertIn("旧版客户端", reply)
-        (kind, reply), = self._zmdlog("zmdlog 技能轴 btl_upload_busy00000001")
+        self.assertIn("画不了排轴", reply)
+        (kind, reply), = self._zmdlog("zmdlog 排轴 btl_upload_busy00000001")
         self.assertEqual(kind, "plain")
         self.assertIn("过于频繁", reply)
-        (kind, reply), = self._zmdlog("zmdlog 技能轴 btl_upload_gone00000001")
+        (kind, reply), = self._zmdlog("zmdlog 排轴 btl_upload_gone00000001")
         self.assertEqual((kind, reply), ("plain", "战报不存在、未公开或已删除。"))
 
     def test_a_dead_battle_is_reported_the_same_way_for_every_page(self) -> None:

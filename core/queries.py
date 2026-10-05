@@ -26,7 +26,7 @@ from dataclasses import replace
 
 from . import messages
 from .account_binding import AccountBinding, to_binding_page
-from .battle_views import unavailable_views
+from .battle_views import unavailable_views, view_strip
 from .bindings import BoundAccount, UserBindings
 from .candidates import (
     MAX_CANDIDATES,
@@ -98,14 +98,14 @@ from .render import LongImageRenderer
 from .routing import OPTION_USAGE, RouteKind, RouteRequest
 from .settings import PluginSettings
 
-# 战报 / 数据 / 配装 / 技能轴 share one argument shape and one lookup; only
+# 战报 / 数据 / 配装 / 排轴 share one argument shape and one lookup; only
 # the page drawn from the battle differs.
 BATTLE_STYLE_ROUTES = frozenset(
     {
         RouteKind.BATTLE_QUERY,
         RouteKind.DATA_QUERY,
         RouteKind.LOADOUT_QUERY,
-        RouteKind.TIMELINE_QUERY,
+        RouteKind.CAST_QUERY,
     }
 )
 _BATTLE_VIEWS = frozenset(
@@ -113,7 +113,7 @@ _BATTLE_VIEWS = frozenset(
         CandidateView.BATTLE,
         CandidateView.DATA,
         CandidateView.LOADOUT,
-        CandidateView.TIMELINE,
+        CandidateView.CAST,
     }
 )
 # Pages that exist per board only: a dungeon or scope hit is flattened to a
@@ -126,7 +126,7 @@ _BOARD_ONLY_VIEWS = (
     CandidateView.BATTLE,
     CandidateView.DATA,
     CandidateView.LOADOUT,
-    CandidateView.TIMELINE,
+    CandidateView.CAST,
     CandidateView.COMPARE,
 )
 _ROUTE_VIEWS = {
@@ -135,7 +135,7 @@ _ROUTE_VIEWS = {
     RouteKind.BATTLE_QUERY: CandidateView.BATTLE,
     RouteKind.DATA_QUERY: CandidateView.DATA,
     RouteKind.LOADOUT_QUERY: CandidateView.LOADOUT,
-    RouteKind.TIMELINE_QUERY: CandidateView.TIMELINE,
+    RouteKind.CAST_QUERY: CandidateView.CAST,
     RouteKind.COMPARE_QUERY: CandidateView.COMPARE,
     RouteKind.TREND_QUERY: CandidateView.TREND,
 }
@@ -1233,18 +1233,18 @@ class QueryService:
         *,
         query: str,
     ) -> Outcome:
-        """Draw the page a 战报 / 数据 / 配装 / 技能轴 request asked for.
+        """Draw the page a 战报 / 数据 / 配装 / 排轴 request asked for.
 
-        The timeline reads the public export, the other three the battle
-        detail. Older uploads carry no roster loadout, skill statistics or
+        排轴 reads the public export, the other three the battle detail.
+        Older uploads carry no roster loadout, skill statistics or
         cast sequence; those get a short text instead of an empty page.
         """
 
         renderer = self._renderer()
-        if view is CandidateView.TIMELINE:
-            # The detail only adds the BUFF 覆盖 band, so it is fetched
-            # alongside the export rather than after it; awaiting it second
-            # put its whole client budget behind the export's.
+        if view is CandidateView.CAST:
+            # The detail only adds the BUFF 覆盖 band and who uploaded, so it
+            # is fetched alongside the export rather than after it; awaiting
+            # it second put its whole client budget behind the export's.
             export, battle = await asyncio.gather(
                 self._data.get_battle_export(battle_id),
                 self._battle_detail_if_available(battle_id),
@@ -1261,11 +1261,12 @@ class QueryService:
             if isinstance(export, BaseException):
                 raise export
             detail = None if isinstance(battle, BaseException) else battle
-            rendered = await renderer.render_timeline(
+            rendered = await renderer.render_battle_cast(
                 export,
                 query=query,
                 web_base_url=self._web_base_url,
                 battle=detail,
+                views=view_strip(view, detail),
             )
             return Outcome.image(
                 rendered, target=_battle_target(battle_id, view, detail)
@@ -1423,8 +1424,6 @@ def _battle_target(
     unavailable = set(unavailable_views(battle, casts_refused=casts_refused))
     if battle is not None and not battle.roster:
         unavailable.add(CandidateView.LOADOUT)
-    if casts_refused:
-        unavailable.add(CandidateView.TIMELINE)
     return PageTarget(
         PageSubject.BATTLE, battle_id, view, unavailable=frozenset(unavailable)
     )

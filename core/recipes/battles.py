@@ -58,7 +58,7 @@ class BattleRecipe:
     suits: dict[str, str]
     query: str
     web_base_url: str
-    # The upload has no casts at all, so it has no 技能轴 either.
+    # The upload has no casts at all, so it has no 排轴 either.
     casts_unsupported: bool = False
     # 暴击期望; None unless the upload recorded the crit roll of some hit.
     crit: CritExpectation | None = None

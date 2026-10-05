@@ -830,6 +830,7 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((LIST_FRAME.width, LIST_FRAME.scale), (540, 2))
         self.assertEqual((WIDE_FRAME.width, WIDE_FRAME.scale), (960, 2))
         self.assertEqual(page_frame("battle"), WIDE_FRAME)
+        self.assertEqual(page_frame("battle-cast"), WIDE_FRAME)
         # Pages not yet on the V2 shell keep the old frame.
         self.assertEqual(page_frame("loadout"), LEGACY_FRAME)
         self.assertEqual((LEGACY_FRAME.width, LEGACY_FRAME.scale), (1280, 1))

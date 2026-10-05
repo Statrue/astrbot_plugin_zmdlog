@@ -191,7 +191,7 @@ class JumpButtonTests(unittest.TestCase):
             (PageTarget(PageSubject.BATTLE, BATTLE, view.BATTLE), f"/battle/{BATTLE}"),
             (PageTarget(PageSubject.BATTLE, BATTLE, view.LOADOUT), f"/battle/{BATTLE}"),
             (PageTarget(PageSubject.BATTLE, BATTLE, view.DATA), f"/battle/{BATTLE}"),
-            (PageTarget(PageSubject.BATTLE, BATTLE, view.TIMELINE), f"/axis/{BATTLE}"),
+            (PageTarget(PageSubject.BATTLE, BATTLE, view.CAST), f"/axis/{BATTLE}"),
             (PageTarget(PageSubject.BOARD, SLUG), f"/boss/{SLUG}"),
             (PageTarget(PageSubject.BOARD, SLUG, view.ROSTER), f"/boss/{SLUG}"),
             (
@@ -251,7 +251,7 @@ EVERY_PAGE = (
     (PageSubject.BATTLE, V.BATTLE),
     (PageSubject.BATTLE, V.DATA),
     (PageSubject.BATTLE, V.LOADOUT),
-    (PageSubject.BATTLE, V.TIMELINE),
+    (PageSubject.BATTLE, V.CAST),
     (PageSubject.BOARD, V.RANKING),
     (PageSubject.BOARD, V.ROSTER),
     (PageSubject.BOARD, V.CHARACTER_STATS),
@@ -276,7 +276,7 @@ LABELS = {
     "摘要": V.BATTLE,
     "数据": V.DATA,
     "配装": V.LOADOUT,
-    "技能轴": V.TIMELINE,
+    "排轴": V.CAST,
     "榜单": V.RANKING,
     "阵容": V.ROSTER,
     "角色统计": V.CHARACTER_STATS,
@@ -290,7 +290,7 @@ ROUTE_OF = {
     (PageSubject.BATTLE, V.BATTLE): RouteKind.BATTLE_QUERY,
     (PageSubject.BATTLE, V.DATA): RouteKind.DATA_QUERY,
     (PageSubject.BATTLE, V.LOADOUT): RouteKind.LOADOUT_QUERY,
-    (PageSubject.BATTLE, V.TIMELINE): RouteKind.TIMELINE_QUERY,
+    (PageSubject.BATTLE, V.CAST): RouteKind.CAST_QUERY,
     (PageSubject.BOARD, V.RANKING): RouteKind.RANKING_QUERY,
     (PageSubject.BOARD, V.ROSTER): RouteKind.ROSTER_QUERY,
     (PageSubject.BOARD, V.CHARACTER_STATS): RouteKind.CHARACTER_STATS,
@@ -308,11 +308,11 @@ class SiblingButtonTests(unittest.TestCase):
         for target, expected in (
             # A pre-1.3.0 battle view reaches the 摘要 under the strip's name.
             (
-                page(PageSubject.BATTLE, V.TIMELINE),
+                page(PageSubject.BATTLE, V.LOADOUT),
                 [
                     ("摘要", f"{c} 战报 {BATTLE}"),
-                    ("配装", f"{c} 配装 {BATTLE}"),
                     ("数据", f"{c} 数据 {BATTLE}"),
+                    ("排轴", f"{c} 排轴 {BATTLE}"),
                 ],
             ),
             (
@@ -412,7 +412,7 @@ class SiblingButtonTests(unittest.TestCase):
                     ],
                 )
         summary = page(PageSubject.BATTLE, V.BATTLE)
-        for word in ("配装", "技能", "技能轴"):
+        for word in ("配装", "技能"):
             self.assertNotIn(
                 word, [label for label, _ in sibling_buttons(summary)]
             )
@@ -424,8 +424,8 @@ class SiblingButtonTests(unittest.TestCase):
         # account the rank watch never polled has no trend.
         battle = page(
             PageSubject.BATTLE,
-            V.TIMELINE,
-            unavailable=frozenset({V.LOADOUT}),
+            V.LOADOUT,
+            unavailable=frozenset({V.CAST}),
         )
         account = page(
             PageSubject.ACCOUNT, V.RANKING, unavailable=frozenset({V.TREND})
@@ -923,7 +923,7 @@ class OutcomeTargetTests(unittest.TestCase):
         self.data.get_battle_export = old_upload
         for kind, unavailable in (
             # The card read the detail and heard the export refused.
-            (RouteKind.BATTLE_QUERY, {V.DATA, V.TIMELINE}),
+            (RouteKind.BATTLE_QUERY, {V.DATA, V.CAST}),
             # The loadout page read the detail only; casts are unknown.
             (RouteKind.LOADOUT_QUERY, {V.DATA}),
         ):
@@ -946,7 +946,7 @@ class OutcomeTargetTests(unittest.TestCase):
             (RouteKind.BATTLE_QUERY, CandidateView.BATTLE),
             (RouteKind.LOADOUT_QUERY, CandidateView.LOADOUT),
             (RouteKind.DATA_QUERY, CandidateView.DATA),
-            (RouteKind.TIMELINE_QUERY, CandidateView.TIMELINE),
+            (RouteKind.CAST_QUERY, CandidateView.CAST),
         ):
             with self.subTest(view=view):
                 outcome = self._command(kind, query=BATTLE)

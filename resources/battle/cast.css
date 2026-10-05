@@ -1,0 +1,410 @@
+/* 排轴: BUFF 覆盖 on a left-to-right time axis, then the cast rail running
+   down the page. */
+
+/* ── BUFF 覆盖: one line a buff — effect, source → target, the bar of when
+   it was up, the share of the fight ─────────────────────────────── */
+.b-hrow {
+  display: grid;
+  grid-template-columns: 360px 1fr 48px;
+  align-items: center;
+  column-gap: 14px;
+}
+.b-hrow--ruler {
+  margin-top: 8px;
+}
+.b-band-row {
+  height: 34px;
+  border-bottom: 1px solid var(--grid-soft);
+}
+.b-band-label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.b-band-label b {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  font-size: var(--fs-15);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.b-band-label span {
+  flex: none;
+  font-size: var(--fs-13);
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.b-band-track {
+  position: relative;
+  height: 16px;
+  background: var(--stripe-b);
+}
+/* a buff on some of the team is a thin bar; on all of it, the full track */
+.b-span {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  background: var(--steel);
+}
+.b-span.is-team {
+  top: 0;
+  bottom: 0;
+  background: var(--who-bg);
+}
+.is-enemy .b-span {
+  background: var(--band-enemy);
+}
+.b-band-cov {
+  text-align: right;
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-15);
+}
+/* the boss's debuffs after the team's buffs, under a bronze rule */
+.b-band-split {
+  height: 30px;
+  margin-top: 10px;
+  padding-bottom: 6px;
+  font-weight: 700;
+  font-size: var(--fs-17);
+  color: var(--band-enemy-ink);
+}
+.b-band-split i {
+  height: 2px;
+  background: var(--band-enemy);
+}
+/* the band is short and wide: the major ticks are enough */
+.b-band .b-ruler span:not(.is-major) {
+  display: none;
+}
+.b-more {
+  margin-top: 10px;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+
+/* ── the cast rail ──────────────────────────────────────────────────
+   线管连续，长度管时长，宽度与颜色管招式层级，节点管瞬时。
+   Each character one 2 px rail line; a move a bar grown rightwards from
+   it: a normal attack the narrowest, 战技 / 连携 / 重击 between, a 终结技
+   the widest and marked with a diamond; an instant a dot. */
+.rail-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0 0 12px;
+  list-style: none;
+  font-size: var(--fs-17);
+  font-weight: 700;
+  color: var(--steel);
+}
+.rail-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rail-legend b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  color: var(--muted);
+}
+.rail-legend i {
+  display: inline-block;
+  width: 16px;
+  height: 10px;
+  background: var(--move-other);
+}
+.rail-legend .is-ultimate i {
+  width: 20px;
+  background: var(--yellow);
+}
+.rail-legend .is-skill i { background: var(--move-skill); }
+.rail-legend .is-combo i { background: var(--move-combo); }
+.rail-legend .is-heavy i { background: var(--move-heavy); }
+.rail-legend .is-normal i {
+  width: 8px;
+  background: var(--move-normal);
+}
+.rail-legend .is-other i {
+  width: 12px;
+  background: var(--move-other);
+}
+.rail-legend .is-instant i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--steel);
+}
+.rail-legend .is-summon i {
+  width: 8px;
+  background-color: var(--rail-line-soft);
+  background-image: repeating-linear-gradient(-45deg, var(--rail-hatch) 0 2px, transparent 2px 4px);
+}
+.rail-legend .is-energy i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--yellow);
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.rail-chart {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--rail-line);
+  background: var(--card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+.rail-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 12px;
+  border-bottom: 1px solid var(--rail-line);
+  background: var(--rail-ground);
+}
+.rail-head--time,
+.rail-foot--time {
+  justify-content: center;
+  padding: 8px 4px;
+  font-family: var(--font-num);
+  font-size: var(--fs-15);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--move-other);
+}
+/* a character's face, ringed like the record band's */
+.rail-face {
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: 50%;
+  font-size: var(--fs-17);
+  font-weight: 700;
+  background: var(--face-bg);
+  box-shadow: 0 0 0 3px var(--card), 0 4px 8px -2px var(--lift-38);
+}
+.rail-face img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.rail-head-text {
+  min-width: 0;
+}
+.rail-head-text strong {
+  display: block;
+  overflow: hidden;
+  font-size: var(--fs-17);
+  font-weight: 800;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-head-text span {
+  display: block;
+  font-size: var(--fs-15);
+  font-weight: 600;
+  color: var(--muted);
+}
+.rail-time {
+  position: relative;
+  border-right: 1px solid var(--rail-line);
+  background: var(--rail-ground);
+}
+.rail-tick {
+  position: absolute;
+  right: 7px;
+  font-family: var(--font-num);
+  font-size: var(--fs-15);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted);
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+.rail-tick.is-major {
+  font-weight: 800;
+  color: var(--ink);
+}
+.rail-tick::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -7px;
+  width: 6px;
+  height: 1px;
+  background: var(--move-other);
+}
+.rail-tick.is-first {
+  transform: translateY(1px);
+}
+.rail-tick.is-last {
+  transform: translateY(calc(-100% - 1px));
+}
+.rail-lane {
+  position: relative;
+  overflow: hidden;
+  border-left: 1px solid var(--rail-line-soft);
+}
+/* grid lines sit well below everything else; the major ones a touch darker */
+.rail-grid {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--rail-grid);
+}
+.rail-grid.is-major {
+  background: var(--rail-grid-major);
+}
+/* the rail: continuity only */
+.rail-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 15px;
+  width: 2px;
+  background: var(--rail-line);
+}
+/* a move with a known end: a bar as long as it lasts, as wide as it matters */
+.rail-bar {
+  position: absolute;
+  background: var(--move-other);
+  border-top: 1px solid var(--card);
+}
+.rail-bar.is-ultimate { background: var(--yellow); }
+.rail-bar.is-skill { background: var(--move-skill); }
+.rail-bar.is-combo { background: var(--move-combo); }
+.rail-bar.is-heavy { background: var(--move-heavy); }
+.rail-bar.is-normal { background: var(--move-normal); }
+/* summoned entities keep to a hatched strip left of the rail */
+.rail-summon {
+  position: absolute;
+  left: 4px;
+  width: 8px;
+  background-color: var(--rail-line-soft);
+  background-image: repeating-linear-gradient(-45deg, var(--rail-hatch) 0 2px, transparent 2px 4px);
+}
+/* an instant: a dot on the rail, a diamond when it is a 终结技 */
+.rail-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--move-other);
+  box-shadow: 0 0 0 1.5px var(--card);
+  transform: translate(-50%, -50%);
+}
+.rail-dot.is-ultimate { background: var(--yellow); }
+.rail-dot.is-skill { background: var(--move-skill); }
+.rail-dot.is-combo { background: var(--move-combo); }
+.rail-dot.is-heavy { background: var(--move-heavy); }
+.rail-dot.is-normal { background: var(--steel); }
+.rail-dot.is-landmark,
+.rail-mark {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 0;
+  background: var(--yellow);
+  box-shadow: none;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.rail-energy {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--yellow);
+  box-shadow: 0 0 0 1.5px var(--ink);
+  transform: translate(-50%, 3px);
+}
+/* a hairline from a narrow bar to its label */
+.rail-lead {
+  position: absolute;
+  height: 1px;
+  background: var(--rail-line);
+}
+.rail-label {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  overflow: hidden;
+  font-size: var(--fs-15);
+  font-weight: 800;
+  line-height: 15px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.rail-label em {
+  flex: 0 0 auto;
+  font-family: var(--font-num);
+  font-size: var(--fs-15);
+  font-style: normal;
+  font-weight: 600;
+  color: var(--muted);
+}
+.rail-label b {
+  overflow: hidden;
+  min-width: 0;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+.rail-label small {
+  flex: 0 0 auto;
+  font-family: var(--font-num);
+  font-size: var(--fs-15);
+  font-weight: 800;
+  color: var(--muted);
+}
+.rail-label.is-ultimate b {
+  padding: 0 4px;
+  background: linear-gradient(transparent 55%, var(--yellow) 55%, var(--yellow) 95%, transparent 95%);
+}
+/* the text's weight follows the bar's */
+.rail-label.is-other b {
+  font-weight: 700;
+  color: var(--steel);
+}
+.rail-label.is-normal,
+.rail-label.is-summon {
+  font-weight: 600;
+  color: var(--muted);
+}
+.rail-label.is-normal b,
+.rail-label.is-summon b {
+  font-weight: 600;
+}
+.rail-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--rail-line);
+  font-size: var(--fs-15);
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--rail-ground);
+}
+.rail-foot b {
+  font-family: var(--font-num);
+  font-size: var(--fs-17);
+  font-weight: 800;
+  color: var(--ink);
+}

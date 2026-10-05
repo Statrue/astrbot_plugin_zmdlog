@@ -3,10 +3,11 @@
 The 摘要 (``build_battle_summary_page``) is what 战报 draws: the record
 band and three charts, each left out when the upload lacks its data.
 ``build_battle_page`` is the whole battle as one model — every figure the
-old card drew — which 对比 builds on. 数据 is ``battle_data``'s.
+old card drew — which 对比 builds on. 数据 is ``battle_data``'s;
+``build_battle_cast_page`` is the 排轴 view, drawn from the cast export.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..contract import group_contract_tags, tag_display_name, tag_short_name
 from ..crit import CritExpectation, CritTotals, coverage_percent
@@ -23,11 +24,13 @@ from ..loadout import (
 from ..models import (
     BattleDetailSummary,
     BattleEquip,
+    BattleExport,
     BattleParticipant,
     BattleWeapon,
 )
 from .charts import (
     BuffBandView,
+    BuffRowView,
     CritBellView,
     DpsCurveView,
     build_buff_band_view,
@@ -51,6 +54,7 @@ from .common import (
     format_number,
     public_url,
 )
+from .rail import TimelineView, build_timeline_view
 
 
 @dataclass(frozen=True, slots=True)
@@ -524,6 +528,113 @@ def _crit_summary(crit: CritExpectation | None) -> CritSummaryView | None:
         coverage_note=team.coverage_note,
         bell=bell,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class BattleCastPage:
+    """排轴: BUFF 覆盖, then the cast rail.
+
+    The band's time runs left to right and the rail's top to bottom, so the
+    page draws the band first and the switch falls on the rail's heading.
+    The rail is the export's; the band and the uploader come from the
+    detail, and without it the page is the rail alone.
+    """
+
+    header: PageHeader
+    battle_id: str
+    report_url: str
+    # None without the detail, which alone names who uploaded and when.
+    uploader_display_name: str | None
+    battle_date: str | None
+    duration: str
+    # Rows alike but for their element merged into one (``_merge_buff_rows``);
+    # None without the detail or without buffs to draw.
+    buff_band: BuffBandView | None
+    rail: TimelineView
+    views: tuple[ViewTabView, ...]
+
+
+def build_battle_cast_page(
+    export: BattleExport,
+    *,
+    query: str,
+    web_base_url: str,
+    battle: BattleDetailSummary | None = None,
+    views: tuple[tuple[str, bool], ...] = (),
+) -> BattleCastPage:
+    """排轴; ``views`` is the strip, ``(label, is_current)`` in order."""
+
+    band = build_buff_band_view(battle) if battle is not None else None
+    return BattleCastPage(
+        header=PageHeader(
+            title=export.boss_name,
+            subtitle=export.dungeon_name,
+            query=query,
+            matched_name=export.battle_id,
+            target_type="排轴",
+            footer_note="公开战报 · 上传时记录的施法序列",
+        ),
+        battle_id=export.battle_id,
+        report_url=public_url(web_base_url, "battle", export.battle_id),
+        uploader_display_name=(
+            battle.uploader_display_name if battle is not None else None
+        ),
+        battle_date=(
+            _format_datetime(battle.battle_end_at) if battle is not None else None
+        ),
+        duration=format_duration(
+            battle.duration_ms if battle is not None else export.duration_ms
+        ),
+        buff_band=(
+            replace(band, rows=_merge_buff_rows(band.rows))
+            if band is not None
+            else None
+        ),
+        rail=build_timeline_view(export, web_base_url=web_base_url),
+        views=tuple(ViewTabView(label, current) for label, current in views),
+    )
+
+
+def _merge_buff_rows(rows: tuple[BuffRowView, ...]) -> tuple[BuffRowView, ...]:
+    """BUFF 覆盖 rows that are one buff wearing several elements, as one row.
+
+    Rows with one source, one target, one value and the very same spans
+    differ only in what they boost: 寒冷增幅 +47% and 自然增幅 +47% become
+    寒冷/自然增幅 +47%, the way upstream already names some buffs. Names
+    that share their zone keep it once; others are joined whole. A row with
+    two effects (``攻击 +16% · 增伤 +20%``) is never merged.
+    """
+
+    merged: dict[tuple, list[BuffRowView]] = {}
+    for index, row in enumerate(rows):
+        name, _, value = row.effect_label.rpartition(" ")
+        if not name or " · " in row.effect_label:
+            merged[(index,)] = [row]
+            continue
+        key = (
+            row.on_enemy,
+            row.source_name,
+            row.target_label,
+            value,
+            tuple((span.left, span.width) for span in row.spans),
+        )
+        merged.setdefault(key, []).append(row)
+    return tuple(_merged_row(group) for group in merged.values())
+
+
+def _merged_row(group: list[BuffRowView]) -> BuffRowView:
+    first = group[0]
+    if len(group) == 1:
+        return first
+    names = [row.effect_label.rpartition(" ")[0] for row in group]
+    value = first.effect_label.rpartition(" ")[2]
+    # Every zone (攻击, 增幅, 脆弱, …) is two characters long.
+    zone = names[0][-2:]
+    if all(len(name) > 2 and name.endswith(zone) for name in names):
+        label = "/".join(name[:-2] for name in names) + zone
+    else:
+        label = "/".join(names)
+    return replace(first, effect_label=f"{label} {value}")
 
 
 _MAX_CARD_SKILLS = 3

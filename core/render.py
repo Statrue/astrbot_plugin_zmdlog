@@ -59,6 +59,7 @@ from .models import (
 )
 from .presentation import (
     build_account_page,
+    build_battle_cast_page,
     build_battle_data_page,
     build_battle_summary_page,
     build_character_boss_page,
@@ -73,7 +74,6 @@ from .presentation import (
     build_ranking_page,
     build_records_page,
     build_roster_page,
-    build_timeline_page,
     build_trend_page,
 )
 from .standings import (
@@ -135,6 +135,7 @@ PAGE_FRAMES: dict[str, PageFrame] = {
     "help": WIDE_FRAME,
     "battle": WIDE_FRAME,
     "battle-data": WIDE_FRAME,
+    "battle-cast": WIDE_FRAME,
 }
 
 
@@ -608,25 +609,29 @@ class TemplateRenderer:
             embed_fonts=embed_fonts,
         )
 
-    def render_timeline(
+    def render_battle_cast(
         self,
         export: BattleExport,
         *,
         query: str,
         web_base_url: str,
         battle: BattleDetailSummary | None = None,
+        views: tuple[tuple[str, bool], ...] = (),
         embed_fonts: bool = True,
     ) -> str:
-        page = build_timeline_page(
+        """排轴 from the cast export; ``battle``, when read, adds BUFF 覆盖."""
+
+        page = build_battle_cast_page(
             export,
             query=query,
             web_base_url=web_base_url,
             battle=battle,
+            views=views,
         )
         return self._render(
-            "timeline/timeline.html",
+            "battle/cast.html",
             page,
-            "timeline",
+            "battle-cast",
             embed_fonts=embed_fonts,
         )
 
@@ -914,7 +919,9 @@ class LongImageRenderer:
     )
     render_loadout = _captured("loadout", TemplateRenderer.render_loadout)
     render_trend = _captured("trend", TemplateRenderer.render_trend)
-    render_timeline = _captured("timeline", TemplateRenderer.render_timeline)
+    render_battle_cast = _captured(
+        "battle-cast", TemplateRenderer.render_battle_cast
+    )
     render_compare = _captured("compare", TemplateRenderer.render_compare)
 
     async def warm_up(self) -> None:

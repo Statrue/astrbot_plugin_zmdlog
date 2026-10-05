@@ -72,6 +72,23 @@
   --bell-hatch: rgba(52, 55, 61, 0.07);
   --mark-expected: #6b7079;
   --mark-edge: rgba(30, 32, 36, 0.35);
+  /* 排轴: a move's bar by its kind (a 终结技 is yellow), the rail's line,
+     ground and grid, a summon's hatching; the buff band's bars, a debuff's
+     in bronze */
+  --steel: #4b5059;
+  --move-skill: #34373d;
+  --move-combo: #7f97b0;
+  --move-heavy: #d98f4e;
+  --move-normal: #d3d6db;
+  --move-other: #b7bcc4;
+  --rail-line: #d3d6db;
+  --rail-line-soft: #e3e6ea;
+  --rail-ground: #f4f5f7;
+  --rail-grid: rgba(28, 32, 40, 0.05);
+  --rail-grid-major: rgba(28, 32, 40, 0.1);
+  --rail-hatch: rgba(28, 32, 40, 0.22);
+  --band-enemy: #d98f4e;
+  --band-enemy-ink: #b8692e;
   /* the potential star, the level block and the level pips */
   --star-base: #d3d6db;
   --star-shadow: rgba(30, 34, 42, 0.32);

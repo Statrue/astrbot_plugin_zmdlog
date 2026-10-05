@@ -127,7 +127,7 @@ class QueryPickListTests(unittest.TestCase):
             RouteKind.BATTLE_QUERY: CandidateView.BATTLE,
             RouteKind.LOADOUT_QUERY: CandidateView.LOADOUT,
             RouteKind.DATA_QUERY: CandidateView.DATA,
-            RouteKind.TIMELINE_QUERY: CandidateView.TIMELINE,
+            RouteKind.CAST_QUERY: CandidateView.CAST,
             RouteKind.COMPARE_QUERY: CandidateView.COMPARE,
             RouteKind.ROSTER_QUERY: CandidateView.ROSTER,
             RouteKind.CHARACTER_STATS: CandidateView.CHARACTER_STATS,

@@ -1,4 +1,4 @@
-"""The vertical cast rail (施法节奏 / 技能轴)."""
+"""The vertical cast rail, drawn on a battle's 排轴 page."""
 
 import math
 from dataclasses import dataclass
@@ -7,24 +7,19 @@ from ..loadout import (
     SkillCategory,
 )
 from ..models import (
-    BattleDetailSummary,
     BattleExport,
 )
 from ..timeline import TimelineLane, build_timeline
 from .charts import (
     _RAIL_TICK_STEPS_MS,
-    BuffBandView,
     RailTickView,
     _clock_label,
-    build_buff_band_view,
 )
 from .common import (
     _CHARACTER_AVATAR_PATH,
-    PageHeader,
     _initial,
     _safe_asset_url,
     format_duration,
-    public_url,
 )
 
 
@@ -79,7 +74,7 @@ class RailLegendView:
 
 @dataclass(frozen=True, slots=True)
 class TimelineView:
-    """The rail chart itself, drawn on the 技能轴 page."""
+    """The rail chart itself, drawn on the 排轴 page."""
 
     chart_height: int
     scale_label: str
@@ -96,24 +91,15 @@ class TimelineView:
     has_instant: bool
 
 
-@dataclass(frozen=True, slots=True)
-class TimelinePage:
-    header: PageHeader
-    battle_id: str
-    report_url: str
-    timeline: TimelineView
-    # From the battle detail, when the page could also fetch it.
-    buff_band: BuffBandView | None = None
-
-
 # The rail runs down the page. The scale is chosen per fight so the chart
-# lands near a target height, a full page for 技能轴. Labels slide down when
-# two moves are closer than one text line and are dropped when they would
-# drift too far from their node.
-_RAIL_PAGE_TARGET_PX = 1600
+# lands near a target height, 1100 px on the 排轴 page (the 1.3.0 design;
+# the old full-page rail aimed at 1600). Labels slide down when two moves
+# are closer than one text line and are dropped when they would drift too
+# far from their node.
+_RAIL_PAGE_TARGET_PX = 1100
 
 
-_RAIL_PAGE_MIN_PPS = 10.0
+_RAIL_PAGE_MIN_PPS = 6.0
 
 
 _RAIL_PAGE_MAX_PPS = 40.0
@@ -195,41 +181,6 @@ _RAIL_LEGEND = (
     ("normal", "普攻连段"),
     ("other", "其他"),
 )
-
-
-def build_timeline_page(
-    export: BattleExport,
-    *,
-    query: str,
-    web_base_url: str,
-    battle: BattleDetailSummary | None = None,
-) -> TimelinePage:
-    """The 技能轴 page: the rail chart at full height.
-
-    ``battle`` is the detail response when the caller could get it; it only
-    adds the BUFF 覆盖 band above the rail, so the page stands without it.
-    """
-
-    return TimelinePage(
-        header=PageHeader(
-            title=export.boss_name,
-            subtitle=export.dungeon_name,
-            query=query,
-            matched_name=export.battle_id,
-            target_type="技能轴",
-            footer_note="公开战报 · 上传时记录的施法序列",
-        ),
-        battle_id=export.battle_id,
-        report_url=public_url(web_base_url, "battle", export.battle_id),
-        timeline=build_timeline_view(
-            export,
-            web_base_url=web_base_url,
-            target_height=_RAIL_PAGE_TARGET_PX,
-            min_pps=_RAIL_PAGE_MIN_PPS,
-            max_pps=_RAIL_PAGE_MAX_PPS,
-        ),
-        buff_band=build_buff_band_view(battle) if battle is not None else None,
-    )
 
 
 def build_timeline_view(

@@ -13,27 +13,16 @@
   --yellow: #f8d34d;
   --yellow-deep: #e0b400;
   --yellow-soft: #fbe98f;
-  --orange: #f0731f;
   --red: #d9302c;
   --blue: #2a6fe0;
-  --teal: #22b3b9;
   --green: #2f9e5b;
   /* semantic roles — new css should reference these, not raw hues */
   --action: var(--yellow);
-  --notify: var(--orange);
   --danger: var(--red);
-  --info: var(--teal);
-  --data: #2a84b4; /* 蓝：正向数据（官方产耗行实测） */
-  --special: #8a5cf6;
   --on-dark: #fff;
   --ink-05: rgba(28, 28, 28, 0.05);
   --ink-10: rgba(28, 28, 28, 0.1);
-  --ink-22: rgba(28, 28, 28, 0.22);
   --yellow-tint: rgba(248, 211, 77, 0.18);
-  --danger-deep: #b0322f;
-  --danger-ink: #8c2c2a;
-  --danger-paper: #faf3f2;
-  --danger-line: #eddedc;
   /* Element rings on avatars. Taken from the ZMDLogs web app's own palette
      (apps/web features/battle-detail DAMAGE_ELEMENT_COLORS), so a ring here
      is the colour people saw on the site and in the game: 电磁 is yellow,

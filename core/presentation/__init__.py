@@ -10,6 +10,7 @@ from .account import (
     build_account_page,
 )
 from .battle import (
+    BattleCastPage,
     BattlePage,
     BattleParticipantView,
     BattleSummaryPage,
@@ -24,6 +25,7 @@ from .battle import (
     SummaryCharacterView,
     ViewTabView,
     WeaponView,
+    build_battle_cast_page,
     build_battle_page,
     build_battle_summary_page,
     build_loadout_page,
@@ -118,9 +120,7 @@ from .rail import (
     RailEventView,
     RailLaneView,
     RailLegendView,
-    TimelinePage,
     TimelineView,
-    build_timeline_page,
     build_timeline_view,
 )
 from .records import (
@@ -155,6 +155,7 @@ __all__ = [
     "AccountPage",
     "AccountRankingView",
     "BattleDataPage",
+    "BattleCastPage",
     "BattlePage",
     "BattleParticipantView",
     "BattleSummaryPage",
@@ -207,7 +208,6 @@ __all__ = [
     "SkillLevelView",
     "SkillRowView",
     "SummaryCharacterView",
-    "TimelinePage",
     "TimelineView",
     "Top3Page",
     "TopCardGroupView",
@@ -234,6 +234,7 @@ __all__ = [
     "_format_stat_value",
     "build_account_page",
     "build_battle_data_page",
+    "build_battle_cast_page",
     "build_battle_page",
     "build_battle_summary_page",
     "build_buff_band_view",
@@ -247,7 +248,6 @@ __all__ = [
     "build_loadout_page",
     "build_ranking_page",
     "build_roster_page",
-    "build_timeline_page",
     "build_timeline_view",
     "build_trend_page",
     "build_character_standings_page",

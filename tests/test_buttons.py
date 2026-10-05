@@ -241,7 +241,7 @@ class RoundTripTests(unittest.TestCase):
             (CandidateView.BATTLE, RouteKind.BATTLE_QUERY, {}),
             (CandidateView.LOADOUT, RouteKind.LOADOUT_QUERY, {"battle_rank": 2}),
             (CandidateView.DATA, RouteKind.DATA_QUERY, {"battle_rank": 4}),
-            (CandidateView.TIMELINE, RouteKind.TIMELINE_QUERY, {"battle_rank": 5}),
+            (CandidateView.CAST, RouteKind.CAST_QUERY, {"battle_rank": 5}),
             (CandidateView.COMPARE, RouteKind.COMPARE_QUERY, {}),
             (CandidateView.COMPARE, RouteKind.COMPARE_QUERY, {"compare_rank": 5}),
             (CandidateView.COMPARE, RouteKind.COMPARE_QUERY,
@@ -249,7 +249,7 @@ class RoundTripTests(unittest.TestCase):
             # A rank on a board is a rank on the board the metric names.
             (CandidateView.BATTLE, RouteKind.BATTLE_QUERY,
              {"battle_rank": 2, "metric": "rdps"}),
-            (CandidateView.TIMELINE, RouteKind.TIMELINE_QUERY, {"metric": "rdps"}),
+            (CandidateView.CAST, RouteKind.CAST_QUERY, {"metric": "rdps"}),
             (CandidateView.COMPARE, RouteKind.COMPARE_QUERY,
              {"compare_rank": 4, "metric": "rdps"}),
         )
