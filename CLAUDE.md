@@ -200,7 +200,8 @@ rather than a decorator. All of them run through one error guard,
   synchronously on the event loop, so an unbounded keyword was a one-message
   denial of service.
 - **`core/presentation/` dependency direction is
-  common ← charts ← rail ← battle ← compare, never back.**
+  common ← charts ← rail ← battle ← compare, never back**; `battle_data`
+  (数据) hangs off `battle` beside `compare`, and neither imports the other.
 - **The LLM tool surface is four tools, one per subject** (榜单 / 战报 / 角色 /
   账号), never one per feature — README's 大模型工具 section states the four
   design rules and their reasons. What follows from them when extending:
@@ -244,7 +245,7 @@ when the user settled the question.
   the strip's other entries, by the same names. A view joins the table when
   its V2 page lands; until then neither strip nor buttons offer it, even where
   its pre-1.3.0 page still answers its old command — those pages keep their
-  old buttons, one of which returns to the 摘要.
+  old buttons, a replaced view's under its V2 name (摘要, 数据).
 - **Elements get rings and a filter, nothing else** (2026-09-06): no element
   chip, no element text, no element statistics page. The main C wears no ring of
   its own — the row prints 主 C by name — so a ring there only cost the element
@@ -300,7 +301,7 @@ when the user settled the question.
   catalog has no upstream endpoint, and a second upstream for a decorative
   figure was rejected). Neutral colour: 合约 is data, not action. Since the
   摘要 replaced the card (#39) it carries 合约分数 alone, as its lead hero
-  figure; the tags section belongs to the 数据 view, under the rules above.
+  figure; the tags section is the 数据 view's last, under the rules above.
 - **The Chinese name is the market name; the code identity stays ZmdLogBot**
   (2026-09-19). `display_name` is 终末地·藕粉铺子 (藕粉 puns on 凹分) and the help
   page title follows it; the repository name, the `zmdlog` command, the
