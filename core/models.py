@@ -564,9 +564,9 @@ def parse_character_types(payload: Any) -> tuple[CharacterType, ...]:
     """Read element and weapon type out of ``GET /api/game-data/character``.
 
     Lenient like the suit catalog: an entry without a name or a type is
-    skipped, never fatal — the rings and the filter simply do not know that
-    character. ``charTypeName`` is the element (物理 / 灼热 / 寒冷 / 自然 /
-    电磁); the catalog carries every rarity, and the two 管理员 entries agree.
+    skipped, never fatal — the filter simply does not know that character.
+    ``charTypeName`` is the element (物理 / 灼热 / 寒冷 / 自然 / 电磁); the
+    catalog carries every rarity, and the two 管理员 entries agree.
     """
 
     root = _mapping(payload, "character-catalog")

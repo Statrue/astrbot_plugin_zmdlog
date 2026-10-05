@@ -10,9 +10,7 @@ out of both, so neither ever sends a reader to a page that would answer
 This table is the one place that decides which views exist and when a
 battle can draw one: the strip on the page (``view_strip``), the buttons
 (``core/buttons``) and the views a result names unavailable (``queries``)
-all read it. A view joins it when its page is migrated, in the order the
-strip prints it; until then it is not offered anywhere, even where its
-pre-1.3.0 page still answers its old command.
+all read it, in the order the strip prints it.
 
 What a battle "can draw" is judged only on what the page that is drawing
 already read — the detail, and whether the cast export refused the upload

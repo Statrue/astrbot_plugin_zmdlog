@@ -12,8 +12,8 @@ here.
 **名次**:
 A record's position on one board: fastest clear first (危机合约 boards:
 highest 合约分数 first), ranks dense from 1, on the DPS board unless
-`--口径 rDPS` asks for that board's. Printed as a number on a row (`03`
-on the board ranking, `#3` elsewhere), 第 N 名 in text.
+`--口径 rDPS` asks for that board's. Printed as a two-digit number on a
+row (`03`), `#3` on the 顶屁股通告 and 阵容's 最佳, 第 N 名 in text.
 _Avoid_: 排名 (for one record), 位次, 排位
 
 **主 C**:
@@ -25,7 +25,8 @@ _Avoid_: 主C, 核心, C 位
 
 **阵容**:
 The four characters a record fielded; also the page (`阵容 <榜单>`) that
-counts them over a board. A hero figure on the 摘要.
+counts them over a board. On the 摘要 it is the row of faces beside the
+hero figures, the main C's first.
 _Avoid_: 编队, 配队, 队伍配置
 
 **通关时间** / **用时**:
@@ -139,8 +140,9 @@ _Avoid_: 期望伤害, 暴击运气
 ### Page structure
 
 **摘要**:
-The page a battle query draws by default: the battle's identity, its hero
-figures (用时, 总 DPS, 总伤害, 阵容), 伤害构成, 暴击期望 and the DPS 曲线.
+The page a battle query draws by default: the battle's identity, its 阵容,
+its hero figures (通关时间, 总 DPS, 总伤害; 危机合约 leads with 合约分数),
+伤害构成, 暴击期望 and the DPS 曲线.
 It answers "how did this run go"; everything else is in a 详细视图.
 _Avoid_: 概览, 简版, 首页
 

@@ -84,6 +84,7 @@ from .recipes import (
 from .render import LongImageRenderer
 from .routing import (
     ALL_PAGES,
+    MAX_RANKING_ROWS,
     RANKING_PAGE_SIZE,
     parse_potential_text,
     parse_range_text,
@@ -200,14 +201,15 @@ class ToolService:
             target, metric=wanted_metric, on_demand=True
         )
         limit = max(1, min(limit, facts.MAX_ROW_LIMIT))
+        # The picture shows what the text lists: the first page, or the
+        # first thirty when the model asked for more than one page.
+        paged = limit <= RANKING_PAGE_SIZE
         recipe = await prepare_ranking(
             self._data,
             ranking,
             query=keyword,
             web_base_url=self._web_base_url,
-            # The picture shows what the text lists: the first page, or the
-            # first thirty when the model asked for more than one page.
-            page=1 if limit <= RANKING_PAGE_SIZE else ALL_PAGES,
+            page=1 if paged else ALL_PAGES,
             character_filter=character or None,
             element_filter=wanted or None,
             profession_filter=role or None,
@@ -233,6 +235,12 @@ class ToolService:
             since=since,
             window_label=window_label(span),
             events=events,
+            # The picture keeps the filters but not the window.
+            pictured=(
+                None
+                if since is not None
+                else RANKING_PAGE_SIZE if paged else MAX_RANKING_ROWS
+            ),
         )
         image = await self._render(recipe.draw)
         return ToolAnswer(text, image).noted(range_note)

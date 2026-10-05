@@ -716,5 +716,6 @@ Paths are in the `4e65587` snapshot; the live bundle may have moved on.
   names (自然爆发, 燃烧 …).
 - **Element colours**: `apps/web/features/battle-detail` `DAMAGE_ELEMENT_COLORS`
   — physical `#9aa3ad`, fire `#ff5f5f`, cryst `#63a9ff`, natural `#74d66b`,
-  pulse `#f5cf4e`. These are the ring colours in `base.css`; a hand-picked set
-  made 电磁 purple when the game and the site both make it yellow.
+  pulse `#f5cf4e`. The old pages ringed faces in these (a hand-picked set
+  had made 电磁 purple when the game and the site both make it yellow); no
+  V2 page draws an element colour.

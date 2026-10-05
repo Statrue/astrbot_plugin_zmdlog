@@ -66,7 +66,6 @@ from .presentation import (
     weapon_label,
 )
 from .professions import normalize_profession
-from .routing import MAX_RANKING_ROWS, RANKING_PAGE_SIZE
 from .standings import (
     AccountTally,
     CharacterStandings,
@@ -106,6 +105,7 @@ def format_board_ranking(
     since: datetime | None = None,
     window_label: str = "",
     events: tuple[RecordEvent, ...] = (),
+    pictured: int | None = None,
 ) -> str:
     """The top runs of one board, and which characters that board runs.
 
@@ -114,6 +114,8 @@ def format_board_ranking(
     without claiming X caused the rank; several names are the teams
     fielding all of them. ``since`` keeps the records fought inside a
     window and adds what the event log saw on this board in it.
+    ``pictured`` is how many of these rows the attached picture shows, in
+    this order; None when it shows a different set, or none.
     """
 
     rows = ranking.rows
@@ -184,12 +186,8 @@ def format_board_ranking(
         )
         lines.append(f"    阵容 {_team(row.roster_entries)} · battleId {row.battle_id}")
     if len(rows) > _bounded(limit):
-        # The tool draws the first page, or the first thirty past a page's
-        # worth, with the same filters but never the window.
-        pictured = RANKING_PAGE_SIZE
-        if _bounded(limit) > RANKING_PAGE_SIZE:
-            pictured = MAX_RANKING_ROWS
-        on_picture = "，图里有" if since is None and len(rows) <= pictured else ""
+        in_picture = pictured is not None and len(rows) <= pictured
+        on_picture = "，图里有" if in_picture else ""
         lines.append(f"（另有 {len(rows) - _bounded(limit)} 条未列出{on_picture}）")
     if any(_any_investment(row.roster_entries) for row in shown):
         lines.append(_INVESTMENT_KEY)
@@ -895,7 +893,7 @@ def format_character_tallies(
         f"{scope}里{who}各占几个",
         *_metric_note(metric),
         "「冠军」= 该榜第一名记录的队伍里带这个角色，四名角色各算一个；"
-        "「当主 C」= 其中该角色是主 C的。",
+        "「当主 C」= 其中该角色是主 C 的。",
         "",
     ]
     if not tallies:
@@ -910,7 +908,7 @@ def format_character_tallies(
     top_main = max(tallies, key=lambda t: t.first_places_as_main)
     lines.append(
         f"冠军最多：{top_team.name} {top_team.first_places} 个榜；"
-        f"当主 C的冠军最多：{top_main.name} {top_main.first_places_as_main} 个榜。"
+        f"当主 C 的冠军最多：{top_main.name} {top_main.first_places_as_main} 个榜。"
     )
     lines.append(
         f"上榜{noun} {len(tallies)} 个，其中有冠军的"

@@ -68,8 +68,9 @@ def build_character_standings_page(
     """
 
     label = standings.character
-    team_label = f"同时带 {label}" if standings.is_team else f"带 {label}"
-    team_phrase = team_label.replace("带 ", "带", 1)
+    verb = "同时带" if standings.is_team else "带"
+    team_label = f"{verb} {label}"
+    team_phrase = f"{verb}{label}"
     rows: list[StandingRowView] = []
     for board in standings.boards:
         row = board.best

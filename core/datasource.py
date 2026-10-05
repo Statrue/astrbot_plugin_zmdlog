@@ -69,8 +69,8 @@ PROFILE_CACHE_MAX_ENTRIES = 64
 # are therefore kept for as long as the process runs in practice, and each is
 # re-read when something it should name is not in it — a roster name without
 # an element, a suit id without a name — because a missing entry is what new
-# content looks like. Without that, a character released after start-up wore
-# no ring and matched no --属性 for up to a month.
+# content looks like. Without that, a character released after start-up
+# matched no --属性 for up to a month.
 STATIC_CATALOG_TTL_SECONDS = 30 * 24 * 3600.0
 EQUIP_CATALOG_TTL_SECONDS = STATIC_CATALOG_TTL_SECONDS
 # A wrong name must not re-read a catalog every time someone mistypes (the

@@ -531,14 +531,17 @@ class FactsTests(unittest.TestCase):
         ]
         ranking = parse_boss_ranking(payload)
 
-        paged = facts.format_board_ranking(ranking, limit=3)
+        paged = facts.format_board_ranking(ranking, limit=3, pictured=10)
         self.assertIn("另有 12 条未列出", paged)
         self.assertNotIn("图里有", paged)
 
-        everything = facts.format_board_ranking(ranking, limit=12)
+        everything = facts.format_board_ranking(ranking, limit=12, pictured=30)
         self.assertIn("另有 3 条未列出，图里有", everything)
 
-        short = facts.format_board_ranking(self.ranking, limit=3)
+        unpictured = facts.format_board_ranking(ranking, limit=12)
+        self.assertNotIn("图里有", unpictured)
+
+        short = facts.format_board_ranking(self.ranking, limit=3, pictured=10)
         self.assertIn("另有 2 条未列出，图里有", short)
 
     def test_row_limits_are_bounded_whatever_is_asked_for(self) -> None:
