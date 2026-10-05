@@ -1,10 +1,5 @@
 # ZmdLogBot 本地视觉资源
 
-## `scene-background.svg`
-
-- 用途：所有 ZmdLogBot 图片共用的页面底纹（浅灰点阵 + 细网格），以 `data:image/svg+xml` 内嵌进页面。
-- 来源：本仓库自绘，无第三方素材。其余装饰（斜纹块、色条、描边水印）全部由 `base.css` 生成。
-
 ## `../shell/` 的纹理（V2 外壳）
 
 - `sky-art.webp`：页头黄天右侧的机械线条半调图（1080×224，无损 WebP，即 540px 的 2 倍）；`box-head.svg` / `box-page.svg`：页头与页面底的大方格加对角线；`topo-strip.svg`：深色名条右端的等高线。

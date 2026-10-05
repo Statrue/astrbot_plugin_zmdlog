@@ -1,11 +1,10 @@
-"""A battle's pages: its 摘要 and 排轴, and the full model 对比 reads.
+"""A battle's pages: its 摘要 and 排轴, and the parts its other pages share.
 
 The 摘要 (``build_battle_summary_page``) is what 战报 draws: the record
 band and three charts, each left out when the upload lacks its data.
-``build_battle_page`` is the whole battle as one model — every figure the
-old card drew — which 对比 builds on. 数据 is ``battle_data``'s, 养成
-``build``'s; ``build_battle_cast_page`` is the 排轴 view, drawn from the
-cast export.
+``build_battle_cast_page`` is the 排轴 view, drawn from the cast export.
+数据 is ``battle_data``'s, 养成 ``build``'s and 对比 ``compare``'s; the
+gear, skill and crit views here are the ones they read.
 """
 
 from dataclasses import dataclass, replace
@@ -14,10 +13,7 @@ from ..contract import group_contract_tags, tag_display_name, tag_short_name
 from ..crit import CritExpectation, CritTotals, coverage_percent
 from ..loadout import (
     CharacterSkillDamage,
-    element_label,
-    group_skill_damage,
     is_raw_item_name,
-    skill_level_summary,
     stat_label,
     suit_catalog_id,
 )
@@ -26,7 +22,6 @@ from ..models import (
     BattleEquip,
     BattleExport,
     BattleParticipant,
-    BattleWeapon,
 )
 from .charts import (
     BuffBandView,
@@ -40,7 +35,6 @@ from .charts import (
 )
 from .common import (
     _EQUIP_ICON_PATH,
-    _WEAPON_ICON_PATH,
     PageHeader,
     _bar_width,
     _clean_text,
@@ -55,23 +49,6 @@ from .common import (
     public_url,
 )
 from .rail import TimelineView, build_timeline_view
-
-
-@dataclass(frozen=True, slots=True)
-class BattleParticipantView:
-    character_name: str
-    character_profession: str
-    character_initial: str
-    character_avatar_url: str | None
-    dps: str
-    rdps: str
-    total_damage: str
-    damage_share: str
-    rdps_share: str
-    dps_share_percent: float
-    rdps_share_percent: float
-    max_hit: str
-    crit_rate: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,22 +70,8 @@ class EquipView:
     icon_url: str | None
     enhance_label: str | None
     stats: tuple[EquipStatView, ...]
-    # One-line form for the compact card, e.g. "动火用 · 护甲".
+    # The short form 对比 reads a piece by, e.g. "动火用 · 护甲".
     compact_label: str
-
-
-@dataclass(frozen=True, slots=True)
-class WeaponView:
-    name: str
-    icon_url: str | None
-    refine_label: str | None
-    level_label: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class SkillLevelView:
-    label: str
-    level: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,24 +86,6 @@ class SkillRowView:
     share: str
     share_width: float
     merged: bool
-
-
-@dataclass(frozen=True, slots=True)
-class LoadoutView:
-    slot: int
-    character_name: str
-    character_initial: str
-    character_avatar_url: str | None
-    profession: str
-    element: str | None
-    level_label: str | None
-    potential_label: str | None
-    weapon: WeaponView | None
-    equips: tuple[EquipView, ...]
-    skill_levels: tuple[SkillLevelView, ...]
-    # Heaviest damage sources of this character, for the compact card.
-    top_skills: tuple[SkillRowView, ...]
-    damage_share: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,148 +124,6 @@ class CritRowView:
 class CritView:
     # The characters in the card's order, then the team.
     rows: tuple[CritRowView, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class BattlePage:
-    header: PageHeader
-    battle_id: str
-    report_url: str
-    account_id: str
-    uploader_display_name: str
-    duration: str
-    total_dps: str
-    total_damage: str
-    battle_date: str
-    timer_label: str
-    integrity_label: str
-    contract_score: str | None
-    participants: tuple[BattleParticipantView, ...]
-    # "rDPS 榜记录" when this upload made the board's rDPS ranking; empty
-    # otherwise, including when the payload does not say.
-    rdps_ranking_label: str = ""
-    loadouts: tuple[LoadoutView, ...] = ()
-    skill_stats_available: bool = False
-    # Both read from the battle's own per-hit telemetry; None when the upload
-    # carried none (older parsers) or nothing survived parsing.
-    dps_curve: DpsCurveView | None = None
-    buff_band: BuffBandView | None = None
-    # 危机合约 only: the record's own tags by family. Name and score, nothing
-    # more — no tier (the id's last digit is not reliably the score) and no
-    # description (an unexpandable template, UPSTREAM.md). Empty off the
-    # contract board.
-    contract_groups: tuple[ContractGroupView, ...] = ()
-    # 暴击期望; None on uploads that recorded no crit rolls.
-    crit: CritView | None = None
-
-
-def build_battle_page(
-    battle: BattleDetailSummary,
-    *,
-    query: str,
-    web_base_url: str,
-    suits: dict[str, str] | None = None,
-    crit: CritExpectation | None = None,
-) -> BattlePage:
-    """The whole battle as one model, participants highest DPS first."""
-
-    timer_is_official = _official_timer(battle)
-    total_damage = battle.total_damage
-    # Highest DPS first, mirroring the site's contribution breakdown.
-    participants = sorted(
-        battle.participants,
-        key=lambda participant: participant.dps,
-        reverse=True,
-    )
-    total_rdps = sum(max(participant.rdps, 0.0) for participant in participants)
-    return BattlePage(
-        header=PageHeader(
-            title=battle.boss_name,
-            subtitle=battle.dungeon_name,
-            query=query,
-            matched_name=battle.battle_id,
-            target_type="公开战报",
-            footer_note="公开战报 · DPS / rDPS",
-        ),
-        battle_id=battle.battle_id,
-        report_url=public_url(
-            web_base_url,
-            "battle",
-            battle.battle_id,
-        ),
-        account_id=battle.uploader_user_id,
-        uploader_display_name=battle.uploader_display_name,
-        duration=format_duration(battle.duration_ms),
-        total_dps=format_number(battle.total_dps),
-        total_damage=format_number(total_damage),
-        battle_date=_format_datetime(battle.battle_end_at),
-        timer_label="官方计时" if timer_is_official else "计时待核验",
-        integrity_label=(
-            "结构校验通过" if battle.integrity_verified else "结构校验未通过"
-        ),
-        rdps_ranking_label="rDPS 榜记录" if battle.rdps_ranking_eligible else "",
-        contract_score=(
-            format_number(battle.contract_tag_score)
-            if battle.contract_tag_score is not None
-            else None
-        ),
-        loadouts=_build_loadouts(
-            battle,
-            web_base_url=web_base_url,
-            top_skills=_MAX_CARD_SKILLS,
-            suits=suits,
-        ),
-        skill_stats_available=bool(battle.skill_stats),
-        dps_curve=build_dps_curve_view(battle, tuple(participants)),
-        buff_band=build_buff_band_view(battle),
-        crit=_build_crit_view(crit, tuple(participants)),
-        contract_groups=_build_contract_groups(battle, web_base_url=web_base_url),
-        participants=tuple(
-            BattleParticipantView(
-                character_name=participant.character_name,
-                character_profession=participant.character_profession or "",
-                character_initial=_initial(participant.character_name),
-                character_avatar_url=_safe_asset_url(
-                    participant.character_avatar_url,
-                    base_url=web_base_url,
-                ),
-                dps=format_number(participant.dps),
-                rdps=format_number(participant.rdps),
-                total_damage=format_number(participant.total_damage),
-                damage_share=(
-                    _share(participant.total_damage, total_damage)
-                    if total_damage > 0
-                    else "—"
-                ),
-                rdps_share=(
-                    _share(participant.rdps, total_rdps)
-                    if total_rdps > 0
-                    else "—"
-                ),
-                dps_share_percent=(
-                    round(participant.total_damage / total_damage * 100, 2)
-                    if total_damage > 0
-                    else 0.0
-                ),
-                rdps_share_percent=(
-                    round(max(participant.rdps, 0.0) / total_rdps * 100, 2)
-                    if total_rdps > 0
-                    else 0.0
-                ),
-                max_hit=(
-                    format_number(participant.max_hit)
-                    if participant.max_hit is not None
-                    else "—"
-                ),
-                crit_rate=(
-                    f"{format_number(round(participant.crit_rate * 100, 1))}%"
-                    if participant.crit_rate is not None
-                    else "—"
-                ),
-            )
-            for participant in participants
-        ),
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -622,9 +425,6 @@ def _merged_row(group: list[BuffRowView]) -> BuffRowView:
     return replace(first, effect_label=f"{label} {value}")
 
 
-_MAX_CARD_SKILLS = 3
-
-
 def _build_crit_view(
     crit: CritExpectation | None,
     participants: tuple[BattleParticipant, ...],
@@ -700,86 +500,6 @@ def _build_contract_groups(
             score=group.score,
         )
         for group in group_contract_tags(battle.contract_tags)
-    )
-
-
-def _build_loadouts(
-    battle: BattleDetailSummary,
-    *,
-    web_base_url: str | None,
-    top_skills: int,
-    suits: dict[str, str] | None,
-) -> tuple[LoadoutView, ...]:
-    suits = suits or {}
-    groups = {
-        group.character_name: group
-        for group in group_skill_damage(battle.skill_stats)
-    }
-    damage = {
-        participant.character_name: participant.total_damage
-        for participant in battle.participants
-    }
-    views: list[LoadoutView] = []
-    for entry in sorted(battle.roster, key=lambda item: item.slot):
-        group = groups.get(entry.character_name)
-        dealt = damage.get(entry.character_name)
-        views.append(
-            LoadoutView(
-                slot=entry.slot,
-                character_name=entry.character_name,
-                character_initial=_initial(entry.character_name),
-                character_avatar_url=_safe_asset_url(
-                    entry.character_avatar_url, base_url=web_base_url
-                ),
-                profession=_clean_text(entry.character_profession),
-                element=element_label(entry.character_element),
-                level_label=(
-                    f"Lv.{entry.character_level}"
-                    if entry.character_level is not None
-                    else None
-                ),
-                potential_label=(
-                    f"潜能 {entry.character_potential}"
-                    if entry.character_potential is not None
-                    else None
-                ),
-                weapon=(
-                    _weapon_view(entry.weapon, web_base_url=web_base_url)
-                    if entry.weapon is not None
-                    else None
-                ),
-                equips=tuple(
-                    _equip_view(equip, suits, web_base_url=web_base_url)
-                    for equip in sorted(entry.equips, key=lambda item: item.slot)
-                ),
-                skill_levels=tuple(
-                    SkillLevelView(label=level.label, level=level.level)
-                    for level in skill_level_summary(entry)
-                ),
-                top_skills=(
-                    _skill_rows(group, limit=top_skills) if group else ()
-                ),
-                damage_share=(
-                    _share(dealt, battle.total_damage)
-                    if dealt is not None and battle.total_damage > 0
-                    else None
-                ),
-            )
-        )
-    return tuple(views)
-
-
-def _weapon_view(weapon: BattleWeapon, *, web_base_url: str | None) -> WeaponView:
-    return WeaponView(
-        name=_clean_text(weapon.name) or "武器未记录",
-        icon_url=_derived_asset_url(
-            weapon.icon_url,
-            _WEAPON_ICON_PATH,
-            weapon.template,
-            web_base_url=web_base_url,
-        ),
-        refine_label=f"精炼 {weapon.refine}" if weapon.refine is not None else None,
-        level_label=f"Lv.{weapon.level}" if weapon.level else None,
     )
 
 

@@ -1,410 +1,604 @@
-/* ---------- 战报对比：A 黄、B 蓝，贯穿全页 ---------- */
-
-.cmp-sides {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 24px;
+/* 对比: the VS strip, 对比摘要, the mirrored DPS bars, the two-line DPS
+   曲线 and the build cards. The first side is ink, the second steel;
+   yellow only marks the better value of a pair. The section bar, the
+   faces and the curve's box are the shell's and battle.css's. */
+.is-a {
+  --v-c: var(--side-a);
+}
+.is-b {
+  --v-c: var(--side-b);
 }
 
-.cmp-side {
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 10px 14px 10px 0;
-  border: 1px solid var(--line);
-  background: var(--card);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
-}
-
-.cmp-tag {
-  flex: 0 0 auto;
-  padding: 10px 12px;
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: var(--fs-18);
-  font-weight: 800;
-  line-height: 1;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
-}
-
-.cmp-side.is-a .cmp-tag { background: var(--action); }
-.cmp-side.is-b .cmp-tag { background: var(--blue); color: var(--on-dark); }
-
-.cmp-side-text {
-  min-width: 0;
-}
-
-.cmp-side-text strong {
-  display: block;
-  overflow: hidden;
-  color: var(--ink);
+/* a side's name on its own colour, over a column or a source list */
+.v-name {
+  display: inline-block;
+  padding: 1px 8px;
+  font-weight: 700;
   font-size: var(--fs-15);
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
+  color: var(--card);
+  background: var(--v-c);
 }
 
-.cmp-side-text span {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-weight: 600;
+/* ── the VS strip: both names on one dark bar, both teams and times
+   below, the VS mark between ─────────────────────────────────────── */
+.v-strip {
+  position: relative;
+  filter: drop-shadow(0 5px 8px var(--lift-16)) drop-shadow(0 0 0.6px var(--lift-26));
 }
-
-.cmp-side-text code {
-  display: block;
-  overflow: hidden;
-  margin-top: 4px;
-  color: var(--steel);
-  font-family: var(--font-body);
-  font-size: var(--fs-11);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.v-strip-bar {
+  height: 52px;
+  padding: 0;
+  clip-path: none;
+  border-radius: 6px 6px 0 0;
+  justify-content: space-between;
+  background: var(--topo-card) center / 240px 52px no-repeat, var(--who-bg);
 }
-
-/* ---------- facts ---------- */
-
-.cmp-facts {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--card);
-}
-
-.cmp-fact {
-  display: grid;
-  grid-template-columns: 130px minmax(0, 1fr) minmax(0, 1fr) 170px;
-  gap: 12px;
+.v-strip-name {
+  display: flex;
   align-items: center;
-  padding: 9px 16px;
+  gap: 12px;
+  height: 100%;
 }
-
-.cmp-fact + .cmp-fact {
-  border-top: 1px solid var(--line-soft);
+.v-strip-name.is-a {
+  padding-left: 24px;
 }
-
-.cmp-fact--head {
-  padding: 7px 16px;
-  background: var(--card-soft);
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+.v-strip-name.is-b {
+  flex-direction: row-reverse;
+  padding-right: 24px;
 }
-
-.cmp-fact--head .is-a { color: var(--yellow-deep); }
-.cmp-fact--head .is-b { color: var(--blue); }
-
-.cmp-fact-label {
-  color: var(--muted);
-  font-size: var(--fs-12);
-  font-weight: 700;
+.v-strip-name .i-name {
+  margin: 0;
 }
-
-.cmp-fact b {
-  overflow: hidden;
-  justify-self: start;
-  padding: 1px 6px;
-  margin-left: -6px;
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: var(--fs-17);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.v-strip-name .i-name strong {
+  font-size: var(--fs-22);
 }
-
-.cmp-fact b.is-better {
-  background: linear-gradient(transparent 55%, var(--action) 55%, var(--action) 95%, transparent 95%);
-}
-
-.cmp-fact em {
-  color: var(--steel);
-  font-size: var(--fs-12);
+.v-strip-name em {
   font-style: normal;
   font-weight: 700;
-  text-align: right;
+  font-size: var(--fs-17);
+  color: var(--who-ink-2);
 }
-
-/* ---------- roster ---------- */
-
-.cmp-roster {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--card);
-}
-
-.cmp-roster-row {
+.v-strip-body {
+  position: relative;
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
-  align-items: center;
-  padding: 8px 16px;
+  grid-template-columns: 1fr 1fr;
+  gap: 220px;
+  padding: 18px 26px 20px;
+  border-radius: 0 0 6px 6px;
+  background: var(--stripe-a);
 }
-
-.cmp-roster-row + .cmp-roster-row {
-  border-top: 1px solid var(--line-soft);
-}
-
-.cmp-roster-row--head {
-  padding: 6px 16px;
-  background: var(--card-soft);
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.cmp-roster-row--head .is-a { color: var(--yellow-deep); }
-.cmp-roster-row--head .is-b { color: var(--blue); }
-
-.cmp-roster-id {
+.v-strip-side {
   display: flex;
-  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+.v-strip-side.is-b {
+  align-items: flex-end;
+}
+.v-strip-side .i-face {
+  width: 50px;
+  height: 50px;
+}
+.v-strip-side.is-b .i-team {
+  flex-direction: row-reverse;
+}
+.v-strip-time {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v-strip-side.is-b .v-strip-time {
+  align-items: flex-end;
+}
+.v-strip-time span {
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.v-strip-time b {
+  align-self: flex-start;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-44);
+  line-height: 1.1;
+  color: var(--ink-2);
+}
+.v-strip-side.is-b .v-strip-time b {
+  align-self: flex-end;
+}
+.v-strip-time b.is-better {
+  padding: 0 8px;
+  color: var(--medal-ink);
+  background: linear-gradient(transparent 55%, var(--yellow) 55%);
+}
+.v-strip-time small {
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.v-vs {
+  position: absolute;
+  left: 50%;
+  top: -48px;
+  width: 210px;
+  height: 210px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.v-vs svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.v-vs-cross rect {
+  fill: var(--vs-orange);
+}
+.v-vs-cross {
+  filter: drop-shadow(0 4px 6px var(--vs-cross-shadow));
+}
+.v-vs-mark {
+  fill: var(--card);
+  filter: drop-shadow(0 0 1.2px var(--vs-mark-edge)) drop-shadow(0 4px 6px var(--vs-mark-shadow));
+}
+.v-vs-gap {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  padding: 3px 12px;
+  font-weight: 700;
+  font-size: var(--fs-17);
+  white-space: nowrap;
+  color: var(--card);
+  background: var(--vs-gap-bg);
+}
+
+/* ── 对比摘要: left | the label and the gap | right ─────────────────── */
+.v-facts {
+  display: flex;
+  flex-direction: column;
+}
+.v-fact {
+  display: grid;
+  grid-template-columns: 1fr 220px 1fr;
+  align-items: center;
+  gap: 16px;
+  min-height: 58px;
+}
+.v-fact + .v-fact {
+  border-top: 1px solid var(--rule-soft);
+}
+.v-fact > b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-26);
+  line-height: 1.2;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.v-fact .v-a {
+  justify-self: end;
+}
+.v-fact .v-b {
+  justify-self: start;
+}
+.v-fact > b.is-better {
+  padding: 0 8px;
+  color: var(--medal-ink);
+  background: linear-gradient(transparent 52%, var(--yellow) 52%);
+}
+.v-fact-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.v-fact-mid span {
+  font-weight: 700;
+  font-size: var(--fs-17);
+  color: var(--ink);
+}
+.v-fact-mid em {
+  font-style: normal;
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+
+/* ── 阵容与 DPS: one line a character, the bars growing outward from
+   the figures by the middle, the face and name in the middle ──────── */
+.v-roster {
+  display: flex;
+  flex-direction: column;
+}
+.v-roster-head {
+  display: grid;
+  grid-template-columns: 1fr 150px 1fr;
+  margin-bottom: 4px;
+  text-align: center;
+}
+.v-roster-head .v-name:first-child {
+  justify-self: end;
+}
+.v-roster-head .v-name:last-child {
+  justify-self: start;
+}
+.v-roster-row {
+  display: grid;
+  grid-template-columns: 1fr 150px 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+.v-roster-row + .v-roster-row {
+  border-top: 1px solid var(--rule-soft);
+}
+.v-roster-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 34px;
+}
+.v-roster-who .i-face,
+.v-roster-who .i-face.is-lead {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+}
+.v-roster-who .i-face.is-lead::before,
+.v-roster-who .i-face.is-lead::after {
+  display: none;
+}
+.v-roster-who .i-face.is-lead .i-face-disc {
+  box-shadow: 0 0 0 2px var(--yellow), 0 3px 6px -2px var(--lift-38);
+}
+.v-roster-who strong {
+  font-weight: 700;
+  font-size: var(--fs-15);
+  white-space: nowrap;
+  color: var(--ink);
+}
+.v-roster-cell {
+  display: flex;
   align-items: center;
   gap: 10px;
 }
-
-.cmp-roster-id .avatar {
-  width: 34px;
-  height: 34px;
-  font-size: var(--fs-13);
+.v-roster-cell.is-b {
+  flex-direction: row-reverse;
 }
-
-.cmp-roster-id strong {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: var(--fs-15);
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.v-roster-cell p {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 76px;
+  line-height: 1.15;
 }
-
-.cmp-roster-cell {
-  position: relative;
-  min-width: 0;
-  padding: 2px 0 8px;
+.v-roster-cell.is-b p {
+  align-items: flex-start;
 }
-
-.cmp-roster-cell b {
-  display: block;
-  color: var(--ink);
+.v-roster-cell b {
   font-family: var(--font-num);
-  font-size: var(--fs-16);
-  font-variant-numeric: tabular-nums;
   font-weight: 800;
-  line-height: 1.1;
+  font-size: var(--fs-17);
+  color: var(--ink);
 }
-
-.cmp-roster-cell span {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: var(--fs-11);
+.v-roster-cell small {
+  font-family: var(--font-num);
   font-weight: 600;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+.v-roster-cell .v-track {
+  flex: 1;
+  height: 10px;
+}
+/* the first side's bar grows leftward, out from the middle */
+.v-roster-cell.is-a .v-track {
+  transform: scaleX(-1);
+}
+.v-roster-cell.is-absent p {
+  flex: 1;
+  align-items: center;
+}
+.v-absent {
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.v-track {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--track);
+  overflow: hidden;
+}
+.v-track i {
+  display: block;
+  height: 100%;
+  min-width: 4px;
+  border-radius: 6px;
+  background: var(--v-c);
 }
 
-.cmp-roster-cell i {
-  position: absolute;
-  bottom: 0;
-  left: 0;
+/* ── the curve: a line a side, dashed where each fight ended ───────── */
+.v-keys i {
   height: 4px;
-  background: var(--faint);
-  transform: skewX(-12deg);
+  background: var(--v-c);
 }
-
-.cmp-roster-cell.is-a i { background: var(--action); }
-.cmp-roster-cell.is-b i { background: var(--blue); }
-
-.cmp-roster-cell.is-absent {
-  padding-bottom: 2px;
+.v-line.is-a,
+.v-line.is-b {
+  stroke: var(--v-c);
+  stroke-width: 3.5;
 }
-
-.cmp-absent {
-  color: var(--faint);
-  font-weight: 700;
-}
-
-/* ---------- curve overlay ---------- */
-
-.curve-legend .is-a i { background: var(--yellow-deep); }
-.curve-legend .is-b i { background: var(--blue); }
-
-.cmp-line-a { stroke: var(--yellow-deep); stroke-width: 2.5; }
-.cmp-line-b { stroke: var(--blue); stroke-width: 2.5; }
-
-.cmp-end {
+.v-end {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 0;
-  border-left: 1px dashed var(--faint);
+  border-left: 2px dashed var(--v-c);
+  opacity: 0.7;
 }
 
-.cmp-end.is-a { border-left-color: var(--yellow-deep); }
-.cmp-end.is-b { border-left-color: var(--blue); }
-
-/* ---------- loadout pairs ---------- */
-
-.cmp-loadout {
-  margin-top: 12px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+/* ── the build cards, two a row: what differs, what is shared, and each
+   side's heaviest damage sources ─────────────────────────────────── */
+.v-builds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
 }
-
-.cmp-loadout:first-of-type {
-  margin-top: 0;
-}
-
-.cmp-loadout-head {
+.v-build {
   display: flex;
+  flex-direction: column;
+  filter: drop-shadow(0 5px 8px var(--lift-16)) drop-shadow(0 0 0.6px var(--lift-26));
+}
+.v-build-who {
+  height: 44px;
+  min-height: 44px;
+  gap: 10px;
+  padding: 0 18px 0 10px;
+  background: var(--topo-card) right center / 240px 44px no-repeat, var(--who-bg);
+}
+.v-build-who .i-face {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+}
+.v-build-who strong {
+  font-weight: 700;
+  font-size: var(--fs-20);
+}
+.v-build-note {
+  margin-left: auto;
+  font-size: var(--fs-15);
+  color: var(--who-ink-2);
+}
+.v-build-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px 16px;
+  border-radius: 0 0 6px 6px;
+  background: var(--stripe-a);
+}
+
+/* a differing line: the first side | the line's name | the second side */
+.v-line-row {
+  display: grid;
+  grid-template-columns: 1fr 76px 1fr;
   align-items: center;
   gap: 10px;
-  padding: 9px 16px;
-  border-bottom: 1px solid var(--line-soft);
-  background: var(--card-soft);
+  min-height: 30px;
 }
-
-.cmp-loadout-head .avatar {
-  width: 34px;
-  height: 34px;
+.v-line-row + .v-line-row {
+  border-top: 1px solid var(--grid-soft);
+}
+.v-line-row > span {
+  justify-self: center;
+  padding: 0 4px;
+  font-weight: 700;
+  font-size: var(--fs-13);
+  white-space: nowrap;
+  color: var(--medal-ink);
+  background: linear-gradient(transparent 55%, var(--yellow) 55%);
+}
+.v-line-head {
+  min-height: 24px;
+}
+.v-line-head > span {
+  background: none;
+}
+.v-line-head .v-name {
+  padding: 0 6px;
   font-size: var(--fs-13);
 }
-
-.cmp-loadout-head strong {
-  color: var(--ink);
-  font-size: var(--fs-16);
-  font-weight: 800;
+.v-line-head .v-name.is-a {
+  justify-self: end;
 }
-
-.cmp-loadout-head em {
-  margin-left: auto;
-  padding: 2px 8px;
-  color: var(--ink);
-  background: var(--action);
-  font-size: var(--fs-11);
-  font-style: normal;
+.v-line-head .v-name.is-b {
+  justify-self: start;
+}
+.v-line-head > span.v-name {
   font-weight: 700;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+  color: var(--card);
+  background: var(--v-c);
 }
 
-.cmp-loadout.is-only-b .cmp-loadout-head em {
-  color: var(--on-dark);
-  background: var(--blue);
+/* the four skill levels, a level that differs on yellow */
+.v-line-lv p {
+  display: flex;
+  gap: 4px;
+}
+.v-line-lv .v-a {
+  justify-content: flex-end;
+}
+.v-line-lv p i {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  font-style: normal;
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-15);
+  color: var(--ink-2);
+  background: var(--tile-c);
+}
+.v-line-lv p i.is-diff {
+  color: var(--medal-ink);
+  background: var(--yellow);
+}
+.v-line-lv > span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+.v-line-lv > span small {
+  font-weight: 500;
+  font-size: var(--fs-13);
+  letter-spacing: 0.12em;
+  color: var(--muted);
 }
 
-.cmp-gear {
+/* a piece: its icon on the outer side of its name */
+.v-line-gear {
+  min-height: 52px;
   padding: 4px 0;
 }
-
-.cmp-gear-line {
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  align-items: baseline;
-  padding: 5px 16px;
+.v-gear {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
 }
-
-.cmp-gear-line--head {
-  color: var(--muted);
-  font-size: var(--fs-10);
+.v-gear.v-a {
+  text-align: right;
+}
+.v-gear.v-b {
+  flex-direction: row-reverse;
+}
+.v-gear b {
+  min-width: 0;
   font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.cmp-gear-line--head .is-a { color: var(--yellow-deep); }
-.cmp-gear-line--head .is-b { color: var(--blue); }
-
-.cmp-gear-line > span {
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-weight: 700;
-}
-
-.cmp-gear-line b {
-  overflow: hidden;
+  font-size: var(--fs-15);
+  line-height: 1.3;
   color: var(--ink);
-  font-size: var(--fs-12);
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-
-/* a line that differs between the sides */
-.cmp-gear-line.is-diff b {
-  padding: 0 4px;
-  margin-left: -4px;
-  justify-self: start;
-  max-width: 100%;
-  background: linear-gradient(transparent 58%, var(--action) 58%, var(--action) 96%, transparent 96%);
-}
-
-.cmp-skills {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  padding: 8px 16px 12px;
-  border-top: 1px solid var(--line-soft);
-}
-
-.cmp-skill-head {
+.v-gear b small {
   display: block;
-  margin-bottom: 4px;
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: var(--fs-13);
   color: var(--muted);
-  font-size: var(--fs-10);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+}
+.v-gear-icon {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 3px;
+  overflow: hidden;
+  background:
+    var(--rings) right bottom / 52px 52px no-repeat,
+    linear-gradient(150deg, var(--tile-a) 0, var(--tile-b) 60%, var(--cell) 100%);
+  box-shadow: inset 0 -3px 0 var(--yellow), 0 0 0 1px var(--tile-chip-edge);
+}
+.v-gear-icon img {
+  position: absolute;
+  inset: 3px 3px 6px;
+  width: calc(100% - 6px);
+  height: calc(100% - 9px);
+  object-fit: contain;
 }
 
-.cmp-skill-col.is-a .cmp-skill-head { color: var(--yellow-deep); }
-.cmp-skill-col.is-b .cmp-skill-head { color: var(--blue); }
-
-.cmp-skill {
+/* the lines both sides share, listed once, two a row */
+.v-same {
+  border-top: 2px solid var(--axis);
+}
+.v-same-label {
+  padding: 6px 0 2px;
+  font-weight: 700;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+.v-same ul {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 16px;
+}
+.v-same li {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  min-width: 0;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: var(--fs-13);
+}
+.v-same li i {
+  flex: none;
+  width: 58px;
+  font-style: normal;
+  color: var(--muted);
+}
+.v-same li span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+}
+
+/* each side's heaviest damage sources */
+.v-sources {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: auto;
+}
+.v-source-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-weight: 700;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+.v-source-head .v-name {
+  padding: 0 6px;
+  font-size: var(--fs-13);
+}
+.v-source {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px 8px;
   padding: 3px 0;
 }
-
-.cmp-skill i {
-  flex: 0 0 auto;
-  padding: 1px 5px;
-  color: var(--ink);
-  background: var(--line-soft);
-  font-size: var(--fs-10);
-  font-style: normal;
-  font-weight: 700;
-}
-
-.cmp-skill b {
-  overflow: hidden;
+.v-source-name {
   min-width: 0;
-  color: var(--ink);
-  font-size: var(--fs-12);
-  font-weight: 700;
-  text-overflow: ellipsis;
+  font-size: var(--fs-13);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
 }
-
-.cmp-skill em {
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: var(--steel);
+.v-source b {
   font-family: var(--font-num);
-  font-size: var(--fs-12);
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
+  font-weight: 700;
+  font-size: var(--fs-15);
+  color: var(--ink);
 }
-
-.cmp-skill.is-empty em {
-  margin-left: 0;
-  color: var(--faint);
-  font-family: var(--font-body);
-  font-weight: 600;
+.v-source .v-track {
+  grid-column: 1 / -1;
+  height: 5px;
+}
+.v-source-none {
+  font-size: var(--fs-13);
+  color: var(--muted);
 }

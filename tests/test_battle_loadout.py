@@ -26,8 +26,9 @@ from core.presentation import (
     _format_stat_value,
     build_battle_build_page,
     build_battle_data_page,
-    build_battle_page,
+    build_compare_page,
 )
+from core.presentation.battle import _equip_view
 from core.render import TemplateRenderer
 from core.routing import RouteKind, RouteParseError, parse_zmdlog_payload
 from tests.helpers import battle_detail_payload
@@ -540,6 +541,19 @@ class GearHelperTests(unittest.TestCase):
         self.assertEqual(skill_level_summary(second), ())
 
 
+WEB = "https://zmdlogs.com"
+
+
+def gear_of(battle, suits=None, *, slot: int = 0):
+    """One roster entry's gear as 养成 and 对比 read it, in upload order."""
+
+    entry = sorted(battle.roster, key=lambda item: item.slot)[slot]
+    return [
+        _equip_view(equip, suits or {}, web_base_url=WEB)
+        for equip in sorted(entry.equips, key=lambda item: item.slot)
+    ]
+
+
 class LoadoutPresentationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.battle = parse_battle_detail(battle_detail_payload())
@@ -554,16 +568,14 @@ class LoadoutPresentationTests(unittest.TestCase):
         roster["equips"][2]["itemId"] = "../not an id"
         roster["equips"][3]["iconUrl"] = "/images/equip/iconbig/explicit.png"
 
-        page = build_battle_page(
-            parse_battle_detail(payload), query="q", web_base_url="https://zmdlogs.com"
-        )
-        luoxi = page.loadouts[0]
+        battle = parse_battle_detail(payload)
+        page = build_battle_build_page(battle, query="q", web_base_url=WEB)
 
         self.assertEqual(
-            luoxi.weapon.icon_url,
+            page.characters[0].weapon.icon_url,
             "https://zmdlogs.com/images/weapon/icon/wpn_sword_0021.png",
         )
-        hand, body, edc, other = luoxi.equips
+        hand, body, edc, other = gear_of(battle)
         self.assertEqual(
             hand.icon_url,
             "https://zmdlogs.com/images/equip/iconbig/item_equip_t4_suit_phy01_hand_01.png",
@@ -574,24 +586,10 @@ class LoadoutPresentationTests(unittest.TestCase):
             other.icon_url, "https://zmdlogs.com/images/equip/iconbig/explicit.png"
         )
 
-    def test_the_battle_model_formats_gear(self) -> None:
-        # The model 对比 reads; 养成 has its own (test_battle_build).
-        page = build_battle_page(
-            self.battle, query="q", web_base_url="https://zmdlogs.com"
-        )
-
-        luoxi, kamiu = page.loadouts
-        self.assertEqual(luoxi.level_label, "Lv.90")
-        self.assertEqual(luoxi.potential_label, "潜能 5")
-        self.assertEqual(luoxi.element, "灼热")
-        self.assertEqual(luoxi.damage_share, "88.4%")
-        self.assertEqual(luoxi.weapon.refine_label, "精炼 3")
-        self.assertEqual(luoxi.weapon.level_label, "Lv.90")
-        self.assertEqual(
-            luoxi.weapon.icon_url,
-            "https://zmdlogs.com/images/weapon/icon/wpn_sword_0021.png",
-        )
-        hand, body, edc, _ = luoxi.equips
+    def test_a_piece_of_gear_is_formatted_once_for_every_page(self) -> None:
+        # The view 养成's tiles and 对比's lines both read
+        # (test_battle_build, test_compare).
+        hand, body, edc, _ = gear_of(self.battle)
         self.assertEqual(hand.piece_label, "点剑护手")
         self.assertEqual(hand.suit_label, "点剑")
         self.assertEqual(hand.enhance_label, "强化 +3 / +3 / +2")
@@ -618,19 +616,7 @@ class LoadoutPresentationTests(unittest.TestCase):
         self.assertEqual(body.enhance_label, "强化 +3")
         self.assertIsNone(edc.enhance_label)
         self.assertEqual(edc.stats, ())
-        self.assertEqual(
-            [(level.label, level.level) for level in luoxi.skill_levels],
-            [("普攻", 12), ("战技", 12), ("连携", 9), ("终结", 12)],
-        )
-        self.assertEqual(
-            [row.name for row in luoxi.top_skills],
-            ["终结技", "普攻 · 绯红刃舞", "战技"],
-        )
-        self.assertEqual(kamiu.potential_label, "潜能 0")
-        self.assertIsNone(kamiu.element)
-        self.assertEqual(kamiu.equips, ())
-        self.assertIsNone(kamiu.weapon.level_label)
-        self.assertEqual(kamiu.weapon.refine_label, "精炼 6")
+        self.assertEqual(gear_of(self.battle, slot=1), [])
 
     def test_attribute_type_numbers_print_the_stat_they_stand_for(self) -> None:
         # 险关手甲 as btl_upload_c5cf4810aa09 (parser v57) recorded it, then
@@ -659,7 +645,7 @@ class LoadoutPresentationTests(unittest.TestCase):
         web = "https://zmdlogs.com"
 
         build = build_battle_build_page(battle, query="q", web_base_url=web)
-        card = build_battle_page(battle, query="q", web_base_url=web)
+        card = build_compare_page(battle, battle, query="q", web_base_url=web)
 
         # The piece is the fixture's 护手, second on 养成 after the 护甲.
         self.assertEqual(
@@ -676,8 +662,8 @@ class LoadoutPresentationTests(unittest.TestCase):
                 ("名称未收录", "12"),
             ],
         )
-        # The card's gear lines (and the comparison built on them) read the
-        # same view; no raw spelling survives anywhere on either page.
+        # 对比's gear lines read the same view; no raw spelling survives
+        # anywhere on either page.
         for page in (build, card):
             self.assertNotIn("attribute_type", repr(page))
             self.assertNotIn("PhySpellUp", repr(page))
@@ -686,13 +672,7 @@ class LoadoutPresentationTests(unittest.TestCase):
         # The same piece, once without the catalog and once with it. The
         # catalog is keyed by the id the item carries, so it answers for
         # every battle rather than only the ones a named sibling appears in.
-        page = build_battle_page(
-            self.battle,
-            query="q",
-            web_base_url="https://zmdlogs.com",
-            suits={"suit_phy01": "点剑"},
-        )
-        _, body, _, _ = page.loadouts[0].equips
+        _, body, _, _ = gear_of(self.battle, {"suit_phy01": "点剑"})
 
         self.assertEqual(body.piece_label, "名称未收录")
         self.assertEqual(body.suit_label, "点剑")
@@ -705,14 +685,9 @@ class LoadoutPresentationTests(unittest.TestCase):
         equip = payload["battle"]["roster"][0]["equips"][0]
         equip["itemId"] = "item_equip_t4_suit_spellburst_hand_01"
         equip["suitName"] = "长息"
-        page = build_battle_page(
-            parse_battle_detail(payload),
-            query="q",
-            web_base_url="https://zmdlogs.com",
-            suits={"suit_spellburst": "险关"},
-        )
+        gear = gear_of(parse_battle_detail(payload), {"suit_spellburst": "险关"})
 
-        self.assertEqual(page.loadouts[0].equips[0].suit_label, "险关")
+        self.assertEqual(gear[0].suit_label, "险关")
 
     def test_a_standalone_piece_keeps_what_the_upload_called_it(self) -> None:
         # ``_parts_`` pieces belong to no suit, so the catalog has nothing to
@@ -721,26 +696,21 @@ class LoadoutPresentationTests(unittest.TestCase):
         equip = payload["battle"]["roster"][0]["equips"][0]
         equip["itemId"] = "item_equip_t4_parts_wuling01_hand_01"
         equip["suitName"] = "独立装备"
-        page = build_battle_page(
-            parse_battle_detail(payload),
-            query="q",
-            web_base_url="https://zmdlogs.com",
-            suits={"suit_wuling01": "不该被用到"},
+        gear = gear_of(parse_battle_detail(payload), {"suit_wuling01": "不该被用到"})
+
+        self.assertEqual(gear[0].suit_label, "独立装备")
+
+    def test_a_comparison_names_each_characters_heaviest_sources(self) -> None:
+        page = build_compare_page(
+            self.battle, self.battle, query="q", web_base_url=WEB
         )
 
-        self.assertEqual(page.loadouts[0].equips[0].suit_label, "独立装备")
-
-    def test_battle_card_carries_compact_loadouts(self) -> None:
-        page = build_battle_page(
-            self.battle, query="q", web_base_url="https://zmdlogs.com"
-        )
-
-        self.assertTrue(page.skill_stats_available)
+        luoxi, kamiu = page.builds
         self.assertEqual(
-            [load.character_name for load in page.loadouts], ["洛茜", "卡缪"]
+            [row.name for row in luoxi.sources_a],
+            ["终结技", "普攻 · 绯红刃舞", "战技"],
         )
-        self.assertEqual(len(page.loadouts[0].top_skills), 3)
-        self.assertEqual(page.loadouts[1].top_skills[0].name, "连携技")
+        self.assertEqual(kamiu.sources_b[0].name, "连携技")
 
     def test_every_surface_prints_the_game_name(self) -> None:
         payload = battle_detail_payload()
@@ -749,11 +719,11 @@ class LoadoutPresentationTests(unittest.TestCase):
         web = "https://zmdlogs.com"
 
         data = build_battle_data_page(battle, query="q", web_base_url=web)
-        card = build_battle_page(battle, query="q", web_base_url=web)
+        card = build_compare_page(battle, battle, query="q", web_base_url=web)
 
         self.assertEqual(data.skill_groups[1].rows[0].name, "连携·潮汐")
-        # The card's 主要伤害来源, which the comparison page reuses.
-        self.assertEqual(card.loadouts[1].top_skills[0].name, "连携·潮汐")
+        # 对比's 伤害来源 on each build card.
+        self.assertEqual(card.builds[1].sources_a[0].name, "连携·潮汐")
         self.assertIn("卡缪：连携·潮汐 76%", format_battle(battle))
 
     def test_stat_values_read_as_percentages_or_plain_numbers(self) -> None:

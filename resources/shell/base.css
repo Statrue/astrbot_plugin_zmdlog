@@ -95,6 +95,15 @@
   --rank-down: #3a9e68;
   --rank-flat: #9aa0a8;
   --trend-area: rgba(52, 55, 61, 0.045);
+  /* 对比: the first side in ink, the second in steel; the VS mark's orange
+     cross, its shadows, and the dark pill under it with the time gap */
+  --side-a: var(--char-2);
+  --side-b: var(--char-4);
+  --vs-orange: #ff7327;
+  --vs-cross-shadow: rgba(120, 40, 0, 0.25);
+  --vs-mark-edge: rgba(20, 22, 26, 0.85);
+  --vs-mark-shadow: rgba(20, 22, 26, 0.35);
+  --vs-gap-bg: #1d1f24;
   /* the potential star, the level block and the level pips */
   --star-base: #d3d6db;
   --star-shadow: rgba(30, 34, 42, 0.32);

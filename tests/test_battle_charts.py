@@ -5,7 +5,6 @@ from pathlib import Path
 
 from core.models import parse_battle_detail
 from core.presentation import (
-    build_battle_page,
     build_buff_band_view,
     build_dps_curve_view,
 )
@@ -394,10 +393,10 @@ class ChartViewTests(unittest.TestCase):
         payload["characterStates"] = []
         battle = parse_battle_detail(payload)
 
-        page = build_battle_page(battle, query="q", web_base_url=WEB)
-
-        self.assertIsNone(page.dps_curve)
-        self.assertIsNone(page.buff_band)
+        self.assertIsNone(
+            build_dps_curve_view(battle, ordered_participants(battle))
+        )
+        self.assertIsNone(build_buff_band_view(battle))
 
 
 class ChartTemplateTests(unittest.TestCase):

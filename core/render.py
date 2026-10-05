@@ -1,16 +1,13 @@
 """Strict HTML templates and single-image Playwright capture for ZmdLogBot.
 
 Every page kind declares its frame (``PAGE_FRAMES``): the CSS width it is
-laid out at, the device scale it is captured at, and which shell it is
-built on. The V2 shell (``resources/shell/``, ADR 0003) has two widths —
-the 540 px phone list and the 960 px wide page — both captured at 2x;
-a page kind not yet moved onto it keeps the 1280 px 1x frame of the old
-shell (``resources/common/base.html``) until its own migration.
+laid out at and the device scale it is captured at. The shell
+(``resources/shell/``, ADR 0003) has two widths — the 540 px phone list
+and the 960 px wide page — both captured at 2x.
 
 The frame is the one source of the width: the template receives it and
 sets the root to it, the capture opens a viewport of it, and validation
-checks the drawn root against it — through the old anchors for an old
-page, through the new ones for a V2 page.
+checks the drawn root against it.
 """
 
 import asyncio
@@ -111,27 +108,20 @@ class PageFrame:
     """How one page kind is laid out and captured.
 
     ``width`` is the root's CSS width; ``scale`` the device pixels per CSS
-    pixel of the capture; ``v2`` whether the page is built on the V2 shell,
-    whose anchors validation checks instead of the old shell's.
+    pixel of the capture.
     """
 
     width: int
     scale: int
-    v2: bool
 
 
-# The old shell: a 1280 px desktop page at 1x (#26, 2026-10-01), kept by
-# every page kind until its migration to the V2 shell. Most pages were 2x
-# for phones once, which tripled the capture and made the PNG 2.5 times
-# larger and paid off only when a reader zoomed in.
-LEGACY_FRAME = PageFrame(width=1280, scale=1, v2=False)
-# The V2 shell's two widths (ADR 0003): the board ranking is a phone-width
+# The shell's two widths (ADR 0003): the board ranking is a phone-width
 # long picture read without zooming; every other page is wide, opened and
 # zoomed on a phone. Both at 2x: the longest wide page (角色排名 洛茜)
 # captured in 2.6 s on the production host, far inside the render budget.
-LIST_FRAME = PageFrame(width=540, scale=2, v2=True)
-WIDE_FRAME = PageFrame(width=960, scale=2, v2=True)
-# Page kinds on the V2 shell; every other kind is drawn in LEGACY_FRAME.
+LIST_FRAME = PageFrame(width=540, scale=2)
+WIDE_FRAME = PageFrame(width=960, scale=2)
+# Every page kind's frame.
 PAGE_FRAMES: dict[str, PageFrame] = {
     "ranking": LIST_FRAME,
     "help": WIDE_FRAME,
@@ -151,13 +141,14 @@ PAGE_FRAMES: dict[str, PageFrame] = {
     "roster": WIDE_FRAME,
     "dungeon-top3": WIDE_FRAME,
     "records": WIDE_FRAME,
+    "compare": WIDE_FRAME,
 }
 
 
 def page_frame(page_kind: str) -> PageFrame:
     """The frame ``page_kind`` is laid out and captured in."""
 
-    return PAGE_FRAMES.get(page_kind, LEGACY_FRAME)
+    return PAGE_FRAMES[page_kind]
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,12 +187,10 @@ class TemplateRenderer:
         self,
         resources_path: Path,
         metadata_path: Path,
-        background_path: Path,
         fonts_path: Path | None = None,
     ) -> None:
         self.resources_path = resources_path.resolve()
         self.version = read_plugin_version(metadata_path)
-        self.background_data_url = _load_background_data_url(background_path)
         self.shell_textures = _load_inline_assets(
             self.resources_path / "shell", _SHELL_TEXTURES
         )
@@ -232,7 +221,6 @@ class TemplateRenderer:
         return cls(
             resources_path,
             plugin_root / "metadata.yaml",
-            resources_path / "common" / "scene-background.svg",
             resources_path / "common" / "fonts",
         )
 
@@ -736,7 +724,6 @@ class TemplateRenderer:
             page_kind=page_kind,
             frame=page_frame(page_kind),
             plugin={"name": "ZmdLog", "version": self.version},
-            background_data_url=self.background_data_url,
             shell=self.shell_textures,
             font_face_css=(
                 self.font_face_css if embed_fonts else self.linked_font_face_css
@@ -1390,52 +1377,15 @@ class LongImageRenderer:
             min(5_000, self.render_timeout_ms // 3),
         )
 
-    async def _validate_page(
-        self, page, frame: PageFrame = LEGACY_FRAME
-    ) -> dict[str, int]:
+    async def _validate_page(self, page, frame: PageFrame) -> dict[str, int]:
         """Check the drawn page against its frame before it is captured.
 
-        Each shell has its anchors: the root that must be exactly the
-        frame's width (an overflowing decoration widens it) and the panel
-        that must end inside it. An old page must also carry the local
-        scene background; a V2 page must declare the frame's width itself,
-        so a template and its page kind cannot disagree on it unseen.
+        The root must be exactly the frame's width (an overflowing
+        decoration widens it), the panel must end inside it, and the page
+        must declare the frame's width itself, so a template and its page
+        kind cannot disagree on it unseen.
         """
 
-        if frame.v2:
-            return await self._validate_v2_page(page, frame)
-        metrics = await page.evaluate(
-            """
-            () => {
-              const root = document.querySelector("#zmd-page");
-              const panel = root && root.querySelector(".main-panel");
-              if (!root || !panel) return null;
-              const rootRect = root.getBoundingClientRect();
-              const panelRect = panel.getBoundingClientRect();
-              return {
-                width: Math.ceil(root.scrollWidth),
-                height: Math.ceil(root.scrollHeight),
-                panelBottom: Math.round(panelRect.bottom - rootRect.top),
-                hasBackground:
-                  getComputedStyle(root).backgroundImage !== "none" &&
-                  getComputedStyle(root)
-                    .getPropertyValue("--zmd-scene-background")
-                    .includes("data:image/"),
-              };
-            }
-            """
-        )
-        if metrics is None:
-            raise RenderError("page frame is missing")
-        if metrics["width"] != frame.width or metrics["height"] <= 0:
-            raise RenderError("page frame has invalid dimensions")
-        if not metrics["hasBackground"]:
-            raise RenderError("local scene background is missing")
-        if metrics["panelBottom"] > metrics["height"]:
-            raise RenderError("main panel does not contain the complete result")
-        return metrics
-
-    async def _validate_v2_page(self, page, frame: PageFrame) -> dict[str, int]:
         metrics = await page.evaluate(
             """
             () => {
@@ -1529,26 +1479,6 @@ def read_plugin_version(metadata_path: Path) -> str:
             return version
         break
     raise TemplateConfigurationError("plugin metadata has no valid version")
-
-
-def _load_background_data_url(background_path: Path) -> str:
-    try:
-        payload = background_path.read_bytes()
-    except OSError as exc:
-        raise TemplateConfigurationError(
-            "local scene background is unavailable"
-        ) from exc
-    if payload.startswith(b"\x89PNG\r\n\x1a\n"):
-        media_type = "image/png"
-    elif payload.startswith(b"\xff\xd8\xff"):
-        media_type = "image/jpeg"
-    elif payload.lstrip().startswith((b"<svg", b"<?xml")):
-        media_type = "image/svg+xml"
-    else:
-        raise TemplateConfigurationError(
-            "local scene background has an unsupported format"
-        )
-    return _data_url(payload, media_type)
 
 
 def _data_url(payload: bytes, media_type: str) -> str:

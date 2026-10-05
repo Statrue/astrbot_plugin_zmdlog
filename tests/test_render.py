@@ -28,13 +28,11 @@ from core.presentation import (
 from core.presentation.build import PipState, star_view
 from core.render import (
     FONT_ORIGIN,
-    LEGACY_FRAME,
     LIST_FRAME,
     WIDE_FRAME,
     AssetCache,
     LongImageRenderer,
     RenderError,
-    TemplateConfigurationError,
     TemplateRenderer,
     page_frame,
     read_plugin_version,
@@ -830,34 +828,15 @@ class TemplateRendererTests(unittest.TestCase):
 
     def test_every_font_size_is_a_scale_token(self) -> None:
         # Colours were tokens from the first commit; sizes drifted into
-        # nineteen values with half-pixels between them. Each shell's
-        # base.css now holds the only sizes its pages may use — the old
-        # shell's under resources/common, the V2 shell's under
-        # resources/shell — and every token a page uses must exist in the
-        # scale of the shell it is built on.
+        # nineteen values with half-pixels between them. The shell's
+        # base.css holds the only sizes a page may use, and every token a
+        # page uses must exist in that scale.
         resources = self.root / "resources"
-
-        def scale(base: Path) -> set[str]:
-            css = base.read_text(encoding="utf-8")
-            root_start = css.index(":root {")
-            root_block = css[root_start : css.index("}", root_start)]
-            return set(re.findall(r"--fs-[a-z0-9-]+(?=:)", root_block))
-
-        old_scale = scale(resources / "common" / "base.css")
-        new_scale = scale(resources / "shell" / "base.css")
-        self.assertTrue(old_scale)
-        self.assertTrue(new_scale)
-
-        # A V2 file is the shell's own, or one a V2 page includes.
-        v2_files = set((resources / "shell").glob("*.*"))
-        for template in resources.rglob("*.html"):
-            markup = template.read_text(encoding="utf-8")
-            if '{% extends "shell/' in markup:
-                v2_files.add(template)
-                v2_files.update(
-                    resources / name
-                    for name in re.findall(r'{% include "([^"]+)" %}', markup)
-                )
+        css = (resources / "shell" / "base.css").read_text(encoding="utf-8")
+        root_start = css.index(":root {")
+        root_block = css[root_start : css.index("}", root_start)]
+        scale = set(re.findall(r"--fs-[a-z0-9-]+(?=:)", root_block))
+        self.assertTrue(scale)
 
         raw_size = re.compile(r"font-size:\s*[0-9.]+(?:px|em|rem|%)")
         # The rule is about sizes, not about stylesheets. An inline
@@ -868,7 +847,7 @@ class TemplateRendererTests(unittest.TestCase):
         token = re.compile(
             r"font-size\s*[:=]\s*[\"']?\s*var\((--fs-[a-z0-9-]+)\)"
         )
-        used = {True: set(), False: set()}
+        used: set[str] = set()
         for path in sorted(resources.rglob("*")):
             if path.suffix not in {".css", ".html"}:
                 continue
@@ -877,12 +856,10 @@ class TemplateRendererTests(unittest.TestCase):
             self.assertEqual(
                 refused.findall(text), [], f"{path.name} sets a raw font-size"
             )
-            used[path in v2_files].update(token.findall(text))
+            used.update(token.findall(text))
 
-        self.assertTrue(used[True])
-        self.assertTrue(used[False])
-        self.assertEqual(used[True] - new_scale, set())
-        self.assertEqual(used[False] - old_scale, set())
+        self.assertTrue(used)
+        self.assertEqual(used - scale, set())
 
     def _board(self, count: int, **row_fields) -> BossRanking:
         return BossRanking(
@@ -1217,21 +1194,6 @@ class TemplateRendererTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 self.assertEqual(page_frame(kind), WIDE_FRAME)
 
-    def test_missing_background_is_a_configuration_error(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            resources = root / "resources"
-            resources.mkdir()
-            metadata = root / "metadata.yaml"
-            metadata.write_text('version: "1.0.0"\n', encoding="utf-8")
-
-            with self.assertRaises(TemplateConfigurationError):
-                TemplateRenderer(
-                    resources,
-                    metadata,
-                    resources / "missing.jpg",
-                )
-
     def test_relative_avatar_paths_resolve_against_web_base_url(self) -> None:
         ranking = BossRanking(
             boss_slug="test-boss",
@@ -1312,9 +1274,9 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
 
         renderer = object.__new__(LongImageRenderer)
         with self.assertRaises(RenderError):
-            await renderer._validate_page(MissingPage())
+            await renderer._validate_page(MissingPage(), WIDE_FRAME)
 
-    async def test_a_v2_page_is_checked_against_its_declared_frame(self) -> None:
+    async def test_a_page_is_checked_against_its_declared_frame(self) -> None:
         class DrawnPage:
             def __init__(self, **metrics) -> None:
                 self.metrics = {
@@ -1327,7 +1289,6 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
                 }
 
             async def evaluate(self, script):
-                # The V2 anchors, never the old shell's.
                 self.script = script
                 return self.metrics
 
@@ -1367,9 +1328,10 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
         # 账号, 趋势 and 角色排名 <角色>: one wide table each, never paged.
         for kind in ("account", "trend", "character-standings"):
             self.assertEqual(page_frame(kind), WIDE_FRAME)
-        # Pages not yet on the V2 shell keep the old frame.
-        self.assertEqual(page_frame("compare"), LEGACY_FRAME)
-        self.assertEqual((LEGACY_FRAME.width, LEGACY_FRAME.scale), (1280, 1))
+        self.assertEqual(page_frame("compare"), WIDE_FRAME)
+        # Every page is on the shell: no kind falls back to another frame.
+        with self.assertRaises(KeyError):
+            page_frame("unknown")
 
     async def test_capture_failure_keeps_rendered_html_for_fallback(self) -> None:
         renderer = LongImageRenderer(self.root)
