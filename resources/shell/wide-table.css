@@ -1,0 +1,342 @@
+/* The wide pages drawn as one table (ADR 0003): 账号, 趋势, 角色排名 and
+   its 冠军榜, 玩家排名, 阵容, 副本前三, 新纪录. A row is a grid whose
+   columns each page sets on its own row class; this file is what every
+   such table shares — the row and its head, the 名次 with its medal
+   underline, a face with a name, a count over a track, the time on its
+   yellow stroke, a team of faces, chips, and the figures card above a
+   table.
+
+   A column of faces gets a fixed width and the last text column
+   minmax(0, 1fr): a 1fr face column has a min-content floor, so a row of
+   four faces would push every later column right of the head's. */
+
+.w-table {
+  padding-top: 6px;
+  padding-bottom: 8px;
+}
+.w-tr {
+  display: grid;
+  align-items: center;
+  gap: 18px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.w-tr:last-child {
+  border-bottom: 0;
+}
+.w-tr > * {
+  text-align: right;
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-20);
+  color: var(--ink);
+}
+.w-tr > .w-left,
+.w-tr > .w-rank,
+.w-tr > .w-who,
+.w-tr > .w-count,
+.w-tr > .w-faces,
+.w-tr > .w-main {
+  text-align: left;
+}
+
+/* 名次, the top three on their medal's underline */
+.w-rank b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-26);
+  line-height: 1;
+  color: var(--ink);
+}
+.w-rank small {
+  margin-left: 4px;
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.w-tr.is-1 {
+  --medal: var(--yellow);
+}
+.w-tr.is-2 {
+  --medal: var(--silver);
+}
+.w-tr.is-3 {
+  --medal: var(--bronze);
+}
+.w-tr.is-top .w-rank b {
+  padding: 0 4px;
+  background: linear-gradient(transparent 55%, var(--medal) 55%);
+}
+
+/* a face, a name, a muted word after it; names wrap, never truncate */
+.w-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.w-who strong {
+  min-width: 0;
+  font-family: var(--font-cjk);
+  font-weight: 700;
+  font-size: var(--fs-20);
+  overflow-wrap: anywhere;
+}
+.w-who em {
+  flex: none;
+  font-style: normal;
+  font-family: var(--font-cjk);
+  font-weight: 400;
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+
+/* a count over a yellow track */
+.w-count {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+.w-count b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-24);
+  text-align: right;
+}
+.w-track {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--track);
+  overflow: hidden;
+}
+.w-track i {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: 5px;
+  background: var(--yellow);
+}
+.w-tr > .w-muted {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.w-tr > .w-main {
+  font-family: var(--font-cjk);
+  font-weight: 600;
+  font-size: var(--fs-17);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+/* the head row: its labels in the muted CJK, after every cell rule */
+.w-th {
+  padding: 8px 0 10px;
+}
+.w-tr.w-th > * {
+  font-family: var(--font-cjk);
+  font-weight: 500;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+.w-tr.w-th > :first-child {
+  text-align: left;
+}
+
+/* faces at the table's sizes: a team's 44, a row's 40, a chip's 32 */
+.w-face-s,
+.w-face-t,
+.w-face-xs {
+  margin: 0;
+}
+.w-face-s {
+  width: 44px;
+  height: 44px;
+}
+.w-face-t {
+  width: 40px;
+  height: 40px;
+}
+.w-face-xs {
+  width: 32px;
+  height: 32px;
+}
+.w-face-s.is-lead,
+.w-face-s.is-lead:first-child {
+  margin: 0 4px;
+}
+.w-face-s.is-lead::before {
+  inset: -8px;
+}
+.w-face-s.is-lead::after {
+  inset: -13px;
+}
+.w-face-t.is-lead,
+.w-face-t.is-lead:first-child {
+  margin: 0 4px 0 2px;
+}
+.w-face-t.is-lead::before {
+  inset: -7px;
+}
+.w-face-t.is-lead::after {
+  inset: -11px;
+}
+.w-face-t .i-face-disc img,
+.w-face-t .i-face-disc .initial {
+  inset: 3px;
+  width: calc(100% - 6px);
+  height: calc(100% - 6px);
+}
+.w-face-xs .i-face-disc img,
+.w-face-xs .i-face-disc .initial {
+  inset: 2px;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
+}
+.w-faces {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 用时 on the yellow stroke, a note under it */
+.w-time {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.w-time b {
+  padding: 0 4px;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-22);
+  background: linear-gradient(transparent 60%, var(--yellow) 60%);
+}
+.w-time b small {
+  font-size: var(--fs-15);
+}
+.w-time > small {
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+
+/* a team: a count, then four faces with their names */
+.w-team {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.w-team:last-child {
+  border-bottom: 0;
+}
+.w-team-n {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.w-team-n b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-30);
+  line-height: 1;
+}
+.w-team-n small {
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.w-team-faces {
+  display: flex;
+  gap: 14px;
+}
+.w-team-m {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 86px;
+}
+.w-team-m em {
+  font-style: normal;
+  font-size: var(--fs-15);
+  font-weight: 600;
+  color: var(--ink-2);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* chips: what the table leaves out, each its own grey tab */
+.w-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.w-chips span {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 3px;
+  background: var(--cell);
+  font-size: var(--fs-17);
+  color: var(--ink-2);
+}
+.w-chips em {
+  margin-right: 6px;
+  font-style: normal;
+  font-size: var(--fs-17);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.w-empty {
+  padding: 12px 0;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+
+/* the figures card above a table: four figures, the key one on yellow */
+.w-facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 18px 0 16px;
+  border-radius: 6px;
+  background: var(--stripe-a);
+  filter: drop-shadow(0 5px 8px var(--lift-16))
+    drop-shadow(0 0 0.6px var(--lift-26));
+}
+.w-facts div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.w-facts div + div {
+  border-left: 1px solid var(--grid);
+}
+.w-facts dt {
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+.w-facts dd {
+  position: relative;
+  isolation: isolate;
+  padding: 0 6px;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-38);
+  line-height: 1;
+  color: var(--ink);
+}
+.w-facts .is-key dd::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: -4px;
+  right: -4px;
+  bottom: 0;
+  height: 14px;
+  background: var(--yellow);
+}
