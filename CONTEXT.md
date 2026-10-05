@@ -44,8 +44,8 @@ _Avoid_: 副词条, 武器属性
 How far one fielded character is built: its level, 潜能, 精炼, skill
 levels, weapon and gear — everything the 养成 view of a battle draws. Its
 shorthand is the pair 潜能 + 精炼, written `5+6` under an avatar on
-ranking-style pages (not on the V2 board ranking, whose rows show faces,
-time and DPS only), in the 角色档案 records column and as the 养成组合
+ranking-style pages (not on the V2 board ranking, 账号 or 角色排名, whose
+rows show faces, time and DPS only), in the 角色档案 records column and as the 养成组合
 shares on 角色档案 (`0+1`, `5+6`, …), `5+?` when the weapon is
 unrecorded — the site's own shorthand; a player reads it there first.
 _Avoid_: 练度, 培养, 配装
