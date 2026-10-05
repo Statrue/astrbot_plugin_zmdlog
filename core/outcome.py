@@ -70,6 +70,13 @@ class PageTarget:
 
     A character page cut to one board (角色档案 ``--榜单``) names the board
     in ``boss_slug``; the site's character page reads it too.
+
+    A board's ranking also carries what turning its page needs: the row
+    filters it was drawn with (``character_filter`` as typed, which reads
+    back the same; ``element_filter`` as the catalog labels it) and
+    ``record_count``, the rows they keep — which says whether a next page
+    exists, and what the ``全部`` picture left to the site. None where the
+    page counted none.
     """
 
     subject: PageSubject
@@ -83,6 +90,9 @@ class PageTarget:
     name: str = ""
     boards: tuple[tuple[str, str], ...] = ()
     boss_slug: str | None = None
+    character_filter: str | None = None
+    element_filter: str | None = None
+    record_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

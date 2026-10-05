@@ -51,6 +51,21 @@ the board the metric names. A page the drawing showed this thing does not
 have — an old upload's loadout, an account's trend before any is recorded —
 gets no button.
 
+A board's ranking has a keyboard of its own, three rows with the jump
+button last. The first is its views: 阵容, 角色统计, 第一名战报 and
+对比第一名 — the last ``对比 <slug> 我``, which compares whoever sends it,
+or taps it, with first place. Both first-place buttons mean the whole
+board's #1 under the page's metric, never the first row a filter left,
+so like the other views they carry the metric and no filter. The second
+row turns the page: 全部 and 下一页, each repeating the page's ``--角色``,
+``--属性`` and metric, so the page it draws is the one this page was
+filtered to (``PageTarget.record_count`` says whether a next page exists;
+the last page has none). The 全部 picture has neither. One that stopped at
+thirty rows and left the rest to the site gets, as its second row, the
+board on the site, labelled with how many rows wait there; being the same
+link as the jump button, it stands in for it rather than repeat it a row
+below.
+
 A dungeon's podiums are the one picture with no page on the site, so no
 jump button; under it instead is a command button per board of the dungeon
 (or the phase), the board's slug as a user would type it, in the board
@@ -101,7 +116,9 @@ from .routing import (
     DEFAULT_STATS_POTENTIAL,
     DEFAULT_STATS_RANGE,
     DEFAULT_TREND_RANGE,
+    MAX_RANKING_ROWS,
     parse_zmdlog_payload,
+    ranking_page_count,
 )
 from .watch import Notice
 
@@ -190,11 +207,13 @@ _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = 
         CandidateView.LOADOUT,
         CandidateView.SKILLS,
     ),
-    # 战报 on a board is its first place's battle.
+    # 战报 on a board is its first place's battle, 对比 the tapper's own
+    # best record against it.
     (PageSubject.BOARD, CandidateView.RANKING): (
         CandidateView.ROSTER,
         CandidateView.CHARACTER_STATS,
         CandidateView.BATTLE,
+        CandidateView.COMPARE,
     ),
     (PageSubject.BOARD, CandidateView.ROSTER): (
         CandidateView.RANKING,
@@ -216,9 +235,15 @@ _SITE_PAGE_LABELS = {SitePage.BINDING: "去 ZMDLogs 生成绑定码"}
 # A sibling's label is its command word, except where that word alone would
 # not say which page it opens.
 _SIBLING_LABELS = {
-    (PageSubject.BOARD, CandidateView.BATTLE): "第 1 名战报",
+    (PageSubject.BOARD, CandidateView.BATTLE): "第一名战报",
+    (PageSubject.BOARD, CandidateView.COMPARE): "对比第一名",
     (PageSubject.ACCOUNT, CandidateView.TREND): "名次趋势",
 }
+# A ranking's page buttons, and the site button that stands in for them
+# under a 全部 picture that left rows to the site.
+ALL_ROWS_LABEL = "全部"
+NEXT_PAGE_LABEL = "下一页"
+SITE_REST_LABEL = "官网查看其余 {count} 条"
 _PNG_CONTENT_TYPE = "response-content-type=image%2Fpng"
 # URL characters that cannot end a markdown image: no space, no bracket or
 # parenthesis, no fragment (the content-type parameter must follow the query).
@@ -464,9 +489,10 @@ def result_keyboard(
 
     The jump button fills the first row; the page's other views of the same
     target (``_SIBLINGS``) share the second, as command buttons — callback
-    buttons with ``callback``. A dungeon's podiums have no link and a button
-    per board instead, and no keyboard only without boards. ``command`` is
-    the prefixed command name (``/zmdlog``).
+    buttons with ``callback``. A board's ranking puts its views first, its
+    pages second and the jump last. A dungeon's podiums have no link and a
+    button per board instead, and no keyboard only without boards.
+    ``command`` is the prefixed command name (``/zmdlog``).
     """
 
     if target.subject is PageSubject.DUNGEON:
@@ -474,16 +500,84 @@ def result_keyboard(
     url = _jump_url(target, web_base_url=web_base_url)
     if url is None:
         return None
-    rows = [[jump_button("open", JUMP_LABEL, url)]]
     siblings = [
         command_button(
             f"view-{view.value}", label, sibling_command, callback=callback
         )
         for view, label, sibling_command in _sibling_commands(target, command)
     ]
+    if (target.subject, target.view) == (PageSubject.BOARD, CandidateView.RANKING):
+        return _ranking_keyboard(
+            target, siblings, url=url, command=command, callback=callback
+        )
+    rows = [[jump_button("open", JUMP_LABEL, url)]]
     if siblings:
         rows.append(siblings)
     return _keyboard_rows(rows)
+
+
+def _ranking_keyboard(
+    target: PageTarget,
+    views: list[dict[str, Any]],
+    *,
+    url: str,
+    command: str,
+    callback: bool,
+) -> dict[str, Any]:
+    """A board's ranking: its views, then its pages, then the site.
+
+    The pages are 全部 and the next one, each with the filters and the
+    metric the page was drawn with; the last page has no next, and the
+    全部 picture neither. A 全部 picture that left rows to the site gets
+    a button there in their place, saying how many — and, being the same
+    link, it is the site button too, so no third row repeats it.
+    """
+
+    rows = [views]
+    if target.ranking_page == ALL_PAGES:
+        rest = (target.record_count or 0) - MAX_RANKING_ROWS
+        if rest > 0:
+            label = SITE_REST_LABEL.format(count=rest)
+            rows.append([jump_button("open", label, url)])
+            return _keyboard_rows(rows)
+    else:
+        pages = [
+            command_button(
+                "page-all",
+                ALL_ROWS_LABEL,
+                _ranking_page_command(target, ALL_PAGES, command),
+                callback=callback,
+            )
+        ]
+        page = target.ranking_page if isinstance(target.ranking_page, int) else 1
+        if target.record_count is not None and page < ranking_page_count(
+            target.record_count
+        ):
+            pages.append(
+                command_button(
+                    "page-next",
+                    NEXT_PAGE_LABEL,
+                    _ranking_page_command(target, page + 1, command),
+                    callback=callback,
+                )
+            )
+        rows.append(pages)
+    rows.append([jump_button("open", JUMP_LABEL, url)])
+    return _keyboard_rows(rows)
+
+
+def _ranking_page_command(target: PageTarget, page: int | str, command: str) -> str:
+    """The command that draws ``page`` of ``target``'s ranking, filters kept."""
+
+    parts = [command, _BOARD_WORDS[CandidateView.RANKING], target.key]
+    parts += ["--页", _page_word(page)]
+    if target.character_filter:
+        parts += ["--角色", target.character_filter]
+    if target.element_filter:
+        parts += ["--属性", target.element_filter]
+    if target.metric != DEFAULT_METRIC:
+        parts += ["--口径", target.metric]
+    return " ".join(parts)
 
 
 def _board_keyboard(
@@ -535,12 +629,13 @@ def _sibling_commands(
     """``(view, label, command)`` of every other view ``target``'s page offers.
 
     A board keeps its metric: the other views of an rDPS board are its rDPS
-    views, its 第 1 名战报 the rDPS board's first place. Its page stays
-    with the ranking: no other view is paged, and the ranking a sibling
-    opens starts on its first page. Its statistics window and potential
-    belong to the statistics page. A character is named by its name, and
-    its window goes to its 角色统计, which reads the same one. A battle or
-    an account command takes no option.
+    views, its 第一名战报 and 对比第一名 the rDPS board's first place. Its
+    page and its row filters stay with the ranking: no other view is paged
+    or filtered, and the ranking a sibling opens starts on its first page.
+    Its statistics window and potential belong to the statistics page. A
+    character is named by its name, and its window goes to its 角色统计,
+    which reads the same one. A battle or an account command takes no
+    option.
     """
 
     words = _SUBJECT_WORDS.get(target.subject, _BOARD_WORDS)
@@ -556,6 +651,9 @@ def _sibling_commands(
         if view in target.unavailable:
             continue
         parts = [command, words[view], target.name or target.key]
+        if target.subject is PageSubject.BOARD and view is CandidateView.COMPARE:
+            # Whoever sends it, or taps it, is the 我 set against first place.
+            parts.append("我")
         if other_metric:
             parts += ["--口径", target.metric]
         if windowed and view is CandidateView.CHARACTER_STATS:

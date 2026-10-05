@@ -171,9 +171,12 @@ class DungeonListTests(unittest.TestCase):
         board = run(self.service.dispatch(route, command_prefix="/", origin=GROUP))
 
         self.assertEqual(self.renderer.calls[-1], "ranking")
-        self.assertEqual(board.target, PageTarget(PageSubject.BOARD, "echo_blade"))
-        # The ranking page offers its own views and no other board of the
-        # dungeon: those would push 阵容 / 角色统计 / 第 1 名战报 off.
+        self.assertEqual(
+            board.target,
+            PageTarget(PageSubject.BOARD, "echo_blade", record_count=5),
+        )
+        # The ranking page offers its own views and pages and no other board
+        # of the dungeon: those would push its views off.
         keyboard = result_keyboard(board.target, web_base_url=WEB, command="/zmdlog")
         self.assertEqual(
             [
@@ -188,12 +191,14 @@ class DungeonListTests(unittest.TestCase):
                 for row in keyboard["content"]["rows"]
             ],
             [
-                [("在 ZMDLogs 打开", 0, f"{WEB}/boss/echo_blade")],
                 [
                     ("阵容", 2, "/zmdlog 阵容 echo_blade"),
                     ("角色统计", 2, "/zmdlog 角色统计 echo_blade"),
-                    ("第 1 名战报", 2, "/zmdlog 战报 echo_blade"),
+                    ("第一名战报", 2, "/zmdlog 战报 echo_blade"),
+                    ("对比第一名", 2, "/zmdlog 对比 echo_blade 我"),
                 ],
+                [("全部", 2, "/zmdlog 榜单 echo_blade --页 全部")],
+                [("在 ZMDLogs 打开", 0, f"{WEB}/boss/echo_blade")],
             ],
         )
 
@@ -204,7 +209,9 @@ class DungeonListTests(unittest.TestCase):
         # The ranking page as typing its name draws it, buttons and all.
         self.assertEqual(
             outcome.target,
-            PageTarget(PageSubject.BOARD, CONTRACT, CandidateView.RANKING),
+            PageTarget(
+                PageSubject.BOARD, CONTRACT, CandidateView.RANKING, record_count=5
+            ),
         )
 
     def test_typing_a_dungeon_draws_what_picking_it_draws(self) -> None:

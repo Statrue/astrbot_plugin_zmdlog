@@ -1251,6 +1251,69 @@ class HandlerTests(unittest.TestCase):
             ["/zmdlog 账号 usr_1234567890abcdef"],
         )
 
+    def test_a_ranking_carries_its_views_its_pages_and_its_link(self) -> None:
+        received = self._long_board()  # 17 rows led by 黎风: two pages
+        path = self._png(1080, 3000)
+
+        async def render_ranking(ranking, **kwargs):
+            received.append(kwargs)
+            return capture(path)
+
+        self.plugin.renderer.render_ranking = render_ranking
+        slug = "dung01_group_bossrush02"
+        typed = "/zmdlog 三位一体 --角色 黎风 --口径 rdps"
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+
+        event, results = self._official(typed, api=api)
+
+        self.assertEqual(results, [])
+        self.assertTrue(event.stopped)
+        (_, payload), = api.calls
+        self.assertTrue(
+            payload["markdown"]["content"].startswith("![img #540px #1500px](")
+        )
+        rows = [
+            [
+                (button["render_data"]["label"], button["action"]["data"])
+                for button in row["buttons"]
+            ]
+            for row in payload["keyboard"]["content"]["rows"]
+        ]
+        self.assertEqual(
+            rows,
+            [
+                [
+                    ("阵容", f"/zmdlog 阵容 {slug} --口径 rdps"),
+                    ("角色统计", f"/zmdlog 角色统计 {slug} --口径 rdps"),
+                    ("第一名战报", f"/zmdlog 战报 {slug} --口径 rdps"),
+                    ("对比第一名", f"/zmdlog 对比 {slug} 我 --口径 rdps"),
+                ],
+                [
+                    ("全部", f"/zmdlog 榜单 {slug} --页 全部 --角色 黎风 --口径 rdps"),
+                    ("下一页", f"/zmdlog 榜单 {slug} --页 2 --角色 黎风 --口径 rdps"),
+                ],
+                [("在 ZMDLogs 打开", f"https://zmdlogs.com/boss/{slug}?metric=rdps")],
+            ],
+        )
+
+        # Sent, 下一页 draws the last page, filtered, which turns no further.
+        api.calls.clear()
+        self._official(rows[1][1][1], api=api)
+        self.assertEqual(received[-1]["page"], 2)
+        self.assertEqual(received[-1]["character_filter"], ("黎风",))
+        (_, payload), = api.calls
+        self.assertEqual(
+            [
+                button["render_data"]["label"]
+                for button in payload["keyboard"]["content"]["rows"][1]["buttons"]
+            ],
+            ["全部"],
+        )
+        # Every other platform gets the picture, and nothing else.
+        self.assertEqual(
+            run(collect(self.plugin.zmdlog(FakeEvent(typed)))), [("image", path)]
+        )
+
     def _dungeon_page(self) -> str:
         """A dungeon of two boards, its podiums drawn as a capture."""
 
@@ -1725,6 +1788,93 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(payload["msg_type"], 7)
         self.assertEqual(payload["media"]["file_info"], "info-1")
         self.assertEqual(payload["event_id"], "INTERACTION_CREATE:e-1")
+
+    def test_a_tapped_compare_with_first_place_compares_the_tapper(self) -> None:
+        # 111 asks for the ranking; whoever taps 对比第一名 under it is 我.
+        from astrbot_plugin_zmdlog.core.models import AccountSearchHit
+
+        self._enable_binding_storage()
+        accounts = {
+            "111": ("usr_00000000000000000000000000000003", "公开账号3"),
+            "222": ("usr_00000000000000000000000000000005", "公开账号5"),
+            "333": ("usr_00000000000000000000000000000001", "公开账号1"),
+            "444": ("usr_1234567890abcdef", "测试账号"),
+        }
+        codes = dict(
+            zip(
+                ("ZMD-AAAA-BBBB", "ZMD-CCCC-DDDD", "ZMD-EEEE-FFFF", "ZMD-GGGG-HHHH"),
+                accounts.items(),
+            )
+        )
+
+        async def lookup(code):
+            return AccountSearchHit(*codes[code][1])
+
+        async def ranking(boss_slug, **kwargs):
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        async def detail(battle_id):
+            payload = battle_detail_payload()
+            payload["battle"]["id"] = battle_id
+            return parse_battle_detail(payload)
+
+        compared: list[tuple[str, str]] = []
+        picture = self._png(1920, 2000)
+
+        async def render_compare(first, second, **kwargs):
+            compared.append((first.battle_id, second.battle_id))
+            return capture(picture)
+
+        async def render_ranking(ranking, **kwargs):
+            return capture(picture)
+
+        self.plugin.client.get_binding_code_account = lookup
+        self.plugin.data.get_boss_ranking = ranking
+        self.plugin.data.get_battle_detail = detail
+        self.plugin.renderer.render_compare = render_compare
+        self.plugin.renderer.render_ranking = render_ranking
+        for code, (member, _) in codes.items():
+            (_, reply), = self._zmdlog(
+                f"zmdlog 绑定 {code}", platform="qq_official", sender=member
+            )
+            self.assertIn("已绑定", reply)
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+        adapter = self._enable_callbacks(api)
+        typed = self._official_event("/zmdlog 三位一体", api=api, sender="111")
+        typed.bot = adapter.client
+        run(collect(self.plugin.zmdlog(typed)))
+        (_, page), = api.calls
+        compare = page["keyboard"]["content"]["rows"][0]["buttons"][3]
+        self.assertEqual(compare["render_data"]["label"], "对比第一名")
+        self.assertEqual(compare["action"]["type"], 1)
+        data = compare["action"]["data"]
+        self.assertEqual(data, "/zmdlog 对比 dung01_group_bossrush02 我")
+
+        def tap(member: str) -> dict:
+            api.calls.clear()
+            run(adapter.client.on_interaction_create(tap_of(data, member=member)))
+            (_, payload), = api.calls
+            return payload
+
+        # 222's own record (5th) against the first, not 111's (3rd).
+        self.assertEqual(tap("222")["msg_type"], 7)
+        self.assertEqual(
+            compared, [("btl_upload_000000000001", "btl_upload_000000000005")]
+        )
+        # The tapper is first place, has no record here, or is not bound:
+        # the typed command's replies, sent to the tapper's tap.
+        first = tap("333")
+        self.assertIn("公开账号1 就是「危境再现·三位一体」第 1 名", first["content"])
+        missing = tap("444")
+        self.assertIn("测试账号", missing["content"])
+        self.assertIn("没有公开记录", missing["content"])
+        unbound = tap("999")
+        self.assertIn("还没有绑定账号", unbound["markdown"]["content"])
+        (binding,), = (
+            row["buttons"] for row in unbound["keyboard"]["content"]["rows"]
+        )
+        self.assertEqual(binding["action"]["type"], 0)
+        self.assertEqual(len(compared), 1)
 
     # --- board watch ----------------------------------------------------------
 

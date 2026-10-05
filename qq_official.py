@@ -53,7 +53,9 @@ command in (``Callbacks.live`` says which a chat's connection is):
 - an AstrBot that subscribes or handles taps itself — it wins.
 
 A tap is acknowledged first (the platform shows 操作失败 after three
-seconds without one) and answered afterwards, however long the page takes.
+seconds without one) and answered afterwards, however long the page takes,
+as if the tapper had sent the command: ``Click.sender_id`` is the tapper,
+so the 我 of a ranking's 对比第一名 is whoever tapped it.
 The handler on a client stays for the client's life, but only forwards to
 the hook on the adapter class, which each plugin load replaces and each
 unload removes: a reload re-points live connections without touching them,

@@ -632,8 +632,10 @@ class ZmdLogBotPlugin(Star):
         only a query runs: the data is whatever the tapping client sends, so
         a command that would add a watch, bind an account or edit an alias
         is refused. Errors take the typed command's ladder and wording. The
-        answer goes to the chat tapped in, as a reply to the tap; without
-        buttons, as plain text or a native picture.
+        tapper is the sender: a ``我`` the command names (对比第一名) is
+        whoever tapped, never whoever asked for the page the button hangs
+        under. The answer goes to the chat tapped in, as a reply to the tap;
+        without buttons, as plain text or a native picture.
         """
 
         request = read_button_command(click.data)

@@ -1213,7 +1213,14 @@ class QueryService:
         )
         if isinstance(recipe, str):
             return Outcome(message=recipe)
-        return Outcome.image(await recipe.draw(renderer), target=board)
+        # What its page buttons turn on: the filters as asked, the rows kept.
+        ranking_target = replace(
+            board,
+            character_filter=pending.character_filter,
+            element_filter=pending.element_filter,
+            record_count=recipe.record_count,
+        )
+        return Outcome.image(await recipe.draw(renderer), target=ranking_target)
 
     # --- battles ---------------------------------------------------------------------
 

@@ -14,7 +14,12 @@ import logging
 import unittest
 from types import SimpleNamespace
 
-from core.buttons import result_image_message, result_keyboard
+from core.buttons import (
+    MAX_BUTTON_DATA_CHARS,
+    read_button_command,
+    result_image_message,
+    result_keyboard,
+)
 from core.candidates import CandidateStore, CandidateView
 from core.client import ZmdLogsAPIError
 from core.matcher import AliasConfig, MatcherCache
@@ -27,7 +32,7 @@ from core.models import (
 )
 from core.outcome import PageSubject, PageTarget
 from core.queries import QueryService
-from core.routing import RouteKind, RouteRequest, parse_zmdlog_payload
+from core.routing import ALL_PAGES, RouteKind, RouteRequest, parse_zmdlog_payload
 from core.settings import PluginSettings
 from tests.helpers import (
     battle_detail_payload,
@@ -274,7 +279,6 @@ LABELS = {
     "榜单": V.RANKING,
     "阵容": V.ROSTER,
     "角色统计": V.CHARACTER_STATS,
-    "第 1 名战报": V.BATTLE,
     "账号": V.RANKING,
     "名次趋势": V.TREND,
     "角色排名": V.CHARACTER_STANDINGS,
@@ -318,14 +322,6 @@ class SiblingButtonTests(unittest.TestCase):
                 ],
             ),
             (
-                page(PageSubject.BOARD, V.RANKING),
-                [
-                    ("阵容", f"{c} 阵容 {SLUG}"),
-                    ("角色统计", f"{c} 角色统计 {SLUG}"),
-                    ("第 1 名战报", f"{c} 战报 {SLUG}"),
-                ],
-            ),
-            (
                 page(PageSubject.BOARD, V.CHARACTER_STATS),
                 [("榜单", f"{c} 榜单 {SLUG}"), ("阵容", f"{c} 阵容 {SLUG}")],
             ),
@@ -342,36 +338,27 @@ class SiblingButtonTests(unittest.TestCase):
                 self.assertEqual(sibling_buttons(target), expected)
 
     def test_a_board_page_keeps_its_metric_in_every_command(self) -> None:
+        # The ranking's own buttons are RankingKeyboardTests'.
         commands = [
             command
             for _, command in sibling_buttons(
-                page(PageSubject.BOARD, V.RANKING, metric="rdps")
+                page(PageSubject.BOARD, V.ROSTER, metric="rdps")
             )
         ]
 
-        # 第 1 名战报 is the rDPS board's first place under an rDPS page —
-        # the two never mix.
         self.assertEqual(
             commands,
             [
-                f"{COMMAND} 阵容 {SLUG} --口径 rdps",
+                f"{COMMAND} 榜单 {SLUG} --口径 rdps",
                 f"{COMMAND} 角色统计 {SLUG} --口径 rdps",
-                f"{COMMAND} 战报 {SLUG} --口径 rdps",
             ],
         )
 
     def test_a_board_page_keeps_its_page_to_itself(self) -> None:
-        # Only the ranking is paged: page 3 of it opens the board's other
-        # views as they are, and they open the ranking on its first page.
+        # Only the ranking is paged, and its other views open on their own
+        # first page (RankingKeyboardTests); they open the ranking on its
+        # first page in turn.
         for view, expected in (
-            (
-                V.RANKING,
-                [
-                    f"{COMMAND} 阵容 {SLUG}",
-                    f"{COMMAND} 角色统计 {SLUG}",
-                    f"{COMMAND} 战报 {SLUG}",
-                ],
-            ),
             (
                 V.ROSTER,
                 [f"{COMMAND} 榜单 {SLUG}", f"{COMMAND} 角色统计 {SLUG}"],
@@ -388,6 +375,9 @@ class SiblingButtonTests(unittest.TestCase):
         # The load-bearing check: typed back in, each command must draw the
         # page its label promises, of this target, under the same metric.
         for subject, view in EVERY_PAGE:
+            if (subject, view) == (PageSubject.BOARD, V.RANKING):
+                # Its keyboard pages as well; RankingKeyboardTests checks it.
+                continue
             board = subject is PageSubject.BOARD
             for metric in ("dps", "rdps") if board else ("dps",):
                 for top in (None, 3) if board else (None,):
@@ -469,6 +459,233 @@ class SiblingButtonTests(unittest.TestCase):
                 # A button's id is unique within its keyboard.
                 ids = [button["id"] for button in buttons_of(keyboard)]
                 self.assertEqual(len(ids), len(set(ids)))
+
+
+def keyboard_rows(target: PageTarget, **options) -> list[list[tuple[str, int, str]]]:
+    """``(label, action type, data)`` of each button, row by row."""
+
+    keyboard = result_keyboard(target, web_base_url=WEB, command=COMMAND, **options)
+    return [
+        [
+            (
+                button["render_data"]["label"],
+                button["action"]["type"],
+                button["action"]["data"],
+            )
+            for button in row["buttons"]
+        ]
+        for row in keyboard["content"]["rows"]
+    ]
+
+
+def ranking(**options) -> PageTarget:
+    """A ranking page of the board ``SLUG``; 25 rows, three pages, by default."""
+
+    options.setdefault("record_count", 25)
+    return PageTarget(PageSubject.BOARD, SLUG, **options)
+
+
+def views_row(*options: str) -> list[tuple[str, int, str]]:
+    """The ranking's first row, ``options`` after each command."""
+
+    tail = "".join(f" {option}" for option in options)
+    return [
+        ("阵容", 2, f"{COMMAND} 阵容 {SLUG}{tail}"),
+        ("角色统计", 2, f"{COMMAND} 角色统计 {SLUG}{tail}"),
+        ("第一名战报", 2, f"{COMMAND} 战报 {SLUG}{tail}"),
+        ("对比第一名", 2, f"{COMMAND} 对比 {SLUG} 我{tail}"),
+    ]
+
+
+def page_button(label: str, page_word: str, *options: str) -> tuple[str, int, str]:
+    tail = "".join(f" {option}" for option in options)
+    return (label, 2, f"{COMMAND} 榜单 {SLUG} --页 {page_word}{tail}")
+
+
+OPEN_ROW = [("在 ZMDLogs 打开", 0, f"{WEB}/boss/{SLUG}")]
+
+
+class RankingKeyboardTests(unittest.TestCase):
+    """A board's ranking: its views, its pages, and the site, in three rows."""
+
+    def test_the_first_page_offers_every_view_all_rows_and_the_next(self) -> None:
+        self.assertEqual(
+            keyboard_rows(ranking()),
+            [
+                views_row(),
+                [page_button("全部", "全部"), page_button("下一页", "2")],
+                OPEN_ROW,
+            ],
+        )
+
+    def test_a_middle_page_turns_to_the_one_after_it(self) -> None:
+        self.assertEqual(
+            keyboard_rows(ranking(ranking_page=2))[1],
+            [page_button("全部", "全部"), page_button("下一页", "3")],
+        )
+
+    def test_the_last_page_has_no_next(self) -> None:
+        for page, count in ((3, 25), (None, 7), (1, 10), (2, 20)):
+            with self.subTest(page=page, count=count):
+                self.assertEqual(
+                    keyboard_rows(ranking(ranking_page=page, record_count=count)),
+                    [views_row(), [page_button("全部", "全部")], OPEN_ROW],
+                )
+
+    def test_the_all_picture_offers_no_page(self) -> None:
+        for count in (5, 30):
+            with self.subTest(count=count):
+                self.assertEqual(
+                    keyboard_rows(ranking(ranking_page=ALL_PAGES, record_count=count)),
+                    [views_row(), OPEN_ROW],
+                )
+
+    def test_past_thirty_the_all_picture_sends_the_rest_to_the_site(self) -> None:
+        # Its second row is the board on ZMDLogs, named for the rows the
+        # picture leaves there; the same link a row below would repeat it.
+        self.assertEqual(
+            keyboard_rows(ranking(ranking_page=ALL_PAGES, record_count=42)),
+            [views_row(), [("官网查看其余 12 条", 0, f"{WEB}/boss/{SLUG}")]],
+        )
+
+    def test_paging_keeps_the_filters_but_first_place_is_the_whole_boards(
+        self,
+    ) -> None:
+        target = ranking(
+            ranking_page=2, character_filter="黎风 洛茜", element_filter="物理"
+        )
+        filters = ("--角色 黎风 洛茜", "--属性 物理")
+
+        self.assertEqual(
+            keyboard_rows(target),
+            [
+                views_row(),
+                [
+                    page_button("全部", "全部", *filters),
+                    page_button("下一页", "3", *filters),
+                ],
+                OPEN_ROW,
+            ],
+        )
+
+    def test_an_rdps_page_keeps_rdps_on_every_button(self) -> None:
+        target = ranking(metric="rdps", character_filter="洛茜")
+
+        self.assertEqual(
+            keyboard_rows(target),
+            [
+                views_row("--口径 rdps"),
+                [
+                    page_button("全部", "全部", "--角色 洛茜", "--口径 rdps"),
+                    page_button("下一页", "2", "--角色 洛茜", "--口径 rdps"),
+                ],
+                [("在 ZMDLogs 打开", 0, f"{WEB}/boss/{SLUG}?metric=rdps")],
+            ],
+        )
+        rest = keyboard_rows(
+            ranking(metric="rdps", ranking_page=ALL_PAGES, record_count=31)
+        )
+        self.assertEqual(
+            rest[1], [("官网查看其余 1 条", 0, f"{WEB}/boss/{SLUG}?metric=rdps")]
+        )
+
+    def test_every_command_parses_back_to_the_page_it_names(self) -> None:
+        # Typed back in — or tapped, which reads it the same way — each
+        # command draws what its label says, of this board.
+        for metric in ("dps", "rdps"):
+            for page in (None, 2):
+                for character, element in ((None, None), ("黎风 洛茜", "物理")):
+                    target = ranking(
+                        metric=metric,
+                        ranking_page=page,
+                        character_filter=character,
+                        element_filter=element,
+                    )
+                    rows = keyboard_rows(target)
+                    commands = {
+                        label: data
+                        for row in rows
+                        for label, kind, data in row
+                        if kind == 2
+                    }
+                    for label, data in commands.items():
+                        with self.subTest(command=data):
+                            request = read_button_command(data)
+                            route = parse_zmdlog_payload(request.payload)
+
+                            self.assertEqual(request.prefix, "/")
+                            self.assertEqual(route.query, SLUG)
+                            self.assertEqual(route.metric, metric)
+                            expected = RANKING_BUTTON_ROUTES[label]
+                            self.assertIs(route.kind, expected["kind"])
+                            for field, value in expected.items():
+                                if field == "kind":
+                                    continue
+                                if value is FROM_PAGE:
+                                    value = (page or 1) + 1
+                                self.assertEqual(getattr(route, field), value)
+                            paged = label in ("全部", "下一页")
+                            self.assertEqual(
+                                route.character_filter, character if paged else None
+                            )
+                            self.assertEqual(
+                                route.element_filter, element if paged else None
+                            )
+
+    def test_with_callbacks_every_command_answers_the_tap(self) -> None:
+        for target in (
+            ranking(),
+            ranking(metric="rdps", ranking_page=ALL_PAGES, record_count=42),
+        ):
+            with self.subTest(target=target):
+                filled = keyboard_rows(target)
+                tapped = keyboard_rows(target, callback=True)
+
+                self.assertEqual(
+                    tapped,
+                    [
+                        [
+                            (label, 1 if kind == 2 else kind, data)
+                            for label, kind, data in row
+                        ]
+                        for row in filled
+                    ],
+                )
+
+    def test_no_ranking_keyboard_breaks_the_platform_limits(self) -> None:
+        for target in (
+            ranking(),
+            ranking(ranking_page=ALL_PAGES, record_count=42),
+            ranking(metric="rdps", character_filter="黎风 洛茜 卡缪 佩丽卡"),
+        ):
+            with self.subTest(target=target):
+                keyboard = result_keyboard(target, web_base_url=WEB, command=COMMAND)
+                rows = keyboard["content"]["rows"]
+                self.assertLessEqual(len(rows), 5)
+                for row in rows:
+                    self.assertLessEqual(len(row["buttons"]), 5)
+                ids = [button["id"] for button in buttons_of(keyboard)]
+                self.assertEqual(len(ids), len(set(ids)))
+                for button in buttons_of(keyboard):
+                    self.assertLessEqual(
+                        len(button["action"]["data"]), MAX_BUTTON_DATA_CHARS
+                    )
+
+
+# The page the next one is: the drawn page's number plus one.
+FROM_PAGE = object()
+RANKING_BUTTON_ROUTES = {
+    "阵容": {"kind": RouteKind.ROSTER_QUERY},
+    "角色统计": {"kind": RouteKind.CHARACTER_STATS},
+    "第一名战报": {"kind": RouteKind.BATTLE_QUERY, "battle_rank": 1},
+    "对比第一名": {
+        "kind": RouteKind.COMPARE_QUERY,
+        "compare_self": True,
+        "compare_rank": 1,
+    },
+    "全部": {"kind": RouteKind.RANKING_QUERY, "ranking_page": ALL_PAGES},
+    "下一页": {"kind": RouteKind.RANKING_QUERY, "ranking_page": FROM_PAGE},
+}
 
 
 # 战争回响's boards as the live board list orders them (2026-10-01).
@@ -724,12 +941,32 @@ class OutcomeTargetTests(unittest.TestCase):
             (
                 RouteKind.RANKING_QUERY,
                 {},
-                PageTarget(PageSubject.BOARD, BOARD_SLUG),
+                PageTarget(PageSubject.BOARD, BOARD_SLUG, record_count=5),
             ),
             (
                 RouteKind.RANKING_QUERY,
                 {"metric": "rdps"},
-                PageTarget(PageSubject.BOARD, BOARD_SLUG, metric="rdps"),
+                PageTarget(
+                    PageSubject.BOARD, BOARD_SLUG, metric="rdps", record_count=2
+                ),
+            ),
+            (
+                # What the keyboard pages on: the filters as typed, and how
+                # many rows they keep.
+                RouteKind.RANKING_QUERY,
+                {
+                    "ranking_page": ALL_PAGES,
+                    "character_filter": "黎风",
+                    "element_filter": "自然",
+                },
+                PageTarget(
+                    PageSubject.BOARD,
+                    BOARD_SLUG,
+                    ranking_page=ALL_PAGES,
+                    character_filter="黎风",
+                    element_filter="自然",
+                    record_count=3,
+                ),
             ),
             (
                 RouteKind.ROSTER_QUERY,

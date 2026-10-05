@@ -45,6 +45,8 @@ class RankingRecipe:
     element_filter: str | None
     profession_filter: str | None
     elements: Mapping[str, str]
+    # The rows the filters keep, on every page: what the pages are of.
+    record_count: int
 
     async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
         return await renderer.render_ranking(
@@ -156,6 +158,7 @@ async def prepare_ranking(
         element_filter=element_filter,
         profession_filter=profession_filter,
         elements=elements,
+        record_count=len(kept),
     )
 
 
