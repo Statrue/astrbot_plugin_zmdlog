@@ -235,17 +235,22 @@ when the user settled the question.
   read as columns of filler). The graded bar widths settled it.
 - **Chart section order.** The 摘要 is the record band, then 伤害构成 →
   暴击期望 → DPS 曲线 (2026-10-05), and no per-character table: the numbers
-  are 数据's. Where the two time axes meet — the 技能轴 page — BUFF 覆盖 comes
-  before the rail, so the one switch from left-to-right to top-to-bottom time
-  coincides with a heading. The buff band was first placed inside the 施法节奏
-  section and the user asked for it to be moved out.
+  are 数据's. 排轴 (#43) is BUFF 覆盖, then the cast rail: the band's time
+  runs left to right and the rail's top to bottom, so the one switch between
+  them falls on the rail's heading. The order is older than V2 — the buff
+  band was first placed inside the old card's 施法节奏 section, the user asked
+  for it to be moved out, and the 技能轴 page that 排轴 replaced kept it. On
+  排轴 the band's rows that differ only in their element (one source, target,
+  value and set of spans) are one row, 寒冷/自然增幅 +47%, merged in the
+  presentation layer, and the rail aims at 1100 px, down from the 技能轴
+  page's 1600.
 - **A battle's pages name one another from one table** (2026-10-05):
   `core/battle_views` lists 摘要 and the 详细视图 in the order the foot's strip
   prints them, and the QQ official bot's buttons under the picture are exactly
   the strip's other entries, by the same names. A view joins the table when
   its V2 page lands; until then neither strip nor buttons offer it, even where
   its pre-1.3.0 page still answers its old command — those pages keep their
-  old buttons, a replaced view's under its V2 name (摘要, 数据).
+  old buttons, which reach the V2 pages under the strip's names.
 - **Elements get rings and a filter, nothing else** (2026-09-06): no element
   chip, no element text, no element statistics page. The main C wears no ring of
   its own — the row prints 主 C by name — so a ring there only cost the element
