@@ -1473,6 +1473,10 @@ def _load_background_data_url(background_path: Path) -> str:
         raise TemplateConfigurationError(
             "local scene background has an unsupported format"
         )
+    return _data_url(payload, media_type)
+
+
+def _data_url(payload: bytes, media_type: str) -> str:
     encoded = base64.b64encode(payload).decode("ascii")
     return f"data:{media_type};base64,{encoded}"
 
@@ -1497,8 +1501,7 @@ def _load_shell_textures(shell_path: Path) -> dict[str, str]:
             raise TemplateConfigurationError(
                 f"shell texture is unavailable: {file_name}"
             ) from exc
-        encoded = base64.b64encode(payload).decode("ascii")
-        textures[name] = f"data:{media_type};base64,{encoded}"
+        textures[name] = _data_url(payload, media_type)
     return textures
 
 

@@ -143,8 +143,8 @@ _SHORT_OPTIONS = frozenset(
 )
 # ``--top N`` drew the first N rows until the ranking was paged (1.3.0).
 _REMOVED_TOP = (
-    "--top 已改为 --页：每页 10 条，例如：罗丹 --页 2，"
-    "或 罗丹 --页 全部 一次看前 30 条。"
+    "--top 已取消：具体榜单改为分页，每页 10 条，例如：罗丹 --页 2，"
+    "或 罗丹 --页 全部 一次看前 30 条；阵容固定统计前 10 名。"
 )
 
 

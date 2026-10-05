@@ -444,7 +444,7 @@ class TimelineRouteTests(unittest.TestCase):
         self.assertEqual(
             parse_zmdlog_payload("时间轴 罗丹").kind, RouteKind.TIMELINE_QUERY
         )
-        for payload in ("技能轴", "技能轴 罗丹 --top 3"):
+        for payload in ("技能轴", "技能轴 罗丹 --页 3"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)

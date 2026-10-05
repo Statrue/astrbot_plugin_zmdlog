@@ -1,5 +1,6 @@
 """Tests for the 0.4.0 features: character statistics, roster page, --角色."""
 
+import dataclasses
 import unittest
 from pathlib import Path
 
@@ -380,11 +381,16 @@ class RosterPageTests(unittest.TestCase):
             [("黎风", 3), ("卡缪", 1), ("洛茜", 1)],
         )
 
-    def test_display_limit_scopes_local_aggregation(self) -> None:
-        page = build_roster_page(self.ranking, query="q", display_limit=2)
-        self.assertEqual(page.sample_size, 2)
-        self.assertEqual(page.combos[0].count, 2)
-        self.assertEqual(page.row_count, 5)
+    def test_teams_are_counted_over_the_first_ten_records(self) -> None:
+        rows = tuple(
+            dataclasses.replace(self.ranking.rows[index % 5], rank=index + 1)
+            for index in range(12)
+        )
+        page = build_roster_page(
+            dataclasses.replace(self.ranking, rows=rows), query="q"
+        )
+        self.assertEqual(page.sample_size, 10)
+        self.assertEqual(page.row_count, 12)
 
     def test_template_does_not_leak_account_or_battle_ids(self) -> None:
         html = self.renderer.render_roster(

@@ -70,7 +70,7 @@ class CompareRoutingTests(unittest.TestCase):
         self.assertIsNone(route.compare_rank)
 
     def test_malformed_forms_are_rejected_with_usage(self) -> None:
-        for payload in ("对比", "对比 罗丹 2 2", "对比 罗丹 0", "对比 罗丹 --top 3"):
+        for payload in ("对比", "对比 罗丹 2 2", "对比 罗丹 0", "对比 罗丹 --页 3"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)

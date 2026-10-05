@@ -657,7 +657,9 @@ class ToolSurfaceTests(unittest.TestCase):
         answer = run(self.service.board("三位一体", limit=50))
 
         self.assertEqual(answer.image_path, "/tmp/ranking.png")
-        # The picture is the board's first page, whatever the text lists.
+        # More than a page asked for: the picture is the 全部 view.
+        self.assertEqual(self.renderer.kwargs["ranking"]["page"], "all")
+        run(self.service.board("三位一体", limit=10))
         self.assertEqual(self.renderer.kwargs["ranking"]["page"], 1)
 
     def test_rows_carry_their_date_and_the_gap_to_the_leader(self) -> None:

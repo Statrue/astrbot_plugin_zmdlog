@@ -1,4 +1,10 @@
-"""Resolve a user-typed character name against the names seen in one ranking."""
+"""Resolve a user-typed character name against the names seen in one ranking,
+and keep the ranking rows a page's filters select (``filter_ranking_rows``).
+
+The row filter lives here, beside the ``--角色`` scope it applies, because
+two layers ask it the same question: the recipe counts the rows to know
+how many pages there are, and the page draws them.
+"""
 
 from collections.abc import Mapping
 from dataclasses import dataclass

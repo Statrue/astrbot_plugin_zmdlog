@@ -46,7 +46,7 @@
 <span class="i-face{% if lead %} is-lead{% endif %}">
   <span class="i-face-disc">
     <span class="initial">{{ member.character_initial }}</span>
-    {% if member.avatar_url %}<img src="{{ member.avatar_url }}" alt="">{% endif %}
+    {% if member.avatar_url %}<img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">{% endif %}
   </span>
 </span>
 {%- endmacro %}

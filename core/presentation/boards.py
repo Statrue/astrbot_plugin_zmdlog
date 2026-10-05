@@ -372,15 +372,10 @@ def build_roster_page(
     ranking: BossRanking,
     *,
     query: str,
-    display_limit: int = RANKING_PAGE_SIZE,
     web_base_url: str | None = None,
 ) -> RosterPage:
-    """Profession usage (whole board) plus top-N roster / main-character stats."""
-
-    if isinstance(display_limit, bool) or not isinstance(display_limit, int):
-        raise PresentationError("ranking display limit must be an integer")
-    if not 1 <= display_limit <= MAX_RANKING_ROWS:
-        raise PresentationError("ranking display limit must be between 1 and 30")
+    """Profession usage (whole board) plus the first ten records' teams and
+    main Cs; the count is fixed since 阵容 lost ``--top``."""
 
     is_crisis_contract = ranking.boss_slug == _CRISIS_CONTRACT_BOSS_SLUG
     title = "危机合约" if is_crisis_contract else ranking.boss_name
@@ -390,7 +385,7 @@ def build_roster_page(
         if is_crisis_contract
         else f"{ranking.dungeon_name} · {ranking.boss_name}"
     )
-    sample_rows = ranking.rows[:display_limit]
+    sample_rows = ranking.rows[:RANKING_PAGE_SIZE]
     sample_size = len(sample_rows)
 
     fielding = profession_record_counts(ranking)

@@ -855,7 +855,7 @@ class BattleStyleRouteTests(unittest.TestCase):
     def test_missing_argument_and_options_are_rejected(self) -> None:
         with self.assertRaisesRegex(RouteParseError, "配装 罗丹 3"):
             parse_zmdlog_payload("配装")
-        for payload in ("技能", "配装 罗丹 --top 3", "技能 罗丹 --角色 黎风"):
+        for payload in ("技能", "配装 罗丹 --页 3", "技能 罗丹 --角色 黎风"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)

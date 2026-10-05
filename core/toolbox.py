@@ -82,7 +82,12 @@ from .recipes import (
     prepare_standings,
 )
 from .render import LongImageRenderer
-from .routing import parse_potential_text, parse_range_text
+from .routing import (
+    ALL_PAGES,
+    RANKING_PAGE_SIZE,
+    parse_potential_text,
+    parse_range_text,
+)
 from .settings import PluginSettings
 from .standings import account_tally
 
@@ -200,8 +205,9 @@ class ToolService:
             ranking,
             query=keyword,
             web_base_url=self._web_base_url,
-            # The picture is the first page whatever ``limit`` the text lists.
-            page=1,
+            # The picture shows what the text lists: the first page, or the
+            # first thirty when the model asked for more than one page.
+            page=1 if limit <= RANKING_PAGE_SIZE else ALL_PAGES,
             character_filter=character or None,
             element_filter=wanted or None,
             profession_filter=role or None,

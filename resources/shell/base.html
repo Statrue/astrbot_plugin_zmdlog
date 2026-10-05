@@ -13,9 +13,6 @@
     {{ font_face_css }}
     :root {
       --zmd-frame-width: {{ frame.width }};
-      --box-head: url("{{ shell.box_head }}");
-      --box-page: url("{{ shell.box_page }}");
-      --topo-strip: url("{{ shell.topo_strip }}");
     }
     {% include "shell/base.css" %}
     {% block frame_styles %}{% endblock %}

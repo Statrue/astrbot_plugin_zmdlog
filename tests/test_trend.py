@@ -307,7 +307,7 @@ class TrendRouteTests(unittest.TestCase):
         )
         rejected = (
             "趋势",
-            "趋势 CPU --top 3",
+            "趋势 CPU --页 3",
             "趋势 CPU --潜能 0",
             "趋势 CPU --范围 3d",
         )
