@@ -508,15 +508,19 @@ def ranking(**options) -> PageTarget:
     return PageTarget(PageSubject.BOARD, SLUG, **options)
 
 
-def views_row(*options: str) -> list[tuple[str, int, str]]:
-    """The ranking's first row, ``options`` after each command."""
+def views_rows(*options: str) -> list[list[tuple[str, int, str]]]:
+    """The ranking's first two rows, ``options`` after each command."""
 
     tail = "".join(f" {option}" for option in options)
     return [
-        ("阵容", 2, f"{COMMAND} 阵容 {SLUG}{tail}"),
-        ("角色统计", 2, f"{COMMAND} 角色统计 {SLUG}{tail}"),
-        ("第一名战报", 2, f"{COMMAND} 战报 {SLUG}{tail}"),
-        ("对比第一名", 2, f"{COMMAND} 对比 {SLUG} 我{tail}"),
+        [
+            ("阵容", 2, f"{COMMAND} 阵容 {SLUG}{tail}"),
+            ("角色统计", 2, f"{COMMAND} 角色统计 {SLUG}{tail}"),
+        ],
+        [
+            ("第一名战报", 2, f"{COMMAND} 战报 {SLUG}{tail}"),
+            ("对比第一名", 2, f"{COMMAND} 对比 {SLUG} 我{tail}"),
+        ],
     ]
 
 
@@ -529,13 +533,13 @@ OPEN_ROW = [("在 ZMDLogs 打开", 0, f"{WEB}/boss/{SLUG}")]
 
 
 class RankingKeyboardTests(unittest.TestCase):
-    """A board's ranking: its views, its pages, and the site, in three rows."""
+    """A board's ranking: its views in two rows, its pages, and the site."""
 
     def test_the_first_page_offers_every_view_all_rows_and_the_next(self) -> None:
         self.assertEqual(
             keyboard_rows(ranking()),
             [
-                views_row(),
+                *views_rows(),
                 [page_button("全部", "全部"), page_button("下一页", "2")],
                 OPEN_ROW,
             ],
@@ -543,7 +547,7 @@ class RankingKeyboardTests(unittest.TestCase):
 
     def test_a_middle_page_turns_to_the_one_after_it(self) -> None:
         self.assertEqual(
-            keyboard_rows(ranking(ranking_page=2))[1],
+            keyboard_rows(ranking(ranking_page=2))[2],
             [page_button("全部", "全部"), page_button("下一页", "3")],
         )
 
@@ -552,7 +556,7 @@ class RankingKeyboardTests(unittest.TestCase):
             with self.subTest(page=page, count=count):
                 self.assertEqual(
                     keyboard_rows(ranking(ranking_page=page, record_count=count)),
-                    [views_row(), [page_button("全部", "全部")], OPEN_ROW],
+                    [*views_rows(), [page_button("全部", "全部")], OPEN_ROW],
                 )
 
     def test_a_board_of_one_page_offers_no_page(self) -> None:
@@ -561,7 +565,7 @@ class RankingKeyboardTests(unittest.TestCase):
             with self.subTest(page=page, count=count):
                 self.assertEqual(
                     keyboard_rows(ranking(ranking_page=page, record_count=count)),
-                    [views_row(), OPEN_ROW],
+                    [*views_rows(), OPEN_ROW],
                 )
 
     def test_the_all_picture_offers_no_page(self) -> None:
@@ -569,15 +573,15 @@ class RankingKeyboardTests(unittest.TestCase):
             with self.subTest(count=count):
                 self.assertEqual(
                     keyboard_rows(ranking(ranking_page=ALL_PAGES, record_count=count)),
-                    [views_row(), OPEN_ROW],
+                    [*views_rows(), OPEN_ROW],
                 )
 
     def test_past_thirty_the_all_picture_sends_the_rest_to_the_site(self) -> None:
-        # Its second row is the board on ZMDLogs, named for the rows the
+        # Its third row is the board on ZMDLogs, named for the rows the
         # picture leaves there; the same link a row below would repeat it.
         self.assertEqual(
             keyboard_rows(ranking(ranking_page=ALL_PAGES, record_count=42)),
-            [views_row(), [("官网查看其余 12 条", 0, f"{WEB}/boss/{SLUG}")]],
+            [*views_rows(), [("官网查看其余 12 条", 0, f"{WEB}/boss/{SLUG}")]],
         )
 
     def test_paging_keeps_the_filters_but_first_place_is_the_whole_boards(
@@ -591,7 +595,7 @@ class RankingKeyboardTests(unittest.TestCase):
         self.assertEqual(
             keyboard_rows(target),
             [
-                views_row(),
+                *views_rows(),
                 [
                     page_button("全部", "全部", *filters),
                     page_button("下一页", "3", *filters),
@@ -606,7 +610,7 @@ class RankingKeyboardTests(unittest.TestCase):
         self.assertEqual(
             keyboard_rows(target),
             [
-                views_row("--口径 rdps"),
+                *views_rows("--口径 rdps"),
                 [
                     page_button("全部", "全部", "--角色 洛茜", "--口径 rdps"),
                     page_button("下一页", "2", "--角色 洛茜", "--口径 rdps"),
@@ -618,7 +622,7 @@ class RankingKeyboardTests(unittest.TestCase):
             ranking(metric="rdps", ranking_page=ALL_PAGES, record_count=31)
         )
         self.assertEqual(
-            rest[1], [("官网查看其余 1 条", 0, f"{WEB}/boss/{SLUG}?metric=rdps")]
+            rest[2], [("官网查看其余 1 条", 0, f"{WEB}/boss/{SLUG}?metric=rdps")]
         )
 
     def test_every_command_parses_back_to_the_page_it_names(self) -> None:

@@ -1299,6 +1299,8 @@ class HandlerTests(unittest.TestCase):
                 [
                     ("阵容", f"/zmdlog 阵容 {slug} --口径 rdps"),
                     ("角色统计", f"/zmdlog 角色统计 {slug} --口径 rdps"),
+                ],
+                [
                     ("第一名战报", f"/zmdlog 战报 {slug} --口径 rdps"),
                     ("对比第一名", f"/zmdlog 对比 {slug} 我 --口径 rdps"),
                 ],
@@ -1312,14 +1314,14 @@ class HandlerTests(unittest.TestCase):
 
         # Sent, 下一页 draws the last page, filtered, which turns no further.
         api.calls.clear()
-        self._official(rows[1][1][1], api=api)
+        self._official(rows[2][1][1], api=api)
         self.assertEqual(received[-1]["page"], 2)
         self.assertEqual(received[-1]["character_filter"], ("黎风",))
         (_, payload), = api.calls
         self.assertEqual(
             [
                 button["render_data"]["label"]
-                for button in payload["keyboard"]["content"]["rows"][1]["buttons"]
+                for button in payload["keyboard"]["content"]["rows"][2]["buttons"]
             ],
             ["全部"],
         )
@@ -1962,7 +1964,7 @@ class HandlerTests(unittest.TestCase):
         typed.bot = adapter.client
         run(collect(self.plugin.zmdlog(typed)))
         (_, page), = api.calls
-        compare = page["keyboard"]["content"]["rows"][0]["buttons"][3]
+        compare = page["keyboard"]["content"]["rows"][1]["buttons"][1]
         self.assertEqual(compare["render_data"]["label"], "对比第一名")
         self.assertEqual(compare["action"]["type"], 1)
         data = compare["action"]["data"]

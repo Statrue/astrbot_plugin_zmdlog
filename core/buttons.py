@@ -52,22 +52,22 @@ have — an old upload's 养成, an account's trend before any is recorded —
 gets no button. A battle's pages are the ones its picture's foot lists, by
 the same names (``core/battle_views``).
 
-A board's ranking has a keyboard of its own, three rows with the jump
-button last. The first is its views: 阵容, 角色统计, 第一名战报 and
-对比第一名 — the last ``对比 <slug> 我``, which compares whoever sends it,
-or taps it, with first place. Both first-place buttons mean the whole
-board's #1 under the page's metric, never the first row a filter left,
-so like the other views they carry the metric and no filter. The second
-row turns the page: 全部 and 下一页, each repeating the page's ``--角色``,
-``--属性`` and metric, so the page it draws is the one this page was
-filtered to (``PageTarget.record_count`` says whether a next page exists;
-the last page has none). The 全部 picture has neither, and nor has a
-board that fits on one page, where 全部 would draw the same rows. A 全部
-picture that stopped at
-thirty rows and left the rest to the site gets, as its second row, the
-board on the site, labelled with how many rows wait there; being the same
-link as the jump button, it stands in for it rather than repeat it a row
-below.
+A board's ranking has a keyboard of its own, four rows with the jump
+button last. The first two are its views, two to a row so no label is
+cut: 阵容, 角色统计, 第一名战报 and 对比第一名 — the last
+``对比 <slug> 我``, which compares whoever sends it, or taps it, with
+first place. Both first-place buttons mean the whole board's #1 under the
+page's metric, never the first row a filter left, so like the other views
+they carry the metric and no filter. The third row turns the page: 全部
+and 下一页, each repeating the page's ``--角色``, ``--属性`` and metric,
+so the page it draws is the one this page was filtered to
+(``PageTarget.record_count`` says whether a next page exists; the last
+page has none). The 全部 picture has neither, and nor has a board that
+fits on one page, where 全部 would draw the same rows. A 全部 picture
+that stopped at thirty rows and left the rest to the site gets, as its
+third row, the board on the site, labelled with how many rows wait
+there; being the same link as the jump button, it stands in for it rather
+than repeat it a row below.
 
 A dungeon's podiums are the one picture with no page on the site, so no
 jump button; under it instead is a command button per board of the dungeon
@@ -146,6 +146,9 @@ _MAX_PREFIX_CHARS = 8
 # What a keyboard may hold, per the platform: five rows of five buttons.
 MAX_KEYBOARD_ROWS = 5
 MAX_ROW_BUTTONS = 5
+# A ranking's views go two to a row: at four, the client cut 角色统计,
+# 第一名战报 and 对比第一名 after two characters; half a row holds five.
+RANKING_VIEWS_PER_ROW = 2
 # Permission type 2: anyone in the chat may tap, not only who asked.
 _EVERYONE = {"type": 2}
 _STYLE_BLUE = 1
@@ -513,7 +516,10 @@ def _ranking_keyboard(
     link, it is the site button too, so no third row repeats it.
     """
 
-    rows = [views]
+    rows = [
+        views[start : start + RANKING_VIEWS_PER_ROW]
+        for start in range(0, len(views), RANKING_VIEWS_PER_ROW)
+    ]
     page_count = (
         None
         if target.record_count is None

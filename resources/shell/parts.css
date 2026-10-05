@@ -8,10 +8,12 @@
 /* ── masthead ───────────────────────────────────────────────────── */
 /* A yellow sky with box lines and a halftone machine, a giant white word
    across it, a pale ground in front that shows only the word's top half,
-   the title straddling the seam. */
+   the title straddling the seam. The title box is in flow, so a meta line
+   that wraps (a long 期数 · 关卡 on the 540 px list) makes the head taller
+   instead of being cut off. */
 .i-head {
   position: relative;
-  height: 180px;
+  min-height: 180px;
   overflow: hidden;
 }
 .i-sky {
@@ -79,16 +81,15 @@
   letter-spacing: 0.06em;
 }
 .i-titlebox {
-  position: absolute;
+  position: relative;
   z-index: 3;
-  left: 30px;
-  right: 24px;
-  top: 82px;
+  margin: 0 24px 0 30px;
+  padding: 82px 0 12px;
 }
 .i-tick {
   position: absolute;
   left: -16px;
-  top: 7px;
+  top: 89px;
   width: 6px;
   height: 42px;
   background: linear-gradient(180deg, var(--magenta) 0 50%, var(--mint) 50% 100%);
@@ -101,18 +102,24 @@
   color: var(--title-ink);
   white-space: nowrap;
 }
-/* what the rows below are: the order, how many, the metric */
+/* what the rows below are: the order, how many, the metric. Every item
+   carries its "/" in a fixed 26 px slot, and the line is pulled 26 px left
+   and clipped back to where it stood, so the slash that would open a
+   wrapped line is cut away along with the first item's. */
 .i-meta {
   display: flex;
   flex-wrap: wrap;
-  margin-top: 6px;
+  margin: 6px 0 0 -26px;
+  clip-path: inset(0 0 0 26px);
   font-size: var(--fs-17);
   line-height: 1.35;
   color: var(--meta-ink);
 }
-.i-meta span + span::before {
+.i-meta span::before {
   content: "/";
-  margin: 0 9px;
+  display: inline-block;
+  width: 26px;
+  text-align: center;
   color: var(--meta-rule);
 }
 .i-meta b {
