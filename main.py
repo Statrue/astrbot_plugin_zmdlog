@@ -2,7 +2,6 @@
 
 import asyncio
 import re
-import time
 import unicodedata
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -48,6 +47,7 @@ from .core.client import (
     ZmdLogsClient,
     ZmdLogsClientError,
 )
+from .core.cooldown import Cooldown
 from .core.datasource import ZmdLogsDataSource
 from .core.identifiers import (
     extract_battle_references,
@@ -217,7 +217,8 @@ class ZmdLogBotPlugin(Star):
             logger=logger,
             trend=self.data.rank_trend,
         )
-        self._auto_expand_lock = asyncio.Lock()
+        self._auto_expanded = Cooldown(settings.battle_link_dedupe_seconds)
+        self._tapped = Cooldown(settings.button_tap_dedupe_seconds)
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._callbacks: qq_official.Callbacks | None = None
         if getattr(filter, "on_agent_done", None) is None:
@@ -225,7 +226,6 @@ class ZmdLogBotPlugin(Star):
                 "ZmdLogBot: this AstrBot has no on_agent_done hook; the LLM "
                 "tools answer in text alone."
             )
-        self._auto_expanded_until: dict[tuple[str, str], float] = {}
         try:
             self.renderer: LongImageRenderer | None = LongImageRenderer(
                 Path(__file__).parent,
@@ -419,7 +419,7 @@ class ZmdLogBotPlugin(Star):
             return
         battle_id = battle_ids[0]
         origin = self._event_origin(event) or "unknown"
-        if not await self._claim_auto_expand(origin, battle_id):
+        if not self._auto_expanded.claim((origin, battle_id)):
             return
 
         outcome, transient = await self._run_guarded(
@@ -432,7 +432,7 @@ class ZmdLogBotPlugin(Star):
         # repost could plausibly do better. A dead link (404) or an image
         # delivered through the fallback renderer keeps the claim.
         if transient:
-            await self._release_auto_expand(origin, battle_id)
+            self._auto_expanded.release((origin, battle_id))
         async for result in self._reply(event, outcome):
             yield result
 
@@ -651,19 +651,35 @@ class ZmdLogBotPlugin(Star):
         whoever tapped, never whoever asked for the page the button hangs
         under. The answer goes to the chat tapped in, as a reply to the tap;
         without buttons, as plain text or a native picture.
+
+        The answer goes to everyone in the chat, so the same button tapped
+        there again within ``button_tap_dedupe_seconds`` — a second member,
+        or a double tap — draws nothing (``core/cooldown``); a button whose
+        page depends on who taps is claimed per tapper. A failure a retry
+        could fix, or an answer that never went out, gives the claim back.
         """
 
         request = read_button_command(click.data)
         if request is None:
             return
         route = _parse_route(request.payload)
-        if isinstance(route, str):
-            outcome = Outcome(message=route)
-        elif route.kind in CONFIGURATION_ROUTES:
+        if not isinstance(route, str) and route.kind in CONFIGURATION_ROUTES:
             logger.warning("ZmdLogBot refused a button callback that is no query.")
             return
+        tap = (
+            click.origin,
+            " ".join(request.payload.split()),
+            click.sender_id
+            if not isinstance(route, str) and route.names_requester
+            else "",
+        )
+        if not self._tapped.claim(tap):
+            return
+        transient = False
+        if isinstance(route, str):
+            outcome = Outcome(message=route)
         else:
-            outcome, _ = await self._run_guarded(
+            outcome, transient = await self._run_guarded(
                 lambda: self.queries.dispatch(
                     route,
                     command_prefix=request.prefix,
@@ -677,16 +693,19 @@ class ZmdLogBotPlugin(Star):
                 failure_label="callback",
             )
         chat = click.chat
-        if await self._send_with_buttons(
+        sent = await self._send_with_buttons(
             chat, outcome, command=request.prefix + "zmdlog"
-        ):
-            return
-        if outcome.image_path is not None:
-            await qq_official.send_image(chat, outcome.image_path, logger=logger)
-        else:
-            await qq_official.send_text(
+        )
+        if not sent and outcome.image_path is not None:
+            sent = await qq_official.send_image(
+                chat, outcome.image_path, logger=logger
+            )
+        elif not sent:
+            sent = await qq_official.send_text(
                 chat, outcome.message or _NO_RESULT, logger=logger
             )
+        if transient or not sent:
+            self._tapped.release(tap)
 
     def _outcome_result(self, event: AstrMessageEvent, outcome: Outcome):
         if outcome.image_path is not None:
@@ -1021,26 +1040,6 @@ class ZmdLogBotPlugin(Star):
                 type(exc).__name__,
             )
             return None
-
-    async def _claim_auto_expand(self, origin: str, battle_id: str) -> bool:
-        now = time.monotonic()
-        key = (origin, battle_id)
-        async with self._auto_expand_lock:
-            self._auto_expanded_until = {
-                entry_key: expires_at
-                for entry_key, expires_at in self._auto_expanded_until.items()
-                if expires_at > now
-            }
-            if key in self._auto_expanded_until:
-                return False
-            self._auto_expanded_until[key] = (
-                now + self.settings.battle_link_dedupe_seconds
-            )
-            return True
-
-    async def _release_auto_expand(self, origin: str, battle_id: str) -> None:
-        async with self._auto_expand_lock:
-            self._auto_expanded_until.pop((origin, battle_id), None)
 
     def _is_command_message(self, event: AstrMessageEvent) -> bool:
         raw_message = getattr(event.message_obj, "message_str", "")

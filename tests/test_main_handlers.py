@@ -51,6 +51,7 @@ if astrbot is not None:
         ZmdLogsAPIError,
         ZmdLogsClientError,
     )
+    from astrbot_plugin_zmdlog.core.cooldown import Cooldown
     from astrbot_plugin_zmdlog.core.models import (
         parse_battle_detail,
         parse_battle_export,
@@ -1811,6 +1812,44 @@ class HandlerTests(unittest.TestCase):
                 self.assertEqual(
                     trend["action"]["data"], f"/zmdlog 趋势 {self.ACCOUNT}"
                 )
+
+    def test_a_button_tapped_again_in_the_chat_draws_nothing(self) -> None:
+        # Two members tapping one button: the first picture went to both.
+        self._account_page()
+        data = f"/zmdlog 账号 {self.ACCOUNT}"
+        now = [0.0]
+        self.plugin._tapped = Cooldown(60, clock=lambda: now[0])
+        api = FakeBotApi(http=FakeBotHttp(raw_url=self.RAW_URL))
+        adapter = self._enable_callbacks(api)
+
+        run(adapter.client.on_interaction_create(tap_of(data, member="111")))
+        run(adapter.client.on_interaction_create(tap_of(data, member="222")))
+
+        self.assertEqual(len(api.calls), 1)
+        # Both taps acknowledged, so neither tapper sees 操作失败.
+        self.assertEqual(len(api.acks), 2)
+        # Another chat is another audience; the claim running out, the
+        # same chat is answered again.
+        self._tap(adapter, data, private=True)
+        self.assertEqual(len(api.calls), 2)
+        now[0] += 60
+        run(adapter.client.on_interaction_create(tap_of(data, member="222")))
+        self.assertEqual(len(api.calls), 3)
+
+    def test_a_tap_that_failed_for_now_leaves_the_button_free(self) -> None:
+        async def down(*args, **kwargs):
+            raise ZmdLogsClientError("down")
+
+        self.plugin.data.get_public_user_rankings = down
+        data = f"/zmdlog 账号 {self.ACCOUNT}"
+        api = FakeBotApi()
+        adapter = self._enable_callbacks(api)
+
+        self._tap(adapter, data)
+        self._tap(adapter, data)
+
+        # Upstream down is worth a retry: both taps are answered.
+        self.assertEqual(len(api.calls), 2)
 
     def test_a_tapped_pick_list_answers_taps_but_a_watch_list_fills_in(
         self,
