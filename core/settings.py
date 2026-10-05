@@ -16,7 +16,7 @@ from .client import DEFAULT_API_BASE_URL, DEFAULT_REQUEST_TIMEOUT_MS
 from .watch import DEFAULT_RANK_THRESHOLD
 
 MIN_RANK_WATCH_INTERVAL_SECONDS = 120.0
-# A rank baseline older than this many polling intervals (never less than an
+# A board baseline older than this many polling intervals (never less than an
 # hour) is re-seeded silently instead of replaying everything that moved.
 SNAPSHOT_MAX_AGE_INTERVALS = 3
 MIN_SNAPSHOT_MAX_AGE_SECONDS = 3600.0

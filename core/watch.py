@@ -1,31 +1,28 @@
-"""Detect and describe public rank drops and new top records.
+"""Detect and describe new top records on the watched boards.
 
-One request to ``users/{id}/rankings`` carries the rank of that account on every
-board, so a whole account watch list costs one request per account per cycle;
-one ``hot-bosses`` read carries the top three of every board, so a whole board
-watch list costs one request per cycle. Nothing here talks to the network.
+One ``hot-bosses`` read carries the top three of every board, so the whole
+board watch costs one request per cycle, whether a chat watches one board
+or 全部榜单. Nothing here talks to the network.
 
 A notice is a :class:`Notice`: the text every platform is sent, and the
 battles that text prints a link to, each under the label a button to it
 wears (``战报 1``, ``战报 2`` …, numbered across the message a chat
-receives). The same battle printed twice — one new record demotes every
-watched account below it — is one link. Where a message can carry buttons
-(``core/buttons``), the label stands in for the printed link.
+receives). Where a message can carry buttons (``core/buttons``), the label
+stands in for the printed link.
 """
 
 from dataclasses import dataclass
 from typing import Any
 
-from .models import BossRanking, HotBossCard, PublicUserRankings
-from .presentation import format_duration, format_number, public_url
+from .models import HotBossCard
+from .presentation import format_duration, public_url
 from .timestamps import parse_timestamp
 from .watchlist import board_label
 
+# The default of ``rank_watch_rank_threshold``: how far down a board a
+# change is news.
 DEFAULT_RANK_THRESHOLD = 10
-SNAPSHOT_VERSION = 2
 BOARD_SNAPSHOT_VERSION = 1
-MAX_DROPS_PER_NOTICE = 5
-_MAX_ACCOUNTS_PER_MESSAGE = 3
 _MAX_BOARDS_PER_MESSAGE = 3
 _LINK_LABEL = "战报 {number}"
 
@@ -44,43 +41,6 @@ class Notice:
 
     text: str
     links: tuple[NoticeLink, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class AccountSnapshot:
-    """Board ranks of one account plus when they were read."""
-
-    ranks: dict[str, int]
-    # Missing only for a hand-edited file. Without it no attribution is
-    # attempted and no staleness bound can be applied, so the entry is treated
-    # as a first sighting instead of a baseline.
-    checked_at: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class NewRecordAbove:
-    """A record posted since the last check that now outranks the account.
-
-    Deliberately NOT called an overtaker: see :func:`find_new_record_above`.
-    """
-
-    account_display_name: str
-    character_name: str
-    dps: float
-    battle_id: str
-    # How many such records appeared. The wording changes above one because no
-    # single record can then be singled out.
-    record_count: int = 1
-
-
-@dataclass(frozen=True, slots=True)
-class RankDrop:
-    boss_slug: str
-    boss_name: str
-    dungeon_name: str
-    previous_rank: int
-    current_rank: int
-    new_record_above: NewRecordAbove | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,22 +83,8 @@ class BoardChange:
     dropped_runs: tuple[BoardRunChange, ...] = ()
 
 
-def build_snapshot(
-    account: PublicUserRankings,
-    *,
-    checked_at: str,
-) -> AccountSnapshot:
-    return AccountSnapshot(ranks=snapshot_ranks(account), checked_at=checked_at)
-
-
-def snapshot_ranks(account: PublicUserRankings) -> dict[str, int]:
-    """Board rank of the account, keyed by slug, as stored between cycles."""
-
-    return {entry.boss_slug: entry.rank for entry in account.rankings}
-
-
-def snapshot_is_usable(
-    snapshot: AccountSnapshot | None,
+def board_snapshot_is_usable(
+    snapshot: BoardSnapshot | None,
     *,
     now: str,
     max_age_seconds: float,
@@ -146,25 +92,10 @@ def snapshot_is_usable(
     """Whether ``snapshot`` is recent enough to be compared against.
 
     A baseline from before a long outage or a long shutdown would make every
-    rank lost in the meantime look like breaking news, so an old one is
-    discarded and the account is re-seeded silently instead.
-    """
-
-    if snapshot is None or not snapshot.ranks:
-        return False
-    return _is_fresh(snapshot.checked_at, now=now, max_age_seconds=max_age_seconds)
-
-
-def board_snapshot_is_usable(
-    snapshot: BoardSnapshot | None,
-    *,
-    now: str,
-    max_age_seconds: float,
-) -> bool:
-    """Like :func:`snapshot_is_usable` for boards.
-
-    An empty top list is a real state here (a board with no public record
-    yet), so only the timestamp decides.
+    record set in the meantime look like breaking news, so an old one is
+    discarded and the board is re-seeded silently instead. An empty top list
+    is a real state (a board with no public record yet), so only the
+    timestamp decides.
     """
 
     if snapshot is None:
@@ -264,13 +195,21 @@ def format_board_notice(change: BoardChange, *, web_base_url: str) -> Notice:
 
 
 def join_board_notices(notices: tuple[Notice, ...]) -> Notice:
-    """One message per chat per cycle, like :func:`join_rank_drop_notices`."""
+    """Merge one cycle worth of notices so a chat receives a single message.
 
-    return _join_notices(
-        notices,
-        limit=_MAX_BOARDS_PER_MESSAGE,
-        hidden_label="另有 {hidden} 个关注的榜单也有新纪录。",
-    )
+    A chat following 全部榜单 would otherwise get a burst of pushes in the
+    same instant, which is also what gets a bot rate-limited. A notice left
+    out for space takes its links with it: a button may only open a battle
+    the text shows.
+    """
+
+    shown = notices[:_MAX_BOARDS_PER_MESSAGE]
+    text = "\n\n".join(notice.text for notice in shown)
+    hidden = len(notices) - len(shown)
+    if hidden > 0:
+        text += f"\n\n另有 {hidden} 个关注的榜单也有新纪录。"
+    urls = [link.url for notice in shown for link in notice.links]
+    return Notice(text, _numbered(urls))
 
 
 def parse_board_snapshot_payload(payload: Any) -> dict[str, BoardSnapshot]:
@@ -337,171 +276,6 @@ def board_snapshot_payload(snapshots: dict[str, BoardSnapshot]) -> dict[str, Any
     }
 
 
-def find_rank_drops(
-    previous: AccountSnapshot | None,
-    account: PublicUserRankings,
-    *,
-    rank_threshold: int = DEFAULT_RANK_THRESHOLD,
-) -> tuple[RankDrop, ...]:
-    """Boards where the account lost ground since ``previous``.
-
-    A board missing from ``previous`` is a first sighting and never an event,
-    otherwise a newly watched account would announce its whole history at once.
-    Improvements stay silent by design, and a drop only matters when the
-    account was inside the top ``rank_threshold`` to begin with.
-    """
-
-    if previous is None or not previous.ranks:
-        return ()
-    drops: list[RankDrop] = []
-    for entry in account.rankings:
-        was = previous.ranks.get(entry.boss_slug)
-        if was is None or entry.rank <= was or was > rank_threshold:
-            continue
-        drops.append(
-            RankDrop(
-                boss_slug=entry.boss_slug,
-                boss_name=entry.boss_name,
-                dungeon_name=entry.dungeon_name,
-                previous_rank=was,
-                current_rank=entry.rank,
-            )
-        )
-    return tuple(
-        sorted(drops, key=lambda drop: (drop.previous_rank, drop.boss_name))
-    )
-
-
-def find_new_record_above(
-    ranking: BossRanking,
-    *,
-    account_id: str,
-    fallback_rank: int,
-    since: str | None,
-) -> NewRecordAbove | None:
-    """The newest record now ranked above the account that postdates ``since``.
-
-    This deliberately does not claim to identify who overtook the account, and
-    the notice must not say so either. Two things cannot be known from a single
-    board read: the row sitting at the old rank is usually a bystander who was
-    pushed down by an insertion further up, and a record posted in the window
-    may equally be a player who was already ahead improving their own time.
-    ``battleEndAt`` is also when the battle ended rather than when it was
-    uploaded, so a late upload can be the real cause while looking old.
-
-    What can honestly be reported is exactly what this returns: a record that
-    is now ahead and did not exist at the last check. ``None`` when nothing
-    qualifies, which renders as a bare rank change.
-    """
-
-    baseline = parse_timestamp(since)
-    if baseline is None:
-        return None
-    # Take the cutoff from this same response where possible: current_rank came
-    # from a separate account read and the two can disagree while either cache
-    # is warm, which would let a row that is not actually above slip in.
-    cutoff = fallback_rank
-    for row in ranking.rows:
-        if row.account_id == account_id:
-            cutoff = row.rank
-            break
-    newest_row = None
-    newest_time = None
-    count = 0
-    for row in ranking.rows:
-        if row.rank >= cutoff or row.account_id == account_id:
-            continue
-        landed = parse_timestamp(row.battle_end_at)
-        if landed is None or landed <= baseline:
-            continue
-        count += 1
-        if newest_time is None or landed > newest_time:
-            newest_row, newest_time = row, landed
-    if newest_row is None:
-        return None
-    return NewRecordAbove(
-        account_display_name=newest_row.account_display_name,
-        character_name=newest_row.character_name,
-        dps=newest_row.dps,
-        battle_id=newest_row.battle_id,
-        record_count=count,
-    )
-
-
-def format_rank_drop_notice(
-    display_name: str,
-    drops: tuple[RankDrop, ...],
-    *,
-    web_base_url: str,
-) -> Notice:
-    """One message covering every board this account just dropped on."""
-
-    shown = drops[:MAX_DROPS_PER_NOTICE]
-    lines = [f"📉 {display_name} 被顶屁股了"]
-    urls: list[str] = []
-    for drop in shown:
-        lines.append("")
-        lines.append(
-            f"「{board_label(drop.dungeon_name, drop.boss_name)}」"
-            f"第 {drop.previous_rank} → 第 {drop.current_rank}"
-        )
-        record = drop.new_record_above
-        if record is None:
-            continue
-        who = (
-            f"{record.account_display_name} · "
-            f"{format_number(record.dps)} DPS · "
-            f"主C {record.character_name}"
-        )
-        if record.record_count > 1:
-            lines.append(
-                f"期间上方新增 {record.record_count} 条纪录，最新的是 {who}"
-            )
-        else:
-            lines.append(f"期间上方新增纪录：{who}")
-        url = public_url(web_base_url, "battle", record.battle_id)
-        lines.append(url)
-        urls.append(url)
-    hidden = len(drops) - len(shown)
-    if hidden > 0:
-        lines.append("")
-        lines.append(f"另有 {hidden} 个榜单也掉了名次。")
-    return Notice("\n".join(lines), _numbered(urls))
-
-
-def join_rank_drop_notices(notices: tuple[Notice, ...]) -> Notice:
-    """Merge one cycle worth of notices so a chat receives a single message.
-
-    One new record demotes every watched account below it, so a group watching
-    its own members would otherwise get a burst of near-identical pushes in the
-    same instant, which is also what gets a bot rate-limited.
-    """
-
-    return _join_notices(
-        notices,
-        limit=_MAX_ACCOUNTS_PER_MESSAGE,
-        hidden_label="另有 {hidden} 个关注的账号也掉了名次。",
-    )
-
-
-def _join_notices(
-    notices: tuple[Notice, ...], *, limit: int, hidden_label: str
-) -> Notice:
-    """The shown notices as one, their links numbered across it.
-
-    A notice left out for space takes its links with it: a button may only
-    open a battle the text shows.
-    """
-
-    shown = notices[:limit]
-    text = "\n\n".join(notice.text for notice in shown)
-    hidden = len(notices) - len(shown)
-    if hidden > 0:
-        text += "\n\n" + hidden_label.format(hidden=hidden)
-    urls = [link.url for notice in shown for link in notice.links]
-    return Notice(text, _numbered(urls))
-
-
 def _numbered(urls: list[str]) -> tuple[NoticeLink, ...]:
     """Each distinct link once, labelled by its first place in the text."""
 
@@ -509,48 +283,3 @@ def _numbered(urls: list[str]) -> tuple[NoticeLink, ...]:
         NoticeLink(url, _LINK_LABEL.format(number=number))
         for number, url in enumerate(dict.fromkeys(urls), start=1)
     )
-
-
-def parse_snapshot_payload(payload: Any) -> dict[str, AccountSnapshot]:
-    """Read the stored ranks, dropping anything malformed instead of raising."""
-
-    if not isinstance(payload, dict):
-        return {}
-    accounts = payload.get("accounts")
-    if not isinstance(accounts, dict):
-        return {}
-    snapshots: dict[str, AccountSnapshot] = {}
-    for account_id, entry in accounts.items():
-        if not isinstance(account_id, str) or not isinstance(entry, dict):
-            continue
-        raw_ranks = entry.get("ranks")
-        # The presence of "ranks" is what marks a current entry; an account
-        # with no public records legitimately stores an empty mapping.
-        if not isinstance(raw_ranks, dict):
-            continue
-        checked_at = entry.get("checkedAt")
-        snapshots[account_id] = AccountSnapshot(
-            ranks={
-                slug: rank
-                for slug, rank in raw_ranks.items()
-                if isinstance(slug, str)
-                and isinstance(rank, int)
-                and not isinstance(rank, bool)
-                and rank > 0
-            },
-            checked_at=checked_at if isinstance(checked_at, str) else None,
-        )
-    return snapshots
-
-
-def snapshot_payload(snapshots: dict[str, AccountSnapshot]) -> dict[str, Any]:
-    return {
-        "version": SNAPSHOT_VERSION,
-        "accounts": {
-            account_id: {
-                "checkedAt": snapshot.checked_at,
-                "ranks": snapshot.ranks,
-            }
-            for account_id, snapshot in snapshots.items()
-        },
-    }

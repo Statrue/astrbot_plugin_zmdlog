@@ -36,7 +36,7 @@ class HelpPage:
 # unasked. Both are switches a group owner or admin sets, not the plugin.
 OFFICIAL_NOTES = (
     "没开「获取群内全部消息」的群，指令前要先 @机器人。",
-    "名次通报要群主或管理员先开「机器人主动在群聊内发言」。",
+    "榜单通报要群主或管理员先开「机器人主动在群聊内发言」。",
 )
 
 
@@ -195,15 +195,15 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
             ),
             HelpSection(
                 title="关注",
-                summary="名次变了第一时间知道",
+                summary="榜单出了新纪录第一时间知道",
                 commands=(
                     HelpCommand(
-                        command=f"{command} 关注 [<账号> | 榜单 <关键词>]",
-                        answers="怎么让机器人盯着一个账号或榜单？",
+                        command=f"{command} 关注 [<榜单关键词> | 全部榜单]",
+                        answers="怎么让机器人盯着榜单出新纪录？",
                         description=(
-                            "账号掉名次、榜单前三出新纪录时在本群通报；"
-                            "不带参数列出关注列表和序号，"
-                            "取关 <序号> 取消，限添加者或管理员。"
+                            "榜单前三出新纪录时在这里通报；不带参数列出关注，"
+                            "取关 <序号或关键词> 取消（全部榜单下为排除），"
+                            "限添加者或管理员。"
                         ),
                     ),
                     HelpCommand(

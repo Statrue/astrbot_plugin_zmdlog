@@ -448,8 +448,7 @@ class ZmdLogsDataSource:
         ``on_demand`` is for a query about this one board — the board page,
         the board tool: a copy not checked for two minutes is then re-read in
         the background, so asking again shows what changed. Every other
-        reader takes the copy as it is; the rank watch reads the copy its
-        ranks came from. ``metric`` picks the DPS or the rDPS board; the
+        reader takes the copy as it is. ``metric`` picks the DPS or the rDPS board; the
         index holds both.
         """
 
@@ -460,8 +459,8 @@ class ZmdLogsDataSource:
     async def get_account_rankings(self, account_id: str) -> PublicUserRankings:
         """The account's rank on every board, from the index when it is complete.
 
-        This is what the rank watch polls and the account page draws: a whole
-        watch list costs nothing once the index is filled. The endpoint
+        This is what the account page draws, and it costs nothing once the
+        index is filled. The endpoint
         answers when the index is not complete yet or holds no row for the
         account.
         """

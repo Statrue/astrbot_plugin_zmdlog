@@ -216,26 +216,19 @@ class RoundTripTests(unittest.TestCase):
 
     def test_an_account_drops_board_options_its_command_refuses(self) -> None:
         # ``CPU --口径 rdps`` can post boards and accounts on one list; the
-        # account page is the same whatever the metric, and 账号 / 关注 take
-        # no options at all, so writing one would make the button a parse error.
-        for view, kind in (
-            (CandidateView.RANKING, RouteKind.ACCOUNT_QUERY),
-            (CandidateView.WATCH, RouteKind.WATCH_ADD),
-        ):
-            with self.subTest(view=view):
-                entry = entry_for(
-                    view,
-                    account_choice(ACCOUNT, "CPU 0", query="cpu"),
-                    metric="rdps",
-                    ranking_page=5,
-                )
+        # account page is the same whatever the metric, and 账号 takes no
+        # options at all, so writing one would make the button a parse error.
+        entry = entry_for(
+            CandidateView.RANKING,
+            account_choice(ACCOUNT, "CPU 0", query="cpu"),
+            metric="rdps",
+            ranking_page=5,
+        )
 
-                route = parse_button(
-                    pick_command(entry, entry.choices[0], command=COMMAND)
-                )
+        route = parse_button(pick_command(entry, entry.choices[0], command=COMMAND))
 
-                self.assertIs(route.kind, kind)
-                self._assert_same_target(route.query, entry.choices[0])
+        self.assertIs(route.kind, RouteKind.ACCOUNT_QUERY)
+        self._assert_same_target(route.query, entry.choices[0])
 
     def test_board_views_keep_their_options(self) -> None:
         cases = (
@@ -307,21 +300,13 @@ class RoundTripTests(unittest.TestCase):
                 self.assertEqual("--范围" in command, written)
 
     def test_watch_lists_fill_in_the_watch_command(self) -> None:
-        account = entry_for(
-            CandidateView.WATCH, account_choice(ACCOUNT, "CPU 0", query="cpu")
-        )
         board = entry_for(CandidateView.WATCH_BOARD, board_choice())
 
-        account_route = parse_button(
-            pick_command(account, account.choices[0], command=COMMAND)
-        )
-        board_route = parse_button(
-            pick_command(board, board.choices[0], command=COMMAND)
-        )
+        command = pick_command(board, board.choices[0], command=COMMAND)
+        board_route = parse_button(command)
 
-        self.assertIs(account_route.kind, RouteKind.WATCH_ADD)
-        self._assert_same_target(account_route.query, account.choices[0])
-        self.assertIs(board_route.kind, RouteKind.WATCH_BOARD_ADD)
+        self.assertEqual(command, f"{COMMAND} 关注 {board.choices[0].target.key}")
+        self.assertIs(board_route.kind, RouteKind.WATCH_ADD)
         self._assert_same_target(board_route.query, board.choices[0])
 
     def test_a_scope_has_no_typeable_key_and_so_no_command(self) -> None:
@@ -377,7 +362,7 @@ class PickListMessageTests(unittest.TestCase):
         name = "一二三四五六七八九十一二三四五"
         longer = name + "六七"
         entry = entry_for(
-            CandidateView.WATCH,
+            CandidateView.RANKING,
             account_choice(ACCOUNT, name, query="x"),
             account_choice("usr_" + "b" * 32, longer, query="x"),
         )
@@ -521,20 +506,15 @@ class CallbackButtonTests(unittest.TestCase):
             self.assertEqual(tap["action"]["permission"], {"type": 2})
 
     def test_a_watch_pick_still_only_fills_the_command_in(self) -> None:
-        for view, choice in (
-            (CandidateView.WATCH, account_choice(ACCOUNT, "CPU 0", query="cpu")),
-            (CandidateView.WATCH_BOARD, board_choice()),
-        ):
-            with self.subTest(view=view):
-                message = pick_list_message(
-                    entry_for(view, choice),
-                    command=COMMAND,
-                    ttl_seconds=600,
-                    callback=True,
-                )
+        message = pick_list_message(
+            entry_for(CandidateView.WATCH_BOARD, board_choice()),
+            command=COMMAND,
+            ttl_seconds=600,
+            callback=True,
+        )
 
-                (row,) = message.keyboard["content"]["rows"]
-                self.assertEqual(row["buttons"][0]["action"]["type"], 2)
+        (row,) = message.keyboard["content"]["rows"]
+        self.assertEqual(row["buttons"][0]["action"]["type"], 2)
 
     def test_button_data_reads_as_the_typed_command_would(self) -> None:
         entry = entry_for(

@@ -32,7 +32,7 @@ class CandidateView(str, Enum):
     SKILLS = "skills"
     TIMELINE = "timeline"
     COMPARE = "compare"
-    WATCH = "watch"
+    # 关注 <关键词> that matched several boards: a pick adds one to the watch.
     WATCH_BOARD = "watch_board"
     TREND = "trend"
     # 榜单: every dungeon, not a match. A pick draws what typing its name
@@ -54,7 +54,6 @@ _VIEW_TITLES = {
     CandidateView.SKILLS: "的技能统计查询匹配到 {count} 个榜单",
     CandidateView.TIMELINE: "的技能轴查询匹配到 {count} 个榜单",
     CandidateView.COMPARE: "的战报对比匹配到 {count} 个榜单",
-    CandidateView.WATCH: "匹配到 {count} 个公开账号，选一个关注",
     CandidateView.WATCH_BOARD: "匹配到 {count} 个榜单，选一个关注",
     CandidateView.TREND: "匹配到 {count} 个公开账号，选一个看名次趋势",
     CandidateView.DUNGEONS: "共 {count} 个副本，选一个看它的榜单",

@@ -1,28 +1,16 @@
-"""Tests for the 0.5.0 rank watch: watch lists, rank diffing, notice text."""
+"""Tests for the board watch: watch lists, their file, board diffs, notice text."""
 
-import asyncio
-import copy
-import logging
+import json
 import tempfile
 import unittest
-from dataclasses import replace
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 
 from core.candidates import CandidateStore
-from core.models import (
-    HotBossCard,
-    HotBossRun,
-    parse_boss_ranking,
-    parse_public_user_rankings,
-)
+from core.models import HotBossCard, HotBossRun
 from core.persistence import load_json, save_json
 from core.rank_watch import WATCHLIST_FILE, RankWatcher
 from core.settings import PluginSettings
-from core.timestamps import parse_timestamp
 from core.watch import (
-    AccountSnapshot,
     BoardSnapshot,
     BoardTopRun,
     Notice,
@@ -30,93 +18,29 @@ from core.watch import (
     board_snapshot_is_usable,
     board_snapshot_payload,
     build_board_snapshot,
-    build_snapshot,
-    find_new_record_above,
-    find_rank_drops,
     find_top_run_changes,
     format_board_notice,
-    format_rank_drop_notice,
     join_board_notices,
-    join_rank_drop_notices,
     parse_board_snapshot_payload,
-    parse_snapshot_payload,
-    snapshot_is_usable,
-    snapshot_payload,
-    snapshot_ranks,
 )
 from core.watchlist import (
-    WatchedAccount,
+    AllBoards,
+    ChatWatch,
     WatchedBoard,
     WatchList,
     board_label,
     format_watchlist,
     parse_watchlist,
 )
-from tests.helpers import (
-    public_user_rankings_payload,
-    ranking_payload_with_rows,
-)
 
 GROUP = "aiocqhttp:GroupMessage:1"
 OTHER_GROUP = "aiocqhttp:GroupMessage:2"
-BEFORE = "2026-08-20T00:00:00+00:00"
 CHECKED = "2026-08-22T00:00:00+00:00"
 AFTER = "2026-08-22T06:00:00+00:00"
-LATER = "2026-08-22T09:00:00+00:00"
+ADDED_AT = "2026-08-22T10:00:00+00:00"
 # What 隔离对话 made of GROUP for members 111 and 222.
 MEMBER_111 = "aiocqhttp:GroupMessage:111_1"
 MEMBER_222 = "aiocqhttp:GroupMessage:222_1"
-
-
-def account(
-    account_id: str = "usr_1",
-    display_name: str = "CPU 0",
-    added_by: str = "aiocqhttp:111",
-) -> WatchedAccount:
-    return WatchedAccount(
-        account_id=account_id,
-        display_name=display_name,
-        added_by=added_by,
-        added_at="2026-08-22T10:00:00+00:00",
-    )
-
-
-def rankings(*entries: tuple[str, int]):
-    """Build a public account response with one row per (slug, rank) pair."""
-
-    payload = public_user_rankings_payload()
-    payload["accountId"] = "usr_watched"
-    payload["accountDisplayName"] = "CPU 0"
-    template = payload["rankings"][0]
-    rows = []
-    for slug, rank in entries:
-        row = copy.deepcopy(template)
-        row["bossSlug"] = slug
-        row["bossName"] = f"首领 {slug}"
-        row["dungeonName"] = f"副本 {slug}"
-        row["rank"] = rank
-        rows.append(row)
-    payload["rankings"] = rows
-    return parse_public_user_rankings(payload)
-
-
-def board(*rows: tuple[int, str, str]):
-    """Build a ranking from (rank, accountId, battleEndAt) triples."""
-
-    payload = ranking_payload_with_rows()
-    template = payload["rows"][0]
-    built = []
-    for rank, account_id, battle_end_at in rows:
-        row = copy.deepcopy(template)
-        row["rank"] = rank
-        row["accountId"] = account_id
-        row["accountDisplayName"] = f"玩家-{account_id}"
-        row["battleId"] = f"btl_upload_{account_id}"
-        row["battleEndAt"] = battle_end_at
-        row["dps"] = 200_000 - rank * 1000
-        built.append(row)
-    payload["rows"] = built
-    return parse_boss_ranking(payload)
 
 
 def battle_url(index: int) -> str:
@@ -127,10 +51,6 @@ def link(index: int) -> "NoticeLink":
     """The one link of a single-battle notice, numbered as its own message."""
 
     return NoticeLink(battle_url(index), "战报 1")
-
-
-def snapshot(ranks: dict[str, int], checked_at: str | None = CHECKED):
-    return AccountSnapshot(ranks=ranks, checked_at=checked_at)
 
 
 def board_entry(
@@ -144,8 +64,22 @@ def board_entry(
         boss_name=boss or f"首领 {slug}",
         dungeon_name=dungeon or f"副本 {slug}",
         added_by=added_by,
-        added_at="2026-08-22T10:00:00+00:00",
+        added_at=ADDED_AT,
     )
+
+
+def explicit(*slugs: str, added_by: str = "aiocqhttp:111") -> ChatWatch:
+    chat = ChatWatch()
+    for slug in slugs:
+        chat, _ = chat.with_board(board_entry(slug, added_by=added_by))
+    return chat
+
+
+def every_board(*excluded: str, added_by: str = "aiocqhttp:111") -> ChatWatch:
+    chat = ChatWatch().following_all(added_by=added_by, added_at=ADDED_AT)
+    for slug in excluded:
+        chat = chat.excluding(board_entry(slug, added_by=added_by))
+    return chat
 
 
 def card(slug: str, *runs: tuple[str, str, str, int]) -> HotBossCard:
@@ -168,615 +102,413 @@ def card(slug: str, *runs: tuple[str, str, str, int]) -> HotBossCard:
     )
 
 
-class WatchListTests(unittest.TestCase):
-    def test_adding_is_per_group_and_keeps_insertion_order(self) -> None:
-        watchlist, added = WatchList.empty().with_account(GROUP, account())
-        self.assertTrue(added)
-        watchlist, added = watchlist.with_account(
-            GROUP, account("usr_2", "CPU 1")
-        )
-        self.assertTrue(added)
-        watchlist, added = watchlist.with_account(
-            OTHER_GROUP, account("usr_3", "CPU 2")
-        )
+class _ListLogger:
+    """A LogSink that keeps what it was told to warn about."""
 
-        self.assertTrue(added)
-        self.assertEqual(
-            [entry.account_id for entry in watchlist.accounts_for(GROUP)],
-            ["usr_1", "usr_2"],
-        )
-        self.assertEqual(
-            [entry.account_id for entry in watchlist.accounts_for(OTHER_GROUP)],
-            ["usr_3"],
-        )
-        self.assertEqual(watchlist.total_accounts, 3)
+    def __init__(self, warnings: list[str]) -> None:
+        self.warnings = warnings
 
-    def test_re_adding_refreshes_the_nickname_without_moving_or_stealing(
-        self,
-    ) -> None:
-        watchlist, _ = WatchList.empty().with_account(GROUP, account())
-        watchlist, _ = watchlist.with_account(GROUP, account("usr_2", "CPU 1"))
-        watchlist, added = watchlist.with_account(
-            GROUP,
-            account("usr_1", "改名了", added_by="aiocqhttp:999"),
+    def warning(self, message, *args) -> None:
+        self.warnings.append(message % args if args else message)
+
+    def debug(self, message, *args) -> None:
+        pass
+
+    def info(self, message, *args) -> None:
+        pass
+
+    def error(self, message, *args) -> None:
+        self.warnings.append(message % args if args else message)
+
+    def exception(self, message, *args) -> None:
+        self.warnings.append(message % args if args else message)
+
+
+def watcher_on(root: Path, warnings: list[str] | None = None) -> RankWatcher:
+    """A watcher that only loads its files; the collaborators stay idle."""
+
+    return RankWatcher(
+        client=None,
+        data=None,
+        settings=PluginSettings(),
+        data_dir=root,
+        board_matcher=None,
+        candidates=CandidateStore(),
+        notify=None,
+        logger=_ListLogger([] if warnings is None else warnings),
+    )
+
+
+class ChatWatchTests(unittest.TestCase):
+    def test_boards_keep_insertion_order_and_their_first_adder(self) -> None:
+        chat, added = ChatWatch().with_board(board_entry("slug_a"))
+        self.assertTrue(added)
+        chat, _ = chat.with_board(board_entry("slug_b"))
+        chat, added = chat.with_board(
+            board_entry("slug_a", boss="改名", added_by="aiocqhttp:999")
         )
 
         self.assertFalse(added)
-        first = watchlist.accounts_for(GROUP)[0]
-        self.assertEqual(first.account_id, "usr_1")
-        self.assertEqual(first.display_name, "改名了")
-        self.assertEqual(first.added_by, "aiocqhttp:111")
-
-    def test_origins_by_account_inverts_the_list(self) -> None:
-        watchlist, _ = WatchList.empty().with_account(GROUP, account())
-        watchlist, _ = watchlist.with_account(OTHER_GROUP, account())
-        watchlist, _ = watchlist.with_account(GROUP, account("usr_2", "CPU 1"))
-
         self.assertEqual(
-            watchlist.origins_by_account(),
-            {"usr_1": (GROUP, OTHER_GROUP), "usr_2": (GROUP,)},
+            [entry.boss_slug for entry in chat.boards], ["slug_a", "slug_b"]
+        )
+        self.assertEqual(chat.boards[0].boss_name, "改名")
+        self.assertEqual(chat.boards[0].added_by, "aiocqhttp:111")
+        self.assertTrue(chat.covers("slug_b"))
+        self.assertFalse(chat.covers("slug_c"))
+        self.assertEqual(
+            [entry.boss_slug for entry in chat.without_board("slug_a").boards],
+            ["slug_b"],
+        )
+        self.assertTrue(
+            chat.without_board("slug_a").without_board("slug_b").is_empty
         )
 
-    def test_resolve_accepts_index_id_and_nickname(self) -> None:
-        watchlist, _ = WatchList.empty().with_account(GROUP, account())
-        watchlist, _ = watchlist.with_account(GROUP, account("usr_2", "阿米娅"))
+    def test_every_board_replaces_the_list_and_covers_unseen_boards(self) -> None:
+        chat = explicit("slug_a").following_all(
+            added_by="aiocqhttp:222", added_at=ADDED_AT
+        )
 
-        self.assertEqual(watchlist.resolve(GROUP, "2").account_id, "usr_2")
-        self.assertEqual(watchlist.resolve(GROUP, "usr_1").account_id, "usr_1")
-        self.assertEqual(watchlist.resolve(GROUP, "阿米娅").account_id, "usr_2")
-        self.assertEqual(watchlist.resolve(GROUP, "cpu 0").account_id, "usr_1")
-        self.assertIsNone(watchlist.resolve(GROUP, "3"))
-        self.assertIsNone(watchlist.resolve(GROUP, "查无此人"))
-        self.assertIsNone(watchlist.resolve(OTHER_GROUP, "1"))
+        self.assertEqual(chat.boards, ())
+        self.assertEqual(chat.all_boards, AllBoards("aiocqhttp:222", ADDED_AT))
+        self.assertTrue(chat.covers("slug_a"))
+        self.assertTrue(chat.covers("a_board_that_opens_next_season"))
+        # Asked again, the first adder and the exclusions stay.
+        excluded = chat.excluding(board_entry("slug_a"))
+        again = excluded.following_all(added_by="aiocqhttp:333", added_at=AFTER)
+        self.assertIs(again, excluded)
 
-    def test_an_absurd_selector_is_rejected_instead_of_raising(self) -> None:
-        watchlist, _ = WatchList.empty().with_account(GROUP, account())
+    def test_an_exclusion_is_recorded_once_and_can_be_lifted(self) -> None:
+        chat = every_board("slug_a")
+        chat = chat.excluding(board_entry("slug_a", added_by="aiocqhttp:999"))
 
-        # int() refuses digit strings this long; the handler must not see that.
-        self.assertEqual(watchlist.resolve_matches(GROUP, "9" * 4400), ())
-        self.assertIsNone(watchlist.resolve(GROUP, "9" * 4400))
-        self.assertEqual(watchlist.resolve_matches(GROUP, "0"), ())
+        self.assertEqual([entry.boss_slug for entry in chat.excluded], ["slug_a"])
+        self.assertEqual(chat.excluded[0].added_by, "aiocqhttp:111")
+        self.assertFalse(chat.covers("slug_a"))
+        self.assertTrue(chat.covers("slug_b"))
+        lifted = chat.including("slug_a")
+        self.assertEqual(lifted.excluded, ())
+        self.assertTrue(lifted.covers("slug_a"))
+
+    def test_board_selectors_accept_index_slug_and_names(self) -> None:
+        chat, _ = ChatWatch().with_board(
+            board_entry("slug_a", boss="“碾骨之拳”罗丹", dungeon="危境再现·罗丹")
+        )
+        chat, _ = chat.with_board(
+            board_entry(
+                "slug_b", boss="山中见犼·苦难", dungeon="影拓丰碑4期 · 山中见犼"
+            )
+        )
+
+        def resolved(selector: str) -> list[str]:
+            return [
+                entry.boss_slug for entry in chat.resolve_board_matches(selector)
+            ]
+
+        self.assertEqual(resolved("2"), ["slug_b"])
+        self.assertEqual(resolved("slug_a"), ["slug_a"])
+        self.assertEqual(resolved("山中见犼·苦难"), ["slug_b"])
+        self.assertEqual(resolved("罗丹"), ["slug_a"])
+        self.assertEqual(resolved("见犼"), ["slug_b"])
+        self.assertEqual(resolved("3"), [])
+        self.assertEqual(resolved("查无此榜"), [])
+        self.assertEqual(resolved("9" * 4400), [])
 
     def test_only_the_adder_or_an_admin_may_remove(self) -> None:
-        entry = account()
-
+        entry = board_entry("slug_a")
         self.assertTrue(entry.removable_by("aiocqhttp:111", is_admin=False))
         self.assertFalse(entry.removable_by("aiocqhttp:222", is_admin=False))
+        self.assertFalse(entry.removable_by("", is_admin=False))
         self.assertTrue(entry.removable_by("aiocqhttp:222", is_admin=True))
-        # An entry whose adder was not recorded must not become everyone's.
-        self.assertFalse(account(added_by="").removable_by("", is_admin=False))
 
-    def test_removing_the_last_account_drops_the_group(self) -> None:
-        watchlist, _ = WatchList.empty().with_account(GROUP, account())
-        watchlist, _ = watchlist.with_account(OTHER_GROUP, account("usr_2"))
-        watchlist = watchlist.without_account(GROUP, "usr_1")
-
-        self.assertEqual(watchlist.accounts_for(GROUP), ())
-        self.assertEqual(len(watchlist.groups), 1)
-
-    def test_payload_round_trip_and_tolerance_for_garbage(self) -> None:
-        watchlist, _ = WatchList.empty().with_account(GROUP, account())
-
-        self.assertEqual(parse_watchlist(watchlist.to_payload()), watchlist)
-        self.assertEqual(parse_watchlist(None), WatchList.empty())
-        self.assertEqual(parse_watchlist({"groups": []}), WatchList.empty())
-        salvaged = parse_watchlist(
-            {
-                "groups": {
-                    GROUP: [
-                        {"accountId": "usr_1"},
-                        {"accountId": "usr_1", "displayName": "重复"},
-                        {"displayName": "没有 id"},
-                        "不是字典",
-                    ],
-                    "": [{"accountId": "usr_9"}],
-                }
-            }
-        )
-        self.assertEqual(
-            [entry.account_id for entry in salvaged.accounts_for(GROUP)],
-            ["usr_1"],
-        )
-        self.assertEqual(salvaged.accounts_for(GROUP)[0].display_name, "usr_1")
-        self.assertEqual(salvaged.total_accounts, 1)
-
-    def test_list_text_numbers_the_entries(self) -> None:
-        watchlist, _ = WatchList.empty().with_account(GROUP, account())
-        text = format_watchlist(watchlist.accounts_for(GROUP))
-
-        self.assertIn("1. CPU 0（usr_1）", text)
-        self.assertIn("关注", format_watchlist(()))
-
-
-class RankDiffTests(unittest.TestCase):
-    def test_a_first_sighting_never_announces_anything(self) -> None:
-        current = rankings(("boss_a", 1), ("boss_b", 4))
-
-        self.assertEqual(find_rank_drops(None, current), ())
-        self.assertEqual(find_rank_drops(snapshot({}), current), ())
-        self.assertEqual(snapshot_ranks(current), {"boss_a": 1, "boss_b": 4})
-        self.assertEqual(
-            build_snapshot(current, checked_at=CHECKED),
-            snapshot({"boss_a": 1, "boss_b": 4}),
+    def test_dropping_everything_needs_the_right_to_drop_every_entry(self) -> None:
+        mixed, _ = explicit("slug_a").with_board(
+            board_entry("slug_b", added_by="aiocqhttp:222")
         )
 
-    def test_only_drops_from_inside_the_threshold_count(self) -> None:
-        previous = snapshot(
-            {"kept": 3, "dropped": 1, "improved": 8, "deep": 12, "gone": 5}
+        self.assertFalse(
+            mixed.removable_entirely_by("aiocqhttp:111", is_admin=False)
         )
-        current = rankings(
-            ("kept", 3),
-            ("dropped", 2),
-            ("improved", 4),
-            ("deep", 20),
-            ("fresh", 1),
-        )
-
-        drops = find_rank_drops(previous, current, rank_threshold=10)
-
-        self.assertEqual([drop.boss_slug for drop in drops], ["dropped"])
-        self.assertEqual(drops[0].previous_rank, 1)
-        self.assertEqual(drops[0].current_rank, 2)
-        self.assertIsNone(drops[0].new_record_above)
-
-    def test_drops_are_ordered_by_how_high_the_account_was(self) -> None:
-        previous = snapshot({"boss_a": 5, "boss_b": 1, "boss_c": 3})
-        current = rankings(("boss_a", 9), ("boss_b", 2), ("boss_c", 4))
-
-        drops = find_rank_drops(previous, current)
-
-        self.assertEqual([drop.previous_rank for drop in drops], [1, 3, 5])
-
-    def test_threshold_is_applied_to_the_old_rank(self) -> None:
-        previous = snapshot({"boss_a": 10, "boss_b": 11})
-        current = rankings(("boss_a", 30), ("boss_b", 12))
-
-        drops = find_rank_drops(previous, current, rank_threshold=10)
-
-        self.assertEqual([drop.boss_slug for drop in drops], ["boss_a"])
-
-
-class OvertakerTests(unittest.TestCase):
-    def test_a_new_record_above_the_account_is_the_overtaker(self) -> None:
-        # usr_new landed after the last check and pushed the watched account
-        # from rank 1 to rank 2.
-        ranking = board(
-            (1, "usr_new", AFTER),
-            (2, "usr_watched", BEFORE),
-            (3, "usr_old", BEFORE),
-        )
-
-        record = find_new_record_above(
-            ranking,
-            account_id="usr_watched",
-            fallback_rank=2,
-            since=CHECKED,
-        )
-
-        self.assertEqual(record.account_display_name, "玩家-usr_new")
-        self.assertEqual(record.record_count, 1)
-
-    def test_a_bystander_shifted_down_is_never_blamed(self) -> None:
-        # The regression this function exists for: usr_new inserts at rank 1 so
-        # everyone shifts down. The watched account went 3 -> 4, and the row now
-        # sitting at its old rank 3 is usr_bystander, who uploaded nothing and
-        # overtook nobody.
-        ranking = board(
-            (1, "usr_new", AFTER),
-            (2, "usr_ahead", BEFORE),
-            (3, "usr_bystander", BEFORE),
-            (4, "usr_watched", BEFORE),
-        )
-
-        record = find_new_record_above(
-            ranking,
-            account_id="usr_watched",
-            fallback_rank=4,
-            since=CHECKED,
-        )
-
-        self.assertEqual(record.account_display_name, "玩家-usr_new")
-
-    def test_several_new_records_are_counted_not_pinned_on_one(self) -> None:
-        ranking = board(
-            (1, "usr_new_a", AFTER),
-            (2, "usr_new_b", LATER),
-            (3, "usr_watched", BEFORE),
-        )
-
-        record = find_new_record_above(
-            ranking,
-            account_id="usr_watched",
-            fallback_rank=3,
-            since=CHECKED,
-        )
-
-        self.assertEqual(record.record_count, 2)
-        # The newest of them, not the best ranked.
-        self.assertEqual(record.account_display_name, "玩家-usr_new_b")
-
-    def test_nothing_is_claimed_without_a_baseline_or_a_new_record(
-        self,
-    ) -> None:
-        ranking = board((1, "usr_new", AFTER), (2, "usr_watched", BEFORE))
-
-        self.assertIsNone(
-            find_new_record_above(
-                ranking,
-                account_id="usr_watched",
-                fallback_rank=2,
-                since=None,
-            )
-        )
-        self.assertIsNone(
-            find_new_record_above(
-                board((1, "usr_old", BEFORE), (2, "usr_watched", BEFORE)),
-                account_id="usr_watched",
-                fallback_rank=2,
-                since=CHECKED,
-            )
-        )
-
-    def test_a_stale_ranking_never_names_the_account_itself(self) -> None:
-        # The shared board cache can still hold a ranking from before the drop,
-        # in which the watched account itself occupies a rank above its current
-        # one. It must never be named, and the cutoff must come from this same
-        # response rather than from the separate account read.
-        ranking = board((1, "usr_watched", LATER), (2, "usr_other", AFTER))
-
-        self.assertIsNone(
-            find_new_record_above(
-                ranking,
-                account_id="usr_watched",
-                fallback_rank=3,
-                since=CHECKED,
-            )
-        )
-
-    def test_unusable_timestamps_are_rejected_rather_than_guessed(self) -> None:
-        self.assertIsNone(parse_timestamp(None))
-        self.assertIsNone(parse_timestamp(""))
-        self.assertIsNone(parse_timestamp("昨天"))
-        # No offset means it cannot be compared against an aware stamp.
-        self.assertIsNone(parse_timestamp("2026-08-22T00:00:00"))
-        self.assertIsNotNone(parse_timestamp("2026-08-22T00:00:00Z"))
-        self.assertIsNotNone(parse_timestamp("2026-08-22T08:00:00+08:00"))
-
-
-class NoticeTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.drops = find_rank_drops(
-            snapshot({"dung01_group_bossrush02": 1}),
-            rankings(("dung01_group_bossrush02", 2)),
-        )
-
-    def test_notice_names_the_board_both_ranks_and_the_new_record(self) -> None:
-        ranking = board((1, "usr_new", AFTER), (2, "usr_watched", BEFORE))
-        drop = replace(
-            self.drops[0],
-            new_record_above=find_new_record_above(
-                ranking,
-                account_id="usr_watched",
-                fallback_rank=2,
-                since=CHECKED,
-            ),
-        )
-
-        notice = format_rank_drop_notice(
-            "CPU 0", (drop,), web_base_url="https://zmdlogs.com"
-        )
-
-        text = notice.text
-        self.assertIn("CPU 0", text)
-        self.assertIn("第 1 → 第 2", text)
-        self.assertIn("期间上方新增纪录：玩家-usr_new", text)
-        # The wording must never claim this record is what overtook the account.
-        self.assertNotIn("超过", text)
-        self.assertIn("199,000 DPS", text)
-        url = "https://zmdlogs.com/battle/btl_upload_usr_new"
-        self.assertIn(url, text.splitlines())
-        # The battle the text prints is the one a button would open.
-        self.assertEqual(notice.links, (NoticeLink(url=url, label="战报 1"),))
-
-    def test_notice_says_so_when_several_records_landed(self) -> None:
-        ranking = board(
-            (1, "usr_new_a", AFTER),
-            (2, "usr_new_b", LATER),
-            (3, "usr_watched", BEFORE),
-        )
-        drop = replace(
-            self.drops[0],
-            new_record_above=find_new_record_above(
-                ranking,
-                account_id="usr_watched",
-                fallback_rank=3,
-                since=CHECKED,
-            ),
-        )
-
-        notice = format_rank_drop_notice(
-            "CPU 0", (drop,), web_base_url="https://zmdlogs.com"
-        )
-
-        self.assertIn("期间上方新增 2 条纪录", notice.text)
-
-    def test_notice_without_an_overtaker_keeps_the_rank_line(self) -> None:
-        notice = format_rank_drop_notice(
-            "CPU 0", self.drops, web_base_url="https://zmdlogs.com"
-        )
-
-        self.assertIn("第 1 → 第 2", notice.text)
-        self.assertNotIn("期间上方", notice.text)
-        # Nothing new above, so no battle to open.
-        self.assertEqual(notice.links, ())
-
-    def test_a_flood_of_drops_is_summarised(self) -> None:
-        previous = snapshot({f"boss_{index}": 1 for index in range(8)})
-        current = rankings(*((f"boss_{index}", 2) for index in range(8)))
-
-        notice = format_rank_drop_notice(
-            "CPU 0",
-            find_rank_drops(previous, current),
-            web_base_url="https://zmdlogs.com",
-        )
-
-        self.assertEqual(notice.text.count("第 1 → 第 2"), 5)
-        self.assertIn("另有 3 个榜单也掉了名次。", notice.text)
-
-    def test_one_cycle_sends_a_chat_a_single_merged_message(self) -> None:
-        notices = tuple(
-            Notice(f"📉 账号{index} 被顶屁股了\n{battle_url(index)}", (link(index),))
-            for index in range(5)
-        )
-
-        merged = join_rank_drop_notices(notices)
-
-        self.assertEqual(merged.text.count("被顶屁股了"), 3)
-        self.assertIn("另有 2 个关注的账号也掉了名次。", merged.text)
-        # Only the battles the text shows, numbered across the message.
-        self.assertEqual(
-            merged.links,
-            tuple(
-                NoticeLink(battle_url(index), f"战报 {index + 1}")
-                for index in range(3)
-            ),
-        )
-        self.assertEqual(join_rank_drop_notices(notices[:1]), notices[0])
-
-    def test_a_record_that_demoted_several_accounts_is_one_link(self) -> None:
-        # One new record pushes every watched account below it down at once.
-        shared, other = battle_url(0), battle_url(1)
-        notices = (
-            Notice(f"📉 甲 被顶屁股了\n{shared}", (NoticeLink(shared, "战报 1"),)),
-            Notice(
-                f"📉 乙 被顶屁股了\n{other}\n{shared}",
-                (NoticeLink(other, "战报 1"), NoticeLink(shared, "战报 2")),
-            ),
-        )
-
-        merged = join_rank_drop_notices(notices)
-
-        self.assertEqual(
-            merged.links,
-            (NoticeLink(shared, "战报 1"), NoticeLink(other, "战报 2")),
-        )
-
-
-class AccountCycleNoticeTests(unittest.TestCase):
-    """What one account cycle hands ``notify``, and what a refusal keeps."""
-
-    def setUp(self) -> None:
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        now = datetime.now(UTC).replace(microsecond=0)
-        checked = (now - timedelta(hours=1)).isoformat()
-        landed = (now - timedelta(minutes=30)).isoformat()
-        # Two boards, and on each a new record now above the account.
-        boards = {
-            "slug_a": board((1, "usr_new_a", landed), (2, "usr_watched", BEFORE)),
-            "slug_b": board(
-                (1, "usr_old", BEFORE),
-                (2, "usr_new_b", landed),
-                (3, "usr_watched", BEFORE),
-            ),
-        }
-
-        async def get_account_rankings(account_id):
-            return rankings(("slug_a", 2), ("slug_b", 3))
-
-        async def get_boss_ranking(boss_slug, **kwargs):
-            return boards[boss_slug]
-
-        self.watcher = RankWatcher(
-            client=None,
-            data=SimpleNamespace(
-                get_account_rankings=get_account_rankings,
-                get_boss_ranking=get_boss_ranking,
-            ),
-            settings=PluginSettings(),
-            data_dir=Path(directory.name),
-            board_matcher=None,
-            candidates=CandidateStore(),
-            notify=self._notify,
-            logger=logging.getLogger("t"),
-        )
-        self.watcher.watchlist, _ = WatchList.empty().with_account(
-            GROUP, account("usr_watched")
-        )
-        self.baseline = {"slug_a": 1, "slug_b": 2}
-        self.watcher.rank_snapshots = {
-            "usr_watched": snapshot(dict(self.baseline), checked_at=checked)
-        }
-        self.sent: list[tuple[str, Notice]] = []
-        self.delivered = True
-
-    async def _notify(self, origin: str, notice: Notice) -> bool:
-        self.sent.append((origin, notice))
-        return self.delivered
-
-    def test_the_notice_carries_every_battle_it_prints(self) -> None:
-        asyncio.run(self.watcher.run_account_cycle())
-
-        ((origin, notice),) = self.sent
-        self.assertEqual(origin, GROUP)
-        urls = [
-            "https://zmdlogs.com/battle/btl_upload_usr_new_a",
-            "https://zmdlogs.com/battle/btl_upload_usr_new_b",
-        ]
-        self.assertEqual([link.url for link in notice.links], urls)
-        self.assertEqual([link.label for link in notice.links], ["战报 1", "战报 2"])
-        lines = notice.text.splitlines()
-        for url in urls:
-            self.assertIn(url, lines)
-        self.assertEqual(
-            self.watcher.rank_snapshots["usr_watched"].ranks,
-            {"slug_a": 2, "slug_b": 3},
-        )
-
-    def test_a_notice_notify_refused_keeps_the_baseline(self) -> None:
-        self.delivered = False
-
-        asyncio.run(self.watcher.run_account_cycle())
-
-        self.assertEqual(len(self.sent), 1)
-        self.assertEqual(
-            self.watcher.rank_snapshots["usr_watched"].ranks, self.baseline
-        )
-        # The next cycle finds the same drops and offers the same notice.
-        self.delivered = True
-        asyncio.run(self.watcher.run_account_cycle())
-        self.assertEqual(self.sent[0][1], self.sent[1][1])
-
-
-class SnapshotFreshnessTests(unittest.TestCase):
-    def test_a_baseline_from_before_a_long_outage_is_not_usable(self) -> None:
-        fresh = AccountSnapshot(ranks={"boss_a": 1}, checked_at=CHECKED)
-
+        self.assertTrue(mixed.removable_entirely_by("aiocqhttp:111", is_admin=True))
         self.assertTrue(
-            snapshot_is_usable(fresh, now=AFTER, max_age_seconds=86_400)
+            explicit("slug_a").removable_entirely_by("aiocqhttp:111", is_admin=False)
         )
-        # 6 hours old against a 1 hour bound.
+        everything = every_board()
+        self.assertTrue(
+            everything.removable_entirely_by("aiocqhttp:111", is_admin=False)
+        )
         self.assertFalse(
-            snapshot_is_usable(fresh, now=AFTER, max_age_seconds=3_600)
-        )
-
-    def test_unusable_shapes_are_rejected(self) -> None:
-        for candidate in (
-            None,
-            AccountSnapshot(ranks={}, checked_at=CHECKED),
-            AccountSnapshot(ranks={"boss_a": 1}, checked_at=None),
-            AccountSnapshot(ranks={"boss_a": 1}, checked_at="昨天"),
-        ):
-            with self.subTest(candidate=candidate):
-                self.assertFalse(
-                    snapshot_is_usable(
-                        candidate, now=AFTER, max_age_seconds=86_400
-                    )
-                )
-
-    def test_a_baseline_stamped_in_the_future_is_not_trusted(self) -> None:
-        ahead = AccountSnapshot(ranks={"boss_a": 1}, checked_at=LATER)
-
-        self.assertFalse(
-            snapshot_is_usable(ahead, now=AFTER, max_age_seconds=86_400)
+            everything.removable_entirely_by("aiocqhttp:222", is_admin=False)
         )
 
 
-class WatchListMaintenanceTests(unittest.TestCase):
-    def test_resolve_reports_every_match_so_ambiguity_can_be_explained(
-        self,
-    ) -> None:
-        watchlist, _ = WatchList.empty().with_account(
-            GROUP, account("usr_1", "同名")
-        )
-        watchlist, _ = watchlist.with_account(GROUP, account("usr_2", "同名"))
+class WatchListTests(unittest.TestCase):
+    def test_every_chat_has_its_own_list(self) -> None:
+        watchlist = WatchList.empty().with_chat(GROUP, explicit("slug_a"))
+        watchlist = watchlist.with_chat(OTHER_GROUP, explicit("slug_a", "slug_b"))
 
-        self.assertEqual(len(watchlist.resolve_matches(GROUP, "同名")), 2)
-        self.assertIsNone(watchlist.resolve(GROUP, "同名"))
-        self.assertEqual(watchlist.resolve_matches(GROUP, "查无此人"), ())
-        self.assertEqual(watchlist.resolve(GROUP, "2").account_id, "usr_2")
-
-    def test_live_nicknames_refresh_across_every_group(self) -> None:
-        watchlist, _ = WatchList.empty().with_account(GROUP, account())
-        watchlist, _ = watchlist.with_account(OTHER_GROUP, account())
-        watchlist, _ = watchlist.with_account(GROUP, account("usr_2", "CPU 1"))
-
-        renamed, changed = watchlist.with_display_names({"usr_1": "改名了"})
-
-        self.assertTrue(changed)
-        self.assertEqual(renamed.accounts_for(GROUP)[0].display_name, "改名了")
+        self.assertEqual(watchlist.chat(GROUP), explicit("slug_a"))
+        self.assertEqual(watchlist.chat("nobody"), ChatWatch())
         self.assertEqual(
-            renamed.accounts_for(OTHER_GROUP)[0].display_name, "改名了"
+            watchlist.origins_by_board(()),
+            {"slug_a": (GROUP, OTHER_GROUP), "slug_b": (OTHER_GROUP,)},
         )
-        self.assertEqual(renamed.accounts_for(GROUP)[1].display_name, "CPU 1")
+        emptied = watchlist.with_chat(GROUP, ChatWatch())
+        self.assertEqual([origin for origin, _ in emptied.chats], [OTHER_GROUP])
+        self.assertTrue(watchlist.watches("slug_b"))
+        self.assertFalse(watchlist.watches("slug_c"))
+
+    def test_every_board_follows_the_catalog_minus_its_exclusions(self) -> None:
+        watchlist = WatchList.empty().with_chat(GROUP, every_board("slug_b"))
+        watchlist = watchlist.with_chat(OTHER_GROUP, explicit("slug_b"))
+
         self.assertEqual(
-            watchlist.with_display_names({"usr_1": "CPU 0"}), (watchlist, False)
+            watchlist.origins_by_board(("slug_a", "slug_b", "slug_new")),
+            {
+                "slug_a": (GROUP,),
+                "slug_b": (OTHER_GROUP,),
+                "slug_new": (GROUP,),
+            },
         )
-        self.assertEqual(watchlist.with_display_names({}), (watchlist, False))
+        self.assertTrue(watchlist.watches("anything"))
+        alone = WatchList.empty().with_chat(GROUP, every_board("slug_b"))
+        self.assertFalse(alone.watches("slug_b"))
 
     def test_entries_kept_under_isolation_move_to_their_group(self) -> None:
         theirs = "aiocqhttp:222"
-        watchlist, _ = WatchList.empty().with_account(MEMBER_111, account("usr_1"))
-        watchlist, _ = watchlist.with_account(MEMBER_111, account("usr_2"))
-        watchlist, _ = watchlist.with_account(
-            MEMBER_222, account("usr_2", added_by=theirs)
+        watchlist = WatchList.empty().with_chat(
+            MEMBER_111, explicit("slug_a", "slug_b")
         )
-        watchlist, _ = watchlist.with_account(
-            MEMBER_222, account("usr_3", added_by=theirs)
+        watchlist = watchlist.with_chat(
+            MEMBER_222, explicit("slug_b", "slug_c", added_by=theirs)
         )
-        watchlist, _ = watchlist.with_board(
-            MEMBER_222, board_entry("slug_a", added_by=theirs)
+        watchlist = watchlist.with_chat(
+            GROUP, explicit("slug_d", added_by="aiocqhttp:333")
         )
-        watchlist, _ = watchlist.with_account(
-            GROUP, account("usr_4", added_by="aiocqhttp:333")
-        )
-        watchlist, _ = watchlist.with_account(OTHER_GROUP, account("usr_1"))
+        watchlist = watchlist.with_chat(OTHER_GROUP, explicit("slug_a"))
 
         moved, count = watchlist.with_group_origins()
 
-        self.assertEqual(count, 5)
-        grouped = moved.accounts_for(GROUP)
+        self.assertEqual(count, 4)
+        grouped = moved.chat(GROUP).boards
         self.assertEqual(
-            [entry.account_id for entry in grouped],
-            ["usr_1", "usr_2", "usr_3", "usr_4"],
+            [entry.boss_slug for entry in grouped],
+            ["slug_a", "slug_b", "slug_c", "slug_d"],
         )
         # Watched by both members: the first one seen keeps it.
         self.assertEqual(grouped[1].added_by, "aiocqhttp:111")
-        self.assertEqual(
-            [entry.boss_slug for entry in moved.boards_for(GROUP)], ["slug_a"]
-        )
-        self.assertEqual(moved.accounts_for(MEMBER_111), ())
-        self.assertEqual(
-            moved.origins_by_account()["usr_1"], (GROUP, OTHER_GROUP)
-        )
+        self.assertEqual(moved.chat(MEMBER_111), ChatWatch())
+        self.assertEqual(moved.origins_by_board(())["slug_a"], (GROUP, OTHER_GROUP))
         again, count = moved.with_group_origins()
         self.assertIs(again, moved)
         self.assertEqual(count, 0)
+
+    def test_a_board_moved_into_a_group_watching_everything_is_covered(
+        self,
+    ) -> None:
+        watchlist = WatchList.empty().with_chat(GROUP, every_board("slug_x"))
+        watchlist = watchlist.with_chat(MEMBER_111, explicit("slug_a"))
+
+        moved, count = watchlist.with_group_origins()
+
+        self.assertEqual(count, 1)
+        self.assertEqual(moved.chat(GROUP), every_board("slug_x"))
+        self.assertEqual([origin for origin, _ in moved.chats], [GROUP])
+
+
+class WatchListFileTests(unittest.TestCase):
+    def test_round_trip_of_both_shapes(self) -> None:
+        watchlist = WatchList.empty().with_chat(GROUP, explicit("slug_a", "slug_b"))
+        watchlist = watchlist.with_chat(OTHER_GROUP, every_board("slug_c"))
+
+        payload = watchlist.to_payload()
+
+        self.assertEqual(payload["version"], 3)
+        self.assertEqual(parse_watchlist(payload), watchlist)
+        self.assertEqual(
+            payload["groups"][OTHER_GROUP]["allBoards"],
+            {"addedBy": "aiocqhttp:111", "addedAt": ADDED_AT},
+        )
+        self.assertNotIn("boards", payload["groups"][OTHER_GROUP])
+        self.assertNotIn("allBoards", payload["groups"][GROUP])
+        self.assertEqual(json.loads(json.dumps(payload)), payload)
+
+    def test_old_files_keep_their_boards_and_drop_their_accounts(self) -> None:
+        version_2 = {
+            "version": 2,
+            "groups": {
+                GROUP: {
+                    "accounts": [{"accountId": "usr_1", "displayName": "CPU 0"}],
+                    "boards": [
+                        {
+                            "bossSlug": "slug_a",
+                            "bossName": "首领 slug_a",
+                            "dungeonName": "副本 slug_a",
+                            "addedBy": "aiocqhttp:111",
+                            "addedAt": ADDED_AT,
+                        }
+                    ],
+                },
+                OTHER_GROUP: {
+                    "accounts": [{"accountId": "usr_2", "displayName": "CPU 1"}],
+                    "boards": [],
+                },
+            },
+        }
+        # Version 1 kept a bare account list per chat.
+        version_1 = {"groups": {GROUP: [{"accountId": "usr_1"}]}}
+
+        upgraded = parse_watchlist(version_2)
+
+        self.assertEqual(
+            upgraded, WatchList.empty().with_chat(GROUP, explicit("slug_a"))
+        )
+        self.assertNotIn("accounts", json.dumps(upgraded.to_payload()))
+        self.assertEqual(parse_watchlist(version_1), WatchList.empty())
+
+    def test_garbage_is_dropped_instead_of_raising(self) -> None:
+        salvaged = parse_watchlist(
+            {
+                "groups": {
+                    GROUP: {
+                        "boards": [
+                            {"bossSlug": "s"},
+                            {"bossSlug": "s", "bossName": "重复"},
+                            {"bossName": "没有 slug"},
+                            1,
+                        ],
+                    },
+                    OTHER_GROUP: {"allBoards": "是", "excludedBoards": "不是列表"},
+                    "": {"boards": [{"bossSlug": "t"}]},
+                }
+            }
+        )
+
+        self.assertEqual([origin for origin, _ in salvaged.chats], [GROUP])
+        (entry,) = salvaged.chat(GROUP).boards
+        self.assertEqual((entry.boss_slug, entry.boss_name), ("s", "s"))
+        for payload in (None, [], {"groups": []}):
+            with self.subTest(payload=payload):
+                self.assertEqual(parse_watchlist(payload), WatchList.empty())
+
+    def test_every_board_wins_over_a_list_beside_it(self) -> None:
+        # Only a hand-edited file holds both; the broader reading is kept.
+        parsed = parse_watchlist(
+            {
+                "groups": {
+                    GROUP: {
+                        "allBoards": {"addedBy": "aiocqhttp:111", "addedAt": ADDED_AT},
+                        "boards": [{"bossSlug": "slug_a"}],
+                        "excludedBoards": [
+                            {
+                                "bossSlug": "slug_c",
+                                "bossName": "首领 slug_c",
+                                "dungeonName": "副本 slug_c",
+                                "addedBy": "aiocqhttp:111",
+                                "addedAt": ADDED_AT,
+                            }
+                        ],
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(parsed.chat(GROUP), every_board("slug_c"))
+
+    def test_the_watcher_upgrades_an_old_file_when_it_loads(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        save_json(
+            root / WATCHLIST_FILE,
+            {
+                "version": 2,
+                "groups": {
+                    GROUP: {
+                        "accounts": [{"accountId": "usr_1", "displayName": "CPU 0"}],
+                        "boards": [
+                            {"bossSlug": "slug_a", "addedBy": "aiocqhttp:111"}
+                        ],
+                    }
+                },
+            },
+        )
+        warnings: list[str] = []
+
+        watcher = watcher_on(root, warnings)
+
+        self.assertEqual(
+            [entry.boss_slug for entry in watcher.watchlist.chat(GROUP).boards],
+            ["slug_a"],
+        )
+        self.assertEqual(warnings, [])
+
+    def test_a_missing_file_is_empty_and_a_corrupt_one_is_set_aside(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        warnings: list[str] = []
+
+        missing = watcher_on(root, warnings)
+
+        self.assertEqual(missing.watchlist, WatchList.empty())
+        self.assertEqual(warnings, [])
+        self.assertEqual(list(root.iterdir()), [])
+
+        (root / WATCHLIST_FILE).write_text("{not json", encoding="utf-8")
+        corrupt = watcher_on(root, warnings)
+
+        self.assertEqual(corrupt.watchlist, WatchList.empty())
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("watch list", warnings[0])
+        (aside,) = [path.name for path in root.iterdir()]
+        self.assertTrue(aside.startswith(f"{WATCHLIST_FILE}.corrupt-"))
 
     def test_a_list_written_under_isolation_is_moved_when_loaded(self) -> None:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
-        stored, _ = WatchList.empty().with_account(MEMBER_111, account())
+        stored = WatchList.empty().with_chat(MEMBER_111, explicit("slug_a"))
         save_json(root / WATCHLIST_FILE, stored.to_payload())
 
-        # Loading reads the file and nothing else; the collaborators stay idle.
-        watcher = RankWatcher(
-            client=None,
-            data=None,
-            settings=PluginSettings(),
-            data_dir=root,
-            board_matcher=None,
-            candidates=CandidateStore(),
-            notify=None,
-            logger=logging.getLogger("t"),
+        watcher = watcher_on(root)
+
+        self.assertEqual(watcher.watchlist.chat(GROUP), explicit("slug_a"))
+        self.assertEqual(list(load_json(root / WATCHLIST_FILE)["groups"]), [GROUP])
+
+
+class WatchListTextTests(unittest.TestCase):
+    def test_an_empty_list_says_how_to_follow(self) -> None:
+        text = format_watchlist(ChatWatch(), command="/zmdlog")
+
+        self.assertIn("还没有关注任何榜单", text)
+        self.assertIn("/zmdlog 关注 <榜单关键词>", text)
+        self.assertIn("/zmdlog 关注 全部榜单", text)
+        self.assertNotIn("账号", text)
+
+    def test_an_explicit_list_is_numbered(self) -> None:
+        chat, _ = ChatWatch().with_board(
+            board_entry(
+                "slug_a", boss="山中见犼·苦难", dungeon="影拓丰碑4期 · 山中见犼"
+            )
         )
 
-        self.assertEqual(
-            [entry.account_id for entry in watcher.watchlist.accounts_for(GROUP)],
-            ["usr_1"],
+        text = format_watchlist(chat, command="/zmdlog")
+
+        self.assertIn("当前关注的榜单", text)
+        self.assertIn("1. 影拓丰碑4期 · 山中见犼 · 苦难", text)
+        self.assertIn("取关 <序号或榜单关键词>", text)
+
+    def test_every_board_shows_its_exclusions(self) -> None:
+        self.assertIn("当前关注：全部榜单", format_watchlist(every_board()))
+        self.assertNotIn("已排除", format_watchlist(every_board()))
+
+        text = format_watchlist(every_board("slug_a", "slug_b"))
+
+        self.assertIn(
+            "已排除：\n- 副本 slug_a · 首领 slug_a\n- 副本 slug_b · 首领 slug_b",
+            text,
         )
-        self.assertEqual(list(load_json(root / WATCHLIST_FILE)["groups"]), [GROUP])
 
 
 class BoardLabelTests(unittest.TestCase):
@@ -790,106 +522,6 @@ class BoardLabelTests(unittest.TestCase):
             "危境再现 · 罗丹 · “碾骨之拳”罗丹",
         )
         self.assertEqual(board_label("危机合约", "破潮之像"), "危机合约 · 破潮之像")
-
-
-class BoardWatchListTests(unittest.TestCase):
-    def test_boards_are_kept_apart_from_accounts(self) -> None:
-        watchlist, added = WatchList.empty().with_board(GROUP, board_entry("slug_a"))
-        self.assertTrue(added)
-        watchlist, added = watchlist.with_board(
-            GROUP, board_entry("slug_a", boss="改名", added_by="aiocqhttp:999")
-        )
-        self.assertFalse(added)
-        self.assertEqual(watchlist.boards_for(GROUP)[0].boss_name, "改名")
-        self.assertEqual(watchlist.boards_for(GROUP)[0].added_by, "aiocqhttp:111")
-        watchlist, _ = watchlist.with_board(OTHER_GROUP, board_entry("slug_a"))
-        watchlist, _ = watchlist.with_account(GROUP, account())
-
-        self.assertEqual(watchlist.origins_by_board(), {"slug_a": (GROUP, OTHER_GROUP)})
-        self.assertEqual(watchlist.total_boards, 2)
-        self.assertEqual(watchlist.total_accounts, 1)
-        without = watchlist.without_board(GROUP, "slug_a")
-        self.assertEqual(without.boards_for(GROUP), ())
-        self.assertEqual(without.accounts_for(GROUP)[0].account_id, "usr_1")
-        self.assertEqual(without.boards_for(OTHER_GROUP)[0].boss_slug, "slug_a")
-        self.assertEqual(without.origins_by_board(), {"slug_a": (OTHER_GROUP,)})
-
-    def test_board_selectors_accept_index_slug_and_names(self) -> None:
-        watchlist, _ = WatchList.empty().with_board(
-            GROUP, board_entry("slug_a", boss="“碾骨之拳”罗丹", dungeon="危境再现·罗丹")
-        )
-        watchlist, _ = watchlist.with_board(
-            GROUP,
-            board_entry(
-                "slug_b", boss="山中见犼·苦难", dungeon="影拓丰碑4期 · 山中见犼"
-            ),
-        )
-
-        self.assertEqual(watchlist.resolve_board(GROUP, "2").boss_slug, "slug_b")
-        self.assertEqual(watchlist.resolve_board(GROUP, "slug_a").boss_slug, "slug_a")
-        self.assertEqual(
-            watchlist.resolve_board(GROUP, "山中见犼·苦难").boss_slug, "slug_b"
-        )
-        self.assertEqual(watchlist.resolve_board(GROUP, "罗丹").boss_slug, "slug_a")
-        self.assertIsNone(watchlist.resolve_board(GROUP, "3"))
-        self.assertIsNone(watchlist.resolve_board(GROUP, "查无此榜"))
-        self.assertIsNone(watchlist.resolve_board(OTHER_GROUP, "1"))
-        self.assertEqual(watchlist.resolve_board_matches(GROUP, "9" * 4400), ())
-        self.assertEqual(len(watchlist.resolve_board_matches(GROUP, "见犼")), 1)
-
-    def test_payload_round_trip_and_version_one_files_still_load(self) -> None:
-        watchlist, _ = WatchList.empty().with_account(GROUP, account())
-        watchlist, _ = watchlist.with_board(GROUP, board_entry("slug_a"))
-        watchlist, _ = watchlist.with_board(OTHER_GROUP, board_entry("slug_b"))
-
-        payload = watchlist.to_payload()
-
-        self.assertEqual(payload["version"], 2)
-        self.assertEqual(parse_watchlist(payload), watchlist)
-        legacy = parse_watchlist(
-            {"groups": {GROUP: [{"accountId": "usr_1", "displayName": "CPU 0"}]}}
-        )
-        self.assertEqual(legacy.accounts_for(GROUP)[0].display_name, "CPU 0")
-        self.assertEqual(legacy.boards_for(GROUP), ())
-        salvaged = parse_watchlist(
-            {
-                "groups": {
-                    GROUP: {
-                        "accounts": "不是列表",
-                        "boards": [
-                            {"bossSlug": "s"},
-                            {"bossSlug": "s", "bossName": "重复"},
-                            {"bossName": "没有 slug"},
-                            1,
-                        ],
-                    }
-                }
-            }
-        )
-        self.assertEqual(
-            [board.boss_slug for board in salvaged.boards_for(GROUP)], ["s"]
-        )
-        self.assertEqual(salvaged.boards_for(GROUP)[0].boss_name, "s")
-        self.assertEqual(salvaged.accounts_for(GROUP), ())
-
-    def test_list_text_shows_both_sections(self) -> None:
-        watchlist, _ = WatchList.empty().with_account(GROUP, account())
-        watchlist, _ = watchlist.with_board(
-            GROUP,
-            board_entry(
-                "slug_a", boss="山中见犼·苦难", dungeon="影拓丰碑4期 · 山中见犼"
-            ),
-        )
-
-        text = format_watchlist(
-            watchlist.accounts_for(GROUP), boards=watchlist.boards_for(GROUP)
-        )
-
-        self.assertIn("1. CPU 0（usr_1）", text)
-        self.assertIn("1. 影拓丰碑4期 · 山中见犼 · 苦难", text)
-        boards_only = format_watchlist((), boards=watchlist.boards_for(GROUP))
-        self.assertNotIn("当前关注的账号", boards_only)
-        self.assertIn("榜单", format_watchlist(()))
 
 
 class BoardDiffTests(unittest.TestCase):
@@ -1069,51 +701,6 @@ class BoardSnapshotPayloadTests(unittest.TestCase):
         self.assertEqual(parsed["slug_c"], BoardSnapshot(runs=(), checked_at=None))
 
 
-class SnapshotPayloadTests(unittest.TestCase):
-    def test_round_trip_keeps_the_ranks_and_the_check_time(self) -> None:
-        snapshots = {"usr_1": snapshot({"boss_a": 1, "boss_b": 7})}
-
-        restored = parse_snapshot_payload(snapshot_payload(snapshots))
-
-        self.assertEqual(restored, snapshots)
-        self.assertEqual(restored["usr_1"].checked_at, CHECKED)
-
-    def test_garbage_is_dropped_instead_of_raising(self) -> None:
-        self.assertEqual(parse_snapshot_payload(None), {})
-        self.assertEqual(parse_snapshot_payload({"accounts": []}), {})
-        # The version 1 shape had no "ranks" key, so it re-seeds rather than
-        # being read as a baseline, which is the safe direction.
-        self.assertEqual(
-            parse_snapshot_payload({"accounts": {"usr_1": {"boss_a": 1}}}), {}
-        )
-        self.assertEqual(
-            parse_snapshot_payload(
-                {
-                    "accounts": {
-                        "usr_1": {
-                            "checkedAt": CHECKED,
-                            "ranks": {"boss_a": 1, "boss_b": "二", "boss_c": 0},
-                        },
-                        "usr_2": {"ranks": {"boss_a": True}},
-                        "usr_3": {"ranks": "不是字典"},
-                        "usr_4": {"ranks": {"boss_a": 2}},
-                    }
-                }
-            ),
-            {
-                "usr_1": snapshot({"boss_a": 1}),
-                # "ranks" present but empty is a real state (no public records),
-                # not garbage, so it survives the round trip.
-                "usr_2": snapshot({}, checked_at=None),
-                "usr_4": snapshot({"boss_a": 2}, checked_at=None),
-            },
-        )
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TimestampOrderTests(unittest.TestCase):
     def test_stamps_with_different_offsets_compare_as_instants(self) -> None:
         from core.timestamps import later_or_same
@@ -1128,3 +715,7 @@ class TimestampOrderTests(unittest.TestCase):
         )
         # Stamps that do not parse fall back to text order.
         self.assertTrue(later_or_same("b", "a"))
+
+
+if __name__ == "__main__":
+    unittest.main()

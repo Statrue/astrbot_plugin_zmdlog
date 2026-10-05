@@ -52,7 +52,7 @@ COMPARE_CROSS_BOSS = (
 )
 
 # 关注 / 趋势
-WATCH_DISABLED = "本机器人未开启名次通报功能。"
+WATCH_DISABLED = "本机器人未开启榜单通报功能。"
 NO_ORIGIN = "无法确定当前会话，关注功能在这里不可用。"
 WATCHLIST_WRITE_FAILED = "关注列表写入失败，请检查数据目录权限。"
 WATCH_REMOVE_FORBIDDEN = "只有添加这条关注的人或机器人管理员可以取消它。"

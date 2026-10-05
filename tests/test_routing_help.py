@@ -154,7 +154,7 @@ class HelpTests(unittest.TestCase):
                 ),
                 "!zmdlog 对比 <榜单关键词 [名次 名次] 或 两个battleId> [--口径 rdps]",
                 "!zmdlog 对比 <榜单关键词> 我 [名次] [--口径 rdps]",
-                "!zmdlog 关注 [<账号> | 榜单 <关键词>]",
+                "!zmdlog 关注 [<榜单关键词> | 全部榜单]",
                 "!zmdlog 趋势 <账号> [--范围 7d|14d|30d|all]",
                 "!zmdlog 绑定 <绑定码>",
                 "!zmdlog 我的 [序号或昵称]",
@@ -304,43 +304,36 @@ class WatchRouteTests(unittest.TestCase):
         from core.routing import RouteParseError
 
         self.assertEqual(parse_zmdlog_payload("关注").kind, RouteKind.WATCH_LIST)
-        add = parse_zmdlog_payload("关注 CPU 0")
-        self.assertEqual(add.kind, RouteKind.WATCH_ADD)
-        self.assertEqual(add.query, "CPU 0")
-        self.assertEqual(parse_zmdlog_payload("盯 usr_x").kind, RouteKind.WATCH_ADD)
+        add = parse_zmdlog_payload("关注 罗丹")
+        self.assertEqual((add.kind, add.query), (RouteKind.WATCH_ADD, "罗丹"))
+        self.assertEqual(parse_zmdlog_payload("盯 罗丹").kind, RouteKind.WATCH_ADD)
         remove = parse_zmdlog_payload("取关 2")
-        self.assertEqual(remove.kind, RouteKind.WATCH_REMOVE)
-        self.assertEqual(remove.query, "2")
+        self.assertEqual((remove.kind, remove.query), (RouteKind.WATCH_REMOVE, "2"))
         self.assertEqual(
-            parse_zmdlog_payload("取消关注 CPU").kind, RouteKind.WATCH_REMOVE
+            parse_zmdlog_payload("取消关注 罗丹").kind, RouteKind.WATCH_REMOVE
         )
-        for payload in ("取关", "关注 CPU --页 3", "取关 1 --角色 黎风"):
+        for payload in ("取关", "关注 罗丹 --页 3", "取关 1 --角色 黎风"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
 
-    def test_board_watch_subcommands(self) -> None:
-        from core.routing import RouteParseError
+    def test_every_board_has_its_own_two_routes(self) -> None:
+        self.assertEqual(
+            parse_zmdlog_payload("关注 全部榜单").kind, RouteKind.WATCH_ALL
+        )
+        self.assertEqual(
+            parse_zmdlog_payload("取关 全部榜单").kind, RouteKind.UNWATCH_ALL
+        )
 
-        board = parse_zmdlog_payload("关注 榜单 罗丹")
-        self.assertEqual(board.kind, RouteKind.WATCH_BOARD_ADD)
-        self.assertEqual(board.query, "罗丹")
+    def test_the_old_board_marker_is_part_of_the_keyword(self) -> None:
+        # 关注 榜单 X was the board form while accounts could be watched; it
+        # is now an ordinary keyword, matched like any other.
+        add = parse_zmdlog_payload("关注 榜单 罗丹")
+        self.assertEqual((add.kind, add.query), (RouteKind.WATCH_ADD, "榜单 罗丹"))
+        remove = parse_zmdlog_payload("取关 榜单 1")
         self.assertEqual(
-            parse_zmdlog_payload("盯 榜单 丰碑4").kind, RouteKind.WATCH_BOARD_ADD
+            (remove.kind, remove.query), (RouteKind.WATCH_REMOVE, "榜单 1")
         )
-        remove = parse_zmdlog_payload("取关 榜单 2")
-        self.assertEqual(remove.kind, RouteKind.WATCH_BOARD_REMOVE)
-        self.assertEqual(remove.query, "2")
-        self.assertEqual(
-            parse_zmdlog_payload("取消关注 榜单 罗丹").kind,
-            RouteKind.WATCH_BOARD_REMOVE,
-        )
-        # A nickname that merely starts with 榜单 still means an account.
-        self.assertEqual(parse_zmdlog_payload("关注 榜单侠").kind, RouteKind.WATCH_ADD)
-        for payload in ("关注 榜单", "取关 榜单", "关注 榜单 罗丹 --页 3"):
-            with self.subTest(payload=payload):
-                with self.assertRaises(RouteParseError):
-                    parse_zmdlog_payload(payload)
 
 
 class AliasRouteTests(unittest.TestCase):

@@ -185,11 +185,12 @@ class RouteKind(str, Enum):
     ALIAS_LIST = "alias_list"
     ALIAS_ADD = "alias_add"
     ALIAS_REMOVE = "alias_remove"
+    # 关注 / 取关: a chat's board watch, its notice whitelist.
     WATCH_LIST = "watch_list"
     WATCH_ADD = "watch_add"
     WATCH_REMOVE = "watch_remove"
-    WATCH_BOARD_ADD = "watch_board_add"
-    WATCH_BOARD_REMOVE = "watch_board_remove"
+    WATCH_ALL = "watch_all"
+    UNWATCH_ALL = "unwatch_all"
     TREND_QUERY = "trend_query"
     # 绑定 <绑定码> / 解绑 / 主账号: one user's verified site accounts.
     BIND = "bind"
@@ -207,13 +208,15 @@ WATCH_ROUTES = frozenset(
         RouteKind.WATCH_LIST,
         RouteKind.WATCH_ADD,
         RouteKind.WATCH_REMOVE,
-        RouteKind.WATCH_BOARD_ADD,
-        RouteKind.WATCH_BOARD_REMOVE,
+        RouteKind.WATCH_ALL,
+        RouteKind.UNWATCH_ALL,
     }
 )
 BINDING_ROUTES = frozenset(
     {RouteKind.BIND, RouteKind.UNBIND, RouteKind.PRIMARY_ACCOUNT}
 )
+# 关注 全部榜单 / 取关 全部榜单: every board the site lists, now and later.
+ALL_BOARDS_WORDS = frozenset({"全部榜单", "全部"})
 # The configuration actions — 别名, 关注, 绑定 — as against the queries,
 # which draw a page. They answer in text, and a tapped callback button never
 # runs one: its data is whatever the tapping client sends.
@@ -480,25 +483,18 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         options.reject_except()
         if not remainder:
             return RouteRequest(RouteKind.WATCH_LIST)
-        board_query = _board_watch_argument(remainder)
-        if board_query is not None:
-            if not board_query:
-                raise RouteParseError("用法：关注 榜单 <榜单关键词>")
-            return RouteRequest(RouteKind.WATCH_BOARD_ADD, board_query)
+        if remainder in ALL_BOARDS_WORDS:
+            return RouteRequest(RouteKind.WATCH_ALL)
         return RouteRequest(RouteKind.WATCH_ADD, remainder)
 
     if command in {"取关", "取消关注", "不盯"}:
         options.reject_except()
         if not remainder:
             raise RouteParseError(
-                "用法：取关 <序号或昵称> 或 取关 榜单 <序号或榜单关键词>，"
-                "序号见 关注 列表。"
+                "用法：取关 <序号或榜单关键词> 或 取关 全部榜单，序号见 关注 列表。"
             )
-        board_query = _board_watch_argument(remainder)
-        if board_query is not None:
-            if not board_query:
-                raise RouteParseError("用法：取关 榜单 <序号或榜单关键词>")
-            return RouteRequest(RouteKind.WATCH_BOARD_REMOVE, board_query)
+        if remainder in ALL_BOARDS_WORDS:
+            return RouteRequest(RouteKind.UNWATCH_ALL)
         return RouteRequest(RouteKind.WATCH_REMOVE, remainder)
 
     if command in {"绑定", "绑定账号"}:
@@ -621,15 +617,6 @@ def _extract_options(payload: str) -> tuple[str, RouteOptions]:
 
 def _is_option_token(token: str) -> bool:
     return token.startswith("--") or token.casefold() in _SHORT_OPTIONS
-
-
-def _board_watch_argument(remainder: str) -> str | None:
-    """The text after a leading 榜单 marker; None when an account is meant."""
-
-    head, _, rest = remainder.partition(" ")
-    if head != "榜单":
-        return None
-    return rest.strip()
 
 
 _COMPARE_USAGE = (

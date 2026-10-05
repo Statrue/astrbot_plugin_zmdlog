@@ -256,13 +256,8 @@ class WatchPickListTests(unittest.TestCase):
             format_candidates(entry, ttl_seconds=self.store.ttl_seconds),
         )
 
-    def test_watching_a_nickname_carries_the_account_list(self) -> None:
-        outcome = self._handle(RouteKind.WATCH_ADD, "CPU")
-
-        self._assert_carries_its_list(outcome, view=CandidateView.WATCH)
-
     def test_watching_a_dungeon_carries_the_board_list(self) -> None:
-        outcome = self._handle(RouteKind.WATCH_BOARD_ADD, DUNGEON)
+        outcome = self._handle(RouteKind.WATCH_ADD, DUNGEON)
 
         self._assert_carries_its_list(outcome, view=CandidateView.WATCH_BOARD)
 

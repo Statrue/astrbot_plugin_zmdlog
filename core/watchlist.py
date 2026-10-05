@@ -1,20 +1,28 @@
-"""Per-group watch lists of public accounts and public boards.
+"""Per-chat board watches: which boards' new records a chat is told about.
 
-A watch list is a subscription to public ranking changes, not a claim that an
-account belongs to anyone: the stored fields are the public ``accountId`` (or
-board slug), the public name snapshot, who added the entry (so they can remove
-it again) and when. Nothing here identifies a player.
+A chat's watch is its notice whitelist, in one of two shapes: an explicit
+list of boards, or 全部榜单 — every board the site lists, including the ones
+that appear later — less an exclusion list. Nothing else is kept: account
+watches were removed in 1.3.0, and a file written before that has its
+``accounts`` dropped when it is read (its ``boards`` stay).
+
+Every entry records who added it and when; the adder (or an admin) is the
+only one who may take it away again. Under 全部榜单 that is whoever asked
+for every board: an exclusion narrows that entry, and lifting one is an
+addition, open to anyone like any 关注. Nothing here identifies a player —
+the stored fields are a board slug, its public names, a platform user key
+and a timestamp.
 """
 
 import re
-from collections.abc import Callable
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Any
 
 from .matcher import fold_text
 from .origins import group_origin_of
 
-WATCHLIST_VERSION = 2
+WATCHLIST_VERSION = 3
 _BOARD_PART_RE = re.compile(r"\s*·\s*")
 
 
@@ -36,25 +44,14 @@ def board_label(dungeon_name: str, boss_name: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class WatchedAccount:
-    account_id: str
-    display_name: str
-    # Platform user key of whoever added the entry. Used only for the
-    # "adder or admin may remove" rule, never rendered or announced.
-    added_by: str
-    added_at: str
-
-    def removable_by(self, requester_key: str, *, is_admin: bool) -> bool:
-        return is_admin or (bool(requester_key) and requester_key == self.added_by)
-
-
-@dataclass(frozen=True, slots=True)
 class WatchedBoard:
-    """A board whose top three is watched for new records."""
+    """A board on a chat's list — or, under 全部榜单, off it."""
 
     boss_slug: str
     boss_name: str
     dungeon_name: str
+    # Platform user key of whoever added the entry. Used only for the
+    # "adder or admin may remove" rule, never rendered or announced.
     added_by: str
     added_at: str
 
@@ -63,255 +60,94 @@ class WatchedBoard:
         return board_label(self.dungeon_name, self.boss_name)
 
     def removable_by(self, requester_key: str, *, is_admin: bool) -> bool:
-        return is_admin or (bool(requester_key) and requester_key == self.added_by)
+        return _removable(self.added_by, requester_key, is_admin=is_admin)
 
 
 @dataclass(frozen=True, slots=True)
-class WatchList:
-    """Immutable snapshot of the watched accounts and boards of every group."""
+class AllBoards:
+    """关注 全部榜单: who asked for every board, and when."""
 
-    groups: tuple[tuple[str, tuple[WatchedAccount, ...]], ...] = ()
-    board_groups: tuple[tuple[str, tuple[WatchedBoard, ...]], ...] = ()
+    added_by: str
+    added_at: str
 
-    @classmethod
-    def empty(cls) -> "WatchList":
-        return cls()
+    def removable_by(self, requester_key: str, *, is_admin: bool) -> bool:
+        return _removable(self.added_by, requester_key, is_admin=is_admin)
 
-    def accounts_for(self, origin: str) -> tuple[WatchedAccount, ...]:
-        for group_origin, accounts in self.groups:
-            if group_origin == origin:
-                return accounts
-        return ()
 
-    def boards_for(self, origin: str) -> tuple[WatchedBoard, ...]:
-        for group_origin, boards in self.board_groups:
-            if group_origin == origin:
-                return boards
-        return ()
+@dataclass(frozen=True, slots=True)
+class ChatWatch:
+    """One chat's whitelist: ``boards``, or ``all_boards`` less ``excluded``.
 
-    @property
-    def total_accounts(self) -> int:
-        return sum(len(accounts) for _, accounts in self.groups)
+    The two shapes never mix: following every board absorbs the explicit
+    list, and an exclusion only exists under 全部榜单.
+    """
+
+    boards: tuple[WatchedBoard, ...] = ()
+    all_boards: AllBoards | None = None
+    excluded: tuple[WatchedBoard, ...] = ()
 
     @property
-    def total_boards(self) -> int:
-        return sum(len(boards) for _, boards in self.board_groups)
+    def is_empty(self) -> bool:
+        return self.all_boards is None and not self.boards
 
-    def origins_by_account(self) -> dict[str, tuple[str, ...]]:
-        """Invert the list so one poll per account can fan out to its groups."""
+    def covers(self, boss_slug: str) -> bool:
+        """Whether a new record on this board is this chat's news."""
 
-        origins: dict[str, list[str]] = {}
-        for origin, accounts in self.groups:
-            for account in accounts:
-                bucket = origins.setdefault(account.account_id, [])
-                if origin not in bucket:
-                    bucket.append(origin)
-        return {
-            account_id: tuple(group_origins)
-            for account_id, group_origins in origins.items()
-        }
+        if self.all_boards is not None:
+            return all(entry.boss_slug != boss_slug for entry in self.excluded)
+        return any(entry.boss_slug == boss_slug for entry in self.boards)
 
-    def origins_by_board(self) -> dict[str, tuple[str, ...]]:
-        """Invert the board list; every watched board is read from one request."""
+    def with_board(self, board: WatchedBoard) -> tuple["ChatWatch", bool]:
+        """Add ``board`` to the explicit list; the flag is False when it was there.
 
-        origins: dict[str, list[str]] = {}
-        for origin, boards in self.board_groups:
-            for board in boards:
-                bucket = origins.setdefault(board.boss_slug, [])
-                if origin not in bucket:
-                    bucket.append(origin)
-        return {slug: tuple(group_origins) for slug, group_origins in origins.items()}
-
-    def with_account(
-        self,
-        origin: str,
-        account: WatchedAccount,
-    ) -> tuple["WatchList", bool]:
-        """Add ``account`` to ``origin``; the flag is False when it was there.
-
-        An account already on the list only has its nickname snapshot
-        refreshed, so re-adding never reorders the list nor takes the entry
-        away from whoever added it first.
+        A board already on the list only has its name snapshot refreshed, so
+        re-adding never reorders the list nor takes the entry away from
+        whoever added it first.
         """
 
-        groups: list[tuple[str, tuple[WatchedAccount, ...]]] = []
-        added = True
-        seen_origin = False
-        for group_origin, accounts in self.groups:
-            if group_origin != origin:
-                groups.append((group_origin, accounts))
-                continue
-            seen_origin = True
-            updated: list[WatchedAccount] = []
-            for existing in accounts:
-                if existing.account_id == account.account_id:
-                    added = False
-                    updated.append(
-                        replace(existing, display_name=account.display_name)
-                    )
-                else:
-                    updated.append(existing)
-            if added:
-                updated.append(account)
-            groups.append((group_origin, tuple(updated)))
-        if not seen_origin:
-            groups.append((origin, (account,)))
-        return replace(self, groups=tuple(groups)), added
+        updated, added = _with_entry(self.boards, board)
+        return replace(self, boards=updated), added
 
-    def with_board(
-        self,
-        origin: str,
-        board: WatchedBoard,
-    ) -> tuple["WatchList", bool]:
-        """Add ``board`` to ``origin``; same re-add semantics as accounts."""
+    def without_board(self, boss_slug: str) -> "ChatWatch":
+        return replace(self, boards=_without_entry(self.boards, boss_slug))
 
-        groups: list[tuple[str, tuple[WatchedBoard, ...]]] = []
-        added = True
-        seen_origin = False
-        for group_origin, boards in self.board_groups:
-            if group_origin != origin:
-                groups.append((group_origin, boards))
-                continue
-            seen_origin = True
-            updated: list[WatchedBoard] = []
-            for existing in boards:
-                if existing.boss_slug == board.boss_slug:
-                    added = False
-                    updated.append(
-                        replace(
-                            existing,
-                            boss_name=board.boss_name,
-                            dungeon_name=board.dungeon_name,
-                        )
-                    )
-                else:
-                    updated.append(existing)
-            if added:
-                updated.append(board)
-            groups.append((group_origin, tuple(updated)))
-        if not seen_origin:
-            groups.append((origin, (board,)))
-        return replace(self, board_groups=tuple(groups)), added
+    def following_all(self, *, added_by: str, added_at: str) -> "ChatWatch":
+        """Every board from now on; the explicit list is absorbed.
 
-    def with_display_names(
-        self,
-        names: dict[str, str],
-    ) -> tuple["WatchList", bool]:
-        """Refresh the stored nickname snapshots; the flag says if anything moved.
-
-        The poll cycle sees the live nickname, so a player who renames stays
-        addressable by the name the notice actually shows.
+        Asked again, nothing moves: the first adder keeps the entry and the
+        exclusions stay, which ``关注 <榜单>`` lifts one by one.
         """
 
-        changed = False
-        groups: list[tuple[str, tuple[WatchedAccount, ...]]] = []
-        for origin, accounts in self.groups:
-            updated = []
-            for account in accounts:
-                name = names.get(account.account_id)
-                if name and name != account.display_name:
-                    changed = True
-                    updated.append(replace(account, display_name=name))
-                else:
-                    updated.append(account)
-            groups.append((origin, tuple(updated)))
-        return (replace(self, groups=tuple(groups)), True) if changed else (self, False)
+        if self.all_boards is not None:
+            return self
+        return ChatWatch(all_boards=AllBoards(added_by, added_at))
 
-    def with_group_origins(self) -> tuple["WatchList", int]:
-        """File every entry kept under a member's 隔离对话 origin under its group.
+    def excluding(self, board: WatchedBoard) -> "ChatWatch":
+        updated, _ = _with_entry(self.excluded, board)
+        return replace(self, excluded=updated)
 
-        Each entry moves by its own ``added_by`` (``core/origins``). An entry
-        two members both watched collapses to the first one seen, which keeps
-        its adder; the count is how many entries moved.
+    def including(self, boss_slug: str) -> "ChatWatch":
+        return replace(self, excluded=_without_entry(self.excluded, boss_slug))
+
+    def removable_entirely_by(self, requester_key: str, *, is_admin: bool) -> bool:
+        """Whether 取关 全部榜单 may clear this chat: every entry must be theirs."""
+
+        if self.all_boards is not None:
+            return self.all_boards.removable_by(requester_key, is_admin=is_admin)
+        return all(
+            entry.removable_by(requester_key, is_admin=is_admin)
+            for entry in self.boards
+        )
+
+    def resolve_board_matches(self, selector: str) -> tuple[WatchedBoard, ...]:
+        """Every listed board a 序号 / slug / name fragment could mean.
+
+        Returning the whole match set lets the caller tell "no such entry"
+        from "several entries match", which are different problems for the
+        user.
         """
 
-        groups, moved_accounts = _regrouped(
-            self.groups, key=lambda account: account.account_id
-        )
-        board_groups, moved_boards = _regrouped(
-            self.board_groups, key=lambda board: board.boss_slug
-        )
-        if not moved_accounts and not moved_boards:
-            return self, 0
-        return WatchList(groups, board_groups), moved_accounts + moved_boards
-
-    def without_account(self, origin: str, account_id: str) -> "WatchList":
-        groups: list[tuple[str, tuple[WatchedAccount, ...]]] = []
-        for group_origin, accounts in self.groups:
-            if group_origin != origin:
-                groups.append((group_origin, accounts))
-                continue
-            kept = tuple(
-                account
-                for account in accounts
-                if account.account_id != account_id
-            )
-            if kept:
-                groups.append((group_origin, kept))
-        return replace(self, groups=tuple(groups))
-
-    def without_board(self, origin: str, boss_slug: str) -> "WatchList":
-        groups: list[tuple[str, tuple[WatchedBoard, ...]]] = []
-        for group_origin, boards in self.board_groups:
-            if group_origin != origin:
-                groups.append((group_origin, boards))
-                continue
-            kept = tuple(board for board in boards if board.boss_slug != boss_slug)
-            if kept:
-                groups.append((group_origin, kept))
-        return replace(self, board_groups=tuple(groups))
-
-    def resolve_matches(
-        self,
-        origin: str,
-        selector: str,
-    ) -> tuple[WatchedAccount, ...]:
-        """Every watched account a 序号 / accountId / 昵称 could mean.
-
-        Returning the whole match set lets the caller tell "no such entry" from
-        "several entries match", which are different problems for the user.
-        """
-
-        accounts = self.accounts_for(origin)
-        stripped = selector.strip()
-        if not accounts or not stripped:
-            return ()
-        index = _list_index(stripped)
-        if index is not None:
-            return (accounts[index - 1],) if 1 <= index <= len(accounts) else ()
-        if stripped.isascii() and stripped.isdecimal():
-            return ()
-        for account in accounts:
-            if account.account_id == stripped:
-                return (account,)
-        folded = fold_text(stripped)
-        exact = tuple(
-            account
-            for account in accounts
-            if fold_text(account.display_name) == folded
-        )
-        if exact:
-            return exact
-        return tuple(
-            account
-            for account in accounts
-            if folded and folded in fold_text(account.display_name)
-        )
-
-    def resolve(self, origin: str, selector: str) -> WatchedAccount | None:
-        """The single watched account a selector means, if it is unambiguous."""
-
-        matches = self.resolve_matches(origin, selector)
-        return matches[0] if len(matches) == 1 else None
-
-    def resolve_board_matches(
-        self,
-        origin: str,
-        selector: str,
-    ) -> tuple[WatchedBoard, ...]:
-        """Every watched board a 序号 / slug / name fragment could mean."""
-
-        boards = self.boards_for(origin)
+        boards = self.boards
         stripped = selector.strip()
         if not boards or not stripped:
             return ()
@@ -332,66 +168,148 @@ class WatchList:
         if exact:
             return exact
         return tuple(
-            board
-            for board in boards
-            if folded and folded in fold_text(board.label)
+            board for board in boards if folded and folded in fold_text(board.label)
         )
 
-    def resolve_board(self, origin: str, selector: str) -> WatchedBoard | None:
-        matches = self.resolve_board_matches(origin, selector)
-        return matches[0] if len(matches) == 1 else None
+
+@dataclass(frozen=True, slots=True)
+class WatchList:
+    """Immutable snapshot of every chat's board watch; empty chats are dropped."""
+
+    chats: tuple[tuple[str, ChatWatch], ...] = ()
+
+    @classmethod
+    def empty(cls) -> "WatchList":
+        return cls()
+
+    def chat(self, origin: str) -> ChatWatch:
+        for chat_origin, chat in self.chats:
+            if chat_origin == origin:
+                return chat
+        return ChatWatch()
+
+    def with_chat(self, origin: str, chat: ChatWatch) -> "WatchList":
+        """``origin``'s watch replaced by ``chat``, in place; an empty one goes."""
+
+        chats: list[tuple[str, ChatWatch]] = []
+        seen = False
+        for chat_origin, existing in self.chats:
+            if chat_origin != origin:
+                chats.append((chat_origin, existing))
+                continue
+            seen = True
+            if not chat.is_empty:
+                chats.append((origin, chat))
+        if not seen and not chat.is_empty:
+            chats.append((origin, chat))
+        return WatchList(tuple(chats))
+
+    def origins_by_board(
+        self, catalog: Iterable[str]
+    ) -> dict[str, tuple[str, ...]]:
+        """The chats to tell about each board.
+
+        ``catalog`` is the boards the site lists now: a chat under 全部榜单
+        follows every one of them it has not excluded, the new ones included.
+        An explicitly listed board is there whether the catalog has it or not.
+        """
+
+        origins: dict[str, list[str]] = {}
+        slugs = tuple(dict.fromkeys(catalog))
+        for origin, chat in self.chats:
+            watched = (
+                (slug for slug in slugs if chat.covers(slug))
+                if chat.all_boards is not None
+                else (board.boss_slug for board in chat.boards)
+            )
+            for slug in watched:
+                bucket = origins.setdefault(slug, [])
+                if origin not in bucket:
+                    bucket.append(origin)
+        return {slug: tuple(chat_origins) for slug, chat_origins in origins.items()}
+
+    def watches(self, boss_slug: str) -> bool:
+        """Whether any chat would be told about this board."""
+
+        return any(chat.covers(boss_slug) for _, chat in self.chats)
+
+    def with_group_origins(self) -> tuple["WatchList", int]:
+        """File every board kept under a member's 隔离对话 origin under its group.
+
+        Each entry moves by its own ``added_by`` (``core/origins``). A board
+        two members both watched collapses to the first one seen, which keeps
+        its adder, and a board moved into a group that follows every board is
+        already covered; the count is how many entries moved. Only explicit
+        lists predate the fix — 全部榜单 is younger — so they are all there is
+        to move.
+        """
+
+        merged: dict[str, ChatWatch] = {}
+        moved = 0
+        for origin, chat in self.chats:
+            if chat.all_boards is not None:
+                merged[origin] = _merged_all(merged.get(origin), chat)
+                continue
+            for board in chat.boards:
+                target = group_origin_of(origin, board.added_by)
+                if target is not None:
+                    moved += 1
+                into = merged.get(target or origin, ChatWatch())
+                if into.all_boards is None and not into.covers(board.boss_slug):
+                    into, _ = into.with_board(board)
+                merged[target or origin] = into
+        if not moved:
+            return self, 0
+        regrouped = WatchList.empty()
+        for origin, chat in merged.items():
+            regrouped = regrouped.with_chat(origin, chat)
+        return regrouped, moved
 
     def to_payload(self) -> dict[str, Any]:
-        origins = list(dict.fromkeys(
-            [origin for origin, _ in self.groups]
-            + [origin for origin, _ in self.board_groups]
-        ))
         return {
             "version": WATCHLIST_VERSION,
-            "groups": {
-                origin: {
-                    "accounts": [
-                        {
-                            "accountId": account.account_id,
-                            "displayName": account.display_name,
-                            "addedBy": account.added_by,
-                            "addedAt": account.added_at,
-                        }
-                        for account in self.accounts_for(origin)
-                    ],
-                    "boards": [
-                        {
-                            "bossSlug": board.boss_slug,
-                            "bossName": board.boss_name,
-                            "dungeonName": board.dungeon_name,
-                            "addedBy": board.added_by,
-                            "addedAt": board.added_at,
-                        }
-                        for board in self.boards_for(origin)
-                    ],
-                }
-                for origin in origins
-            },
+            "groups": {origin: _chat_payload(chat) for origin, chat in self.chats},
         }
 
 
-def _regrouped(
-    groups: tuple[tuple[str, tuple[Any, ...]], ...],
-    *,
-    key: Callable[[Any], str],
-) -> tuple[tuple[tuple[str, tuple[Any, ...]], ...], int]:
-    merged: dict[str, list[Any]] = {}
-    moved = 0
-    for origin, entries in groups:
-        for entry in entries:
-            target = group_origin_of(origin, entry.added_by)
-            if target is not None:
-                moved += 1
-            bucket = merged.setdefault(target or origin, [])
-            if all(key(kept) != key(entry) for kept in bucket):
-                bucket.append(entry)
-    regrouped = tuple((origin, tuple(entries)) for origin, entries in merged.items())
-    return regrouped, moved
+def _merged_all(existing: ChatWatch | None, chat: ChatWatch) -> ChatWatch:
+    """A 全部榜单 watch absorbs whatever list was filed under its origin first."""
+
+    if existing is None or existing.all_boards is None:
+        return chat
+    return existing
+
+
+def _with_entry(
+    entries: tuple[WatchedBoard, ...], board: WatchedBoard
+) -> tuple[tuple[WatchedBoard, ...], bool]:
+    updated: list[WatchedBoard] = []
+    added = True
+    for existing in entries:
+        if existing.boss_slug == board.boss_slug:
+            added = False
+            updated.append(
+                replace(
+                    existing,
+                    boss_name=board.boss_name,
+                    dungeon_name=board.dungeon_name,
+                )
+            )
+        else:
+            updated.append(existing)
+    if added:
+        updated.append(board)
+    return tuple(updated), added
+
+
+def _without_entry(
+    entries: tuple[WatchedBoard, ...], boss_slug: str
+) -> tuple[WatchedBoard, ...]:
+    return tuple(entry for entry in entries if entry.boss_slug != boss_slug)
+
+
+def _removable(added_by: str, requester_key: str, *, is_admin: bool) -> bool:
+    return is_admin or (bool(requester_key) and requester_key == added_by)
 
 
 def _list_index(selector: str) -> int | None:
@@ -406,11 +324,38 @@ def _list_index(selector: str) -> int | None:
     return int(selector)
 
 
+def _chat_payload(chat: ChatWatch) -> dict[str, Any]:
+    if chat.all_boards is not None:
+        return {
+            "allBoards": {
+                "addedBy": chat.all_boards.added_by,
+                "addedAt": chat.all_boards.added_at,
+            },
+            "excludedBoards": [_board_payload(entry) for entry in chat.excluded],
+        }
+    return {"boards": [_board_payload(entry) for entry in chat.boards]}
+
+
+def _board_payload(board: WatchedBoard) -> dict[str, str]:
+    return {
+        "bossSlug": board.boss_slug,
+        "bossName": board.boss_name,
+        "dungeonName": board.dungeon_name,
+        "addedBy": board.added_by,
+        "addedAt": board.added_at,
+    }
+
+
 def parse_watchlist(payload: Any) -> WatchList:
     """Read a stored payload, dropping anything malformed instead of raising.
 
-    Version 1 stored a bare account list per group; version 2 stores
-    ``{"accounts": [...], "boards": [...]}``. Both shapes are accepted.
+    Version 3 stores ``{"boards": [...]}`` or ``{"allBoards": {...},
+    "excludedBoards": [...]}`` per chat. Older files are read as they stand:
+    version 2's ``{"accounts": [...], "boards": [...]}`` keeps its boards,
+    and version 1 — a bare account list per chat — has nothing left to keep.
+    Account entries are dropped without a word: account 关注 no longer
+    exists. A file that holds both shapes for one chat (only a hand edit
+    makes one) is read as 全部榜单, the broader of the two.
     """
 
     if not isinstance(payload, dict):
@@ -418,55 +363,23 @@ def parse_watchlist(payload: Any) -> WatchList:
     raw_groups = payload.get("groups")
     if not isinstance(raw_groups, dict):
         return WatchList.empty()
-    groups: list[tuple[str, tuple[WatchedAccount, ...]]] = []
-    board_groups: list[tuple[str, tuple[WatchedBoard, ...]]] = []
-    for origin, entries in raw_groups.items():
-        if not isinstance(origin, str) or not origin:
+    watchlist = WatchList.empty()
+    for origin, entry in raw_groups.items():
+        if not isinstance(origin, str) or not origin or not isinstance(entry, dict):
             continue
-        if isinstance(entries, list):
-            account_entries, board_entries = entries, []
-        elif isinstance(entries, dict):
-            account_entries = entries.get("accounts")
-            board_entries = entries.get("boards")
-        else:
-            continue
-        accounts = _parse_accounts(account_entries)
-        if accounts:
-            groups.append((origin, accounts))
-        boards = _parse_boards(board_entries)
-        if boards:
-            board_groups.append((origin, boards))
-    return WatchList(tuple(groups), tuple(board_groups))
-
-
-def _parse_accounts(entries: Any) -> tuple[WatchedAccount, ...]:
-    if not isinstance(entries, list):
-        return ()
-    accounts: list[WatchedAccount] = []
-    seen: set[str] = set()
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        account_id = entry.get("accountId")
-        if not isinstance(account_id, str) or not account_id:
-            continue
-        if account_id in seen:
-            continue
-        seen.add(account_id)
-        display_name = entry.get("displayName")
-        accounts.append(
-            WatchedAccount(
-                account_id=account_id,
-                display_name=(
-                    display_name
-                    if isinstance(display_name, str) and display_name
-                    else account_id
+        raw_all = entry.get("allBoards")
+        if isinstance(raw_all, dict):
+            chat = ChatWatch(
+                all_boards=AllBoards(
+                    added_by=_text(raw_all.get("addedBy")),
+                    added_at=_text(raw_all.get("addedAt")),
                 ),
-                added_by=_text(entry.get("addedBy")),
-                added_at=_text(entry.get("addedAt")),
+                excluded=_parse_boards(entry.get("excludedBoards")),
             )
-        )
-    return tuple(accounts)
+        else:
+            chat = ChatWatch(boards=_parse_boards(entry.get("boards")))
+        watchlist = watchlist.with_chat(origin, chat)
+    return watchlist
 
 
 def _parse_boards(entries: Any) -> tuple[WatchedBoard, ...]:
@@ -499,37 +412,42 @@ def _text(value: Any) -> str:
     return value if isinstance(value, str) else ""
 
 
-def format_watchlist(
-    accounts: tuple[WatchedAccount, ...],
-    *,
-    command: str = "/zmdlog",
-    boards: tuple[WatchedBoard, ...] = (),
-) -> str:
-    """Numbered lists; the numbers are what 取关 / 取关 榜单 address.
+def format_watchlist(chat: ChatWatch, *, command: str = "/zmdlog") -> str:
+    """One chat's watch as text; the numbers are what 取关 addresses.
 
-    ``command`` carries the resolved prefix so the hint can be copied as
+    ``command`` carries the resolved prefix so a hint can be copied as
     written, instead of naming a bare subcommand that does nothing alone.
+    Exclusions are not numbered: a number under 全部榜单 would have nothing
+    to address.
     """
 
-    if not accounts and not boards:
+    if chat.all_boards is not None:
+        lines = [
+            "当前关注：全部榜单（以后新出的榜单也包含，前三名有新纪录时通报）。"
+        ]
+        if chat.excluded:
+            lines.append(
+                "已排除：\n"
+                + "\n".join(f"- {entry.label}" for entry in chat.excluded)
+            )
+        lines.append(
+            f"排除一张榜用 {command} 取关 <榜单关键词>，"
+            f"恢复用 {command} 关注 <榜单关键词>，"
+            f"全部取消用 {command} 取关 全部榜单。"
+        )
+        return "\n\n".join(lines)
+    if chat.boards:
+        lines = [
+            f"{index}. {board.label}"
+            for index, board in enumerate(chat.boards, start=1)
+        ]
         return (
-            "还没有关注任何账号或榜单。"
-            f"用 {command} 关注 <昵称或accountId> 关注账号（名次掉了会通报），"
-            f"用 {command} 关注 榜单 <榜单关键词> 关注榜单（前三名有新纪录会通报）。"
+            "当前关注的榜单（前三名有新纪录时通报，"
+            "取消用 取关 <序号或榜单关键词>）：\n" + "\n".join(lines)
         )
-    sections: list[str] = []
-    if accounts:
-        lines = [
-            f"{index}. {account.display_name}（{account.account_id}）"
-            for index, account in enumerate(accounts, start=1)
-        ]
-        sections.append("当前关注的账号：\n" + "\n".join(lines))
-    if boards:
-        lines = [
-            f"{index}. {board.label}" for index, board in enumerate(boards, start=1)
-        ]
-        sections.append(
-            "当前关注的榜单（前三名有新纪录时通报，取消用 取关 榜单 <序号>）：\n"
-            + "\n".join(lines)
-        )
-    return "\n\n".join(sections)
+    return (
+        "还没有关注任何榜单。"
+        f"用 {command} 关注 <榜单关键词> 关注一张榜，"
+        f"或 {command} 关注 全部榜单（以后新出的榜单也会包含）；"
+        "关注的榜单前三名有新纪录时会在这里通报。"
+    )

@@ -8,7 +8,7 @@ is the single place board rankings are read from.
 
 Every board has two rankings, DPS and rDPS, and the index holds both: the
 DPS one is what every page reads unless asked otherwise and what the rank
-watch and the account page read only; the rDPS one lists the records whose
+trend and the account page read only; the rDPS one lists the records whose
 upload could compute team contribution (a few percent, as of 2026-09-16),
 in the same clear-time order. The DPS boards are filled first, so a DPS
 page waits for 49 reads, not 98.
@@ -788,8 +788,8 @@ def account_rankings(
 
     The same answer as ``users/{id}/rankings`` on 全部榜单 — a board ranking
     lists every record, so the account's rank there is the rank of its best
-    row — but it costs no request: a whole watch list, or an account page,
-    is read off boards already held. ``None`` when the account has no row
+    row — but it costs no request: an account page is read off boards
+    already held. ``None`` when the account has no row
     anywhere, which the caller answers with the endpoint.
     """
 

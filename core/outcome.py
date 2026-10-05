@@ -1,7 +1,7 @@
 """What one command produced, as the host sends it.
 
-Kept apart from ``queries`` because the watch routes answer in the same
-shape: ``queries`` imports ``rank_watch``, so the type cannot live in either.
+Kept apart from ``queries`` because the watch and binding routes answer in
+the same shape without being queries (``rank_watch``, ``account_binding``).
 
 ``PageTarget`` travels with it: what a picture is about is known where the
 page is chosen, in ``queries``, and used where the reply is sent, in the
@@ -59,7 +59,7 @@ class PageTarget:
 
     ``unavailable`` names the views of this target that drawing it showed
     cannot be drawn — an older upload without loadout, skill statistics or
-    casts, an account the rank watch never polled — so the host offers no
+    casts, an account with no rank trend recorded yet — so the host offers no
     way to one of them.
 
     A dungeon's podiums are about the dungeon (or the phase) its ``key``

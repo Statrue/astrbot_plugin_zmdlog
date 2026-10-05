@@ -707,20 +707,12 @@ class ZmdLogBotPlugin(Star):
             yield self._text_result(event, "这份候选列表已过期或序号无效，请重新查询。")
             return
         entry, choice = resolved
-        if entry.view in {CandidateView.WATCH, CandidateView.WATCH_BOARD}:
-            origin = self._event_origin(event)
-            requester = self._event_user_key(event)
-            if entry.view is CandidateView.WATCH:
-                message = await self.watcher.remember_account(
-                    origin,
-                    requester,
-                    account_id=choice.target.key,
-                    display_name=choice.target.name,
-                )
-            else:
-                message = await self.watcher.remember_board(
-                    origin, requester, choice.target.key
-                )
+        if entry.view is CandidateView.WATCH_BOARD:
+            message = await self.watcher.remember_board(
+                self._event_origin(event),
+                self._event_user_key(event),
+                choice.target.key,
+            )
             yield self._text_result(event, message)
             return
 

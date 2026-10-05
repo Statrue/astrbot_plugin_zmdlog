@@ -76,13 +76,14 @@ name, 战争回响's only before their common difficulty. Past twenty-five, the
 rest have no button and are typed. A ranking page offers no other board of
 its dungeon: those would crowd out its own views.
 
-A rank notice carries a jump button for every battle it prints a link to,
+A board notice carries a jump button for every battle it prints a link to,
 under the label ``core/watch`` gave it (``战报 1``). In the markdown the
 label takes the printed link's place, at the end of the line above it —
 the line that says whose record it is — so text and button name each
 battle the same way; the plain text keeps its links. The keyboard holds
-five rows of five: a full merge names at most fifteen battles, one per row
-while five fit; a notice naming more than twenty-five goes as plain text.
+five rows of five: a full merge names at most nine battles (three boards'
+top three), one per row while five fit; a notice naming more than
+twenty-five goes as plain text.
 
 With callbacks on (a default-off switch; ``qq_official`` explains the
 patch), a command button whose command draws a page becomes a *callback*
@@ -155,13 +156,12 @@ _BOARD_WORDS = {
     CandidateView.SKILLS: "技能",
     CandidateView.TIMELINE: "技能轴",
     CandidateView.COMPARE: "对比",
-    CandidateView.WATCH_BOARD: "关注 榜单",
+    CandidateView.WATCH_BOARD: "关注",
 }
 # ... and for an account target; the other views never list accounts.
 _ACCOUNT_WORDS = {
     CandidateView.RANKING: "账号",
     CandidateView.TREND: "趋势",
-    CandidateView.WATCH: "关注",
 }
 # ... and for a character, whom a command names by its name, not its key.
 _CHARACTER_WORDS = {
@@ -325,8 +325,8 @@ def pick_command(
     parts = [command, word, key]
     if target.target_type is TargetType.ACCOUNT:
         # The account page is the same whatever board options the list
-        # carried (``CPU --口径 rdps`` can list accounts), and 账号 / 关注
-        # refuse every option; only 趋势 takes one, its window.
+        # carried (``CPU --口径 rdps`` can list accounts), and 账号 refuses
+        # every option; only 趋势 takes one, its window.
         trend = entry.view is CandidateView.TREND
         if trend and entry.stats_range != DEFAULT_TREND_RANGE:
             parts += ["--范围", entry.stats_range]
@@ -451,7 +451,7 @@ def site_page_message(
 
 
 def notice_message(notice: Notice) -> ButtonMessage | None:
-    """A rank notice as markdown, a jump button per battle it prints.
+    """A board notice as markdown, a jump button per battle it prints.
 
     None when it prints no battle a button can open, or more than a keyboard
     holds; the plain notice, links and all, is all there is then.

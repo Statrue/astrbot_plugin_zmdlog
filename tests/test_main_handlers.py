@@ -65,7 +65,7 @@ if astrbot is not None:
         NoticeLink,
         build_board_snapshot,
     )
-    from astrbot_plugin_zmdlog.core.watchlist import WatchedAccount, WatchedBoard
+    from astrbot_plugin_zmdlog.core.watchlist import ChatWatch, WatchedBoard
 
 GROUP = "aiocqhttp:GroupMessage:1"
 OTHER_GROUP = "aiocqhttp:GroupMessage:2"
@@ -828,18 +828,33 @@ class HandlerTests(unittest.TestCase):
 
     def test_a_watch_pick_list_fills_in_the_watch_command(self) -> None:
         self._enable_watch_storage()
-        self._two_accounts_named_cpu()
+        self._two_boards_in_one_dungeon()
         api = FakeBotApi()
 
-        event, results = self._official("/zmdlog 关注 CPU", api=api)
+        event, results = self._official("/zmdlog 关注 测试区", api=api)
 
         self.assertEqual(results, [])
-        self._assert_sent_with_buttons(
-            api,
-            event,
-            scene="group",
-            commands=["/zmdlog 关注 usr_a", "/zmdlog 关注 usr_b"],
+        (scene, payload), = api.calls
+        self.assertEqual(scene, "group")
+        self.assertIn("选一个关注", payload["markdown"]["content"])
+        self.assertEqual(
+            [
+                row["buttons"][0]["action"]["data"]
+                for row in payload["keyboard"]["content"]["rows"]
+            ],
+            [
+                "/zmdlog 关注 dung01_group_bossrush02",
+                "/zmdlog 关注 dung01_group_bossrush03",
+            ],
         )
+        self.assertTrue(event.stopped)
+
+    def _two_boards_in_one_dungeon(self) -> None:
+        first = hot_bosses_payload()[0]
+        second = dict(
+            first, bossSlug="dung01_group_bossrush03", bossName="危境再现·白垩界卫"
+        )
+        self.cards = parse_hot_bosses([first, second])
 
     def test_the_dungeon_list_buttons_each_dungeon_by_its_name(self) -> None:
         first = hot_bosses_payload()[0]
@@ -1702,7 +1717,8 @@ class HandlerTests(unittest.TestCase):
         adapter = self._enable_callbacks(api)
 
         self._tap(adapter, "/zmdlog 账号 CPU")
-        watch = self._official_event("/zmdlog 关注 CPU", api=api)
+        self._two_boards_in_one_dungeon()
+        watch = self._official_event("/zmdlog 关注 测试区", api=api)
         watch.bot = adapter.client
         run(collect(self.plugin.zmdlog(watch)))
 
@@ -1878,6 +1894,10 @@ class HandlerTests(unittest.TestCase):
 
     # --- board watch ----------------------------------------------------------
 
+    TRIO = "dung01_group_bossrush02"
+    RODAN = "dung01_group_bossrush01"
+    RODAN_LABEL = "危境再现 · 罗丹 · “碾骨之拳”罗丹"
+
     def _enable_watch_storage(self) -> None:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -1885,12 +1905,35 @@ class HandlerTests(unittest.TestCase):
         watcher = self.plugin.watcher
         watcher.enabled = True
         watcher.watchlist_store.path = root / "watchlist.json"
-        watcher.rank_snapshot_store.path = root / "rank-snapshot.json"
         watcher.board_snapshot_store.path = root / "board-snapshot.json"
-
-    def _hot_bosses_with_run(self, battle_id: str, nickname: str):
+        # Two boards: the fixture's 三位一体 and 罗丹, in two dungeons.
         payload = hot_bosses_payload()
-        payload[0]["topSpeedRuns"] = [
+        payload.append(
+            dict(
+                payload[0],
+                bossSlug=self.RODAN,
+                bossKey="bossrush01",
+                bossName="“碾骨之拳”罗丹",
+                dungeonName="危境再现·罗丹",
+            )
+        )
+        self.cards = parse_hot_bosses(payload)
+
+    def _hot_bosses_with_run(self, battle_id: str, nickname: str, *, slug=None):
+        payload = hot_bosses_payload()
+        payload.append(
+            dict(
+                payload[0],
+                bossSlug=self.RODAN,
+                bossKey="bossrush01",
+                bossName="“碾骨之拳”罗丹",
+                dungeonName="危境再现·罗丹",
+            )
+        )
+        target = next(
+            entry for entry in payload if entry["bossSlug"] == (slug or self.TRIO)
+        )
+        target["topSpeedRuns"] = [
             {
                 "battleId": battle_id,
                 "durationMs": 9_771,
@@ -1900,28 +1943,141 @@ class HandlerTests(unittest.TestCase):
         ]
         return parse_hot_bosses(payload), payload
 
-    def test_boards_can_be_followed_listed_and_unfollowed(self) -> None:
-        self._enable_watch_storage()
-        slug = "dung01_group_bossrush02"
+    def _watch_slugs(self, origin: str = GROUP) -> list[str]:
+        catalog = (self.TRIO, self.RODAN)
+        return [
+            slug
+            for slug, origins in self.plugin.watcher.watchlist.origins_by_board(
+                catalog
+            ).items()
+            if origin in origins
+        ]
 
-        (kind, reply), = self._zmdlog("zmdlog 关注 榜单 三位一体")
+    def test_a_board_is_followed_by_its_keyword_listed_and_unfollowed(self) -> None:
+        self._enable_watch_storage()
+
+        (kind, reply), = self._zmdlog("zmdlog 关注 罗丹")
         self.assertEqual(kind, "plain")
-        self.assertIn("已关注榜单「危境再现 · 测试区 · 三位一体」，序号 1", reply)
-        self.assertIn(slug, self.plugin.watcher.board_snapshots)
+        self.assertIn(f"已关注榜单「{self.RODAN_LABEL}」，序号 1", reply)
+        self.assertIn(self.RODAN, self.plugin.watcher.board_snapshots)
         self.assertTrue(self.plugin.watcher.board_snapshot_store.path.exists())
 
-        (_, again), = self._zmdlog("zmdlog 关注 榜单 三位一体")
+        (_, again), = self._zmdlog("zmdlog 关注 罗丹")
         self.assertIn("已经在关注列表里", again)
         (_, listing), = self._zmdlog("zmdlog 关注")
         self.assertIn("当前关注的榜单", listing)
-        self.assertIn("1. 危境再现 · 测试区 · 三位一体", listing)
-        (_, missing), = self._zmdlog("zmdlog 关注 榜单 完全无关的关键词")
-        self.assertIn("没有找到", missing)
+        self.assertIn(f"1. {self.RODAN_LABEL}", listing)
+        self.assertNotIn("账号", listing)
 
-        (_, removed), = self._zmdlog("zmdlog 取关 榜单 1")
-        self.assertIn("已取消关注榜单", removed)
-        self.assertNotIn(slug, self.plugin.watcher.board_snapshots)
-        self.assertEqual(self.plugin.watcher.watchlist.boards_for(GROUP), ())
+        (_, removed), = self._zmdlog("zmdlog 取关 罗丹")
+        self.assertIn(f"已取消关注榜单「{self.RODAN_LABEL}」", removed)
+        self.assertNotIn(self.RODAN, self.plugin.watcher.board_snapshots)
+        self.assertEqual(self._watch_slugs(), [])
+        (_, empty), = self._zmdlog("zmdlog 关注")
+        self.assertIn("还没有关注任何榜单", empty)
+        self.assertIn("关注 全部榜单", empty)
+
+    def test_a_board_is_unfollowed_by_its_list_number(self) -> None:
+        self._enable_watch_storage()
+        self._zmdlog("zmdlog 关注 罗丹")
+        self._zmdlog("zmdlog 关注 三位一体")
+
+        (_, removed), = self._zmdlog("zmdlog 取关 2")
+
+        self.assertIn("已取消关注榜单「危境再现 · 测试区 · 三位一体」", removed)
+        self.assertEqual(self._watch_slugs(), [self.RODAN])
+
+    def test_an_account_name_is_looked_up_as_a_board_keyword(self) -> None:
+        # Account 关注 is gone: a name that matches no board is a board that
+        # was not found, and no account search is made.
+        self._enable_watch_storage()
+
+        async def unexpected(*args, **kwargs):
+            raise AssertionError("no account search expected")
+
+        self.plugin.client.search_public_accounts = unexpected
+
+        (kind, reply), = self._zmdlog("zmdlog 关注 完全无关的昵称")
+
+        self.assertEqual(
+            (kind, reply), ("plain", "没有找到与「完全无关的昵称」匹配的榜单。")
+        )
+        self.assertEqual(self._watch_slugs(), [])
+
+    def test_every_board_is_followed_and_one_excluded(self) -> None:
+        self._enable_watch_storage()
+        self._zmdlog("zmdlog 关注 三位一体")
+
+        (kind, reply), = self._zmdlog("zmdlog 关注 全部榜单")
+        self.assertEqual(kind, "plain")
+        self.assertIn("已关注全部榜单", reply)
+        self.assertIn("以后新出的榜单也会自动包含", reply)
+        self.assertEqual(self._watch_slugs(), [self.TRIO, self.RODAN])
+        # A board nobody has ever seen is watched too.
+        self.assertIn(
+            GROUP,
+            self.plugin.watcher.watchlist.origins_by_board(("brand_new",))[
+                "brand_new"
+            ],
+        )
+
+        (_, excluded), = self._zmdlog("zmdlog 取关 罗丹")
+        self.assertIn(f"已在全部榜单中排除「{self.RODAN_LABEL}」", excluded)
+        self.assertEqual(self._watch_slugs(), [self.TRIO])
+
+        (_, listing), = self._zmdlog("zmdlog 关注")
+        self.assertIn("当前关注：全部榜单", listing)
+        self.assertIn(f"已排除：\n- {self.RODAN_LABEL}", listing)
+
+        (_, included), = self._zmdlog("zmdlog 关注 罗丹")
+        self.assertIn(f"已恢复关注榜单「{self.RODAN_LABEL}」", included)
+        self.assertEqual(self._watch_slugs(), [self.TRIO, self.RODAN])
+        (_, covered), = self._zmdlog("zmdlog 关注 罗丹")
+        self.assertIn("已经关注了全部榜单", covered)
+
+    def test_unfollowing_every_board_empties_the_chat(self) -> None:
+        self._enable_watch_storage()
+        for text in ("zmdlog 关注 全部榜单", "zmdlog 取关 罗丹"):
+            self._zmdlog(text)
+
+        (kind, reply), = self._zmdlog("zmdlog 取关 全部榜单")
+
+        self.assertEqual((kind, reply), ("plain", "已取消这里的全部榜单关注。"))
+        self.assertEqual(self._watch_slugs(), [])
+        self.assertEqual(self.plugin.watcher.board_snapshots, {})
+        (_, listing), = self._zmdlog("zmdlog 关注")
+        self.assertIn("还没有关注任何榜单", listing)
+        (_, again), = self._zmdlog("zmdlog 取关 全部榜单")
+        self.assertEqual(again, "这里还没有关注任何榜单。")
+
+    def test_only_the_adder_or_an_admin_may_narrow_or_drop_every_board(
+        self,
+    ) -> None:
+        self._enable_watch_storage()
+        self._zmdlog("zmdlog 关注 全部榜单", sender="111")
+
+        (_, narrowed), = self._zmdlog("zmdlog 取关 罗丹", sender="222")
+        (_, dropped), = self._zmdlog("zmdlog 取关 全部榜单", sender="222")
+
+        self.assertEqual(narrowed, "只有添加这条关注的人或机器人管理员可以取消它。")
+        self.assertEqual(dropped, narrowed)
+        self.assertEqual(self._watch_slugs(), [self.TRIO, self.RODAN])
+        admin = FakeEvent("zmdlog 取关 全部榜单", sender="222")
+        admin.is_admin = lambda: True
+        (_, done), = run(collect(self.plugin.zmdlog(admin)))
+        self.assertEqual(done, "已取消这里的全部榜单关注。")
+
+    def test_a_private_chat_keeps_its_own_watch_list(self) -> None:
+        self._enable_watch_storage()
+        private = "aiocqhttp:FriendMessage:111"
+
+        (_, reply), = self._zmdlog("zmdlog 关注 罗丹", origin=private)
+        self.assertIn("已关注榜单", reply)
+        (_, listing), = self._zmdlog("zmdlog 关注", origin=private)
+
+        self.assertIn(f"1. {self.RODAN_LABEL}", listing)
+        self.assertEqual(self._watch_slugs(private), [self.RODAN])
+        self.assertEqual(self._watch_slugs(GROUP), [])
 
     def test_isolated_members_of_one_group_share_its_watch_list(self) -> None:
         # 隔离对话 hands every member their own origin; the list is the group's.
@@ -1936,21 +2092,21 @@ class HandlerTests(unittest.TestCase):
             )
 
         (_, reply), = run(
-            collect(self.plugin.zmdlog(member("zmdlog 关注 榜单 三位一体", "111")))
+            collect(self.plugin.zmdlog(member("zmdlog 关注 三位一体", "111")))
         )
         self.assertIn("已关注榜单", reply)
         (_, listing), = run(collect(self.plugin.zmdlog(member("zmdlog 关注", "222"))))
 
         self.assertIn("1. 危境再现 · 测试区 · 三位一体", listing)
-        self.assertEqual(len(self.plugin.watcher.watchlist.boards_for(GROUP)), 1)
+        self.assertEqual(self._watch_slugs(), [self.TRIO])
         self.assertEqual(
             self.plugin._event_origin(FakeEvent("x", origin=GROUP)), GROUP
         )
 
     def test_board_watch_cycle_reports_a_new_top_run_once(self) -> None:
         self._enable_watch_storage()
-        slug = "dung01_group_bossrush02"
-        (_, reply), = self._zmdlog("zmdlog 关注 榜单 三位一体")
+        slug = self.TRIO
+        (_, reply), = self._zmdlog("zmdlog 关注 三位一体")
         self.assertIn("已关注榜单", reply)
         fresh = self._hot_bosses_with_run("btl_upload_new000000001", "shiki")
         sent: list[tuple[str, Notice]] = []
@@ -1983,21 +2139,55 @@ class HandlerTests(unittest.TestCase):
         run(self.plugin.watcher.run_board_cycle())
         self.assertEqual(len(sent), 1)
 
+    def test_every_board_is_reported_except_the_excluded(self) -> None:
+        self._enable_watch_storage()
+        for text in ("zmdlog 关注 全部榜单", "zmdlog 取关 罗丹"):
+            self._zmdlog(text)
+        reads = iter(
+            (
+                self._hot_bosses_with_run("btl_upload_new000000003", "甲"),
+                self._hot_bosses_with_run(
+                    "btl_upload_new000000004", "乙", slug=self.RODAN
+                ),
+            )
+        )
+        sent: list[tuple[str, Notice]] = []
+
+        async def fetch():
+            return next(reads)
+
+        async def send(origin, notice):
+            sent.append((origin, notice))
+            return True
+
+        self.plugin.client.list_hot_bosses_with_payload = fetch
+        self.plugin.watcher.notify = send
+
+        run(self.plugin.watcher.run_board_cycle())
+        run(self.plugin.watcher.run_board_cycle())
+
+        (origin, notice), = sent
+        self.assertEqual(origin, GROUP)
+        self.assertIn("三位一体", notice.text)
+        self.assertNotIn(self.RODAN, self.plugin.watcher.board_snapshots)
+
     def test_a_failed_send_keeps_the_baseline_so_the_next_cycle_retries(self) -> None:
         # Saving the snapshot first and sending second lost the event for
         # good: the next cycle compared against the ranks already stored and
         # saw nothing to report.
         self._enable_watch_storage()
-        slug = "dung01_group_bossrush02"
-        self.plugin.watcher.watchlist, _ = self.plugin.watcher.watchlist.with_board(
+        slug = self.TRIO
+        self.plugin.watcher.watchlist = self.plugin.watcher.watchlist.with_chat(
             GROUP,
-            WatchedBoard(
-                boss_slug=slug,
-                boss_name="危境再现·三位一体",
-                dungeon_name="危境再现 · 测试区",
-                added_by="aiocqhttp:111",
-                added_at="2026-08-22T10:00:00+00:00",
-            ),
+            ChatWatch().with_board(
+                WatchedBoard(
+                    boss_slug=slug,
+                    boss_name="危境再现·三位一体",
+                    dungeon_name="危境再现 · 测试区",
+                    added_by="aiocqhttp:111",
+                    added_at="2026-08-22T10:00:00+00:00",
+                )
+            )[0],
         )
         seed, _ = self._hot_bosses_with_run("btl_upload_old000000001", "老王")
         self.plugin.watcher.board_snapshots = {
@@ -2039,16 +2229,18 @@ class HandlerTests(unittest.TestCase):
 
     def test_a_stale_board_baseline_is_reseeded_silently(self) -> None:
         self._enable_watch_storage()
-        slug = "dung01_group_bossrush02"
-        self.plugin.watcher.watchlist, _ = self.plugin.watcher.watchlist.with_board(
+        slug = self.TRIO
+        self.plugin.watcher.watchlist = self.plugin.watcher.watchlist.with_chat(
             GROUP,
-            WatchedBoard(
-                boss_slug=slug,
-                boss_name="危境再现·三位一体",
-                dungeon_name="危境再现 · 测试区",
-                added_by="aiocqhttp:111",
-                added_at="2026-08-22T10:00:00+00:00",
-            ),
+            ChatWatch().with_board(
+                WatchedBoard(
+                    boss_slug=slug,
+                    boss_name="危境再现·三位一体",
+                    dungeon_name="危境再现 · 测试区",
+                    added_by="aiocqhttp:111",
+                    added_at="2026-08-22T10:00:00+00:00",
+                )
+            )[0],
         )
         self.plugin.watcher.board_snapshots = {
             slug: BoardSnapshot(runs=(), checked_at="2020-01-01T00:00:00+00:00")
@@ -2097,7 +2289,6 @@ class HandlerTests(unittest.TestCase):
 
         self._seed_history()
 
-        self.assertEqual(self.plugin.watcher.watchlist.origins_by_account(), {})
         (kind, result), = self._zmdlog("zmdlog 趋势 usr_1234567890abcdef")
         self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
 
@@ -2139,33 +2330,6 @@ class HandlerTests(unittest.TestCase):
         (kind, reply), = self._zmdlog("zmdlog 趋势 路人甲")
         self.assertEqual(kind, "plain")
         self.assertIn("还没有名次记录", reply)
-
-    def test_the_watch_poll_leaves_the_trend_to_the_board_reads(self) -> None:
-        self._enable_watch_storage()
-        account_id = "usr_1234567890abcdef"
-        self.plugin.watcher.watchlist, _ = self.plugin.watcher.watchlist.with_account(
-            GROUP,
-            WatchedAccount(
-                account_id=account_id,
-                display_name="测试账号",
-                added_by="aiocqhttp:111",
-                added_at="2026-08-22T10:00:00+00:00",
-            ),
-        )
-
-        async def account(requested_id):
-            return parse_public_user_rankings(public_user_rankings_payload())
-
-        self.plugin.data.get_public_user_rankings = account
-
-        run(self.plugin.watcher.run_account_cycle())
-
-        self.assertIsNone(self.plugin.data.rank_trend.history_for(account_id))
-        self._seed_history()
-        (_, removed), = self._zmdlog("zmdlog 取关 1")
-        self.assertIn("已取消关注", removed)
-        # Unfollowing is no reason to forget a trace every account has.
-        self.assertIsNotNone(self.plugin.data.rank_trend.history_for(account_id))
 
     # --- 绑定 / 我的 -------------------------------------------------------------
 
