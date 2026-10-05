@@ -1,6 +1,6 @@
 /* The textures the parts and the frames draw, inlined as data URLs by
    core/render.py (ASSETS.md says where they come from). A frame includes
-   this with parts.css; a page that draws neither (help) carries none. */
+   this with parts.css; a comic page carries its own (comic.css). */
 :root {
   --box-head: url("{{ shell.box_head }}");
   --box-page: url("{{ shell.box_page }}");

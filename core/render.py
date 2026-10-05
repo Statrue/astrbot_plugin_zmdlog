@@ -132,6 +132,7 @@ WIDE_FRAME = PageFrame(width=960, scale=2, v2=True)
 # Page kinds on the V2 shell; every other kind is drawn in LEGACY_FRAME.
 PAGE_FRAMES: dict[str, PageFrame] = {
     "ranking": LIST_FRAME,
+    "help": WIDE_FRAME,
 }
 
 
@@ -183,7 +184,12 @@ class TemplateRenderer:
         self.resources_path = resources_path.resolve()
         self.version = read_plugin_version(metadata_path)
         self.background_data_url = _load_background_data_url(background_path)
-        self.shell_textures = _load_shell_textures(self.resources_path / "shell")
+        self.shell_textures = _load_inline_assets(
+            self.resources_path / "shell", _SHELL_TEXTURES
+        )
+        self.help_chibis = _load_inline_assets(
+            self.resources_path / "help", _HELP_CHIBIS
+        )
         self.font_files, self.font_face_css, self.linked_font_face_css = (
             _load_fonts(fonts_path)
         )
@@ -222,6 +228,7 @@ class TemplateRenderer:
             page,
             "help",
             embed_fonts=embed_fonts,
+            chibis=self.help_chibis,
         )
 
     def render_dungeon_top3(
@@ -654,13 +661,15 @@ class TemplateRenderer:
         page_kind: str,
         *,
         embed_fonts: bool = True,
+        **extra: Any,
     ) -> str:
         """Render one page; ``embed_fonts`` picks how the fonts are referenced.
 
         Embedded data URLs make the document self-contained for a renderer
         that cannot reach this process (AstrBot's fallback); linked fonts on
         :data:`FONT_ORIGIN` keep it small for the bundled Chromium, whose
-        route handler serves them from memory.
+        route handler serves them from memory. ``extra`` is what only one
+        page kind draws (the help page's chibis).
         """
 
         template = self.environment.get_template(template_name)
@@ -674,6 +683,7 @@ class TemplateRenderer:
             font_face_css=(
                 self.font_face_css if embed_fonts else self.linked_font_face_css
             ),
+            **extra,
         )
 
 
@@ -1489,20 +1499,35 @@ _SHELL_TEXTURES = {
     "box_head": ("box-head.svg", "image/svg+xml"),
     "box_page": ("box-page.svg", "image/svg+xml"),
     "topo_strip": ("topo-strip.svg", "image/svg+xml"),
+    "comic_topo": ("comic-topo.svg", "image/svg+xml"),
+}
+# The help page's chibis, the user's art (ASSETS.md), inlined the same way
+# rather than fetched: WebP at twice the width each is drawn at, about
+# 106 KB for the five. Name -> (file under resources/help, media type).
+_HELP_CHIBIS = {
+    "spear": ("chibi-spear.webp", "image/webp"),
+    "ice_cream": ("chibi-ice-cream.webp", "image/webp"),
+    "arms_crossed": ("chibi-arms-crossed.webp", "image/webp"),
+    "waving": ("chibi-waving.webp", "image/webp"),
+    "blob": ("chibi-blob.webp", "image/webp"),
 }
 
 
-def _load_shell_textures(shell_path: Path) -> dict[str, str]:
-    textures: dict[str, str] = {}
-    for name, (file_name, media_type) in _SHELL_TEXTURES.items():
+def _load_inline_assets(
+    directory: Path, table: Mapping[str, tuple[str, str]]
+) -> dict[str, str]:
+    """Each file of ``table`` under ``directory`` as a data URL, by name."""
+
+    assets: dict[str, str] = {}
+    for name, (file_name, media_type) in table.items():
         try:
-            payload = (shell_path / file_name).read_bytes()
+            payload = (directory / file_name).read_bytes()
         except OSError as exc:
             raise TemplateConfigurationError(
-                f"shell texture is unavailable: {file_name}"
+                f"inline asset is unavailable: {file_name}"
             ) from exc
-        textures[name] = _data_url(payload, media_type)
-    return textures
+        assets[name] = _data_url(payload, media_type)
+    return assets
 
 
 # Subset web fonts built by tools/build_fonts.py; missing files simply fall

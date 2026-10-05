@@ -9,7 +9,13 @@
 
 - `sky-art.webp`：页头黄天右侧的机械线条半调图（1080×224，无损 WebP，即 540px 的 2 倍）；`box-head.svg` / `box-page.svg`：页头与页面底的大方格加对角线；`topo-strip.svg`：深色名条右端的等高线。
 - 来源：本仓库自绘，均由 V2 原型的程序化脚本一次生成（`prototype/frontend-v2` 分支 `prototype/frontend_v2/shards.py` 的 `sky_art()`、`topo.py` 的 `box_grid(90, …)` / `box_grid(108, …)` / `contours(280, 56, …, seed=3, levels=12, base=2, fade_left=True)`），之后作为静态文件提交；运行时不依赖 numpy / Pillow。渲染时由 `core/render.py` 以 data URL 内嵌进页面。
+- `comic-topo.svg`：漫画风页面（帮助）黄底上的白色等高线，由同一个 `topo.py` 的 `contours(480, 300, "rgba(255,255,255,0.55)", seed=11, levels=9, base=2, fade_left=False)` 生成。
 - 无第三方素材。
+
+## `../help/chibi-*.webp`
+
+- 用途：帮助页上的五个 Q 版小人（持矛的猫耳、冰淇淋、抱臂、挥手、举团子），渲染时由 `core/render.py` 以 data URL 内嵌进页面，不在截图时联网取。
+- 来源：用户提供的《加油吧！终末地》官方 Q 版贴纸（鹰角网络），在 V2 原型中切成单张（`prototype/frontend_v2/chibi.py`），再按各自在页面上的 CSS 宽度的 2 倍缩放、存为 WebP（质量 86），共约 106 KB。版权归鹰角所有，不在本仓库的 MIT 许可范围内；用户确认不另做许可审查。
 
 ## `fonts/*.woff2`
 

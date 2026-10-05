@@ -115,28 +115,59 @@ class TemplateRendererTests(unittest.TestCase):
     def test_help_is_self_contained_and_uses_manifest_version(self) -> None:
         html = self.renderer.render_help(command_prefix="!")
 
-        self.assertIn("!zmdlog 榜单", html)
-        self.assertIn("!zmdlog 战报 | 配装 | 技能 | 技能轴", html)
+        # Each command in its shortest form beside one statement; the
+        # options are explained once, in their own card.
+        self.assertIn("!zmdlog 榜单</code>", html)
+        self.assertIn("!zmdlog &lt;榜单关键词&gt;</code>", html)
+        self.assertIn("!zmdlog 角色排名</code>", html)
+        self.assertIn("查询某个榜单", html)
+        self.assertNotIn("[--", html)
+        self.assertIn("常用选项", html)
+        self.assertIn("--页 N|全部", html)
+        self.assertIn("对比 … 我", html)
+        self.assertIn("17 条指令", html)
         self.assertIn("终末地·藕粉铺子", html)
         # Read from the manifest rather than repeating it: the version is
         # bumped every release, and the point of the test is that the page
         # shows whatever metadata.yaml says.
         version = read_plugin_version(self.root / "metadata.yaml")
         self.assertIn(f"v{version}", html)
-        self.assertIn("data:image/svg+xml;base64,", html)
         self.assertIn("@font-face", html)
         self.assertNotIn("astrbot_plugin_zmdlog", html)
         self.assertNotIn("/zmdlog", html)
         self.assertNotIn("固定口径", html)
         self.assertNotIn("影拓4", html)
 
+    def test_help_is_a_wide_comic_page_with_its_chibis_embedded(self) -> None:
+        from core.render import page_frame
+
+        html = self.renderer.render_help(command_prefix="/")
+
+        self.assertEqual(page_frame("help"), WIDE_FRAME)
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn('id="zmd-root"', html)
+        self.assertIn('class="zmd-main', html)
+        self.assertNotIn('id="zmd-page"', html)
+        self.assertNotIn("scene-background", html)
+        # The five chibis travel inside the page, never fetched at capture.
+        chibis = re.findall(
+            r'<img class="comic-chibi[^"]*" src="data:image/webp;base64,', html
+        )
+        self.assertEqual(len(chibis), 5)
+        # About 106 KB of WebP; the fonts are linked for the capture.
+        linked = self.renderer.render_help(command_prefix="/", embed_fonts=False)
+        self.assertLess(len(linked), 300_000)
+        # An outline from -webkit-text-stroke came out as spiky blobs and
+        # hid the clipped fills; the letters are outlined by a shadow ring.
+        self.assertNotIn("text-stroke", html)
+
     def test_help_shows_the_official_notes_only_when_asked(self) -> None:
         plain = self.renderer.render_help(command_prefix="/")
         official = self.renderer.render_help(command_prefix="/", official=True)
 
-        self.assertNotIn('class="help-notes"', plain)
+        self.assertNotIn('class="comic-note', plain)
         self.assertNotIn("获取群内全部消息", plain)
-        self.assertIn('class="help-notes"', official)
+        self.assertIn('class="comic-note', official)
         self.assertIn("获取群内全部消息", official)
         self.assertIn("机器人主动在群聊内发言", official)
 

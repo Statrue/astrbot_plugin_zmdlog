@@ -59,6 +59,24 @@
   --lift-28: rgba(24, 32, 52, 0.28);
   --lift-38: rgba(18, 24, 40, 0.38);
   --lift-42: rgba(18, 24, 40, 0.42);
+  /* the comic pages (comic.css), off the 《加油吧！终末地》 covers: paper
+     on a faint grid, the dark teal outline and its two lighter rims, a
+     pale yellow, a dotted light grey, the command pill's blue-grey */
+  --comic-paper: #fbfbfa;
+  --comic-grid: rgba(28, 33, 48, 0.035);
+  --comic-teal: #1d4f6c;
+  --comic-teal-2: #2f6f93;
+  --comic-teal-3: #6aa6c8;
+  --comic-pale: #fff6a6;
+  --comic-grey: #e6e8ec;
+  --comic-dot: #bfc5ce;
+  --comic-rule: #d7e3ea;
+  --comic-code: #e9f1f6;
+  --comic-white: #ffffff;
+  --comic-sparkle: rgba(255, 255, 255, 0.08);
+  --comic-hatch: rgba(255, 255, 255, 0.85);
+  --comic-foot-pill: rgba(120, 124, 132, 0.82);
+  --comic-sticker-shadow: rgba(29, 79, 108, 0.25);
   --font-cjk: "Noto Sans SC", "Source Han Sans SC", "PingFang SC",
     "Microsoft YaHei", sans-serif;
   --font-body: "Barlow", var(--font-cjk);

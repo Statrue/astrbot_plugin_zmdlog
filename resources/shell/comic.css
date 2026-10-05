@@ -1,0 +1,317 @@
+/* The comic kit (帮助, and the 顶屁股通告 after it), off the official
+   《加油吧！终末地》 covers: a white top on a faint grid with chunky
+   outlined lettering, a pill badge and a hand-drawn yellow line; below
+   it a yellow ground with contour lines where the content sits on white
+   sticker cards; at the foot a giant white word under two grey pills.
+   Sizes are the 960 frame's. comic.html draws the parts; a page places
+   them, and sets what is its own, in its own stylesheet. */
+:root {
+  --comic-topo: url("{{ shell.comic_topo }}");
+  /* The letters' outline: a ring of teal copies of the glyph so its
+     corners come out round, then a few more dropped below it for the
+     depth. The browser's own stroke on text gave spiky blobs on CJK and
+     hid the clipped dotted fill, so it is not used. Radius / drop: title
+     11 / 6, subtitle 8 / 5, card heading 5 / 3. */
+  --comic-ring-title: 11.0px 0.0px 0 var(--comic-teal), 10.6px 2.8px 0 var(--comic-teal), 9.5px 5.5px 0 var(--comic-teal), 7.8px 7.8px 0 var(--comic-teal), 5.5px 9.5px 0 var(--comic-teal), 2.8px 10.6px 0 var(--comic-teal), 0.0px 11.0px 0 var(--comic-teal), -2.8px 10.6px 0 var(--comic-teal), -5.5px 9.5px 0 var(--comic-teal), -7.8px 7.8px 0 var(--comic-teal), -9.5px 5.5px 0 var(--comic-teal), -10.6px 2.8px 0 var(--comic-teal), -11.0px 0.0px 0 var(--comic-teal), -10.6px -2.8px 0 var(--comic-teal), -9.5px -5.5px 0 var(--comic-teal), -7.8px -7.8px 0 var(--comic-teal), -5.5px -9.5px 0 var(--comic-teal), -2.8px -10.6px 0 var(--comic-teal), 0.0px -11.0px 0 var(--comic-teal), 2.8px -10.6px 0 var(--comic-teal), 5.5px -9.5px 0 var(--comic-teal), 7.8px -7.8px 0 var(--comic-teal), 9.5px -5.5px 0 var(--comic-teal), 10.6px -2.8px 0 var(--comic-teal), 11.0px 6.0px 0 var(--comic-teal), 7.8px 13.8px 0 var(--comic-teal), 0.0px 17.0px 0 var(--comic-teal), -7.8px 13.8px 0 var(--comic-teal), -11.0px 6.0px 0 var(--comic-teal), -7.8px -1.8px 0 var(--comic-teal), 0.0px -5.0px 0 var(--comic-teal), 7.8px -1.8px 0 var(--comic-teal);
+  --comic-ring-sub: 8.0px 0.0px 0 var(--comic-teal), 7.7px 2.1px 0 var(--comic-teal), 6.9px 4.0px 0 var(--comic-teal), 5.7px 5.7px 0 var(--comic-teal), 4.0px 6.9px 0 var(--comic-teal), 2.1px 7.7px 0 var(--comic-teal), 0.0px 8.0px 0 var(--comic-teal), -2.1px 7.7px 0 var(--comic-teal), -4.0px 6.9px 0 var(--comic-teal), -5.7px 5.7px 0 var(--comic-teal), -6.9px 4.0px 0 var(--comic-teal), -7.7px 2.1px 0 var(--comic-teal), -8.0px 0.0px 0 var(--comic-teal), -7.7px -2.1px 0 var(--comic-teal), -6.9px -4.0px 0 var(--comic-teal), -5.7px -5.7px 0 var(--comic-teal), -4.0px -6.9px 0 var(--comic-teal), -2.1px -7.7px 0 var(--comic-teal), 0.0px -8.0px 0 var(--comic-teal), 2.1px -7.7px 0 var(--comic-teal), 4.0px -6.9px 0 var(--comic-teal), 5.7px -5.7px 0 var(--comic-teal), 6.9px -4.0px 0 var(--comic-teal), 7.7px -2.1px 0 var(--comic-teal), 8.0px 5.0px 0 var(--comic-teal), 5.7px 10.7px 0 var(--comic-teal), 0.0px 13.0px 0 var(--comic-teal), -5.7px 10.7px 0 var(--comic-teal), -8.0px 5.0px 0 var(--comic-teal), -5.7px -0.7px 0 var(--comic-teal), 0.0px -3.0px 0 var(--comic-teal), 5.7px -0.7px 0 var(--comic-teal);
+  --comic-ring-sec: 5.0px 0.0px 0 var(--comic-teal), 4.8px 1.3px 0 var(--comic-teal), 4.3px 2.5px 0 var(--comic-teal), 3.5px 3.5px 0 var(--comic-teal), 2.5px 4.3px 0 var(--comic-teal), 1.3px 4.8px 0 var(--comic-teal), 0.0px 5.0px 0 var(--comic-teal), -1.3px 4.8px 0 var(--comic-teal), -2.5px 4.3px 0 var(--comic-teal), -3.5px 3.5px 0 var(--comic-teal), -4.3px 2.5px 0 var(--comic-teal), -4.8px 1.3px 0 var(--comic-teal), -5.0px 0.0px 0 var(--comic-teal), -4.8px -1.3px 0 var(--comic-teal), -4.3px -2.5px 0 var(--comic-teal), -3.5px -3.5px 0 var(--comic-teal), -2.5px -4.3px 0 var(--comic-teal), -1.3px -4.8px 0 var(--comic-teal), 0.0px -5.0px 0 var(--comic-teal), 1.3px -4.8px 0 var(--comic-teal), 2.5px -4.3px 0 var(--comic-teal), 3.5px -3.5px 0 var(--comic-teal), 4.3px -2.5px 0 var(--comic-teal), 4.8px -1.3px 0 var(--comic-teal), 5.0px 3.0px 0 var(--comic-teal), 3.5px 6.5px 0 var(--comic-teal), 0.0px 8.0px 0 var(--comic-teal), -3.5px 6.5px 0 var(--comic-teal), -5.0px 3.0px 0 var(--comic-teal), -3.5px -0.5px 0 var(--comic-teal), 0.0px -2.0px 0 var(--comic-teal), 3.5px -0.5px 0 var(--comic-teal);
+}
+
+.comic {
+  background: var(--comic-paper);
+}
+
+/* ── the white top ─────────────────────────────────────────────── */
+.comic-top {
+  position: relative;
+  padding: 34px 0 36px;
+  text-align: center;
+  background:
+    linear-gradient(90deg, var(--comic-grid) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(0deg, var(--comic-grid) 1px, transparent 1px) 0 0 / 48px 48px,
+    var(--comic-paper);
+}
+.comic-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.comic-brand b {
+  padding: 4px 12px 5px;
+  background: var(--logo-bg);
+  color: var(--yellow);
+  font-weight: 900;
+  font-size: var(--fs-20);
+  letter-spacing: 0.06em;
+}
+.comic-brand span {
+  padding: 3px 10px;
+  border: 3px solid var(--title-ink);
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-22);
+  letter-spacing: 0.04em;
+}
+
+/* Chunky letters, three layers: the span's own text (transparent) holds
+   the place; ::before is the outline, the ring of the line it sits in;
+   ::after is the fill, yellow, pale or dotted grey. Each letter tilts and
+   lifts a little, hand-set by the page. */
+.comic-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 22px;
+}
+.comic-line {
+  position: relative;
+  display: flex;
+}
+.comic-line--1 {
+  font-size: var(--fs-128);
+}
+.comic-line--2 {
+  margin-top: 2px;
+  font-size: var(--fs-84);
+}
+.comic-ch {
+  position: relative;
+  display: inline-block;
+  margin: 0 2px;
+  font-weight: 900;
+  line-height: 1.12;
+  color: transparent;
+  transform: rotate(var(--tilt)) translateY(var(--lift));
+}
+.comic-ch::before,
+.comic-ch::after,
+.comic-sec-name::before,
+.comic-sec-name::after {
+  content: attr(data-ch);
+  position: absolute;
+  inset: 0;
+}
+.comic-ch::before {
+  color: var(--comic-teal);
+}
+.comic-line--1 .comic-ch::before {
+  text-shadow: var(--comic-ring-title);
+}
+.comic-line--2 .comic-ch::before {
+  text-shadow: var(--comic-ring-sub);
+}
+.comic-ch::after {
+  color: var(--yellow);
+}
+.comic-ch.is-pale::after {
+  color: var(--comic-pale);
+}
+.comic-ch.is-dots::after {
+  color: transparent;
+  background:
+    radial-gradient(circle, var(--comic-dot) 0 1.4px, transparent 1.9px) 0 0 / 7px 7px,
+    var(--comic-grey);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+/* the magenta and mint strokes stuck over the lettering */
+.comic-tick {
+  position: absolute;
+  z-index: 2;
+  width: 10px;
+  height: 34px;
+  border-radius: 5px;
+}
+.comic-tick.is-m {
+  background: var(--magenta);
+}
+.comic-tick.is-g {
+  background: var(--mint);
+}
+
+/* the pill badge: teal, a lighter rim, yellow words, a slashed dot each end */
+.comic-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 30px;
+  margin-top: 26px;
+  padding: 10px 34px;
+  border-radius: 40px;
+  background:
+    radial-gradient(circle, var(--comic-sparkle) 0 1px, transparent 1.6px) 0 0 / 6px 6px,
+    var(--comic-teal-2);
+  box-shadow: 0 0 0 5px var(--comic-teal-3), 0 0 0 7px var(--comic-teal);
+}
+.comic-pill span {
+  font-weight: 900;
+  font-size: var(--fs-34);
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  color: var(--yellow);
+}
+.comic-pill i {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--yellow);
+}
+.comic-pill i::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--comic-teal-2);
+  transform: translate(-50%, -50%) rotate(40deg);
+}
+/* the hand-drawn line, out of the left edge; the page sets its width */
+.comic-scribble {
+  position: absolute;
+  left: 0;
+  bottom: 4px;
+  height: 30px;
+}
+
+/* ── the yellow ground ─────────────────────────────────────────── */
+/* The giant word at the foot runs past the bottom edge and is cut there:
+   clipped here, so the overflow never counts toward the page's height. */
+.comic-ground {
+  overflow: hidden;
+  position: relative;
+  padding: 44px 30px 0;
+  background:
+    var(--comic-topo) right -40px top 10px / 640px 400px no-repeat,
+    var(--comic-topo) left -120px top 900px / 640px 400px no-repeat,
+    var(--yellow);
+}
+.comic-dots {
+  position: absolute;
+  right: 36px;
+  top: 18px;
+  display: flex;
+  gap: 10px;
+}
+.comic-dots b {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--comic-white);
+}
+.comic-note {
+  position: relative;
+  margin: 0 0 26px;
+  padding: 14px 20px;
+  border: 3px dashed var(--comic-teal);
+  border-radius: 14px;
+  background: var(--comic-white);
+  font-size: var(--fs-17);
+  color: var(--comic-teal);
+}
+.comic-note p + p {
+  margin-top: 4px;
+}
+
+/* a sticker card, each a hair off straight (the page sets --tilt) */
+.comic-card {
+  position: relative;
+  padding: 22px 22px 16px;
+  border: 4px solid var(--comic-teal);
+  border-radius: 22px;
+  background: var(--comic-white);
+  box-shadow: 7px 7px 0 var(--comic-teal);
+  transform: rotate(var(--tilt));
+}
+.comic-sec {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 8px;
+  padding-right: 80px;
+}
+.comic-sec-name {
+  position: relative;
+  flex: none;
+  margin-left: 4px;
+  font-weight: 900;
+  font-size: var(--fs-40);
+  line-height: 1.15;
+  white-space: nowrap;
+  color: transparent;
+  transform: rotate(-3deg);
+}
+.comic-sec-name::before {
+  color: var(--comic-teal);
+  text-shadow: var(--comic-ring-sec);
+}
+.comic-sec-name::after {
+  color: var(--yellow);
+}
+.comic-sec small {
+  min-width: 0;
+  font-size: var(--fs-17);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--comic-teal-2);
+}
+
+/* the user's chibi art, stuck on as stickers with a soft drop */
+.comic-chibi {
+  position: absolute;
+  z-index: 3;
+  height: auto;
+  filter: drop-shadow(3px 4px 0 var(--comic-sticker-shadow));
+}
+
+/* ── the foot: a giant white word, two grey pills over it ──────── */
+.comic-foot {
+  position: relative;
+  height: 190px;
+  margin: 6px -30px 0;
+}
+.comic-giant {
+  position: absolute;
+  left: 50%;
+  bottom: -40px;
+  transform: translateX(-50%);
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-230);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--giant-ink);
+}
+.comic-foot-pill {
+  position: absolute;
+  bottom: 44px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  padding: 0 22px;
+  border-radius: 23px;
+  background: var(--comic-foot-pill);
+  color: var(--comic-white);
+}
+.comic-foot-pill.is-l {
+  left: 40px;
+  box-shadow: inset 6px 0 0 var(--magenta);
+}
+.comic-foot-pill.is-r {
+  right: 40px;
+  box-shadow: inset -6px 0 0 var(--mint);
+}
+.comic-foot-pill b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-20);
+  letter-spacing: 0.03em;
+}
+.comic-foot-pill i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--comic-white);
+}

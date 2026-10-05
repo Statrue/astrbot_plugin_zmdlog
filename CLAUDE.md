@@ -130,7 +130,9 @@ rather than a decorator. All of them run through one error guard,
   page-specific CSS is `{% include %}`d into `extra_styles`; a page includes its
   own stylesheet plus the shared ones under `resources/common/`. Anything two
   pages need lives in `base.css`. CSS files render under autoescape like the
-  templates.
+  templates. The comic pages (帮助, and the 顶屁股通告 after it) extend
+  `shell/base.html` directly and share `shell/comic.css` (included by the
+  page itself) and the macros in `shell/comic.html`.
 - **Visual language is Endfield-style**, every colour and every font size a
   token in `base.css` (the `--fs-*` scale; a size off it is a design change,
   and `test_render.test_every_font_size_is_a_scale_token` pins the rule), and
@@ -160,9 +162,12 @@ rather than a decorator. All of them run through one error guard,
   API code, never response bodies or stacks.
 - **Help data (`core/help.py`) is updated whenever a user-facing command
   changes.** `test_routing_help` asserts the exact command list, and every
-  `HelpCommand` carries an `answers` line ending in `？`, because 阵容 /
-  角色统计 / `--角色` are indistinguishable from their syntax alone. Version
-  comes from `metadata.yaml`; don't hardcode it.
+  `HelpCommand` carries a one-line `answers` statement (opens with its verb,
+  no closing punctuation), because 阵容 / 角色统计 / `--角色` are
+  indistinguishable from their syntax alone. The page shows each command
+  without its `--options` (`HelpCommand.short`); every option a command
+  takes is explained once in `OPTIONS`, and a test holds the two in step.
+  Version comes from `metadata.yaml`; don't hardcode it.
 - **Capture fetches images only from the configured origins.** The Playwright
   route handler only ever sees the first hop of a redirect chain, so allowed
   requests are fetched *inside* the handler with `max_redirects=0` and any 3xx

@@ -1,28 +1,89 @@
-{% extends "common/base.html" %}
+{# 帮助 as a comic page (#40), after the official 《加油吧！终末地》 covers:
+   the white top with the chunky title, the pill counting the commands
+   and the hand-drawn line out to the cat; below, the sections as sticker
+   cards on the yellow ground, each command in its shortest form over one
+   statement, the options explained once in their own card; HELP at the
+   foot. The chibis are the user's art, embedded (``chibis``). On the V2
+   shell's root directly, not a frame of it: the page draws its own top. #}
+{% extends "shell/base.html" %}
+{% from "shell/comic.html" import brand, letter, tick, pill, scribble, dots, chibi, card, heading, foot %}
 
-{% block content %}
-{% if page.notes %}
-<ul class="help-notes">
-  {% for note in page.notes %}<li>{{ note }}</li>{% endfor %}
-</ul>
-{% endif %}
-{% for section in page.sections %}
-<section class="help-section">
-  <div class="section-heading">
-    <h2>{{ section.title }}</h2>
-    <span class="section-note">{{ section.summary }}</span>
-  </div>
-  <div class="help-list">
-    {% for item in section.commands %}
-    <div class="help-row">
-      <code>{{ item.command }}</code>
-      <div class="help-text">
-        <b>{{ item.answers }}</b>
-        {% if item.description %}<p>{{ item.description }}</p>{% endif %}
-      </div>
+{% block styles %}{% include "shell/comic.css" %}{% include "help/help.css" %}{% endblock %}
+{% block root_class %}comic{% endblock %}
+
+{% block root %}
+{# Two columns balanced by hand; a section not named here goes right. #}
+{% set left = ("榜单", "关注", "管理") %}
+{% set tilts = (-1.2, 0.8, -0.6, 1.1, -0.9, 0.7) %}
+<header class="comic-top">
+  {{ brand() }}
+  <h1 class="comic-title" aria-label="指令帮助">
+    <span class="comic-line comic-line--1">
+      {{ letter("指", "yellow", -6, 6) }}{{ letter("令", "pale", 4, -4) }}{{ letter("帮", "yellow", -3, 2) }}{{ letter("助", "yellow", 5, -2) }}{{ letter("!", "dots", 8, -6) }}
+      {{ tick("m", "left: 84px; top: 110px; transform: rotate(-20deg);") }}
+      {{ tick("g", "left: 300px; top: 30px;") }}
+      {{ tick("m", "left: 560px; top: 104px; transform: rotate(70deg);") }}
+    </span>
+    <span class="comic-line comic-line--2">
+      {{ letter("藕", "dots", -4, 0) }}{{ letter("粉", "yellow", 3, -4) }}{{ letter("铺", "dots", -2, 2) }}{{ letter("子", "dots", 5, -2) }}
+      {{ tick("g", "left: 10px; top: 24px;") }}
+      {{ tick("m", "left: 196px; top: 64px; transform: rotate(-30deg);") }}
+    </span>
+  </h1>
+  {{ pill(page.command_count ~ " 条指令") }}
+  {{ scribble("help-scribble") }}
+  {{ chibi(chibis.spear, "help-chibi-head") }}
+</header>
+
+<main class="zmd-main comic-ground">
+  <i class="help-hatch" aria-hidden="true"></i>
+  {{ dots(4) }}
+
+  {% if page.notes %}
+  <aside class="comic-note">
+    {% for note in page.notes %}<p>{{ note }}</p>{% endfor %}
+  </aside>
+  {% endif %}
+
+  <div class="help-cards">
+    {% for on_left in (true, false) %}
+    <div class="help-col">
+      {% for section in page.sections %}
+      {% if (section.title in left) == on_left %}
+      {% call card(tilts[loop.index0 % 6]) %}
+        {% if section.title == "榜单" %}{{ chibi(chibis.ice_cream, "help-chibi-side") }}{% endif %}
+        {% if section.title == "战报" %}{{ chibi(chibis.arms_crossed, "help-chibi-arms") }}{% endif %}
+        {% if section.title == "管理" %}{{ chibi(chibis.waving, "help-chibi-waving") }}{% endif %}
+        {{ heading(section.title, section.summary) }}
+        <ol class="help-cmds">
+          {% for item in section.commands %}
+          <li class="help-cmd">
+            <code>{{ item.short }}</code>
+            <b>{{ item.answers }}</b>
+          </li>
+          {% endfor %}
+        </ol>
+      {% endcall %}
+      {% endif %}
+      {% endfor %}
+      {% if on_left %}
+      {# the --options, once for every command that takes them #}
+      {% call card(0.9, "help-opts") %}
+        {{ heading("常用选项", "加在指令后面") }}
+        <dl class="help-opt-list">
+          {% for entry in page.options %}
+          <div><dt>{{ entry.option }}</dt><dd>{{ entry.does }}</dd></div>
+          {% endfor %}
+        </dl>
+      {% endcall %}
+      {% endif %}
     </div>
     {% endfor %}
   </div>
-</section>
-{% endfor %}
+
+  {% call foot("HELP", plugin.version, 3) %}
+    {# the blob-holder floating down onto the P #}
+    {{ chibi(chibis.blob, "help-chibi-on-p") }}
+  {% endcall %}
+</main>
 {% endblock %}

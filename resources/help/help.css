@@ -1,0 +1,130 @@
+/* 帮助 over the comic kit (shell/comic.css): the cards in two columns,
+   each command in a light-teal pill over its statement, the options card
+   (option on pale yellow | what it does), and where each chibi stands. */
+
+.help-scribble {
+  width: 880px;
+}
+
+.help-hatch {
+  position: absolute;
+  left: 22px;
+  top: 1180px;
+  width: 110px;
+  height: 110px;
+  background: repeating-linear-gradient(135deg, var(--comic-hatch) 0 3px, transparent 3px 9px);
+}
+
+/* two columns; the left one stacks over the right where a chibi reaches */
+.help-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 28px;
+  align-items: start;
+  padding-top: 26px;
+}
+.help-col {
+  display: flex;
+  flex-direction: column;
+  gap: 64px;
+}
+.help-cards > .help-col:first-child {
+  z-index: 2;
+}
+
+.help-cmds {
+  list-style: none;
+}
+.help-cmd {
+  padding: 10px 0;
+}
+.help-cmd + .help-cmd {
+  border-top: 3px dashed var(--comic-rule);
+}
+.help-cmd code {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 12px;
+  background: var(--comic-code);
+  color: var(--comic-teal);
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-17);
+  line-height: 1.45;
+}
+.help-cmd b {
+  display: block;
+  margin-top: 6px;
+  font-size: var(--fs-17);
+  font-weight: 800;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.help-opt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 0 4px;
+}
+.help-opt-list div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 12px;
+}
+.help-opt-list dt {
+  padding: 4px 11px;
+  border-radius: 12px;
+  background: var(--comic-pale);
+  box-shadow: inset 0 0 0 2px var(--comic-teal);
+  color: var(--comic-teal);
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-17);
+  white-space: nowrap;
+}
+.help-opt-list dd {
+  font-size: var(--fs-17);
+  font-weight: 700;
+  color: var(--ink);
+}
+.help-cmd code,
+.help-opt-list dt {
+  font-variant-ligatures: none;
+  letter-spacing: 0.02em;
+}
+
+/* the chibis: the cat with the spear on the top's seam, where the line
+   ends; the ice cream inside 榜单, beside its middle rows; arms crossed
+   on 战报's corner and the waving girl on 管理's; the blob-holder
+   floating down onto HELP's P */
+.help-chibi-head {
+  right: 26px;
+  bottom: -12px;
+  width: 162px;
+  transform: rotate(-6deg);
+}
+.help-chibi-side {
+  right: 14px;
+  top: 222px;
+  width: 126px;
+  transform: rotate(-8deg);
+}
+.help-chibi-arms {
+  right: 14px;
+  top: -74px;
+  width: 93px;
+}
+.help-chibi-waving {
+  right: 14px;
+  top: -70px;
+  width: 109px;
+  transform: rotate(-4deg);
+}
+.help-chibi-on-p {
+  left: 602px;
+  bottom: 180px;
+  width: 132px;
+  transform: rotate(-4deg);
+}

@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from core.help import build_help_page
@@ -165,29 +166,28 @@ class HelpTests(unittest.TestCase):
             [section.title for section in page.sections],
             ["榜单", "角色", "战报", "关注", "绑定", "管理"],
         )
-        # Every description stays a single line of what the syntax cannot say.
-        for section in page.sections:
-            for command in section.commands:
-                with self.subTest(command=command.command):
-                    self.assertLessEqual(len(command.description), 60)
         visible_text = repr(page)
         self.assertNotIn("固定口径", visible_text)
         self.assertNotIn("智能匹配", visible_text)
         self.assertNotIn("副本范围", visible_text)
         self.assertNotIn("影拓", visible_text)
 
-    def test_every_row_states_the_question_it_answers(self) -> None:
-        # The page groups look-alike commands (阵容 / 角色统计 / --角色), so the
-        # question each one answers is what tells them apart.
+    def test_every_row_states_what_it_does_in_one_line(self) -> None:
+        # The page groups look-alike commands (阵容 / 角色统计 / --角色), so
+        # the statement beside each is what tells them apart: one line, a
+        # statement rather than a question, with no closing punctuation.
         page = build_help_page("/")
         for section in page.sections:
             with self.subTest(section=section.title):
                 self.assertTrue(section.summary)
             for command in section.commands:
                 with self.subTest(command=command.command):
-                    self.assertTrue(command.answers.endswith("？"))
+                    self.assertTrue(command.answers.strip())
+                    self.assertNotIn("\n", command.answers)
+                    self.assertNotIn(command.answers[-1], "。？！?!.，,；;：:")
+                    self.assertNotIn("？", command.answers)
 
-    def test_the_bare_board_command_answers_which_dungeons_exist(self) -> None:
+    def test_the_bare_board_command_lists_the_dungeons(self) -> None:
         # 榜单 lists the dungeons to pick from; it no longer draws every
         # board's top three.
         page = build_help_page("/")
@@ -198,8 +198,56 @@ class HelpTests(unittest.TestCase):
             if command.command == "/zmdlog 榜单"
         )
 
-        self.assertEqual(row.answers, "现在有哪些副本和榜单？")
+        self.assertEqual(row.answers, "列出全部副本和榜单")
         self.assertNotIn("前三", row.answers)
+
+    def test_each_row_shows_its_bare_form_without_options(self) -> None:
+        # The options are explained once, in their own card; a row shows the
+        # shortest way to write its command.
+        page = build_help_page("/")
+        short = {
+            command.command.split(" <")[0].split(" [")[0]: command.short
+            for section in page.sections
+            for command in section.commands
+        }
+
+        self.assertEqual(short["/zmdlog"], "/zmdlog <榜单关键词>")
+        self.assertEqual(short["/zmdlog 角色排名"], "/zmdlog 角色排名")
+        self.assertEqual(
+            short["/zmdlog 角色统计"], "/zmdlog 角色统计 [榜单关键词或角色名]"
+        )
+        for section in page.sections:
+            for command in section.commands:
+                with self.subTest(command=command.command):
+                    self.assertNotIn("--", command.short)
+                    self.assertTrue(command.command.startswith(command.short))
+
+    def test_every_option_a_command_takes_is_explained_once(self) -> None:
+        # Stripped from the rows, the options would otherwise vanish from
+        # the page: each one a command spells gets exactly one line in the
+        # options card, and the card explains nothing no command takes.
+        page = build_help_page("/")
+        spelled = {
+            option
+            for section in page.sections
+            for command in section.commands
+            for option in re.findall(r"--[^\s|\]]+", command.command)
+        }
+        explained = [
+            option
+            for entry in page.options
+            for option in re.findall(r"--[^\s|/]+", entry.option)
+        ]
+
+        self.assertEqual(sorted(explained), sorted(spelled))
+        for entry in page.options:
+            with self.subTest(option=entry.option):
+                self.assertTrue(entry.does.strip())
+        options = [entry.option for entry in page.options]
+        # Paging is never offered on the picture, and 我 is a word, not an
+        # --option: the card is where a reader learns either exists.
+        self.assertIn("--页 N|全部", options)
+        self.assertIn("对比 … 我", options)
 
     def test_the_three_character_verbs_share_a_section(self) -> None:
         # 角色统计, 角色排名 and 角色档案 all take a character name and

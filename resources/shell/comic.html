@@ -1,0 +1,68 @@
+{# The comic kit's parts (comic.css styles them; a page includes that
+   stylesheet itself, so its sizes stay on the scale the test checks).
+   A comic page extends shell/base.html with root_class "comic": a
+   ``<header class="comic-top">`` holding brand(), the title in letter()s,
+   pill() and scribble(), then ``<main class="zmd-main comic-ground">``
+   holding card()s and, last, foot(). #}
+
+{# The two-part logo over the title. #}
+{% macro brand() -%}
+<p class="comic-brand"><b>终末地·藕粉铺子</b><span>ZMDLOG</span></p>
+{%- endmacro %}
+
+{# One chunky letter. ``kind``: yellow, pale or dots; tilt in degrees and
+   lift in px set by hand, letter by letter. #}
+{% macro letter(c, kind="yellow", tilt=0, lift=0) -%}
+<span class="comic-ch is-{{ kind }}" data-ch="{{ c }}" style="--tilt: {{ tilt }}deg; --lift: {{ lift }}px;">{{ c }}</span>
+{%- endmacro %}
+
+{# A magenta (``m``) or mint (``g``) stroke over the lettering, placed by
+   ``style``. #}
+{% macro tick(kind, style) -%}
+<i class="comic-tick is-{{ kind }}" style="{{ style }}"></i>
+{%- endmacro %}
+
+{# The pill badge under the title. #}
+{% macro pill(text, cls="") -%}
+<p class="comic-pill {{ cls }}"><i></i><span>{{ text }}</span><i></i></p>
+{%- endmacro %}
+
+{# The hand-drawn yellow line along the top's lower edge; the page sets
+   its width (it stretches to it). #}
+{% macro scribble(cls="") -%}
+<svg class="comic-scribble {{ cls }}" viewBox="0 0 880 30" preserveAspectRatio="none" aria-hidden="true"><path d="M0,18 C70,15 140,19 210,16 S350,12 430,17 S580,20 650,14 S780,8 860,10" style="fill: none; stroke: var(--yellow)" stroke-width="5" stroke-linecap="round"/></svg>
+{%- endmacro %}
+
+{# A row of white dots on the ground's top-right. #}
+{% macro dots(count=4) -%}
+<i class="comic-dots" aria-hidden="true">{% for _ in range(count) %}<b></b>{% endfor %}</i>
+{%- endmacro %}
+
+{# A chibi sticker: ``src`` is the art's data URL, ``cls`` places it. #}
+{% macro chibi(src, cls) -%}
+<img class="comic-chibi {{ cls }}" src="{{ src }}" alt="" aria-hidden="true">
+{%- endmacro %}
+
+{# A sticker card tilted ``tilt`` degrees; the caller fills it. #}
+{% macro card(tilt, cls="") -%}
+<section class="comic-card {{ cls }}" style="--tilt: {{ tilt }}deg;">
+{{ caller() }}
+</section>
+{%- endmacro %}
+
+{# A card's heading: the name in outlined letters, a note beside it. #}
+{% macro heading(name, note) -%}
+<h2 class="comic-sec"><span class="comic-sec-name" data-ch="{{ name }}">{{ name }}</span><small>{{ note }}</small></h2>
+{%- endmacro %}
+
+{# The foot: ``giant`` in white behind, the source pill on the left, the
+   version pill on the right after ``dots`` white dots. Call it with a
+   body (empty or not): whatever it holds is placed over the giant word. #}
+{% macro foot(giant, version, dots=1) -%}
+<footer class="comic-foot">
+  <span class="comic-giant" aria-hidden="true">{{ giant }}</span>
+  {{ caller() }}
+  <p class="comic-foot-pill is-l"><b>数据来源 ZMDLogs</b></p>
+  <p class="comic-foot-pill is-r">{% for _ in range(dots) %}<i></i>{% endfor %}<b>v{{ version }}</b></p>
+</footer>
+{%- endmacro %}
