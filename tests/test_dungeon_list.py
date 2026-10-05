@@ -197,7 +197,6 @@ class DungeonListTests(unittest.TestCase):
                     ("第一名战报", 2, "/zmdlog 战报 echo_blade"),
                     ("对比第一名", 2, "/zmdlog 对比 echo_blade 我"),
                 ],
-                [("全部", 2, "/zmdlog 榜单 echo_blade --页 全部")],
                 [("在 ZMDLogs 打开", 0, f"{WEB}/boss/echo_blade")],
             ],
         )

@@ -549,11 +549,20 @@ class RankingKeyboardTests(unittest.TestCase):
         )
 
     def test_the_last_page_has_no_next(self) -> None:
-        for page, count in ((3, 25), (None, 7), (1, 10), (2, 20)):
+        for page, count in ((3, 25), (2, 20), (2, 11)):
             with self.subTest(page=page, count=count):
                 self.assertEqual(
                     keyboard_rows(ranking(ranking_page=page, record_count=count)),
                     [views_row(), [page_button("全部", "全部")], OPEN_ROW],
+                )
+
+    def test_a_board_of_one_page_offers_no_page(self) -> None:
+        # 全部 would draw the very rows the page shows.
+        for page, count in ((None, 7), (1, 10), (None, 0)):
+            with self.subTest(page=page, count=count):
+                self.assertEqual(
+                    keyboard_rows(ranking(ranking_page=page, record_count=count)),
+                    [views_row(), OPEN_ROW],
                 )
 
     def test_the_all_picture_offers_no_page(self) -> None:

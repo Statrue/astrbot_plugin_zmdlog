@@ -1975,7 +1975,7 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(self._watch_slugs(), [])
         (_, empty), = self._zmdlog("zmdlog 关注")
         self.assertIn("还没有关注任何榜单", empty)
-        self.assertIn("关注 全部榜单", empty)
+        self.assertIn("关注 全部", empty)
 
     def test_a_board_is_unfollowed_by_its_list_number(self) -> None:
         self._enable_watch_storage()
@@ -2004,11 +2004,22 @@ class HandlerTests(unittest.TestCase):
         )
         self.assertEqual(self._watch_slugs(), [])
 
+    def test_every_board_is_spelled_as_all_alone(self) -> None:
+        # 关注 全部 is the one spelling; 全部榜单 is matched like any keyword.
+        self._enable_watch_storage()
+
+        (kind, reply), = self._zmdlog("zmdlog 关注 全部榜单")
+
+        self.assertEqual(
+            (kind, reply), ("plain", "没有找到与「全部榜单」匹配的榜单。")
+        )
+        self.assertEqual(self._watch_slugs(), [])
+
     def test_every_board_is_followed_and_one_excluded(self) -> None:
         self._enable_watch_storage()
         self._zmdlog("zmdlog 关注 三位一体")
 
-        (kind, reply), = self._zmdlog("zmdlog 关注 全部榜单")
+        (kind, reply), = self._zmdlog("zmdlog 关注 全部")
         self.assertEqual(kind, "plain")
         self.assertIn("已关注全部榜单", reply)
         self.assertIn("以后新出的榜单也会自动包含", reply)
@@ -2037,32 +2048,32 @@ class HandlerTests(unittest.TestCase):
 
     def test_unfollowing_every_board_empties_the_chat(self) -> None:
         self._enable_watch_storage()
-        for text in ("zmdlog 关注 全部榜单", "zmdlog 取关 罗丹"):
+        for text in ("zmdlog 关注 全部", "zmdlog 取关 罗丹"):
             self._zmdlog(text)
 
-        (kind, reply), = self._zmdlog("zmdlog 取关 全部榜单")
+        (kind, reply), = self._zmdlog("zmdlog 取关 全部")
 
         self.assertEqual((kind, reply), ("plain", "已取消这里的全部榜单关注。"))
         self.assertEqual(self._watch_slugs(), [])
         self.assertEqual(self.plugin.watcher.board_snapshots, {})
         (_, listing), = self._zmdlog("zmdlog 关注")
         self.assertIn("还没有关注任何榜单", listing)
-        (_, again), = self._zmdlog("zmdlog 取关 全部榜单")
+        (_, again), = self._zmdlog("zmdlog 取关 全部")
         self.assertEqual(again, "这里还没有关注任何榜单。")
 
     def test_only_the_adder_or_an_admin_may_narrow_or_drop_every_board(
         self,
     ) -> None:
         self._enable_watch_storage()
-        self._zmdlog("zmdlog 关注 全部榜单", sender="111")
+        self._zmdlog("zmdlog 关注 全部", sender="111")
 
         (_, narrowed), = self._zmdlog("zmdlog 取关 罗丹", sender="222")
-        (_, dropped), = self._zmdlog("zmdlog 取关 全部榜单", sender="222")
+        (_, dropped), = self._zmdlog("zmdlog 取关 全部", sender="222")
 
         self.assertEqual(narrowed, "只有添加这条关注的人或机器人管理员可以取消它。")
         self.assertEqual(dropped, narrowed)
         self.assertEqual(self._watch_slugs(), [self.TRIO, self.RODAN])
-        admin = FakeEvent("zmdlog 取关 全部榜单", sender="222")
+        admin = FakeEvent("zmdlog 取关 全部", sender="222")
         admin.is_admin = lambda: True
         (_, done), = run(collect(self.plugin.zmdlog(admin)))
         self.assertEqual(done, "已取消这里的全部榜单关注。")
@@ -2141,7 +2152,7 @@ class HandlerTests(unittest.TestCase):
 
     def test_every_board_is_reported_except_the_excluded(self) -> None:
         self._enable_watch_storage()
-        for text in ("zmdlog 关注 全部榜单", "zmdlog 取关 罗丹"):
+        for text in ("zmdlog 关注 全部", "zmdlog 取关 罗丹"):
             self._zmdlog(text)
         reads = iter(
             (

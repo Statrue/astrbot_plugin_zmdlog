@@ -155,7 +155,7 @@ class HelpTests(unittest.TestCase):
                 ),
                 "!zmdlog 对比 <榜单关键词 [名次 名次] 或 两个battleId> [--口径 rdps]",
                 "!zmdlog 对比 <榜单关键词> 我 [名次] [--口径 rdps]",
-                "!zmdlog 关注 [<榜单关键词> | 全部榜单]",
+                "!zmdlog 关注 [<榜单关键词> | 全部]",
                 "!zmdlog 趋势 <账号> [--范围 7d|14d|30d|all]",
                 "!zmdlog 绑定 <绑定码>",
                 "!zmdlog 我的 [序号或昵称]",
@@ -366,11 +366,18 @@ class WatchRouteTests(unittest.TestCase):
                     parse_zmdlog_payload(payload)
 
     def test_every_board_has_its_own_two_routes(self) -> None:
+        self.assertEqual(parse_zmdlog_payload("关注 全部").kind, RouteKind.WATCH_ALL)
         self.assertEqual(
-            parse_zmdlog_payload("关注 全部榜单").kind, RouteKind.WATCH_ALL
+            parse_zmdlog_payload("取关 全部").kind, RouteKind.UNWATCH_ALL
         )
+
+    def test_every_board_is_spelled_one_way(self) -> None:
+        # 全部 alone names every board; 全部榜单 is an ordinary keyword.
+        add = parse_zmdlog_payload("关注 全部榜单")
+        self.assertEqual((add.kind, add.query), (RouteKind.WATCH_ADD, "全部榜单"))
+        remove = parse_zmdlog_payload("取关 全部榜单")
         self.assertEqual(
-            parse_zmdlog_payload("取关 全部榜单").kind, RouteKind.UNWATCH_ALL
+            (remove.kind, remove.query), (RouteKind.WATCH_REMOVE, "全部榜单")
         )
 
     def test_the_old_board_marker_is_part_of_the_keyword(self) -> None:

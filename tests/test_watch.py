@@ -483,7 +483,7 @@ class WatchListTextTests(unittest.TestCase):
 
         self.assertIn("还没有关注任何榜单", text)
         self.assertIn("/zmdlog 关注 <榜单关键词>", text)
-        self.assertIn("/zmdlog 关注 全部榜单", text)
+        self.assertIn("/zmdlog 关注 全部", text)
         self.assertNotIn("账号", text)
 
     def test_an_explicit_list_is_numbered(self) -> None:

@@ -205,7 +205,7 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                 summary="有新纪录第一时间知道",
                 commands=(
                     HelpCommand(
-                        command=f"{command} 关注 [<榜单关键词> | 全部榜单]",
+                        command=f"{command} 关注 [<榜单关键词> | 全部]",
                         answers="关注榜单，有新纪录在这里通报；取关 撤销",
                     ),
                     HelpCommand(

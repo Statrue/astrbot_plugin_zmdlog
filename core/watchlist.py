@@ -65,7 +65,7 @@ class WatchedBoard:
 
 @dataclass(frozen=True, slots=True)
 class AllBoards:
-    """关注 全部榜单: who asked for every board, and when."""
+    """关注 全部: who asked for every board, and when."""
 
     added_by: str
     added_at: str
@@ -130,7 +130,7 @@ class ChatWatch:
         return replace(self, excluded=_without_entry(self.excluded, boss_slug))
 
     def removable_entirely_by(self, requester_key: str, *, is_admin: bool) -> bool:
-        """Whether 取关 全部榜单 may clear this chat: every entry must be theirs."""
+        """Whether 取关 全部 may clear this chat: every entry must be theirs."""
 
         if self.all_boards is not None:
             return self.all_boards.removable_by(requester_key, is_admin=is_admin)
@@ -433,7 +433,7 @@ def format_watchlist(chat: ChatWatch, *, command: str = "/zmdlog") -> str:
         lines.append(
             f"排除一张榜用 {command} 取关 <榜单关键词>，"
             f"恢复用 {command} 关注 <榜单关键词>，"
-            f"全部取消用 {command} 取关 全部榜单。"
+            f"全部取消用 {command} 取关 全部。"
         )
         return "\n\n".join(lines)
     if chat.boards:
@@ -448,6 +448,6 @@ def format_watchlist(chat: ChatWatch, *, command: str = "/zmdlog") -> str:
     return (
         "还没有关注任何榜单。"
         f"用 {command} 关注 <榜单关键词> 关注一张榜，"
-        f"或 {command} 关注 全部榜单（以后新出的榜单也会包含）；"
+        f"或 {command} 关注 全部（以后新出的榜单也会包含）；"
         "关注的榜单前三名有新纪录时会在这里通报。"
     )

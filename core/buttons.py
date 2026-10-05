@@ -61,7 +61,9 @@ so like the other views they carry the metric and no filter. The second
 row turns the page: 全部 and 下一页, each repeating the page's ``--角色``,
 ``--属性`` and metric, so the page it draws is the one this page was
 filtered to (``PageTarget.record_count`` says whether a next page exists;
-the last page has none). The 全部 picture has neither. One that stopped at
+the last page has none). The 全部 picture has neither, and nor has a
+board that fits on one page, where 全部 would draw the same rows. A 全部
+picture that stopped at
 thirty rows and left the rest to the site gets, as its second row, the
 board on the site, labelled with how many rows wait there; being the same
 link as the jump button, it stands in for it rather than repeat it a row
@@ -544,19 +546,25 @@ def _ranking_keyboard(
 
     The pages are 全部 and the next one, each with the filters and the
     metric the page was drawn with; the last page has no next, and the
-    全部 picture neither. A 全部 picture that left rows to the site gets
+    全部 picture neither, nor a board that fits on one page — 全部 would
+    draw the rows it shows. A 全部 picture that left rows to the site gets
     a button there in their place, saying how many — and, being the same
     link, it is the site button too, so no third row repeats it.
     """
 
     rows = [views]
+    page_count = (
+        None
+        if target.record_count is None
+        else ranking_page_count(target.record_count)
+    )
     if target.ranking_page == ALL_PAGES:
         rest = (target.record_count or 0) - MAX_RANKING_ROWS
         if rest > 0:
             label = SITE_REST_LABEL.format(count=rest)
             rows.append([jump_button("open", label, url)])
             return _keyboard_rows(rows)
-    else:
+    elif page_count != 1:
         pages = [
             command_button(
                 "page-all",
@@ -566,9 +574,7 @@ def _ranking_keyboard(
             )
         ]
         page = target.ranking_page if isinstance(target.ranking_page, int) else 1
-        if target.record_count is not None and page < ranking_page_count(
-            target.record_count
-        ):
+        if page_count is not None and page < page_count:
             pages.append(
                 command_button(
                     "page-next",

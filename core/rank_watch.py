@@ -288,7 +288,7 @@ class RankWatcher:
     async def _watch_all(
         self, origin: str, requester_key: str, *, command: str
     ) -> str:
-        """关注 全部榜单: every board, the ones the site opens later too."""
+        """关注 全部: every board, the ones the site opens later too."""
 
         chat = self.watchlist.chat(origin)
         if chat.all_boards is not None:
@@ -403,7 +403,7 @@ class RankWatcher:
     def _unwatch_all(
         self, origin: str, requester_key: str, *, is_admin: bool
     ) -> str:
-        """取关 全部榜单: the chat's whole watch, if every entry is theirs."""
+        """取关 全部: the chat's whole watch, if every entry is theirs."""
 
         chat = self.watchlist.chat(origin)
         if chat.is_empty:

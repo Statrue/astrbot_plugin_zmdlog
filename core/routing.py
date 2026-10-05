@@ -215,8 +215,9 @@ WATCH_ROUTES = frozenset(
 BINDING_ROUTES = frozenset(
     {RouteKind.BIND, RouteKind.UNBIND, RouteKind.PRIMARY_ACCOUNT}
 )
-# 关注 全部榜单 / 取关 全部榜单: every board the site lists, now and later.
-ALL_BOARDS_WORDS = frozenset({"全部榜单", "全部"})
+# 关注 全部 / 取关 全部: every board the site lists, now and later. One
+# spelling: 全部榜单 is an ordinary keyword, matched like any other.
+ALL_BOARDS_WORDS = frozenset({"全部"})
 # The configuration actions — 别名, 关注, 绑定 — as against the queries,
 # which draw a page. They answer in text, and a tapped callback button never
 # runs one: its data is whatever the tapping client sends.
@@ -491,7 +492,7 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         options.reject_except()
         if not remainder:
             raise RouteParseError(
-                "用法：取关 <序号或榜单关键词> 或 取关 全部榜单，序号见 关注 列表。"
+                "用法：取关 <序号或榜单关键词> 或 取关 全部，序号见 关注 列表。"
             )
         if remainder in ALL_BOARDS_WORDS:
             return RouteRequest(RouteKind.UNWATCH_ALL)
