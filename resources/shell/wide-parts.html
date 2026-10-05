@@ -1,0 +1,71 @@
+{# The wide pages' shared parts (wide-parts.css styles them): the cut
+   corner, a section's dark bar, the strip of a battle's pages, and the
+   game's own marks for a build — the potential / 精炼 star, the level
+   block and the level pips. parts.html keeps the masthead, the arrow
+   block and the faces both widths draw. #}
+
+{# The cut top-right corner, softened: a clip path for a layer ``w`` wide,
+   the cut ``c`` deep. The path runs far below the layer, so a layer a long
+   name makes taller is never cut short. #}
+{% macro cut(w, c=16) -%}
+path('M0,6 Q0,0 6,0 H{{ w - c - 4 }} Q{{ w - c }},0 {{ w - c + 2.8 }},2.8 L{{ w - 2.8 }},{{ c - 2.8 }} Q{{ w }},{{ c }} {{ w }},{{ c + 4 }} V2000 H0 Z')
+{%- endmacro %}
+
+{# A section's title: a dark bar with the cut corner and a yellow key, the
+   name, and one figure on the right when the section has one to anchor it. #}
+{% macro bar(title, w, aside="") -%}
+<div class="i-layer i-layer--who b-bar" style="clip-path: {{ cut(w, 14) }};">
+  <i class="b-bar-key" aria-hidden="true"></i><strong>{{ title }}</strong>{% if aside %}<span class="b-bar-aside">{{ aside }}</span>{% endif %}
+</div>
+{%- endmacro %}
+
+{# The battle's pages in the foot, ``(label, current)`` each, the current
+   one on yellow; nothing at all when the page has no siblings to name. #}
+{% macro view_strip(views) -%}
+{% if views %}
+<p class="w-views">
+  {% for view in views %}{% if not loop.first %}<i>·</i>{% endif %}<span{% if view.current %} class="is-on"{% endif %}>{{ view.label }}</span>{% endfor %}
+</p>
+{% endif %}
+{%- endmacro %}
+
+{# The potential star the game draws for 潜能 and 精炼 alike: five
+   interwoven blades traced off the game's art (the paint order makes the
+   weave). ``n`` is the rank counted from 1 (潜能 + 1, or the 精炼): the
+   blades before the n-th are white, the n-th — the next to gain — yellow,
+   counter-clockwise from the upper-left one, A → B → E → D → C; at 6 (潜能
+   5, 精炼 6) every blade is white and the star aglow. #}
+{% macro refine_star(n) -%}
+{%- set blades = {'D': '70,151 246,151 282,174 106,174', 'C': '203,38 238,11 183,178 149,202', 'A': '66,1 208,103 223,144 80,42', 'B': '0,160 147,58 191,56 48,158', 'E': '95,61 150,226 138,265 84,100'} -%}
+{%- set light = ['A', 'B', 'E', 'D', 'C'] -%}
+<svg class="b-star{% if n >= 6 %} is-max{% endif %}" viewBox="-6 -6 300 288" aria-hidden="true">
+  {#- the unlit blades first, so grey never lies over a lit one; then the
+      lit ones, woven among themselves #}
+  {%- for key in ["D", "C", "A", "B", "E"] %}{% if n < light.index(key) + 1 %}<polygon class="is-base" points="{{ blades[key] }}"/>{% endif %}{% endfor %}
+  {%- for key in ["D", "C", "A", "B", "E"] %}{% set rank = light.index(key) + 1 %}{% if n >= rank %}<polygon class="is-{{ 'lead' if rank == n else 'lit' }}" points="{{ blades[key] }}"/>{% endif %}{% endfor %}
+</svg>
+{%- endmacro %}
+
+{# A character's level after the game's character screen: the number large
+   over a grid of small squares fading to the lower right; a dash when the
+   upload did not record it. #}
+{% macro level_block(level) -%}
+<div class="b-lo-level{% if level is none %} is-empty{% endif %}">
+  <em>等级</em>
+  <b>{{ level if level is not none else "—" }}</b>
+</div>
+{%- endmacro %}
+
+{# A weapon skill's or 词条's level as the game's weapon panel draws it:
+   ``total`` capsules tilted like a slash — yellow up to ``level``, a pale
+   outline past it, and past ``cap`` (the 精炼's limit) a grey outline
+   crossed by one stroke the other way. #}
+{% macro level_pips(level, cap, total=9) -%}
+<svg class="b-pips" viewBox="0 0 {{ total * 13 + 5 }} 16" width="{{ total * 13 + 5 }}" height="16" aria-hidden="true">
+  {% for k in range(total) %}{% set x = k * 13 + 4 %}
+  {% if k < level %}<line class="is-on" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/>
+  {% elif k < cap %}<line class="is-ring" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/><line class="is-hole" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/>
+  {% else %}<g class="is-x"><line class="is-ring" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/><line class="is-hole" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/><line class="is-bar" x1="{{ x - 0.5 }}" y1="3.8" x2="{{ x + 8.5 }}" y2="12.2"/></g>{% endif %}
+  {% endfor %}
+</svg>
+{%- endmacro %}

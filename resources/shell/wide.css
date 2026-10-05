@@ -1,0 +1,44 @@
+/* The 960 px wide page: the list's ground and masthead, the giant word and
+   the title a size up (the sky's machine keeps its 540 px drawing at the
+   right end), the sections stacked with room between them, and the view
+   strip in the foot. */
+.zmd-wide {
+  background: var(--box-page) 0 180px / 216px 216px repeat, var(--page-bg);
+  /* Barlow's ligatures join the digits of a figure like 1:22 */
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+.zmd-wide .i-giant {
+  font-size: var(--fs-150);
+}
+.zmd-wide .i-title {
+  font-size: var(--fs-52);
+}
+.zmd-wide .zmd-main {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 22px 24px 0;
+}
+
+/* the battle's pages, this one on a yellow block */
+.w-views {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: var(--fs-17);
+  color: var(--foot-ink-soft);
+}
+.w-views span {
+  padding: 2px 8px;
+}
+.w-views i {
+  margin: 0 4px;
+  font-style: normal;
+  color: var(--foot-rule);
+}
+.w-views .is-on {
+  font-weight: 700;
+  background: var(--yellow);
+  color: var(--medal-ink);
+}

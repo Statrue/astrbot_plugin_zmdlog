@@ -1,0 +1,31 @@
+{# The 960 px wide page (ADR 0003), opened and zoomed on a phone: the
+   masthead with its giant word, the page's sections, and the dark foot.
+   A wide page fills ``giant`` (BATTLE REPORT; 对比 says VERSUS), ``meta``
+   (the line under the title) and ``content``; it may fill ``views`` with
+   the strip of its sibling pages (wide-parts.html ``view_strip``), which
+   the foot sets above its meta line, and ``foot_note`` replaces the page's
+   own footer note. #}
+{% extends "shell/base.html" %}
+{% from "shell/parts.html" import masthead %}
+
+{% block frame_styles %}{% include "shell/textures.css" %}{% include "shell/parts.css" %}{% include "shell/wide-parts.css" %}{% include "shell/wide.css" %}{% endblock %}
+{% block root_class %}zmd-wide{% endblock %}
+
+{% block root %}
+{% call masthead(page.header.title, self.giant(), shell.sky_art) %}{{ self.meta() }}{% endcall %}
+<main class="zmd-main">
+  {% block content %}{% endblock %}
+</main>
+<footer class="i-foot">
+  {% block views %}{% endblock %}
+  <p class="i-foot-meta">
+    <span>数据来源 ZMDLogs</span>
+    <span>{% block foot_note %}{{ page.header.footer_note }}{% endblock %}</span>
+    <span><b>v{{ plugin.version }}</b></span>
+  </p>
+</footer>
+{% endblock %}
+
+{# Filled by the page; drawn through self.* in the masthead above. #}
+{% block giant %}{% endblock %}
+{% block meta %}{% endblock %}

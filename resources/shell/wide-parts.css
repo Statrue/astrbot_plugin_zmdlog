@@ -1,0 +1,154 @@
+/* The wide pages' shared parts (macros in wide-parts.html): a section as
+   a dark bar over a light body, the characters' colours, and the game's
+   marks for a build — the star, the level block and the level pips. */
+
+/* ── a section: dark bar over a light body ──────────────────────── */
+.b-block {
+  filter: drop-shadow(0 5px 8px var(--lift-16)) drop-shadow(0 0 0.6px var(--lift-26));
+}
+.b-bar {
+  height: 44px;
+  min-height: 44px;
+  gap: 12px;
+  padding: 0 30px 0 0;
+}
+.b-bar-key {
+  align-self: stretch;
+  width: 10px;
+  background: var(--yellow);
+}
+.b-bar strong {
+  font-weight: 700;
+  font-size: var(--fs-20);
+  letter-spacing: 0.04em;
+}
+.b-bar-aside {
+  margin-left: auto;
+  font-size: var(--fs-17);
+  color: var(--who-ink-2);
+}
+.b-body {
+  padding: 18px 22px;
+  border-radius: 0 0 6px 6px;
+  background: var(--stripe-a);
+}
+
+/* The characters' colours, in the battle's DPS order: the main C keeps
+   the yellow, the rest take the page's other inks. A wave fight's fifth
+   and sixth fall back to greys. */
+.c1 { --c: var(--char-1); }
+.c2 { --c: var(--char-2); }
+.c3 { --c: var(--char-3); }
+.c4 { --c: var(--char-4); }
+.c5 { --c: var(--char-5); }
+.c6 { --c: var(--char-6); }
+
+/* ── the potential / 精炼 star ───────────────────────────────────── */
+/* Each blade casts a soft shadow so the weave reads on a light ground;
+   the filter works in the star's own units (300 wide → 64 px). */
+.b-star {
+  width: 64px;
+  height: 62px;
+  overflow: visible;
+}
+.b-star polygon {
+  filter: drop-shadow(0 6px 6px var(--star-shadow)) drop-shadow(0 0 1.5px var(--star-edge));
+}
+.b-star .is-base {
+  fill: var(--star-base);
+  filter: none;
+}
+.b-star .is-lead {
+  fill: var(--yellow);
+}
+.b-star .is-lit {
+  fill: var(--card);
+}
+.b-star.is-max {
+  filter: drop-shadow(0 0 4px var(--star-glow)) drop-shadow(0 0 9px var(--star-glow-soft));
+}
+
+/* ── the level block: the number over a fading grid of squares ──── */
+.b-lo-level {
+  position: relative;
+  flex: none;
+  width: 124px;
+  height: 88px;
+}
+.b-lo-level::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18px;
+  bottom: 0;
+  background: var(--level-grid);
+  opacity: 0.12;
+  /* the squares' shape and the fade, intersected; only alpha counts */
+  -webkit-mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Crect width='7.5' height='7.5' rx='1'/%3E%3C/svg%3E"),
+    linear-gradient(160deg, #000 35%, transparent 95%);
+  -webkit-mask-size: 10px 10px, auto;
+  -webkit-mask-composite: source-in;
+  mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Crect width='7.5' height='7.5' rx='1'/%3E%3C/svg%3E"),
+    linear-gradient(160deg, #000 35%, transparent 95%);
+  mask-size: 10px 10px, auto;
+  mask-composite: intersect;
+}
+.b-lo-level b {
+  position: absolute;
+  left: 4px;
+  bottom: 0;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-66);
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--level-ink);
+}
+.b-lo-level em {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-style: normal;
+  font-size: var(--fs-13);
+  line-height: 1;
+  color: var(--muted);
+}
+.b-lo-level.is-empty b {
+  color: var(--muted);
+}
+
+/* ── level pips: one tilted capsule a level ─────────────────────── */
+.b-pips {
+  flex: none;
+  box-sizing: content-box;
+  padding: 3px 7px;
+  border-radius: 11px;
+  background: var(--pip-bg);
+  overflow: visible;
+}
+.b-pips line {
+  stroke-linecap: round;
+}
+.b-pips .is-on {
+  stroke: var(--yellow);
+  stroke-width: 7;
+  filter: drop-shadow(0 0 0.6px var(--pip-glow));
+}
+.b-pips .is-ring {
+  stroke: var(--pip-ring);
+  stroke-width: 7;
+}
+.b-pips .is-x .is-ring {
+  stroke: var(--pip-cross);
+}
+.b-pips .is-x .is-bar {
+  stroke: var(--pip-cross);
+  stroke-width: 1.4;
+}
+.b-pips .is-hole {
+  stroke: var(--pip-bg);
+  stroke-width: 3.6;
+}

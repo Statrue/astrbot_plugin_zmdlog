@@ -41,9 +41,10 @@
 <span class="i-arrow"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4L15 15M15 6.5V15H6.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/></svg></span>
 {%- endmacro %}
 
-{# One round face; ``lead`` gives it the main C's yellow ring and halo. #}
-{% macro face(member, lead=false) -%}
-<span class="i-face{% if lead %} is-lead{% endif %}">
+{# One round face; ``lead`` gives it the main C's yellow ring and halo,
+   ``cls`` a size or a place the page's stylesheet gives it. #}
+{% macro face(member, lead=false, cls="") -%}
+<span class="i-face{% if lead %} is-lead{% endif %}{% if cls %} {{ cls }}{% endif %}">
   <span class="i-face-disc">
     <span class="initial">{{ member.character_initial }}</span>
     {% if member.avatar_url %}<img src="{{ member.avatar_url }}" alt="" onerror="this.remove()">{% endif %}

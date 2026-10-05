@@ -48,14 +48,51 @@
   --foot-bg: #262828;
   --foot-ink: #b9bcc0;
   --foot-ink-strong: #e6e6e6;
+  --foot-ink-soft: #d6d8db;
   --foot-rule: #6d7074;
+  /* a battle's characters, in its DPS order: the main C's yellow, then
+     charcoal, bronze and steel blue; a wave fight's fifth and sixth grey */
+  --char-1: var(--yellow);
+  --char-2: #34373d;
+  --char-3: #d98f4e;
+  --char-4: #7f97b0;
+  --char-5: #a0a4ab;
+  --char-6: #c2c5cb;
+  /* charts on the wide pages: a bar's empty track, the grid, the axis */
+  --track: #dde0e4;
+  --grid: #dcdfe3;
+  --grid-soft: #e3e6ea;
+  --grid-major: #cfd3d8;
+  --axis: #c9cdd3;
+  --rule-soft: #e0e3e7;
+  --line-halo: rgba(30, 32, 36, 0.32);
+  /* 暴击期望's bell: its fill and ±1σ hatching, the expected mark, the
+     edge round the actual one */
+  --bell-fill: rgba(52, 55, 61, 0.1);
+  --bell-hatch: rgba(52, 55, 61, 0.07);
+  --mark-expected: #6b7079;
+  --mark-edge: rgba(30, 32, 36, 0.35);
+  /* the potential star, the level block and the level pips */
+  --star-base: #d3d6db;
+  --star-shadow: rgba(30, 34, 42, 0.32);
+  --star-edge: rgba(30, 34, 42, 0.35);
+  --star-glow: rgba(255, 214, 0, 0.9);
+  --star-glow-soft: rgba(255, 200, 0, 0.5);
+  --level-ink: #3a3d43;
+  --level-grid: #3c424c;
+  --pip-bg: #d5d8dc;
+  --pip-ring: #eceef0;
+  --pip-cross: #a9aeb5;
+  --pip-glow: rgba(110, 90, 0, 0.55);
   /* shadows: one ink, at the strengths the parts use */
   --shadow-6: rgba(0, 0, 0, 0.06);
   --shadow-8: rgba(0, 0, 0, 0.08);
   --shadow-12: rgba(0, 0, 0, 0.12);
   --lift-12: rgba(18, 24, 40, 0.12);
   --lift-16: rgba(24, 32, 52, 0.16);
+  --lift-22: rgba(24, 32, 52, 0.22);
   --lift-24: rgba(24, 32, 52, 0.24);
+  --lift-26: rgba(24, 32, 52, 0.26);
   --lift-28: rgba(24, 32, 52, 0.28);
   --lift-38: rgba(18, 24, 40, 0.38);
   --lift-42: rgba(18, 24, 40, 0.42);
