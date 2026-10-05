@@ -305,15 +305,27 @@ class CharacterStatsPageTests(unittest.TestCase):
             top.character_avatar_url,
             "https://zmdlogs.com/images/character/chr_lifeng.png",
         )
-        self.assertEqual(len(page.axis_labels), 5)
+        # Five ticks a quarter apart, so the plot's grid falls on each.
+        self.assertEqual(
+            [tick.left for tick in page.axis_ticks], [0, 25, 50, 75, 100]
+        )
         # Axis follows the whiskers (168k) rather than the 260k outlier maximum.
-        self.assertEqual(page.axis_labels[-1], "20万")
+        self.assertEqual(page.axis_ticks[0].label, "0")
+        self.assertEqual(page.axis_ticks[-1].label, "20万")
         self.assertEqual(top.maximum_left, 100.0)
         # Insufficient rows with zero samples are dropped from the chip list.
         self.assertEqual(
             [chip.character_name for chip in page.insufficient], ["佩丽卡"]
         )
         self.assertEqual(page.insufficient[0].sample_count, 3)
+
+    def test_a_median_and_a_maximum_are_whole(self) -> None:
+        stats = parse_character_statistics(character_statistics_payload())
+        page = build_character_stats_page(stats, query="角色")
+
+        # 卡缪's median is 60,500.5 upstream.
+        self.assertEqual(page.rows[2].median, "60,500")
+        self.assertNotIn(".", page.rows[2].maximum)
 
     def test_global_scope_labels(self) -> None:
         stats = parse_character_statistics(character_statistics_payload(scope="all"))
@@ -322,20 +334,61 @@ class CharacterStatsPageTests(unittest.TestCase):
         self.assertEqual(page.header.subtitle, "角色统计总榜")
         self.assertEqual(page.included_boss_count, 12)
 
-    def test_template_renders_without_leaking_keys(self) -> None:
-        stats = parse_character_statistics(character_statistics_payload())
+    def test_the_global_page_is_one_table_a_character_a_row(self) -> None:
+        stats = parse_character_statistics(character_statistics_payload(scope="all"))
         html = self.renderer.render_character_stats(
-            stats, query="角色 测试", web_base_url="https://zmdlogs.com"
+            stats, query="角色统计", web_base_url="https://zmdlogs.com"
         )
-        self.assertIn("六星角色 DPS 分布", html)
-        self.assertIn("黎风", html)
-        self.assertIn("样本不足", html)
-        self.assertIn("佩丽卡", html)
-        self.assertFalse(hasattr(page_row := build_character_stats_page(
-            stats, query="角色 测试").rows[0], "character_key"), page_row)
+
+        self.assertIn('<h1 class="i-title">全部榜单</h1>', html)
+        self.assertIn(">STATISTICS<", html)
+        self.assertIn("<span>六星 DPS 分布</span>", html)
+        self.assertIn("<span>全部时间</span>", html)
+        self.assertIn("<span><b>57</b> 个样本</span>", html)
+        self.assertIn("<strong>六星角色 DPS 分布</strong>", html)
+        self.assertIn('<span class="b-bar-aside">覆盖 12 个榜单</span>', html)
+        # The head names the columns, the axis's ticks heading the plots.
+        start = html.index('class="w-tr w-th')
+        head = html[start:html.index("</div>", start)]
+        for label in ("名次", "角色", "样本", "中位", "最高"):
+            self.assertIn(f">{label}</span>", head)
+        self.assertIn(">0</i>", head)
+        self.assertIn(">20万</i>", head)
+        # A row a character, the first three on their medal's underline.
+        self.assertIn('class="w-tr s-tr is-top is-1"', html)
+        self.assertIn('class="w-tr s-tr is-top is-3"', html)
+        self.assertIn('<span class="w-rank"><b>01</b></span>', html)
+        self.assertIn("<strong>黎风</strong><em>近卫</em>", html)
+        self.assertIn("https://zmdlogs.com/images/character/chr_lifeng.png", html)
+        self.assertIn('<b class="s-median-v">120,000</b>', html)
+        self.assertIn('<span class="w-muted">260,000</span>', html)
+        # The outlier maximum past the axis turns to point off it.
+        self.assertIn('class="s-max is-off"', html)
+        # Too few samples: a chip each, out of the ranking.
+        self.assertIn("<strong>样本不足</strong>", html)
+        self.assertIn("不足 5 个样本，不参与排名", html)
+        self.assertIn("<span>佩丽卡<b>3</b></span>", html)
         self.assertNotIn("无样本", html)
         body = html.split("<body>", 1)[1]
         self.assertNotIn("rdps", body.lower())
+
+    def test_a_boards_page_names_its_dungeon_and_covers_no_boards(self) -> None:
+        stats = parse_character_statistics(character_statistics_payload())
+        html = self.renderer.render_character_stats(stats, query="角色 测试")
+
+        self.assertIn('<h1 class="i-title">危境再现·三位一体</h1>', html)
+        self.assertIn("<span>危境再现 · 测试区</span>", html)
+        self.assertNotIn("覆盖", html)
+
+    def test_the_rdps_page_says_rdps(self) -> None:
+        stats = parse_character_statistics(
+            character_statistics_payload(scope="all", metric="rdps"), metric="rdps"
+        )
+        html = self.renderer.render_character_stats(stats, query="角色统计")
+
+        self.assertIn("<span>六星 rDPS 分布</span>", html)
+        self.assertIn("<strong>六星角色 rDPS 分布</strong>", html)
+        self.assertNotIn("六星角色 DPS", html)
 
     def test_empty_ranked_rows_render_a_notice(self) -> None:
         payload = character_statistics_payload()
@@ -345,6 +398,7 @@ class CharacterStatsPageTests(unittest.TestCase):
         self.assertEqual(page.rows, ())
         html = self.renderer.render_character_stats(stats, query="角色")
         self.assertIn("该范围内暂无足够样本", html)
+        self.assertNotIn('class="w-tr w-th', html)
 
 
 class RosterPageTests(unittest.TestCase):
@@ -494,6 +548,9 @@ class CharacterBossStatisticsTests(unittest.TestCase):
         self.assertEqual(page.rows[0].ranked_character_count, 12)
         self.assertIsNotNone(page.rows[1].maximum_left)
         self.assertEqual(
+            [tick.left for tick in page.axis_ticks], [0, 25, 50, 75, 100]
+        )
+        self.assertEqual(
             page.character_avatar_url,
             "https://zmdlogs.com/images/character/icon_chr_0028_wulfa.png",
         )
@@ -510,11 +567,26 @@ class CharacterBossStatisticsTests(unittest.TestCase):
         html = renderer.render_character_boss(
             stats, query="角色统计 洛茜", web_base_url="https://zmdlogs.com"
         )
-        self.assertIn("各榜单 DPS 分布", html)
-        self.assertIn("#1", html)
-        self.assertIn("/ 12", html)
-        self.assertIn("蚀影噪雷", html)
-        self.assertIn("样本不足", html)
+        self.assertIn('<h1 class="i-title">洛茜</h1>', html)
+        self.assertIn(">STATISTICS<", html)
+        self.assertIn("<span>近卫</span>", html)
+        self.assertIn("<span>六星 DPS 分布</span>", html)
+        self.assertIn("<span><b>120</b> 个样本</span>", html)
+        self.assertIn("<strong>各榜 DPS 分布</strong>", html)
+        # A row a board, its name over its dungeon, the character's rank on
+        # it out of the ranked characters; a first place underlined yellow.
+        head = html[html.index('class="w-tr w-th'):]
+        for label in ("榜单", "该榜名次", "样本", "中位", "最高"):
+            self.assertIn(f">{label}</span>", head)
+        self.assertIn("<strong>蚀影噪雷</strong><em>危境碎片</em>", html)
+        self.assertIn('class="w-tr s-tr is-top is-1"', html)
+        self.assertIn('class="w-tr s-tr is-top is-2"', html)
+        self.assertIn('<span class="w-rank"><b>01</b><small>/ 12</small></span>', html)
+        self.assertIn('<span class="w-rank"><b>02</b><small>/ 15</small></span>', html)
+        self.assertLess(html.index("蚀影噪雷"), html.index("危境再现·罗丹"))
+        self.assertIn("<strong>样本不足</strong>", html)
+        self.assertIn("<span>白垩界卫·苦难<b>3</b></span>", html)
+        self.assertNotIn("清波访客", html)
         body = html.split("<body>", 1)[1]
         self.assertNotIn("rdps", body.lower())
 

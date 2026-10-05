@@ -1,0 +1,19 @@
+{# 角色统计's two tables share these (character-stats.css styles them): the
+   axis's ticks heading the plot column, and one row's box plot on it. #}
+
+{% macro axis(ticks) -%}
+<span class="s-ticks">{% for tick in ticks %}<i style="left: {{ tick.left }}%;">{{ tick.label }}</i>{% endfor %}</span>
+{%- endmacro %}
+
+{# The whisker with its caps, the box yellow on a charcoal edge, the median
+   a charcoal bar, the highest record a white ▼ above — turned to point
+   off the axis when it lies past the axis's end. #}
+{% macro plot(row) -%}
+<span class="s-plot" aria-hidden="true">
+  <i class="s-grid"></i>
+  <i class="s-whisker" style="left: {{ row.whisker_left }}%; width: {{ row.whisker_width }}%;"></i>
+  <i class="s-box" style="left: {{ row.box_left }}%; width: {{ row.box_width }}%;"></i>
+  <i class="s-median" style="left: {{ row.median_left }}%;"></i>
+  {% if row.maximum_left is not none %}<svg class="s-max{% if row.maximum_left >= 100 %} is-off{% endif %}" style="left: {{ row.maximum_left }}%;" viewBox="0 0 14 12"><polygon points="1.5,1.5 12.5,1.5 7,10.5"/></svg>{% endif %}
+</span>
+{%- endmacro %}

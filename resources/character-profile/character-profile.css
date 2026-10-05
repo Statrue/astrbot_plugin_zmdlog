@@ -1,181 +1,270 @@
-/* 角色档案 — 四块占比两两并排，每块一行一项、单系列黄条；
-   各榜通关名次复用 common/standings-rows.css，一榜一行；
-   切到一个榜时换成该榜记录，同样一条一行。 */
+/* 角色档案 on the wide shell: the figures card, the four share cards 2×2,
+   and two columns of boards (or, cut to one board, of its records).
+   Names wrap rather than truncate. */
 
-/* 样本口径（切榜时上面多一条榜单）：hero 下的身份条，样式在 base.css 的 identity strip 里 */
-.profile-rule {
-  display: grid;
-  gap: 8px;
-  margin-top: 18px;
-}
-
-/* ---------- 四块占比 ---------- */
-
-.share-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 28px;
-}
-
-.share-block {
-  min-width: 0;
-}
-
-.share-rows {
-  margin: 0;
-  padding: 0;
-  background: var(--card);
-  list-style: none;
-}
-
-.share-row {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 150px) minmax(0, 1fr) 96px;
-  gap: 12px;
+/* ── the figures: the portrait, then three figures ruled apart ──── */
+.c-id {
+  display: flex;
   align-items: center;
-  padding: 8px 14px 8px 12px;
-  border-bottom: 1px solid var(--line-soft);
+  gap: 40px;
+  padding: 24px 30px 24px 38px;
+  border-radius: 6px;
+  background: var(--stripe-a);
+  filter: drop-shadow(0 5px 8px var(--lift-16)) drop-shadow(0 0 0.6px var(--lift-26));
+}
+.c-id-face {
+  width: 92px;
+  height: 92px;
+}
+.c-id-face.is-lead,
+.c-id-face.is-lead:first-child {
+  margin: 0 10px 0 6px;
+}
+.c-id-face.is-lead::before {
+  inset: -14px;
+}
+.c-id-face.is-lead::after {
+  inset: -22px;
+}
+.c-id-facts {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.c-id-facts div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 22px;
+}
+.c-id-facts div + div {
+  border-left: 1px solid var(--grid);
+}
+.c-id-facts dt {
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+.c-id-facts dd {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-40);
+  line-height: 1;
+  color: var(--ink);
+}
+.c-id-facts dd small {
+  margin-left: 4px;
+  font-family: var(--font-cjk);
+  font-size: var(--fs-17);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.c-id-facts div.is-top .c-id-rank {
+  padding: 0 5px;
+  background: linear-gradient(transparent 55%, var(--medal) 55%);
 }
 
-/* 养成组合没有图，名字直接靠左 */
-.share-block--investment .share-row {
-  grid-template-columns: minmax(0, 150px) minmax(0, 1fr) 96px;
+/* the top three on their medal's underline, here and on the boards */
+.c-id-facts .is-1,
+.c-board.is-1 {
+  --medal: var(--yellow);
+}
+.c-id-facts .is-2,
+.c-board.is-2 {
+  --medal: var(--silver);
+}
+.c-id-facts .is-3,
+.c-board.is-3 {
+  --medal: var(--bronze);
 }
 
-.share-row .avatar {
-  width: 30px;
-  height: 30px;
-  font-size: var(--fs-12);
+/* ── the share cards, 2×2; a share's bar is always yellow ───────── */
+.c-shares {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px 16px;
 }
-
-.share-icon {
-  position: relative;
-  display: block;
-  width: 30px;
-  height: 30px;
+.c-share {
+  display: flex;
+  flex-direction: column;
+}
+.c-share-rows {
+  flex: 1;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px 18px;
+}
+.c-share-row {
+  display: grid;
+  grid-template-columns: 116px 1fr 64px 34px;
+  align-items: center;
+  gap: 12px;
+}
+.c-share.is-gear .c-share-row,
+.c-share.is-teammate .c-share-row {
+  grid-template-columns: 34px 112px 1fr 64px 34px;
+}
+.c-share-name {
+  min-width: 0;
+  font-weight: 700;
+  font-size: var(--fs-17);
+  line-height: 1.25;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.c-share.is-investment .c-share-name {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-20);
+}
+.c-share-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 4px;
   overflow: hidden;
-  border: 1px solid var(--line-soft);
-  background: var(--card-soft);
+  background: linear-gradient(135deg, var(--tile-a), var(--track));
+  box-shadow: inset 0 -3px 0 var(--yellow);
 }
-
-.share-icon img {
-  position: absolute;
-  inset: 0;
-  display: block;
+.c-share-icon img {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
-
-.share-name {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: var(--fs-14);
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.c-share-face {
+  width: 34px;
+  height: 34px;
 }
-
-.share-block--investment .share-name {
-  font-family: var(--font-num);
-  font-size: var(--fs-17);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
+.c-share-face .i-face-disc img,
+.c-share-face .i-face-disc .initial {
+  inset: 2px;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
 }
-
-.share-bar {
-  position: relative;
+.c-share-face .i-face-disc .initial {
+  font-size: var(--fs-15);
+}
+.c-share-track {
   display: block;
   height: 10px;
-  background: var(--line-soft);
+  border-radius: 5px;
+  background: var(--track);
+  overflow: hidden;
 }
-
-.share-bar i {
-  position: absolute;
-  inset: 0 auto 0 0;
-  min-width: 0;
+.c-share-track i {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: 5px;
   background: var(--yellow);
 }
+.c-share-pct {
+  text-align: right;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-20);
+  color: var(--ink);
+}
+.c-share-row.is-top .c-share-pct {
+  font-size: var(--fs-22);
+}
+.c-share-n {
+  text-align: right;
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.c-share-empty {
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
 
-.share-value {
+/* ── the boards: two columns of short rows ──────────────────────── */
+.c-boards {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 28px;
+  padding: 6px 22px 10px;
+}
+.c-board {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.c-board-rank {
   display: flex;
   align-items: baseline;
-  justify-content: flex-end;
-  gap: 6px;
-  white-space: nowrap;
+  gap: 4px;
 }
-
-.share-value b {
-  color: var(--ink);
+.c-board-rank b {
   font-family: var(--font-num);
-  font-size: var(--fs-17);
-  font-variant-numeric: tabular-nums;
   font-weight: 800;
+  font-size: var(--fs-28);
+  line-height: 1;
+  color: var(--ink);
 }
-
-.share-value i {
-  color: var(--muted);
+.c-board-rank small {
   font-family: var(--font-num);
-  font-size: var(--fs-11);
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-.share-more {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: var(--fs-12);
   font-weight: 600;
+  font-size: var(--fs-15);
+  color: var(--muted);
 }
-
-/* ---------- 各榜通关名次：没有阵容行，四列 ---------- */
-
-.profile-boards {
-  --standings-cols: 92px minmax(0, 1fr) 300px 168px;
+.c-board.is-top .c-board-rank b {
+  padding: 0 5px;
+  background: linear-gradient(transparent 55%, var(--medal) 55%);
 }
-
-/* 一条一行：两张表都没有阵容行 */
-.profile-boards .standings-row,
-.profile-records .standings-row {
-  grid-template-rows: auto;
+.c-board-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
-
-/* ---------- 该榜记录：名次、账号、养成、日期、用时五列 ---------- */
-
-.profile-records {
-  --standings-cols: 92px minmax(0, 1fr) 120px 150px 168px;
+.c-board-name strong {
+  font-weight: 700;
+  font-size: var(--fs-17);
+  line-height: 1.3;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
-
-.profile-head-fact {
-  text-align: right;
+.c-board-name small,
+.c-board-best small {
+  font-size: var(--fs-15);
+  line-height: 1.3;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
-
-.profile-record-fact {
+.c-board-best {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 3px;
-  white-space: nowrap;
+  gap: 2px;
+  min-width: 0;
+  max-width: 130px;
+  text-align: right;
 }
-
-.profile-record-fact span {
-  color: var(--muted);
-  font-size: var(--fs-11);
-  font-weight: 800;
-  letter-spacing: 0.1em;
-}
-
-.profile-record-fact b {
-  color: var(--steel);
+.c-board-best b {
   font-family: var(--font-num);
-  font-size: var(--fs-20);
-  font-variant-numeric: tabular-nums;
   font-weight: 800;
-  line-height: 1;
+  font-size: var(--fs-20);
+  color: var(--ink);
 }
 
-/* 养成是这张表除用时外要看的那一列 */
-.profile-record-fact .investment-text {
-  color: var(--ink);
+/* --榜单: the board's records; 养成 as a small grey chip */
+.c-record {
+  grid-template-columns: 52px minmax(0, 1fr) auto auto;
+}
+.c-record-inv {
+  padding: 3px 8px 2px;
+  border-radius: 3px;
+  background: var(--cell);
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-17);
+  line-height: 1.1;
+  color: var(--ink-2);
 }

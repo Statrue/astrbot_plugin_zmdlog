@@ -1049,36 +1049,44 @@ class ProfileTemplateTests(unittest.TestCase):
             icons=icons or {},
         )
 
-    def test_the_hero_names_the_character_window_and_sample(self) -> None:
+    def test_the_masthead_names_the_character_its_profession_and_window(
+        self,
+    ) -> None:
         html = self._html()
 
-        self.assertIn('<span class="title-text">莱万汀</span>', html)
-        self.assertIn('<span class="title-tag">角色档案</span>', html)
-        self.assertIn('<p class="page-subtitle">突击</p>', html)
-        # Its portrait is the catalog's, in its element's ring.
-        self.assertIn('class="avatar avatar--hero el-fire"', html)
-        self.assertIn(
-            f"{WEB}/images/character/charremoteicon/icon_chr_0016_laevat.png", html
-        )
-        self.assertIn("<span>范围</span><strong>近 7 天</strong>", html)
-        self.assertIn("<span>样本</span><strong>15</strong>", html)
-        self.assertIn("<span>公开账号</span><strong>9</strong>", html)
-        # The boards it was fielded on; 榜单 alone is the board the page is
-        # cut to, once it can be.
-        self.assertIn("<span>上榜榜单</span><strong>3</strong>", html)
-        # What the percentages are out of, stated where the page starts.
-        self.assertIn(
-            "只统计带该角色的公开有效通关记录，同一账号在同一榜单只留最快一场", html
-        )
+        self.assertIn('<h1 class="i-title">莱万汀</h1>', html)
+        self.assertIn(">OPERATOR<", html)
+        self.assertIn("<span>突击</span>", html)
+        self.assertIn("<span>近 7 天</span>", html)
+        self.assertIn("公开通关记录 · 角色档案", html)
 
-    def test_four_share_blocks_then_the_boards_in_that_order(self) -> None:
+    def test_the_figures_card_is_the_portrait_sample_accounts_and_boards(
+        self,
+    ) -> None:
+        html = self._html()
+        card = html[html.index('class="c-id"'):html.index('class="c-shares"')]
+
+        # Its portrait is the catalog's, on the main C's yellow ring.
+        self.assertIn('class="i-face is-lead c-id-face"', card)
+        self.assertIn(
+            f"{WEB}/images/character/charremoteicon/icon_chr_0016_laevat.png", card
+        )
+        self.assertIn("<dt>样本</dt><dd>15<small>条</small></dd>", card)
+        self.assertIn("<dt>公开账号</dt><dd>9</dd>", card)
+        # The boards it was fielded on; a page cut to one board gives its
+        # 通关名次 there instead.
+        self.assertIn("<dt>上榜榜单</dt><dd>3</dd>", card)
+        self.assertNotIn("通关名次", card)
+
+    def test_four_share_cards_then_the_boards_in_that_order(self) -> None:
         html = self._html()
 
         headings = [
-            html.index(f"<h2>{title}</h2>")
+            html.index(f"<strong>{title}</strong>")
             for title in ("养成组合", "武器", "装备", "常见队友", "各榜通关名次")
         ]
         self.assertEqual(headings, sorted(headings))
+        self.assertIn("队伍最快通关在该榜全部角色中的名次", html)
 
     def test_a_combination_is_written_as_every_page_writes_its_investment(
         self,
@@ -1086,32 +1094,39 @@ class ProfileTemplateTests(unittest.TestCase):
         html = self._html()
 
         # 5+6 under an avatar elsewhere, so 5+6 here: not upstream's "5 + 6".
-        self.assertIn('<span class="share-name">2+1</span>', html)
-        self.assertIn('<span class="share-name">5+?</span>', html)
-        self.assertIn('<span class="share-name">养成未记录</span>', html)
+        self.assertIn('<span class="c-share-name">2+1</span>', html)
+        self.assertIn('<span class="c-share-name">5+?</span>', html)
+        self.assertIn('<span class="c-share-name">养成未记录</span>', html)
         self.assertNotIn("2 + 1", html)
         self.assertNotIn("未知", html)
-        # Shares out of the sample, one decimal, with the count beside.
-        self.assertIn("<b>33.3%</b><i>5 条</i>", html)
+        # Shares out of the sample, one decimal, with the count beside; the
+        # first row of a card is its lead.
+        self.assertRegex(
+            html,
+            r'<b class="c-share-pct">33\.3%</b>\s*<small class="c-share-n">5</small>',
+        )
         self.assertIn('style="width: 33.33%;"', html)
+        self.assertIn('<li class="c-share-row is-top">', html)
 
     def test_gear_and_teammates_carry_their_pictures(self) -> None:
         html = self._html(icons={"卡缪": "/images/character/camille.png"})
 
-        self.assertIn('<span class="share-name">熔铸火焰</span>', html)
-        self.assertIn('<span class="share-name">武器未记录</span>', html)
+        self.assertIn('<span class="c-share-name">熔铸火焰</span>', html)
+        self.assertIn('<span class="c-share-name">武器未记录</span>', html)
         self.assertIn(f"{WEB}/images/weapon/icon/wpn_sword_0006.png", html)
         self.assertIn(
             f"{WEB}/images/equip/iconbig/item_equip_t4_suit_heal01_edc_03.png", html
         )
-        self.assertIn("<b>100%</b><i>15 条</i>", html)
+        self.assertIn('<b class="c-share-pct">100%</b>', html)
         # A teammate's face is the catalog's when it names one, else the
-        # conventional path by key; its ring is its element.
-        self.assertIn(f"{WEB}/images/character/camille.png", html)
+        # conventional path by key.
+        teammates = html[html.index("<strong>常见队友</strong>"):]
+        self.assertIn(f"{WEB}/images/character/camille.png", teammates)
         self.assertIn(
-            f"{WEB}/images/character/charremoteicon/icon_chr_0006_wolfgd.png", html
+            f"{WEB}/images/character/charremoteicon/icon_chr_0006_wolfgd.png",
+            teammates,
         )
-        self.assertIn('class="avatar el-pulse"', html)
+        self.assertIn('class="i-face c-share-face"', teammates)
 
     def test_a_raw_item_id_is_never_printed_as_a_name(self) -> None:
         payload = character_profile_payload()
@@ -1120,9 +1135,11 @@ class ProfileTemplateTests(unittest.TestCase):
 
         html = self._html(payload)
 
-        self.assertNotIn('<span class="share-name">wpn_sword_0006</span>', html)
-        self.assertNotIn("share-name\">item_equip", html)
-        self.assertEqual(html.count('<span class="share-name">名称未收录</span>'), 2)
+        self.assertNotIn('<span class="c-share-name">wpn_sword_0006</span>', html)
+        self.assertNotIn('c-share-name">item_equip', html)
+        self.assertEqual(
+            html.count('<span class="c-share-name">名称未收录</span>'), 2
+        )
 
     def test_a_long_list_shows_its_head_and_counts_the_rest(self) -> None:
         payload = character_profile_payload()
@@ -1141,7 +1158,7 @@ class ProfileTemplateTests(unittest.TestCase):
 
         self.assertIn("队友7", html)
         self.assertNotIn("队友8", html)
-        self.assertIn("另有 4 个未列出", html)
+        self.assertIn('<span class="b-bar-aside">另有 4 个</span>', html)
 
     def test_boards_run_best_clear_rank_first(self) -> None:
         html = self._html()
@@ -1153,11 +1170,15 @@ class ProfileTemplateTests(unittest.TestCase):
             for name in ("白刃穿水·残酷", "危境再现·阿莱克琉斯", "无机狂热·残酷")
         ]
         self.assertEqual(boards, sorted(boards))
-        self.assertRegex(html, r"<b>10</b>\s*<i>/ 13</i>")
+        # Every board is listed, a first place on the yellow underline.
+        self.assertEqual(html.count('<li class="c-board'), 3)
+        self.assertEqual(html.count('<li class="c-board is-top is-1">'), 2)
+        self.assertIn('<li class="c-board">', html)
+        self.assertIn("<b>10</b><small>/ 13</small>", html)
+        self.assertIn("<b>01</b><small>/ 15</small>", html)
         # The fastest clear, and whose record it is.
-        self.assertIn("<b>0:45.517</b>", html)
-        self.assertIn("<strong>百合末莉</strong>", html)
-        self.assertIn("该榜带该角色的记录 8 条", html)
+        self.assertIn("<b>0:45.517</b><small>百合末莉</small>", html)
+        self.assertIn("<strong>白刃穿水·残酷</strong><small>战争回响</small>", html)
 
     def test_no_drawn_text_comes_from_the_unread_lists(self) -> None:
         payload = character_profile_payload()
@@ -1180,12 +1201,11 @@ class ProfileTemplateTests(unittest.TestCase):
     def test_a_board_page_lists_that_boards_records_for_the_boards(self) -> None:
         html = self._board_html()
 
-        self.assertIn("<h2>该榜记录</h2>", html)
-        self.assertNotIn("<h2>各榜通关名次</h2>", html)
-        self.assertNotIn('class="standings profile-boards"', html)
-        # The four share blocks stay, ahead of the records.
+        self.assertIn("<strong>该榜记录</strong>", html)
+        self.assertNotIn("各榜通关名次", html)
+        # The four share cards stay, ahead of the records.
         headings = [
-            html.index(f"<h2>{title}</h2>")
+            html.index(f"<strong>{title}</strong>")
             for title in ("养成组合", "武器", "装备", "常见队友", "该榜记录")
         ]
         self.assertEqual(headings, sorted(headings))
@@ -1197,15 +1217,17 @@ class ProfileTemplateTests(unittest.TestCase):
             html.index(f"<strong>{name}</strong>") for name in ("百合末莉", "镜花水月")
         )
         self.assertLess(first, second)
-        self.assertRegex(html, r'<div class="standings-rank">\s*<b>1</b>')
-        self.assertIn("btl_upload_cad50c180d36", html)
-        self.assertIn("<b>0:45.517</b>", html)
-        self.assertIn("<b>0:58.871</b>", html)
-        # The date under the word the account page prints it under.
-        self.assertRegex(html, r"<span>战斗日期</span>\s*<b>2026-09-24</b>")
+        records = html[html.index("<strong>该榜记录</strong>"):]
+        self.assertIn('<li class="c-board c-record is-top is-1">', records)
+        self.assertIn('<li class="c-board c-record is-top is-2">', records)
+        self.assertIn("<b>01</b>", records)
+        self.assertIn("<b>0:45.517</b>", records)
+        self.assertIn("<b>0:58.871</b>", records)
+        self.assertIn("<strong>百合末莉</strong><small>2026-09-24</small>", records)
         # 养成 written as under every avatar.
-        self.assertIn('<b class="investment-text">5+6</b>', html)
-        self.assertIn('<b class="investment-text">2+1</b>', html)
+        self.assertIn('<span class="c-record-inv">5+6</span>', records)
+        self.assertIn('<span class="c-record-inv">2+1</span>', records)
+        self.assertNotIn("btl_upload", html)
 
     def test_an_unrecorded_weapon_or_potential_is_written_as_elsewhere(self) -> None:
         payload = character_profile_payload(boss_slug="indie_battletower001_ex")
@@ -1215,8 +1237,8 @@ class ProfileTemplateTests(unittest.TestCase):
 
         html = self._board_html(payload)
 
-        self.assertIn('<b class="investment-text">3+?</b>', html)
-        self.assertIn('<b class="investment-text">—</b>', html)
+        self.assertIn('<span class="c-record-inv">3+?</span>', html)
+        self.assertIn('<span class="c-record-inv">—</span>', html)
 
     def test_a_date_is_the_servers_day(self) -> None:
         # Upstream stamps each record in its uploader's offset.
@@ -1225,34 +1247,35 @@ class ProfileTemplateTests(unittest.TestCase):
 
         html = self._board_html(payload)
 
-        self.assertIn("<b>2026-07-23</b>", html)
+        self.assertIn("<small>2026-07-23</small>", html)
         payload["bosses"][0]["rows"][0]["battleEndAt"] = "2026-07-23T13:29:31-04:00"
-        self.assertIn("<b>2026-07-24</b>", self._board_html(payload))
+        self.assertIn("<small>2026-07-24</small>", self._board_html(payload))
 
     def test_a_board_page_names_its_board_and_its_clear_rank(self) -> None:
         html = self._board_html()
 
-        self.assertIn(
-            "<span>榜单</span><strong>白刃穿水·残酷 · 战争回响</strong>", html
-        )
-        self.assertIn(
-            "<span>通关名次</span><strong>1</strong><em>上榜角色 15</em>", html
-        )
+        self.assertIn("<span>白刃穿水·残酷 · 战争回响</span>", html)
+        card = html[html.index('class="c-id"'):html.index('class="c-shares"')]
+        # Its sample is the board's; its 通关名次 a first place, underlined.
+        self.assertIn("<dt>样本</dt><dd>8<small>条</small></dd>", card)
+        self.assertIn('<div class="is-top is-1"><dt>通关名次</dt>', card)
+        self.assertIn('<span class="c-id-rank">01</span><small>/ 15</small>', card)
         self.assertNotIn("上榜榜单", html)
-        self.assertIn("莱万汀 · 角色档案 · 白刃穿水·残酷", html)
-        # Its sample is the board's.
-        self.assertIn("<span>样本</span><strong>8</strong>", html)
 
     def test_records_past_the_ones_listed_are_counted(self) -> None:
         # Upstream lists twenty records at most, one per account; the board's
         # sample counts them all.
         html = self._board_html()
 
-        self.assertIn("只列最快 2 条，共 8 条", html)
+        self.assertIn(
+            '<span class="b-bar-aside">共 8 条 · 列出最快 2 条</span>', html
+        )
 
         payload = character_profile_payload(boss_slug="indie_battletower001_ex")
         payload["bosses"][0]["sampleCount"] = 2
-        self.assertNotIn("只列最快", self._board_html(payload))
+        html = self._board_html(payload)
+        self.assertIn('<span class="b-bar-aside">共 2 条</span>', html)
+        self.assertNotIn("列出最快", html)
 
 
 def profile_page(**options) -> PageTarget:

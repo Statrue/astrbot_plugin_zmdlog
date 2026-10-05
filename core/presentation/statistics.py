@@ -1,4 +1,8 @@
-"""Character statistics per board and one character across boards."""
+"""角色统计: six-star DPS spreads on one board or all, and one character's on each.
+
+Both pages are one table of box plots on a shared axis: the axis's five
+ticks head the plot column, and the plot's grid falls on them.
+"""
 
 import math
 from dataclasses import dataclass
@@ -19,6 +23,14 @@ from .common import (
 
 
 @dataclass(frozen=True, slots=True)
+class AxisTickView:
+    """One label of the shared axis, at its place along it (0–100)."""
+
+    label: str
+    left: float
+
+
+@dataclass(frozen=True, slots=True)
 class CharacterStatRowView:
     rank: int
     character_name: str
@@ -36,8 +48,6 @@ class CharacterStatRowView:
     box_left: float
     box_width: float
     median_left: float
-    p10_left: float
-    p90_left: float
     maximum_left: float | None
 
 
@@ -58,7 +68,7 @@ class CharacterStatsPage:
     total_outlier_count: int
     included_boss_count: int
     minimum_sample_count: int
-    axis_labels: tuple[str, ...]
+    axis_ticks: tuple[AxisTickView, ...]
     rows: tuple[CharacterStatRowView, ...]
     insufficient: tuple[CharacterStatChipView, ...]
     metric_label: str = "DPS"
@@ -79,8 +89,6 @@ class CharacterBossRowView:
     box_left: float
     box_width: float
     median_left: float
-    p10_left: float
-    p90_left: float
     maximum_left: float | None
 
 
@@ -103,7 +111,7 @@ class CharacterBossPage:
     total_outlier_count: int
     included_boss_count: int
     minimum_sample_count: int
-    axis_labels: tuple[str, ...]
+    axis_ticks: tuple[AxisTickView, ...]
     rows: tuple[CharacterBossRowView, ...]
     insufficient: tuple[CharacterBossChipView, ...]
     metric_label: str = "DPS"
@@ -115,9 +123,9 @@ _POTENTIAL_LABELS = {"0": "0 潜能", "1-5": "1–5 潜能", "all": "全部潜�
 def _box_plot(row, axis_max: float) -> dict[str, object]:
     """One row's box-plot geometry as percentages of the shared axis.
 
-    The same twelve fields on both statistics pages: sample counts, the
-    formatted median and maximum, and whisker / box / median / p10 / p90
-    positions, with an outlier maximum pinned to the right edge.
+    The same ten fields on both statistics pages: sample counts, the
+    whole median and maximum, and whisker / box / median positions, with an
+    outlier maximum pinned to the right edge.
     """
 
     def percent(value: float | None) -> float:
@@ -137,15 +145,13 @@ def _box_plot(row, axis_max: float) -> dict[str, object]:
     return {
         "sample_count": row.normal_sample_count,
         "outlier_count": row.outlier_count,
-        "median": format_number(row.median) if row.median is not None else "—",
-        "maximum": format_number(row.maximum) if row.maximum is not None else "—",
+        "median": _whole(row.median),
+        "maximum": _whole(row.maximum),
         "whisker_left": whisker_left,
         "whisker_width": round(max(0.0, percent(high) - whisker_left), 2),
         "box_left": box_left,
         "box_width": round(max(0.0, percent(p75) - box_left), 2),
         "median_left": percent(row.median),
-        "p10_left": percent(row.p10 if row.p10 is not None else p25),
-        "p90_left": percent(row.p90 if row.p90 is not None else p75),
         "maximum_left": maximum_left,
     }
 
@@ -170,8 +176,6 @@ def build_character_stats_page(
         if row.rank is not None and not row.insufficient_samples
     )
     axis_max = _stats_axis_max(ranked)
-    step = axis_max / 4 if axis_max else 0
-    axis_labels = tuple(_format_axis_value(step * index) for index in range(5))
 
     rows = tuple(
         CharacterStatRowView(
@@ -215,7 +219,7 @@ def build_character_stats_page(
         total_outlier_count=stats.total_outlier_count,
         included_boss_count=stats.included_boss_count,
         minimum_sample_count=stats.minimum_sample_count,
-        axis_labels=axis_labels,
+        axis_ticks=_axis_ticks(axis_max),
         rows=tuple(rows),
         insufficient=insufficient,
     )
@@ -244,8 +248,6 @@ def build_character_boss_page(
         )
     )
     axis_max = _stats_axis_max(ranked)
-    step = axis_max / 4 if axis_max else 0
-    axis_labels = tuple(_format_axis_value(step * index) for index in range(5))
 
     rows = tuple(
         CharacterBossRowView(
@@ -289,9 +291,30 @@ def build_character_boss_page(
         total_outlier_count=stats.total_outlier_count,
         included_boss_count=stats.included_boss_count,
         minimum_sample_count=stats.minimum_sample_count,
-        axis_labels=axis_labels,
+        axis_ticks=_axis_ticks(axis_max),
         rows=tuple(rows),
         insufficient=insufficient,
+    )
+
+
+def _whole(value: float | None) -> str:
+    """A DPS figure as every page prints one: whole, grouped; a dash if absent."""
+
+    return "—" if value is None else format_number(round(value))
+
+
+# The axis in quarters: five ticks, and the plot's grid on each.
+_AXIS_STEPS = 4
+
+
+def _axis_ticks(axis_max: float) -> tuple[AxisTickView, ...]:
+    step = axis_max / _AXIS_STEPS
+    return tuple(
+        AxisTickView(
+            label=_format_axis_value(step * index),
+            left=index * 100 / _AXIS_STEPS,
+        )
+        for index in range(_AXIS_STEPS + 1)
     )
 
 

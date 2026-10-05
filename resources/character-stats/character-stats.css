@@ -1,224 +1,143 @@
-/* ---------- box-plot table ---------- */
+/* 角色统计's two tables on the wide shell (wide-table.css draws the rows,
+   the 名次 and the names): a row a character, or for one character a row a
+   board, the box plots on one shared axis whose ticks head the 分布 column.
+   The plot column is the flexible one; the name column is fixed, so a long
+   name wraps in place and never pushes the plots off the head's ticks. */
 
-.stats-table-wrap {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--card);
+.s-tr {
+  grid-template-columns: 50px 190px 58px minmax(0, 1fr) 90px 90px;
+  padding: 10px 0;
+}
+.s-table.is-boss .s-tr {
+  grid-template-columns: 210px 72px 46px minmax(0, 1fr) 90px 90px;
+}
+.s-tr.w-th {
+  padding: 8px 0 10px;
 }
 
-.stats-head,
-.stats-row {
-  display: grid;
-  grid-template-columns: 62px 200px 84px minmax(0, 1fr) 120px 96px;
-  align-items: center;
-  column-gap: 12px;
-  padding: 0 14px;
+/* for one character the board stacks over its dungeon, and its rank sits
+   right, under 该榜名次 */
+.s-table.is-boss .w-who {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
 }
-
-.stats-head {
-  min-height: 40px;
-  color: var(--on-dark);
-  background: var(--ink);
-  font-size: var(--fs-12);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+.s-table.is-boss .w-who strong {
+  font-size: var(--fs-20);
+  line-height: 1.25;
 }
-
-.stats-head-axis {
-  position: relative;
-  display: flex;
-  justify-content: space-between;
-  height: 100%;
-  align-items: center;
-  color: var(--line);
-  font-family: var(--font-num);
-  font-size: var(--fs-11);
-  font-weight: 600;
-  letter-spacing: 0.02em;
+.s-table.is-boss .w-who em {
+  flex: initial;
+  overflow-wrap: anywhere;
 }
-
-.stats-head-axis i {
-  font-style: normal;
-}
-
-.stats-head-median,
-.stats-head-max,
-.stats-median,
-.stats-max {
+.s-table.is-boss .w-tr > .w-rank {
   text-align: right;
 }
-
-.stats-row {
-  min-height: 58px;
-  border-top: 1px solid var(--line-soft);
+.s-median-v {
+  font-weight: 800;
+  font-size: var(--fs-22);
 }
 
-/* The zebra stripe must not outrank the first place's tint: this file is
-   included after base.css, so equal specificity would let it win. */
-.stats-row:nth-child(even):not(.is-1) {
-  background: var(--card-soft);
-}
-
-.stats-rank .ranking-position {
-  display: inline-flex;
-  width: 34px;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--fs-15);
-}
-
-.stats-row:nth-child(2) .ranking-position::before {
-  background: var(--yellow);
-}
-
-.stats-row:nth-child(3) .ranking-position {
-  color: var(--on-dark);
-}
-
-.stats-row:nth-child(3) .ranking-position::before {
-  background: var(--ink);
-}
-
-.stats-row:nth-child(4) .ranking-position {
-  color: var(--on-dark);
-}
-
-.stats-row:nth-child(4) .ranking-position::before {
-  background: var(--muted);
-}
-
-.stats-char {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-}
-
-.stats-char-text {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.stats-char-text strong {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: var(--fs-15);
-  font-weight: 700;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.stats-sample strong {
-  color: var(--ink);
-  font-family: var(--font-num);
-  font-size: var(--fs-16);
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-.stats-sample em {
-  display: block;
-  color: var(--muted);
-  font-size: var(--fs-10);
-  font-style: normal;
-  font-weight: 600;
-}
-
-.stats-plot {
+/* the axis: tick labels head the plot column, the first at its left
+   edge and the last kept inside */
+.w-tr > .s-ticks {
   position: relative;
   display: block;
-  height: 30px;
-  overflow: hidden;
+  align-self: stretch;
+  text-align: left;
 }
-
-.stats-plot i {
+.s-ticks i {
   position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-style: normal;
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-17);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.s-ticks i:first-child {
+  transform: none;
+}
+.s-ticks i:last-child {
+  transform: translateX(-70%);
+}
+
+/* the box plot: a faint grid a quarter apart, whisker with caps, the box
+   yellow on a charcoal edge, the median a charcoal bar, the highest record
+   a white ▼ (▶ past the axis) */
+.w-tr > .s-plot {
+  position: relative;
   display: block;
+  height: 24px;
 }
-
-.plot-grid {
-  inset: 0;
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0 calc(25% - 1px),
-    var(--line-soft) calc(25% - 1px) 25%
-  );
+.s-plot > * {
+  position: absolute;
 }
-
-.plot-whisker {
-  top: 14px;
+.s-grid {
+  inset: -10px 0;
+  background: linear-gradient(90deg, var(--track) 1px, transparent 1px) 0 0 / 25% 100%;
+  border-right: 1px solid var(--track);
+}
+.s-whisker {
+  top: 50%;
   height: 2px;
-  background: var(--steel);
+  margin-top: -1px;
+  background: var(--who-bg);
 }
-
-.plot-whisker::before,
-.plot-whisker::after {
+.s-whisker::before,
+.s-whisker::after {
   content: "";
   position: absolute;
-  top: -5px;
+  top: -6px;
   width: 2px;
-  height: 12px;
-  background: var(--steel);
+  height: 14px;
+  background: var(--who-bg);
 }
-
-.plot-whisker::before {
+.s-whisker::before {
   left: 0;
 }
-
-.plot-whisker::after {
+.s-whisker::after {
   right: 0;
 }
-
-.plot-box {
-  top: 7px;
-  height: 16px;
-  min-width: 3px;
-  border: 1px solid var(--ink);
+.s-box {
+  top: 3px;
+  bottom: 3px;
+  min-width: 4px;
   background: var(--yellow);
-  box-sizing: border-box;
+  box-shadow: inset 0 0 0 2px var(--who-bg);
 }
-
-.plot-tick {
-  top: 11px;
-  width: 2px;
-  height: 8px;
-  margin-left: -1px;
-  background: var(--muted);
-}
-
-.plot-median {
-  top: 4px;
+.s-median {
+  top: 0;
+  bottom: 0;
   width: 3px;
-  height: 22px;
   margin-left: -1.5px;
-  background: var(--ink);
+  background: var(--who-bg);
+}
+.s-plot .s-max {
+  top: -9px;
+  width: 12px;
+  height: 10px;
+  transform: translateX(-50%);
+  overflow: visible;
+}
+.s-plot .s-max.is-off {
+  top: 50%;
+  transform: translate(-30%, -50%) rotate(-90deg);
+}
+.s-max polygon {
+  fill: var(--card);
+  stroke: var(--who-bg);
+  stroke-width: 2.2;
 }
 
-.plot-max {
-  top: 10px;
-  width: 0;
-  height: 0;
-  margin-left: -5px;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-left: 8px solid var(--red);
+/* too few samples: a chip each, the count after the name */
+.s-few span {
+  gap: 6px;
 }
-
-.stats-median {
-  color: var(--ink);
+.s-few b {
   font-family: var(--font-num);
-  font-size: var(--fs-20);
-  font-variant-numeric: tabular-nums;
   font-weight: 800;
-}
-
-.stats-max {
-  color: var(--steel);
-  font-family: var(--font-num);
-  font-size: var(--fs-14);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  color: var(--ink);
 }

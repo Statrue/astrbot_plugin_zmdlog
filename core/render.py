@@ -143,6 +143,9 @@ PAGE_FRAMES: dict[str, PageFrame] = {
     "account": WIDE_FRAME,
     "trend": WIDE_FRAME,
     "character-standings": WIDE_FRAME,
+    "character-profile": WIDE_FRAME,
+    "character-stats": WIDE_FRAME,
+    "character-boss": WIDE_FRAME,
 }
 
 

@@ -620,6 +620,86 @@ class TemplateRendererTests(unittest.TestCase):
         self.assertIn('<div class="b-item b-item--wpn is-empty">', kamiu)
         self.assertNotIn("b-refine", kamiu)
 
+    def test_the_character_pages_are_wide_pages_on_the_new_shell(self) -> None:
+        from core.models import (
+            CharacterType,
+            parse_character_boss_statistics,
+            parse_character_profile,
+            parse_character_statistics,
+        )
+        from core.render import page_frame
+        from tests.helpers import (
+            character_boss_statistics_payload,
+            character_profile_payload,
+            character_statistics_payload,
+        )
+
+        laevat = CharacterType(
+            "莱万汀", "灼热", "单手剑", "突击", "", key="chr_0016_laevat", rarity=6
+        )
+        web = "https://zmdlogs.com"
+        forms = {
+            "角色档案": (
+                "character-profile",
+                "OPERATOR",
+                self.renderer.render_character_profile(
+                    parse_character_profile(character_profile_payload()),
+                    character=laevat,
+                    query="角色档案 莱万汀",
+                    web_base_url=web,
+                ),
+            ),
+            "角色档案 --榜单": (
+                "character-profile",
+                "OPERATOR",
+                self.renderer.render_character_profile(
+                    parse_character_profile(
+                        character_profile_payload(
+                            boss_slug="indie_battletower001_ex"
+                        )
+                    ),
+                    character=laevat,
+                    query="角色档案 莱万汀 --榜单 白刃",
+                    web_base_url=web,
+                ),
+            ),
+            "角色统计": (
+                "character-stats",
+                "STATISTICS",
+                self.renderer.render_character_stats(
+                    parse_character_statistics(
+                        character_statistics_payload(scope="all")
+                    ),
+                    query="角色统计",
+                    web_base_url=web,
+                ),
+            ),
+            "角色统计 角色": (
+                "character-boss",
+                "STATISTICS",
+                self.renderer.render_character_boss(
+                    parse_character_boss_statistics(
+                        character_boss_statistics_payload()
+                    ),
+                    query="角色统计 洛茜",
+                    web_base_url=web,
+                ),
+            ),
+        }
+        for form, (kind, giant, html) in forms.items():
+            with self.subTest(form=form):
+                self.assertEqual(page_frame(kind), WIDE_FRAME)
+                self.assertIn("--zmd-frame-width: 960;", html)
+                self.assertIn('id="zmd-root"', html)
+                self.assertIn(f"zmd-root--{kind}", html)
+                self.assertIn("zmd-wide", html)
+                self.assertIn('class="zmd-main"', html)
+                self.assertIn(f">{giant}<", html)
+                self.assertIn(f"v{self.renderer.version}", html)
+                # Nothing of the old shell.
+                self.assertNotIn('id="zmd-page"', html)
+                self.assertNotIn("scene-background", html)
+
     def test_every_font_size_is_a_scale_token(self) -> None:
         # Colours were tokens from the first commit; sizes drifted into
         # nineteen values with half-pixels between them. Each shell's

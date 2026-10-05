@@ -1,81 +1,59 @@
-{% extends "common/base.html" %}
+{# 角色统计 over every board or one: one table, a row a six-star, the box
+   plots on one shared axis whose ticks head the 分布 column; then the
+   characters with too few samples to rank, as chips. #}
+{% extends "shell/wide-base.html" %}
+{% from "shell/parts.html" import face %}
+{% from "shell/wide-parts.html" import bar %}
+{% from "character-stats/plot.html" import axis, plot %}
 
-{% block extra_styles %}{% include "character-stats/character-stats.css" %}{% endblock %}
+{% block styles %}{% include "shell/wide-table.css" %}{% include "character-stats/character-stats.css" %}{% endblock %}
 
-{% block hero_facts %}
-<div class="hero-facts">
-  <div class="hero-fact hero-fact--key"><span>范围</span><strong>{{ page.range_label }}</strong></div>
-  <div class="hero-fact"><span>潜能</span><strong>{{ page.potential_label }}</strong></div>
-  <div class="hero-fact"><span>样本</span><strong>{{ page.total_sample_count }}</strong><em>含离群 {{ page.total_outlier_count }}</em></div>
-</div>
+{% set every_board = page.scope_label == "全部榜单" %}
+
+{% block giant %}STATISTICS{% endblock %}
+
+{% block meta %}
+{% if not every_board %}<span>{{ page.header.subtitle }}</span>{% endif %}
+<span>六星 {{ page.metric_label }} 分布</span>
+<span>{{ page.range_label }}</span>
+{% if page.potential_label != "全部潜能" %}<span>{{ page.potential_label }}</span>{% endif %}
+<span><b>{{ page.total_sample_count }}</b> 个样本</span>
 {% endblock %}
 
 {% block content %}
-<div class="section-heading">
-  <h2>六星角色 {{ page.metric_label }} 分布</h2>
-  <span class="section-note">{% if page.scope_label == "全部榜单" %}覆盖 {{ page.included_boss_count }} 个榜单{% else %}单个榜单{% endif %} · 有效战斗 {{ page.eligible_battle_count }} 场 · 盒=P25–P75 · 竖线=中位 · 须=正常样本极值 · 至少 {{ page.minimum_sample_count }} 个样本参与排名</span>
-</div>
-
-{% if page.rows %}
-<div class="stats-table-wrap">
-  <div class="stats-head">
-    <span class="stats-head-rank">名次</span>
-    <span class="stats-head-char">角色</span>
-    <span class="stats-head-sample">样本</span>
-    <span class="stats-head-axis">
-      {% for label in page.axis_labels %}<i>{{ label }}</i>{% endfor %}
-    </span>
-    <span class="stats-head-median">中位 {{ page.metric_label }}</span>
-    <span class="stats-head-max">最高</span>
-  </div>
-  {% for row in page.rows %}
-  <div class="stats-row rank-row{% if row.rank <= 3 %} is-{{ row.rank }}{% endif %}">
-    <span class="stats-rank"><span class="ranking-position">{{ row.rank }}</span></span>
-    <span class="stats-char">
-      <span class="avatar">
-        {{ row.character_initial }}
-        {% if row.character_avatar_url %}
-        <img src="{{ row.character_avatar_url }}" alt="" onerror="this.remove()">
-        {% endif %}
+{% set card_w = frame.width - 48 %}
+<section class="b-block">
+  {{ bar("六星角色 " ~ page.metric_label ~ " 分布", card_w, ("覆盖 " ~ page.included_boss_count ~ " 个榜单") if every_board else "") }}
+  {% if page.rows %}
+  <div class="b-body w-table s-table">
+    <div class="w-tr w-th s-tr">
+      <span>名次</span><span class="w-who">角色</span><span>样本</span>{{ axis(page.axis_ticks) }}<span>中位</span><span>最高</span>
+    </div>
+    {% for row in page.rows %}
+    <div class="w-tr s-tr{% if row.rank <= 3 %} is-top is-{{ row.rank }}{% endif %}">
+      <span class="w-rank"><b>{{ "%02d"|format(row.rank) }}</b></span>
+      <span class="w-who">
+        {{ face({"character_initial": row.character_initial, "avatar_url": row.character_avatar_url}, size="w-face-s") }}
+        <strong>{{ row.character_name }}</strong><em>{{ row.character_profession }}</em>
       </span>
-      <span class="stats-char-text">
-        <strong>{{ row.character_name }}</strong>
-        <span class="cell-subtitle">{{ row.character_profession }}</span>
-      </span>
-    </span>
-    <span class="stats-sample">
-      <strong>{{ row.sample_count }}</strong>
-      {% if row.outlier_count %}<em>+{{ row.outlier_count }} 离群</em>{% endif %}
-    </span>
-    <span class="stats-plot" aria-hidden="true">
-      <i class="plot-grid"></i>
-      <i class="plot-whisker" style="left: {{ row.whisker_left }}%; width: {{ row.whisker_width }}%;"></i>
-      <i class="plot-box" style="left: {{ row.box_left }}%; width: {{ row.box_width }}%;"></i>
-      <i class="plot-tick" style="left: {{ row.p10_left }}%;"></i>
-      <i class="plot-tick" style="left: {{ row.p90_left }}%;"></i>
-      <i class="plot-median" style="left: {{ row.median_left }}%;"></i>
-      {% if row.maximum_left is not none %}
-      <i class="plot-max" style="left: {{ row.maximum_left }}%;"></i>
-      {% endif %}
-    </span>
-    <span class="stats-median">{{ row.median }}</span>
-    <span class="stats-max">{{ row.maximum }}</span>
+      <span class="w-muted">{{ row.sample_count }}</span>
+      {{ plot(row) }}
+      <b class="s-median-v">{{ row.median }}</b>
+      <span class="w-muted">{{ row.maximum }}</span>
+    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
-</div>
-{% else %}
-<div class="empty-ranking">该范围内暂无足够样本</div>
-{% endif %}
+  {% else %}
+  <p class="b-body w-empty">该范围内暂无足够样本</p>
+  {% endif %}
+</section>
 
 {% if page.insufficient %}
-<div class="section-heading section-heading--minor">
-  <h2>样本不足</h2>
-  <span class="section-note">不足 {{ page.minimum_sample_count }} 个正常样本，不参与排名</span>
-</div>
-<div class="stats-insufficient">
-  {% for chip in page.insufficient %}
-  <span class="stats-insufficient-chip">{{ chip.character_name }}<b>{{ chip.sample_count }}</b></span>
-  {% endfor %}
-</div>
+<section class="b-block">
+  {{ bar("样本不足", card_w, "不足 " ~ page.minimum_sample_count ~ " 个样本，不参与排名") }}
+  <p class="b-body w-chips s-few">
+    {% for chip in page.insufficient %}<span>{{ chip.character_name }}<b>{{ chip.sample_count }}</b></span>{% endfor %}
+  </p>
+</section>
 {% endif %}
 {% endblock %}

@@ -63,7 +63,6 @@ class ShareRowView:
 @dataclass(frozen=True, slots=True)
 class ShareBlockView:
     title: str
-    note: str
     # ``investment``, ``gear`` or ``teammate``: whether a row has a picture,
     # and whether it is a face.
     kind: str
@@ -118,7 +117,6 @@ class CharacterProfilePage:
     sample_count: int
     account_count: int
     boss_count: int
-    sample_rule: str
     shares: tuple[ShareBlockView, ...]
     boards: tuple[ProfileBoardRowView, ...]
     # The board the page is cut to, None for every board; its records then
@@ -172,18 +170,15 @@ def build_character_profile_page(
         sample_count=profile.sample_count,
         account_count=profile.account_count,
         boss_count=profile.boss_count,
-        sample_rule=SAMPLE_RULE,
         shares=(
             _block(
                 "养成组合",
-                "潜能+精炼，占全部样本的比例",
                 "investment",
                 profile.combinations,
                 lambda share: _share_row(share, combination_label(share)),
             ),
             _block(
                 "武器",
-                "占全部样本的比例",
                 "gear",
                 profile.weapons,
                 lambda share: _share_row(
@@ -194,7 +189,6 @@ def build_character_profile_page(
             ),
             _block(
                 "装备",
-                "带上这件的记录占全部样本的比例，一条记录不止一件",
                 "gear",
                 profile.equipment,
                 lambda share: _share_row(
@@ -205,7 +199,6 @@ def build_character_profile_page(
             ),
             _block(
                 "常见队友",
-                "同队出现的记录占全部样本的比例",
                 "teammate",
                 profile.teammates,
                 lambda share: _share_row(
@@ -283,7 +276,6 @@ def _record_row(record: ProfileRecord) -> ProfileRecordRowView:
 
 def _block(
     title: str,
-    note: str,
     kind: str,
     shares: tuple[ProfileShare, ...],
     row: Callable[[ProfileShare], ShareRowView],
@@ -291,7 +283,6 @@ def _block(
     head, hidden_count = listed_shares(shares)
     return ShareBlockView(
         title=title,
-        note=note,
         kind=kind,
         rows=tuple(row(share) for share in head),
         hidden_count=hidden_count,
