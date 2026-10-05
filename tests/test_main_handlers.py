@@ -337,8 +337,8 @@ class FakeRenderer:
     async def render_loadout(self, battle, **kwargs):
         return capture("/tmp/loadout.png")
 
-    async def render_skills(self, battle, **kwargs):
-        return capture("/tmp/skills.png")
+    async def render_battle_data(self, battle, **kwargs):
+        return capture("/tmp/data.png")
 
     async def render_trend(self, history, **kwargs):
         return capture("/tmp/trend.png")
@@ -697,7 +697,7 @@ class HandlerTests(unittest.TestCase):
 
     # --- 配装 / 技能 share the 战报 lookup ------------------------------------
 
-    def test_loadout_and_skill_commands_pick_the_ranked_battle(self) -> None:
+    def test_loadout_and_data_commands_pick_the_ranked_battle(self) -> None:
         fetched: list[str] = []
 
         async def ranking(boss_slug, **kwargs):
@@ -714,11 +714,15 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual((kind, result), ("image", "/tmp/loadout.png"))
         self.assertEqual(fetched, ["btl_upload_000000000002"])
 
-        (kind, result), = self._zmdlog("zmdlog 技能 btl_upload_abcdef123456")
-        self.assertEqual((kind, result), ("image", "/tmp/skills.png"))
+        (kind, result), = self._zmdlog("zmdlog 数据 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/data.png"))
         self.assertEqual(fetched[-1], "btl_upload_abcdef123456")
 
-        (kind, reply), = self._zmdlog("zmdlog 技能 三位一体 9")
+        (kind, result), = self._zmdlog("zmdlog 数据 三位一体 2")
+        self.assertEqual((kind, result), ("image", "/tmp/data.png"))
+        self.assertEqual(fetched[-1], "btl_upload_000000000002")
+
+        (kind, reply), = self._zmdlog("zmdlog 数据 三位一体 9")
         self.assertEqual(kind, "plain")
         self.assertIn("没有第 9 名", reply)
 
@@ -731,7 +735,7 @@ class HandlerTests(unittest.TestCase):
 
         self.plugin.data.get_battle_detail = detail
 
-        (kind, reply), = self._zmdlog("zmdlog 技能 btl_upload_abcdef123456")
+        (kind, reply), = self._zmdlog("zmdlog 数据 btl_upload_abcdef123456")
         self.assertEqual((kind, reply), ("plain", "这份战报没有技能统计数据。"))
         (kind, reply), = self._zmdlog("zmdlog 配装 btl_upload_abcdef123456")
         self.assertEqual((kind, reply), ("plain", "这份战报没有记录阵容配装。"))
@@ -2795,10 +2799,55 @@ class HandlerTests(unittest.TestCase):
                 (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
 
                 self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
-                # The 摘要 draws no casts; its foot names the battle's pages,
-                # itself lit — the only one on the V2 shell so far.
+                # The 摘要 draws no casts; its foot names the battle's pages
+                # on the V2 shell, itself lit.
                 self.assertNotIn("export", received[-1])
-                self.assertEqual(received[-1]["views"], (("摘要", True),))
+                self.assertEqual(
+                    received[-1]["views"], (("摘要", True), ("数据", False))
+                )
+
+    def test_data_draws_the_numbers_with_its_own_view_lit(self) -> None:
+        received: list[dict] = []
+        exported: list[str] = []
+
+        async def detail(battle_id):
+            return parse_battle_detail(battle_detail_payload())
+
+        async def export(battle_id):
+            exported.append(battle_id)
+            return parse_battle_export(battle_export_payload())
+
+        async def render_battle_data(battle, **kwargs):
+            received.append(kwargs)
+            return capture("/tmp/data.png")
+
+        self.plugin.data.get_battle_detail = detail
+        self.plugin.data.get_battle_export = export
+        self.plugin.renderer.render_battle_data = render_battle_data
+
+        (kind, result), = self._zmdlog("zmdlog 数据 btl_upload_abcdef123456")
+
+        self.assertEqual((kind, result), ("image", "/tmp/data.png"))
+        self.assertEqual(received[-1]["views"], (("摘要", False), ("数据", True)))
+        # An upload without crit rolls has no 暴击期望 to draw.
+        self.assertIsNone(received[-1]["crit"])
+        # 数据 draws no casts and does not ask for them.
+        self.assertEqual(exported, [])
+
+    def test_the_old_skill_words_draw_no_page(self) -> None:
+        # 技能 / 技能统计 are no commands any more: the words are a keyword
+        # like any other, and no board is called that.
+        async def detail(battle_id):
+            raise AssertionError("no battle should be read")
+
+        self.plugin.data.get_battle_detail = detail
+        for command in ("技能", "技能统计"):
+            with self.subTest(command=command):
+                (kind, _), = self._zmdlog(
+                    f"zmdlog {command} btl_upload_abcdef123456"
+                )
+
+                self.assertEqual(kind, "plain")
 
     # --- ranking pages -----------------------------------------------------------
 
@@ -3076,7 +3125,7 @@ class HandlerTests(unittest.TestCase):
 
         self.plugin.data.get_battle_detail = missing
 
-        for command in ("战报", "配装", "技能"):
+        for command in ("战报", "数据", "配装"):
             with self.subTest(command=command):
                 (kind, reply), = self._zmdlog(
                     f"zmdlog {command} btl_upload_abcdef123456"

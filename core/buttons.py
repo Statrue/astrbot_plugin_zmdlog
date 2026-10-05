@@ -156,8 +156,8 @@ _BOARD_WORDS = {
     CandidateView.CHARACTER_STATS: "角色统计",
     CandidateView.ROSTER: "阵容",
     CandidateView.BATTLE: "战报",
+    CandidateView.DATA: "数据",
     CandidateView.LOADOUT: "配装",
-    CandidateView.SKILLS: "技能",
     CandidateView.TIMELINE: "技能轴",
     CandidateView.COMPARE: "对比",
     CandidateView.WATCH_BOARD: "关注",
@@ -187,8 +187,8 @@ _SUBJECT_WORDS = {
 _BATTLE_VIEWS = frozenset(
     {
         CandidateView.BATTLE,
+        CandidateView.DATA,
         CandidateView.LOADOUT,
-        CandidateView.SKILLS,
         CandidateView.TIMELINE,
     }
 )
@@ -211,18 +211,13 @@ _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = 
     },
     (PageSubject.BATTLE, CandidateView.LOADOUT): (
         CandidateView.BATTLE,
-        CandidateView.SKILLS,
-        CandidateView.TIMELINE,
-    ),
-    (PageSubject.BATTLE, CandidateView.SKILLS): (
-        CandidateView.BATTLE,
-        CandidateView.LOADOUT,
+        CandidateView.DATA,
         CandidateView.TIMELINE,
     ),
     (PageSubject.BATTLE, CandidateView.TIMELINE): (
         CandidateView.BATTLE,
         CandidateView.LOADOUT,
-        CandidateView.SKILLS,
+        CandidateView.DATA,
     ),
     # 战报 on a board is its first place's battle, 对比 the tapper's own
     # best record against it.

@@ -1,0 +1,151 @@
+{# 战报's 数据: who did what, in full — 战斗贡献, the character table,
+   暴击期望, the DPS 曲线, 技能伤害, then the 合约 tags when the record has
+   them. A section whose data the upload lacks is left out, heading and all.
+   Every character keeps its colour (cN) in every section. #}
+{% extends "shell/wide-base.html" %}
+{% from "shell/parts.html" import face %}
+{% from "shell/wide-parts.html" import bar, view_strip %}
+{% from "battle/charts.html" import crit_bell, dps_curve %}
+
+{% block styles %}{% include "battle/battle.css" %}{% include "battle/data.css" %}{% endblock %}
+
+{% block giant %}BATTLE REPORT{% endblock %}
+
+{% block meta %}
+<span>{{ page.uploader_display_name }}</span>
+<span><b>{{ page.duration }}</b> 通关</span>
+<span>{{ page.battle_date }}</span>
+{% endblock %}
+
+{% block views %}{{ view_strip(page.views) }}{% endblock %}
+
+{% block content %}
+{% set card_w = frame.width - 48 %}
+{% if page.characters %}
+{# a DPS bar (direct damage) over an rDPS bar (team contribution), so a
+   support's buffs show beside its hits #}
+<section class="b-block">
+  {{ bar("战斗贡献", card_w) }}
+  <div class="b-body d-contrib">
+    {% for character in page.characters %}
+    <div class="d-contrib-row c{{ character.colour_index }}{% if loop.first %} is-lead{% endif %}">
+      {{ face(character, lead=loop.first) }}
+      <p><span>{{ character.character_name }}</span>{% if character.profession %}<small>{{ character.profession }}</small>{% endif %}</p>
+      <div class="d-contrib-bars">
+        <div class="d-contrib-bar"><em>DPS</em><i class="b-sum-track"><i style="width: {{ character.damage_percent }}%;"></i></i><b>{{ character.damage_share }}</b></div>
+        <div class="d-contrib-bar is-r"><em>rDPS</em><i class="b-sum-track"><i style="width: {{ character.rdps_percent }}%;"></i></i><b>{{ character.rdps_share }}</b></div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="b-block">
+  {{ bar("本场角色", card_w, "按 DPS 排序") }}
+  <div class="b-body d-table">
+    <div class="d-tr d-th">
+      <span class="d-who">角色</span><span>DPS</span><span>rDPS</span><span>伤害</span><span>最大单次</span><span>暴击率</span>
+    </div>
+    {% for character in page.characters %}
+    <div class="d-tr">
+      <span class="d-who">
+        <i class="d-key c{{ character.colour_index }}"></i>
+        {{ face(character, lead=loop.first) }}
+        <strong>{{ character.character_name }}</strong>{% if character.profession %}<em>{{ character.profession }}</em>{% endif %}
+      </span>
+      <b>{{ character.dps }}</b>
+      <span>{{ character.rdps }}</span>
+      <span>{{ character.total_damage }}<small>{{ character.damage_share }}</small></span>
+      <span>{{ character.max_hit }}</span>
+      <span>{{ character.crit_rate }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if page.crit %}
+{% set crit = page.crit %}
+<section class="b-block">
+  {{ bar("暴击期望", card_w, "固定本场技能与命中，只算暴击带来的波动") }}
+  <div class="b-body d-crit">
+    <div class="d-crit-figs">
+      <div><span>实际总伤</span><b>{{ crit.actual_damage }}</b></div>
+      <div><span>期望总伤</span><b>{{ crit.expected_damage }}</b></div>
+      <div><span>期望 DPS</span><b>{{ crit.expected_dps }}</b></div>
+      <div class="is-dev"><span>实际偏差</span><b>{{ crit.deviation }}</b></div>
+    </div>
+    {% if crit.coverage_note %}<p class="d-more">{{ crit.coverage_note }}</p>{% endif %}
+    {% if crit.bell %}{{ crit_bell(crit.bell) }}{% endif %}
+    <div class="d-table d-table--crit">
+      <div class="d-tr d-th"><span class="d-who">角色</span><span>实际总伤</span><span>期望总伤</span><span>期望 DPS</span><span>实际偏差</span></div>
+      {% for row in crit.rows %}
+      <div class="d-tr">
+        <span class="d-who"><i class="d-key c{{ row.colour_index }}"></i><strong>{{ row.label }}</strong>{% if row.coverage_note %}<em>{{ row.coverage_note }}</em>{% endif %}</span>
+        <span>{{ row.actual_damage }}</span><span>{{ row.expected_damage }}</span><span>{{ row.expected_dps }}</span><b>{{ row.deviation }}</b>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if page.dps_curve %}
+{% set curve = page.dps_curve %}
+<section class="b-block">
+  {{ bar("DPS 曲线", card_w, "到当前时刻为止的平均 DPS · 峰值 " ~ curve.peak_label) }}
+  {{ dps_curve(curve, page.curve_keys) }}
+</section>
+{% endif %}
+
+{% if page.skill_groups %}
+{# two characters a row, each one's heaviest skills; a share is of the
+   character's own skill total #}
+<section class="b-block">
+  {{ bar("技能伤害", card_w, "每人伤害最高的招式 · 占比为占本人技能总伤") }}
+  <div class="b-body d-skills">
+    {% for group in page.skill_groups %}
+    <article class="d-skill-group c{{ group.colour_index }}">
+      <header>
+        {{ face(group, lead=group.colour_index == 1) }}
+        <strong>{{ group.character_name }}</strong>
+        <span>{{ group.total_damage }}<em>全队 {{ group.team_share }}</em></span>
+      </header>
+      <ul>
+        {% for row in group.rows %}
+        <li>
+          <span class="d-cat">{{ row.category }}</span>
+          <span class="d-skill-name">{{ row.name }}{% if row.cast_count %}<small>×{{ row.cast_count }}</small>{% endif %}</span>
+          <span class="d-skill-dmg">{{ row.total_damage }}</span>
+          <span class="d-skill-share">{{ row.share }}</span>
+          <i class="d-skill-bar"><i style="width: {{ row.share_width }}%;"></i></i>
+        </li>
+        {% endfor %}
+      </ul>
+      {% if group.hidden_count %}<p class="d-more">另有 {{ group.hidden_count }} 项</p>{% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if page.contract_groups %}
+{# the record's own tags: name and score, a family's count and subtotal in
+   its header — no description, no tier (CLAUDE.md) #}
+<section class="b-block">
+  {{ bar("危机合约", card_w, (page.contract_score ~ " 分") if page.contract_score else "") }}
+  <div class="b-body d-contract">
+    {% for group in page.contract_groups %}
+    <div class="d-contract-group">
+      <header><strong>{{ group.family }}</strong><span>{{ group.count }} 条 · {{ group.score }} 分</span></header>
+      <ul>
+        {% for tag in group.tags %}
+        <li><span class="d-contract-icon">{{ tag.initial }}{% if tag.icon_url %}<img src="{{ tag.icon_url }}" alt="" onerror="this.remove()">{% endif %}</span><span>{{ tag.name }}</span><b>{{ tag.score }}</b></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

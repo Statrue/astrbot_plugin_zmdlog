@@ -45,9 +45,23 @@ def _always(battle: BattleDetailSummary | None, casts_refused: bool) -> bool:
     return True
 
 
+def _has_skill_stats(
+    battle: BattleDetailSummary | None, casts_refused: bool
+) -> bool:
+    """数据: its 技能伤害 is the one section nothing else on a battle draws.
+
+    The table, 战斗贡献 and the curve would still draw from an old upload's
+    participants, but so does the 摘要; without skill statistics 数据 has
+    nothing of its own to add, and answers in text instead.
+    """
+
+    return battle is None or bool(battle.skill_stats)
+
+
 # The strip's order. #42–#44 add 数据, 排轴 and 养成 here as each lands.
 BATTLE_VIEWS: tuple[BattleView, ...] = (
     BattleView(CandidateView.BATTLE, "摘要", "战报", _always),
+    BattleView(CandidateView.DATA, "数据", "数据", _has_skill_stats),
 )
 
 

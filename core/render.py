@@ -59,6 +59,7 @@ from .models import (
 )
 from .presentation import (
     build_account_page,
+    build_battle_data_page,
     build_battle_summary_page,
     build_character_boss_page,
     build_character_champions_page,
@@ -72,7 +73,6 @@ from .presentation import (
     build_ranking_page,
     build_records_page,
     build_roster_page,
-    build_skill_page,
     build_timeline_page,
     build_trend_page,
 )
@@ -134,6 +134,7 @@ PAGE_FRAMES: dict[str, PageFrame] = {
     "ranking": LIST_FRAME,
     "help": WIDE_FRAME,
     "battle": WIDE_FRAME,
+    "battle-data": WIDE_FRAME,
 }
 
 
@@ -535,6 +536,32 @@ class TemplateRenderer:
             embed_fonts=embed_fonts,
         )
 
+    def render_battle_data(
+        self,
+        battle: BattleDetailSummary,
+        *,
+        query: str,
+        web_base_url: str,
+        crit: CritExpectation | None = None,
+        views: tuple[tuple[str, bool], ...] = (),
+        embed_fonts: bool = True,
+    ) -> str:
+        """战报's 数据; ``views`` is the strip of the battle's pages in its foot."""
+
+        page = build_battle_data_page(
+            battle,
+            query=query,
+            web_base_url=web_base_url,
+            crit=crit,
+            views=views,
+        )
+        return self._render(
+            "battle/data.html",
+            page,
+            "battle-data",
+            embed_fonts=embed_fonts,
+        )
+
     def render_loadout(
         self,
         battle: BattleDetailSummary,
@@ -554,26 +581,6 @@ class TemplateRenderer:
             "loadout/loadout.html",
             page,
             "loadout",
-            embed_fonts=embed_fonts,
-        )
-
-    def render_skills(
-        self,
-        battle: BattleDetailSummary,
-        *,
-        query: str,
-        web_base_url: str,
-        embed_fonts: bool = True,
-    ) -> str:
-        page = build_skill_page(
-            battle,
-            query=query,
-            web_base_url=web_base_url,
-        )
-        return self._render(
-            "skills/skills.html",
-            page,
-            "skills",
             embed_fonts=embed_fonts,
         )
 
@@ -902,8 +909,10 @@ class LongImageRenderer:
     render_roster = _captured("roster", TemplateRenderer.render_roster)
     render_account = _captured("account", TemplateRenderer.render_account)
     render_battle = _captured("battle", TemplateRenderer.render_battle)
+    render_battle_data = _captured(
+        "battle-data", TemplateRenderer.render_battle_data
+    )
     render_loadout = _captured("loadout", TemplateRenderer.render_loadout)
-    render_skills = _captured("skills", TemplateRenderer.render_skills)
     render_trend = _captured("trend", TemplateRenderer.render_trend)
     render_timeline = _captured("timeline", TemplateRenderer.render_timeline)
     render_compare = _captured("compare", TemplateRenderer.render_compare)

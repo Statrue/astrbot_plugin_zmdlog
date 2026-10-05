@@ -167,8 +167,8 @@ class RouteKind(str, Enum):
     ACCOUNT_QUERY = "account_query"
     BATTLE_QUERY = "battle_query"
     # Same argument shape as 战报; they differ only in which page is drawn.
+    DATA_QUERY = "data_query"
     LOADOUT_QUERY = "loadout_query"
-    SKILL_QUERY = "skill_query"
     TIMELINE_QUERY = "timeline_query"
     COMPARE_QUERY = "compare_query"
     SMART_QUERY = "smart_query"
@@ -227,10 +227,9 @@ CONFIGURATION_ROUTES = ALIAS_ROUTES | WATCH_ROUTES | BINDING_ROUTES
 _BATTLE_STYLE_COMMANDS.update(
     {
         "战报": RouteKind.BATTLE_QUERY,
+        "数据": RouteKind.DATA_QUERY,
         "配装": RouteKind.LOADOUT_QUERY,
         "装备": RouteKind.LOADOUT_QUERY,
-        "技能": RouteKind.SKILL_QUERY,
-        "技能统计": RouteKind.SKILL_QUERY,
         "技能轴": RouteKind.TIMELINE_QUERY,
         "排轴": RouteKind.TIMELINE_QUERY,
         "时间轴": RouteKind.TIMELINE_QUERY,

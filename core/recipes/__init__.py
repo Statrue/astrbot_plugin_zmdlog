@@ -24,10 +24,12 @@ prints describe the same moment.
 from .accounts import AccountRecipe, prepare_account
 from .battles import (
     EXPORT_UNSUPPORTED,
+    BattleDataRecipe,
     BattleRecipe,
     CompareRecipe,
     export_refusal,
     prepare_battle,
+    prepare_battle_data,
     prepare_compare,
 )
 from .boards import (
@@ -60,6 +62,7 @@ from .statistics import (
 __all__ = [
     "EXPORT_UNSUPPORTED",
     "AccountRecipe",
+    "BattleDataRecipe",
     "BattleRecipe",
     "ChampionsRecipe",
     "CharacterBossRecipe",
@@ -77,6 +80,7 @@ __all__ = [
     "index_snapshot",
     "prepare_account",
     "prepare_battle",
+    "prepare_battle_data",
     "prepare_champions",
     "prepare_character_boss",
     "prepare_character_profile",

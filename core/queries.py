@@ -82,6 +82,7 @@ from .recipes import (
     index_snapshot,
     prepare_account,
     prepare_battle,
+    prepare_battle_data,
     prepare_champions,
     prepare_character_boss,
     prepare_character_profile,
@@ -97,21 +98,21 @@ from .render import LongImageRenderer
 from .routing import OPTION_USAGE, RouteKind, RouteRequest
 from .settings import PluginSettings
 
-# 战报 / 配装 / 技能 / 技能轴 share one argument shape and one lookup; only
+# 战报 / 数据 / 配装 / 技能轴 share one argument shape and one lookup; only
 # the page drawn from the battle differs.
 BATTLE_STYLE_ROUTES = frozenset(
     {
         RouteKind.BATTLE_QUERY,
+        RouteKind.DATA_QUERY,
         RouteKind.LOADOUT_QUERY,
-        RouteKind.SKILL_QUERY,
         RouteKind.TIMELINE_QUERY,
     }
 )
 _BATTLE_VIEWS = frozenset(
     {
         CandidateView.BATTLE,
+        CandidateView.DATA,
         CandidateView.LOADOUT,
-        CandidateView.SKILLS,
         CandidateView.TIMELINE,
     }
 )
@@ -123,8 +124,8 @@ _BOARD_ONLY_VIEWS = (
     CandidateView.CHARACTER_PROFILE,
     CandidateView.ROSTER,
     CandidateView.BATTLE,
+    CandidateView.DATA,
     CandidateView.LOADOUT,
-    CandidateView.SKILLS,
     CandidateView.TIMELINE,
     CandidateView.COMPARE,
 )
@@ -132,8 +133,8 @@ _ROUTE_VIEWS = {
     RouteKind.CHARACTER_STATS: CandidateView.CHARACTER_STATS,
     RouteKind.ROSTER_QUERY: CandidateView.ROSTER,
     RouteKind.BATTLE_QUERY: CandidateView.BATTLE,
+    RouteKind.DATA_QUERY: CandidateView.DATA,
     RouteKind.LOADOUT_QUERY: CandidateView.LOADOUT,
-    RouteKind.SKILL_QUERY: CandidateView.SKILLS,
     RouteKind.TIMELINE_QUERY: CandidateView.TIMELINE,
     RouteKind.COMPARE_QUERY: CandidateView.COMPARE,
     RouteKind.TREND_QUERY: CandidateView.TREND,
@@ -1232,7 +1233,7 @@ class QueryService:
         *,
         query: str,
     ) -> Outcome:
-        """Draw the page a 战报 / 配装 / 技能 / 技能轴 request asked for.
+        """Draw the page a 战报 / 数据 / 配装 / 技能轴 request asked for.
 
         The timeline reads the public export, the other three the battle
         detail. Older uploads carry no roster loadout, skill statistics or
@@ -1269,24 +1270,28 @@ class QueryService:
             return Outcome.image(
                 rendered, target=_battle_target(battle_id, view, detail)
             )
-        if view in (CandidateView.LOADOUT, CandidateView.SKILLS):
-            # Neither page reads the cast export, so neither pays for it.
+        if view is CandidateView.DATA:
+            # It reads no cast export, so it does not pay for one.
+            recipe = await prepare_battle_data(
+                self._data, battle_id, query=query, web_base_url=self._web_base_url
+            )
+            if isinstance(recipe, str):
+                return Outcome(message=recipe)
+            return Outcome.image(
+                await recipe.draw(renderer),
+                target=_battle_target(battle_id, view, recipe.battle),
+            )
+        if view is CandidateView.LOADOUT:
+            # The loadout page reads no cast export, so it does not pay for one.
             battle = await self._data.get_battle_detail(battle_id)
-            if view is CandidateView.LOADOUT:
-                if not battle.roster:
-                    return Outcome(message=messages.NO_LOADOUT)
-                rendered = await renderer.render_loadout(
-                    battle,
-                    query=query,
-                    web_base_url=self._web_base_url,
-                    suits=await self._data.equip_suits_for(battle),
-                )
-            else:
-                if not battle.skill_stats:
-                    return Outcome(message=messages.NO_SKILL_STATS)
-                rendered = await renderer.render_skills(
-                    battle, query=query, web_base_url=self._web_base_url
-                )
+            if not battle.roster:
+                return Outcome(message=messages.NO_LOADOUT)
+            rendered = await renderer.render_loadout(
+                battle,
+                query=query,
+                web_base_url=self._web_base_url,
+                suits=await self._data.equip_suits_for(battle),
+            )
             return Outcome.image(
                 rendered, target=_battle_target(battle_id, view, battle)
             )
@@ -1410,7 +1415,7 @@ def _battle_target(
     """The battle a page is about, less the pages its upload cannot draw.
 
     Only what the page already read counts: without the detail the loadout
-    and skill pages are assumed there, and only the export endpoint's own
+    page and 数据 are assumed there, and only the export endpoint's own
     refusal of an old upload rules the rail out (a rate limit passes). The
     V2 pages answer for themselves (``core/battle_views``).
     """
@@ -1418,8 +1423,6 @@ def _battle_target(
     unavailable = set(unavailable_views(battle, casts_refused=casts_refused))
     if battle is not None and not battle.roster:
         unavailable.add(CandidateView.LOADOUT)
-    if battle is not None and not battle.skill_stats:
-        unavailable.add(CandidateView.SKILLS)
     if casts_refused:
         unavailable.add(CandidateView.TIMELINE)
     return PageTarget(

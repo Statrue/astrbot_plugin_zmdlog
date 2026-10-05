@@ -302,7 +302,8 @@ class SamePictureTests(unittest.TestCase):
 
         self._assert_same_call("battle")
         self.assertEqual(
-            self.tool_renderer.kwargs["battle"]["views"], (("摘要", True),)
+            self.tool_renderer.kwargs["battle"]["views"],
+            (("摘要", True), ("数据", False)),
         )
 
     def test_a_comparison(self) -> None:

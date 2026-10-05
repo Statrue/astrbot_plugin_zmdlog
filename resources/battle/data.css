@@ -1,0 +1,355 @@
+/* 数据: 战斗贡献, the character tables, 暴击期望's figures, 技能伤害 and
+   the 合约 tags. The bell, the curve and the bar tracks are battle.css's. */
+
+/* a face in a row is a size down; the main C keeps its ring and a
+   tighter halo */
+.d-who .i-face,
+.d-contrib-row .i-face,
+.d-skill-group .i-face {
+  width: 44px;
+  height: 44px;
+  margin: 0;
+}
+.d-who .i-face.is-lead,
+.d-skill-group .i-face.is-lead {
+  margin: 0 4px;
+}
+.d-who .i-face.is-lead::before,
+.d-skill-group .i-face.is-lead::before {
+  inset: -8px;
+}
+.d-who .i-face.is-lead::after,
+.d-skill-group .i-face.is-lead::after {
+  inset: -13px;
+}
+/* a character's colour, as a square key */
+.d-key {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  background: var(--c);
+}
+.d-key.c1 {
+  box-shadow: inset 0 0 0 1px var(--lift-16);
+}
+.d-more {
+  margin-top: 10px;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+
+/* ── 战斗贡献: a DPS bar over an rDPS bar, a row a character ─────── */
+.d-contrib {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.d-contrib-row {
+  display: grid;
+  grid-template-columns: 52px 130px 1fr;
+  align-items: center;
+  gap: 14px;
+}
+.d-contrib-row + .d-contrib-row {
+  padding-top: 14px;
+  border-top: 1px solid var(--rule-soft);
+}
+.d-contrib-row .i-face.is-lead::before,
+.d-contrib-row .i-face.is-lead::after {
+  display: none;
+}
+.d-contrib-row p {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.d-contrib-row p span {
+  font-weight: 700;
+  font-size: var(--fs-17);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.d-contrib-row small {
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.d-contrib-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.d-contrib-bar {
+  display: grid;
+  grid-template-columns: 46px 1fr 74px;
+  align-items: center;
+  gap: 12px;
+}
+.d-contrib-bar em {
+  font-style: normal;
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.d-contrib-bar b {
+  text-align: right;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-20);
+  color: var(--ink);
+}
+.d-contrib-bar.is-r b {
+  font-weight: 700;
+  color: var(--ink-2);
+}
+/* rDPS hatched in the character's colour, so the two bars never read as
+   one quantity */
+.d-contrib-bar.is-r .b-sum-track i {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--c) 0 4px,
+    color-mix(in srgb, var(--c) 55%, var(--card)) 4px 7px
+  );
+}
+
+/* ── the tables: the character table and 暴击期望's ───────────────── */
+.d-table {
+  padding-top: 6px;
+  padding-bottom: 8px;
+}
+.d-tr {
+  display: grid;
+  grid-template-columns: 1.9fr repeat(5, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.d-tr:last-child {
+  border-bottom: 0;
+}
+.d-tr > :not(.d-who) {
+  text-align: right;
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-20);
+  color: var(--ink);
+}
+.d-tr > b {
+  font-weight: 800;
+  font-size: var(--fs-24);
+}
+.d-tr small {
+  display: block;
+  font-weight: 600;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+.d-th {
+  padding: 8px 0;
+}
+.d-th > *,
+.d-th > :not(.d-who) {
+  font-family: var(--font-cjk);
+  font-weight: 500;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+.d-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.d-who strong {
+  font-weight: 700;
+  font-size: var(--fs-20);
+  overflow-wrap: anywhere;
+}
+.d-who em {
+  flex: none;
+  font-style: normal;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+.d-table--crit .d-tr {
+  grid-template-columns: 1.6fr repeat(4, 1fr);
+}
+.d-table--crit .d-who em {
+  flex: 0 1 auto;
+}
+
+/* ── 暴击期望: the team's four figures, the deviation on yellow ───── */
+.d-crit-figs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.d-crit-figs span {
+  display: block;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+.d-crit-figs b {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-30);
+  line-height: 1.1;
+  color: var(--ink);
+}
+.d-crit-figs .is-dev b {
+  display: inline-block;
+  padding: 0 6px;
+  background: var(--yellow);
+  color: var(--medal-ink);
+}
+.d-crit .b-dist {
+  margin: 52px 0 6px;
+}
+.d-crit .d-table--crit {
+  margin-top: 18px;
+}
+
+/* ── 技能伤害: two characters a row ────────────────────────────── */
+.d-skills {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px 28px;
+}
+.d-skill-group {
+  min-width: 0;
+}
+.d-skill-group header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--grid);
+}
+.d-skill-group header strong {
+  min-width: 0;
+  font-weight: 700;
+  font-size: var(--fs-20);
+  overflow-wrap: anywhere;
+}
+.d-skill-group header span {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-20);
+}
+.d-skill-group header em {
+  margin-left: 10px;
+  font-style: normal;
+  font-weight: 600;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+.d-skill-group ul {
+  list-style: none;
+}
+.d-skill-group li {
+  display: grid;
+  grid-template-columns: auto 1fr auto 62px;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 9px 0 8px;
+  border-bottom: 1px solid var(--grid-soft);
+}
+.d-cat {
+  padding: 1px 7px;
+  font-size: var(--fs-17);
+  line-height: 1.4;
+  background: var(--grid-soft);
+  color: var(--ink-2);
+}
+.d-skill-name {
+  min-width: 0;
+  font-weight: 500;
+  font-size: var(--fs-17);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.d-skill-name small {
+  margin-left: 6px;
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: var(--fs-17);
+  color: var(--muted);
+}
+.d-skill-dmg {
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-20);
+}
+.d-skill-share {
+  text-align: right;
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-20);
+  color: var(--ink-2);
+}
+.d-skill-bar {
+  grid-column: 1 / -1;
+  display: block;
+  height: 4px;
+  background: var(--rule-soft);
+}
+.d-skill-bar i {
+  display: block;
+  height: 100%;
+  background: var(--c);
+}
+
+/* ── 危机合约: three families side by side ───────────────────────── */
+.d-contract {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+.d-contract-group header {
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--grid);
+  font-size: var(--fs-17);
+}
+.d-contract-group ul {
+  list-style: none;
+}
+.d-contract-group li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--grid-soft);
+  font-size: var(--fs-17);
+}
+.d-contract-group li b {
+  margin-left: auto;
+  font-family: var(--font-num);
+  font-size: var(--fs-20);
+}
+.d-contract-icon {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  background: var(--who-bg);
+  color: var(--who-ink);
+  font-size: var(--fs-15);
+}
+.d-contract-icon img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}

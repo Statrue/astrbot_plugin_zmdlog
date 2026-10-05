@@ -5,6 +5,7 @@
 {% extends "shell/wide-base.html" %}
 {% from "shell/parts.html" import arrow, face %}
 {% from "shell/wide-parts.html" import cut, bar, view_strip %}
+{% from "battle/charts.html" import crit_bell, dps_curve %}
 
 {% block styles %}{% include "battle/battle.css" %}{% endblock %}
 
@@ -78,20 +79,7 @@
       </dl>
       {% if crit.coverage_note %}<small class="b-sum-cover">{{ crit.coverage_note }}</small>{% endif %}
     </div>
-    <div class="b-dist">
-      <div class="b-dist-plot{% if bell.marks_close %} is-close{% if bell.actual_below %} is-below{% else %} is-above{% endif %}{% endif %}">
-        <i class="b-dist-sd" style="left: {{ bell.spread_left }}%; width: {{ bell.spread_width }}%;"></i>
-        <svg viewBox="0 0 {{ bell.width }} {{ bell.height }}" preserveAspectRatio="none" aria-hidden="true">
-          <path class="b-dist-area" d="{{ bell.area }}"/>
-          <path class="b-dist-line" d="{{ bell.line }}" vector-effect="non-scaling-stroke"/>
-        </svg>
-        <i class="b-dist-mark is-expected" style="left: {{ bell.expected_left }}%;"><em>期望</em></i>
-        <i class="b-dist-mark is-actual" style="left: {{ bell.actual_left }}%;"><em>实际</em></i>
-      </div>
-      <div class="b-ruler b-dist-ruler">
-        {% for left, label in bell.ticks %}<span style="left: {{ left }}%;">{{ label }}</span>{% endfor %}
-      </div>
-    </div>
+    {{ crit_bell(bell) }}
   </div>
 </section>
 {% endif %}
@@ -101,30 +89,7 @@
 {% set curve = page.dps_curve %}
 <section class="b-block b-curve">
   {{ bar("DPS 曲线", card_w, "峰值 " ~ curve.peak_label) }}
-  <div class="b-body b-sum-curve">
-    <ul class="b-sum-keys">
-      {% for key in page.curve_keys %}
-      <li{% if key.colour_index is none %} class="is-team"{% endif %}><i{% if key.colour_index is not none %} class="c{{ key.colour_index }}"{% endif %}></i>{{ key.label }}<b>{{ key.dps }}</b></li>
-      {% endfor %}
-    </ul>
-    <div class="b-curve-box">
-      {% for label in curve.axis_labels %}
-      <i class="b-ygrid" style="top: {{ loop.index0 * 25 }}%;"></i>
-      <span class="b-ylabel" style="top: {{ loop.index0 * 25 }}%;">{{ label }}</span>
-      {% endfor %}
-      {% for tick in curve.ticks %}{% if not loop.first %}<i class="b-xgrid{% if tick.major %} is-major{% endif %}" style="left: {{ tick.top }}%;"></i>{% endif %}{% endfor %}
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        {% for series in curve.series|reverse %}
-        {% if series.colour_index == 1 %}<polyline class="b-line-halo" points="{{ series.polyline }}" vector-effect="non-scaling-stroke"/>{% endif %}
-        <polyline class="b-line c{{ series.colour_index }}" points="{{ series.polyline }}" vector-effect="non-scaling-stroke"/>
-        {% endfor %}
-        <polyline class="b-line is-team" points="{{ curve.team_polyline }}" vector-effect="non-scaling-stroke"/>
-      </svg>
-    </div>
-    <div class="b-ruler">
-      {% for tick in curve.ticks %}<span{% if tick.major %} class="is-major"{% endif %} style="left: {{ tick.top }}%;">{{ tick.label }}</span>{% endfor %}
-    </div>
-  </div>
+  {{ dps_curve(curve, page.curve_keys) }}
 </section>
 {% endif %}
 {% endblock %}

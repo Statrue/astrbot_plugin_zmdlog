@@ -1,4 +1,4 @@
-"""战报 and 对比: one battle's 摘要, and two battles of one boss side by side."""
+"""战报, 数据 and 对比: a battle's 摘要 and its numbers, two battles side by side."""
 
 import asyncio
 from dataclasses import dataclass
@@ -100,13 +100,58 @@ async def prepare_battle(
         query=query,
         web_base_url=web_base_url,
         casts_unsupported=error is not None and casts_unsupported(error),
-        crit=build_crit_expectation(
-            (
-                CritHit(point.value, point.crit_roll, point.character_name)
-                for point in battle.damage_points
-            ),
-            duration_ms=battle.duration_ms,
+        crit=battle_crit(battle),
+    )
+
+
+def battle_crit(battle: BattleDetailSummary) -> CritExpectation | None:
+    """暴击期望 from the battle's own hits; None when none recorded a roll."""
+
+    return build_crit_expectation(
+        (
+            CritHit(point.value, point.crit_roll, point.character_name)
+            for point in battle.damage_points
         ),
+        duration_ms=battle.duration_ms,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class BattleDataRecipe:
+    """数据: the detail alone, and the 暴击期望 its hits carry.
+
+    It reads neither the casts nor the suits, so its strip judges 排轴 by
+    the detail only (``core/battle_views``).
+    """
+
+    battle: BattleDetailSummary
+    query: str
+    web_base_url: str
+    crit: CritExpectation | None = None
+
+    async def draw(self, renderer: "LongImageRenderer") -> "RenderedImage":
+        return await renderer.render_battle_data(
+            self.battle,
+            query=self.query,
+            web_base_url=self.web_base_url,
+            crit=self.crit,
+            views=view_strip(CandidateView.DATA, self.battle),
+        )
+
+
+async def prepare_battle_data(
+    data: "ZmdLogsDataSource", battle_id: str, *, query: str, web_base_url: str
+) -> BattleDataRecipe | str:
+    """数据's one read; an upload with no skill statistics has no 数据."""
+
+    battle = await data.get_battle_detail(battle_id)
+    if not battle.skill_stats:
+        return messages.NO_SKILL_STATS
+    return BattleDataRecipe(
+        battle=battle,
+        query=query,
+        web_base_url=web_base_url,
+        crit=battle_crit(battle),
     )
 
 

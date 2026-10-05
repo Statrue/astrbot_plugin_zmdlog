@@ -1,9 +1,9 @@
-"""A battle's pages: its 摘要, the full model 对比 reads, loadout and skills.
+"""A battle's pages: its 摘要, the full model 对比 reads, and the loadout.
 
 The 摘要 (``build_battle_summary_page``) is what 战报 draws: the record
 band and three charts, each left out when the upload lacks its data.
 ``build_battle_page`` is the whole battle as one model — every figure the
-old card drew — which 对比 builds on and the 详细视图 will.
+old card drew — which 对比 builds on. 数据 is ``battle_data``'s.
 """
 
 from dataclasses import dataclass
@@ -152,33 +152,6 @@ class LoadoutPage:
     battle_date: str
     loadouts: tuple[LoadoutView, ...]
     stat_lines_available: bool
-
-
-@dataclass(frozen=True, slots=True)
-class SkillGroupView:
-    character_name: str
-    character_initial: str
-    character_avatar_url: str | None
-    profession: str
-    total_damage: str
-    team_share: str
-    team_share_width: float
-    rows: tuple[SkillRowView, ...]
-    hidden_count: int
-
-
-@dataclass(frozen=True, slots=True)
-class SkillPage:
-    header: PageHeader
-    battle_id: str
-    report_url: str
-    uploader_display_name: str
-    duration: str
-    total_dps: str
-    total_damage: str
-    battle_date: str
-    groups: tuple[SkillGroupView, ...]
-    has_merged_rows: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,22 +475,26 @@ def build_battle_summary_page(
         ),
         crit=_crit_summary(crit),
         dps_curve=curve,
-        curve_keys=(
-            (
-                CurveKeyView(label="全队", colour_index=None, dps=curve.team_dps),
-                *(
-                    CurveKeyView(
-                        label=series.character_name,
-                        colour_index=series.colour_index,
-                        dps=series.final_dps,
-                    )
-                    for series in curve.series
-                ),
-            )
-            if curve is not None
-            else ()
-        ),
+        curve_keys=curve_keys(curve),
         views=tuple(ViewTabView(label, current) for label, current in views),
+    )
+
+
+def curve_keys(curve: DpsCurveView | None) -> tuple[CurveKeyView, ...]:
+    """The DPS 曲线's key: the team's line, then each character's."""
+
+    if curve is None:
+        return ()
+    return (
+        CurveKeyView(label="全队", colour_index=None, dps=curve.team_dps),
+        *(
+            CurveKeyView(
+                label=series.character_name,
+                colour_index=series.colour_index,
+                dps=series.final_dps,
+            )
+            for series in curve.series
+        ),
     )
 
 
@@ -552,8 +529,6 @@ def _crit_summary(crit: CritExpectation | None) -> CritSummaryView | None:
 _MAX_CARD_SKILLS = 3
 
 
-_MAX_SKILL_ROWS = 12
-
 
 def build_loadout_page(
     battle: BattleDetailSummary,
@@ -583,53 +558,6 @@ def build_loadout_page(
         loadouts=loadouts,
         stat_lines_available=any(
             equip.stats for load in loadouts for equip in load.equips
-        ),
-    )
-
-
-def build_skill_page(
-    battle: BattleDetailSummary,
-    *,
-    query: str,
-    web_base_url: str,
-) -> SkillPage:
-    """Per-character damage by skill, heaviest first."""
-
-    groups = group_skill_damage(battle.skill_stats)
-    grand_total = sum(group.total_damage for group in groups)
-    identities = _roster_identities(battle)
-    views: list[SkillGroupView] = []
-    for group in groups:
-        avatar_url, profession = identities.get(group.character_name, (None, ""))
-        rows = _skill_rows(group, limit=_MAX_SKILL_ROWS)
-        views.append(
-            SkillGroupView(
-                character_name=group.character_name,
-                character_initial=_initial(group.character_name),
-                character_avatar_url=_safe_asset_url(
-                    avatar_url, base_url=web_base_url
-                ),
-                profession=profession,
-                total_damage=format_number(group.total_damage),
-                team_share=_share(group.total_damage, grand_total),
-                team_share_width=_bar_width(group.total_damage, grand_total),
-                rows=rows,
-                hidden_count=max(0, len(group.rows) - len(rows)),
-            )
-        )
-    return SkillPage(
-        header=PageHeader(
-            title=battle.boss_name,
-            subtitle=battle.dungeon_name,
-            query=query,
-            matched_name=battle.battle_id,
-            target_type="技能统计",
-            footer_note="公开战报 · 各角色技能伤害统计",
-        ),
-        **_report_facts(battle, web_base_url),
-        groups=tuple(views),
-        has_merged_rows=any(
-            row.merged_count > 1 for group in groups for row in group.rows
         ),
     )
 

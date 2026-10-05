@@ -240,7 +240,7 @@ class RoundTripTests(unittest.TestCase):
             (CandidateView.BATTLE, RouteKind.BATTLE_QUERY, {"battle_rank": 3}),
             (CandidateView.BATTLE, RouteKind.BATTLE_QUERY, {}),
             (CandidateView.LOADOUT, RouteKind.LOADOUT_QUERY, {"battle_rank": 2}),
-            (CandidateView.SKILLS, RouteKind.SKILL_QUERY, {"battle_rank": 4}),
+            (CandidateView.DATA, RouteKind.DATA_QUERY, {"battle_rank": 4}),
             (CandidateView.TIMELINE, RouteKind.TIMELINE_QUERY, {"battle_rank": 5}),
             (CandidateView.COMPARE, RouteKind.COMPARE_QUERY, {}),
             (CandidateView.COMPARE, RouteKind.COMPARE_QUERY, {"compare_rank": 5}),

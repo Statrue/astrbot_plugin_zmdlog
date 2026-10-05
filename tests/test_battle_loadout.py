@@ -1,4 +1,4 @@
-"""Tests for the 0.6.0 battle loadout (配装) and skill statistics (技能) pages."""
+"""Tests for the 0.6.0 battle loadout (配装) page and the skill names pages print."""
 
 import unittest
 from dataclasses import replace
@@ -25,9 +25,9 @@ from core.models import (
 )
 from core.presentation import (
     _format_stat_value,
+    build_battle_data_page,
     build_battle_page,
     build_loadout_page,
-    build_skill_page,
 )
 from core.render import TemplateRenderer
 from core.routing import RouteKind, RouteParseError, parse_zmdlog_payload
@@ -735,41 +735,6 @@ class LoadoutPresentationTests(unittest.TestCase):
 
         self.assertEqual(page.loadouts[0].equips[0].suit_label, "独立装备")
 
-    def test_skill_page_shares_and_ordering(self) -> None:
-        page = build_skill_page(
-            self.battle, query="技能 罗丹", web_base_url="https://zmdlogs.com"
-        )
-
-        self.assertEqual(page.header.target_type, "技能统计")
-        self.assertTrue(page.has_merged_rows)
-        luoxi, kamiu = page.groups
-        self.assertEqual(luoxi.total_damage, "2,027,572")
-        self.assertEqual(luoxi.team_share, "88.4%")
-        self.assertEqual(luoxi.profession, "近卫")
-        self.assertEqual(
-            luoxi.character_avatar_url,
-            "https://zmdlogs.com/images/character/luoxi.png",
-        )
-        top = luoxi.rows[0]
-        self.assertEqual(
-            (
-                top.category,
-                top.name,
-                top.cast_count,
-                top.total_damage,
-                top.share,
-                top.avg_damage,
-                top.max_damage,
-                top.merged,
-            ),
-            ("终结技", "终结技", 2, "1,200,000", "59.2%", "600,000", "700,000", False),
-        )
-        merged = next(row for row in luoxi.rows if row.merged)
-        self.assertEqual(merged.name, "普攻 · 绯红刃舞")
-        self.assertEqual(luoxi.hidden_count, 0)
-        self.assertEqual(kamiu.rows[0].category, "连携")
-        self.assertEqual(kamiu.team_share, "11.6%")
-
     def test_battle_card_carries_compact_loadouts(self) -> None:
         page = build_battle_page(
             self.battle, query="q", web_base_url="https://zmdlogs.com"
@@ -788,10 +753,10 @@ class LoadoutPresentationTests(unittest.TestCase):
         battle = parse_battle_detail(payload)
         web = "https://zmdlogs.com"
 
-        skills = build_skill_page(battle, query="q", web_base_url=web)
+        data = build_battle_data_page(battle, query="q", web_base_url=web)
         card = build_battle_page(battle, query="q", web_base_url=web)
 
-        self.assertEqual(skills.groups[1].rows[0].name, "连携·潮汐")
+        self.assertEqual(data.skill_groups[1].rows[0].name, "连携·潮汐")
         # The card's 主要伤害来源, which the comparison page reuses.
         self.assertEqual(card.loadouts[1].top_skills[0].name, "连携·潮汐")
         self.assertIn("卡缪：连携·潮汐 76%", format_battle(battle))
@@ -834,19 +799,6 @@ class LoadoutTemplateTests(unittest.TestCase):
         self.assertIn("本场未记录装备", html)
         self.assertIn("潜能 0", html)
 
-    def test_skills_page_renders_rows(self) -> None:
-        html = self.renderer.render_skills(
-            self.battle, query="技能 罗丹", web_base_url="https://zmdlogs.com"
-        )
-
-        self.assertIn("普攻 · 绯红刃舞", html)
-        self.assertIn("1,200,000", html)
-        self.assertIn("59.2%", html)
-        self.assertIn("<i>合并</i>", html)
-        self.assertIn("燃烧", html)
-        self.assertIn("技能 3090", html)
-        self.assertIn("占全队 88.4%", html)
-
     def test_pages_without_loadout_data_still_render(self) -> None:
         payload = battle_detail_payload()
         payload["battle"]["roster"] = []
@@ -861,14 +813,10 @@ class LoadoutTemplateTests(unittest.TestCase):
             battle, query="q", web_base_url="https://zmdlogs.com"
         )
         self.assertIn("这份战报没有记录阵容", html)
-        html = self.renderer.render_skills(
-            battle, query="q", web_base_url="https://zmdlogs.com"
-        )
-        self.assertIn("这份战报没有技能统计数据", html)
 
 
 class BattleStyleRouteTests(unittest.TestCase):
-    def test_loadout_and_skill_commands_share_the_battle_shape(self) -> None:
+    def test_loadout_and_data_commands_share_the_battle_shape(self) -> None:
         route = parse_zmdlog_payload("配装 罗丹 3")
         self.assertEqual(route.kind, RouteKind.LOADOUT_QUERY)
         self.assertEqual(route.query, "罗丹")
@@ -880,12 +828,12 @@ class BattleStyleRouteTests(unittest.TestCase):
         self.assertEqual(route.battle_rank, 1)
 
         route = parse_zmdlog_payload(
-            "技能 https://zmdlogs.com/battle/btl_upload_abcdef123456"
+            "数据 https://zmdlogs.com/battle/btl_upload_abcdef123456"
         )
-        self.assertEqual(route.kind, RouteKind.SKILL_QUERY)
+        self.assertEqual(route.kind, RouteKind.DATA_QUERY)
 
-        route = parse_zmdlog_payload("技能统计 罗丹 第2名")
-        self.assertEqual(route.kind, RouteKind.SKILL_QUERY)
+        route = parse_zmdlog_payload("数据 罗丹 第2名")
+        self.assertEqual(route.kind, RouteKind.DATA_QUERY)
         self.assertEqual(route.battle_rank, 2)
 
         self.assertEqual(parse_zmdlog_payload("战报 罗丹").kind, RouteKind.BATTLE_QUERY)
@@ -893,7 +841,7 @@ class BattleStyleRouteTests(unittest.TestCase):
     def test_missing_argument_and_options_are_rejected(self) -> None:
         with self.assertRaisesRegex(RouteParseError, "配装 罗丹 3"):
             parse_zmdlog_payload("配装")
-        for payload in ("技能", "配装 罗丹 --页 3", "技能 罗丹 --角色 黎风"):
+        for payload in ("数据", "配装 罗丹 --页 3", "数据 罗丹 --角色 黎风"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
@@ -922,10 +870,10 @@ class BattleCandidateViewTests(unittest.TestCase):
         loadout = store.remember(
             "测", choices, view=CandidateView.LOADOUT, battle_rank=2
         )
-        skills = store.remember("测", choices, view=CandidateView.SKILLS)
+        data = store.remember("测", choices, view=CandidateView.DATA)
 
         self.assertIn("配装查询匹配到 2 个榜单", format_candidates(loadout))
-        self.assertIn("技能统计查询匹配到 2 个榜单", format_candidates(skills))
+        self.assertIn("战报数据查询匹配到 2 个榜单", format_candidates(data))
         entry, choice = store.resolve(loadout.code, "2")
         self.assertIs(entry.view, CandidateView.LOADOUT)
         self.assertEqual(entry.battle_rank, 2)

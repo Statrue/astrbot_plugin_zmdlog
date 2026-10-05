@@ -182,10 +182,10 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                     ),
                     HelpCommand(
                         command=(
-                            f"{command} 战报 | 配装 | 技能 | 技能轴 {battle_argument}"
+                            f"{command} 战报 | 数据 | 配装 | 技能轴 {battle_argument}"
                             " [--口径 rdps]"
                         ),
-                        answers="查看一场战报的摘要，配装、技能、技能轴各放大一面",
+                        answers="查看一场战报的摘要，数据、配装、技能轴各放大一面",
                     ),
                     HelpCommand(
                         command=(
