@@ -26,7 +26,7 @@ Python 3.11+ (`asyncio.timeout`, `datetime.UTC`), dependencies in
 the modules that carry a design worth understanding — `ranking_index`,
 `board_changes`, `rank_trend`, `recipes/__init__`, `rank_watch`, `watch`,
 `queries`, `toolbox`, `facts`, `contract`, `timeline`, `telemetry`, `crit`,
-`bindings`, `origins`, `metrics`, `cache`, `buttons` — explain their economics and their reasons
+`bindings`, `origins`, `metrics`, `cache`, `buttons`, `battle_views` — explain their economics and their reasons
 there, and so does `qq_official.py` at the root. That is the module
 map; this file does not repeat it, and a behaviour question is answered by the
 docstring beside the code, not here.
@@ -228,10 +228,19 @@ when the user settled the question.
   vertical blocks ("一整块砸下来"), a hairline rail with dots (too thin to read
   without zooming), and a uniform 44 px track (the light-grey normal-attack runs
   read as columns of filler). The graded bar widths settled it.
-- **Chart section order** on the battle card is DPS 曲线 → BUFF 覆盖 → 施法节奏,
-  so the one switch from left-to-right to top-to-bottom time coincides with a
-  heading. The buff band was first placed inside the 施法节奏 section and the
-  user asked for it to be moved out.
+- **Chart section order.** The 摘要 is the record band, then 伤害构成 →
+  暴击期望 → DPS 曲线 (2026-10-05), and no per-character table: the numbers
+  are 数据's. Where the two time axes meet — the 技能轴 page — BUFF 覆盖 comes
+  before the rail, so the one switch from left-to-right to top-to-bottom time
+  coincides with a heading. The buff band was first placed inside the 施法节奏
+  section and the user asked for it to be moved out.
+- **A battle's pages name one another from one table** (2026-10-05):
+  `core/battle_views` lists 摘要 and the 详细视图 in the order the foot's strip
+  prints them, and the QQ official bot's buttons under the picture are exactly
+  the strip's other entries, by the same names. A view joins the table when
+  its V2 page lands; until then neither strip nor buttons offer it, even where
+  its pre-1.3.0 page still answers its old command — those pages keep their
+  old buttons, one of which returns to the 摘要.
 - **Elements get rings and a filter, nothing else** (2026-09-06): no element
   chip, no element text, no element statistics page. The main C wears no ring of
   its own — the row prints 主 C by name — so a ring there only cost the element
@@ -285,7 +294,9 @@ when the user settled the question.
   the score is what counts), no merging by tag base (names change between
   tiers), no "N of the catalog" denominator and no board-best reference (the
   catalog has no upstream endpoint, and a second upstream for a decorative
-  figure was rejected). Neutral colour: 合约 is data, not action.
+  figure was rejected). Neutral colour: 合约 is data, not action. Since the
+  摘要 replaced the card (#39) it carries 合约分数 alone, as its lead hero
+  figure; the tags section belongs to the 数据 view, under the rules above.
 - **The Chinese name is the market name; the code identity stays ZmdLogBot**
   (2026-09-19). `display_name` is 终末地·藕粉铺子 (藕粉 puns on 凹分) and the help
   page title follows it; the repository name, the `zmdlog` command, the
