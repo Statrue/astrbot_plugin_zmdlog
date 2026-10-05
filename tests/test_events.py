@@ -196,9 +196,9 @@ class EventLogTests(unittest.TestCase):
             fetch_boards=fetch_boards,
             logger=logging.getLogger("t"),
             clock=lambda: now[0],
-            on_refresh=lambda old, new: seen.append(
-                (old.rows[0].battle_id, new.rows[0].battle_id)
-            ),
+            # A first read comes with no held copy: nothing to compare.
+            on_refresh=lambda old, new: old is None
+            or seen.append((old.rows[0].battle_id, new.rows[0].battle_id)),
         )
 
         async def scenario():

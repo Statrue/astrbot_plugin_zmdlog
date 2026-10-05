@@ -72,7 +72,7 @@ from .models import (
     HotBossCard,
 )
 from .outcome import Outcome, PageSubject, PageTarget
-from .rank_watch import RankWatcher
+from .rank_trend import RankTrend
 from .recipes import (
     BattleRecipe,
     IndexSnapshot,
@@ -164,7 +164,7 @@ class QueryService:
         renderer: Callable[[], LongImageRenderer],
         candidates: CandidateStore,
         board_matcher: BoardMatcher,
-        watcher: RankWatcher,
+        trend: RankTrend,
         settings: PluginSettings,
         logger: LogSink,
         bindings: AccountBinding | None = None,
@@ -175,7 +175,8 @@ class QueryService:
         self._renderer = renderer
         self._candidates = candidates
         self._board_matcher = board_matcher
-        self._watcher = watcher
+        # Every account's rank trace, recorded from the index's board reads.
+        self._trend = trend
         # The binding book behind 我的 and 对比 … 我; None where the host has
         # none.
         self._bindings = bindings
@@ -399,9 +400,9 @@ class QueryService:
             return await self._render_trend(
                 account_id, query=route.query, time_range=route.stats_range
             )
-        # A watched account is addressable by the nickname its history
-        # already holds, with no upstream search at all.
-        local = self._watcher.history_by_name(route.query)
+        # An account with a trace is addressable by the nickname the trace
+        # holds, with no upstream search at all.
+        local = self._trend.by_name(route.query)
         if len(local) == 1:
             return await self._render_trend(
                 local[0].account_id,
@@ -421,7 +422,12 @@ class QueryService:
                 view=CandidateView.TREND,
                 stats_range=route.stats_range,
             )
-            return self._pick_list(entry)
+            # Every account on a board has a trace, so a short name can
+            # match more than a list holds.
+            more = len(local) > MAX_CANDIDATES
+            return self._pick_list(
+                entry, note=messages.MORE_NICKNAME_HITS if more else None
+            )
         outcome = await self._account_search_outcome(
             route.query,
             origin=origin,
@@ -717,8 +723,8 @@ class QueryService:
                 raise
             self._logger.warning("ZmdLogBot API request failed: %s", exc.code)
             return Outcome(message=messages.ACCOUNT_NOT_FOUND)
-        # A trend exists only for an account the rank watch has polled.
-        history = self._watcher.history_for(account_id)
+        # A trend exists for an account seen on a board since the trend began.
+        history = self._trend.history_for(account_id)
         no_trend = history is None or not history.boards
         return Outcome.image(
             await recipe.draw(renderer),
@@ -809,11 +815,11 @@ class QueryService:
     ) -> Outcome:
         """Draw the rank trace of one account; text when nothing was recorded.
 
-        The trace only exists for accounts the rank watch polls, so this never
-        talks to upstream: an unknown account is answered with how to start.
+        The trace is recorded from the board reads, so this never talks to
+        upstream: an account no board read has seen has no trace yet.
         """
 
-        history = self._watcher.history_for(account_id)
+        history = self._trend.history_for(account_id)
         if history is None or not history.boards:
             return Outcome(message=messages.TREND_NO_DATA)
         rendered = await self._renderer().render_trend(
@@ -821,7 +827,7 @@ class QueryService:
             query=query,
             web_base_url=self._web_base_url,
             time_range=time_range,
-            last_checked=self._watcher.last_checked(account_id),
+            last_checked=self._trend.last_checked(account_id),
         )
         return Outcome.image(
             rendered,

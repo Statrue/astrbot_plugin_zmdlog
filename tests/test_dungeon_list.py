@@ -71,7 +71,7 @@ class DungeonListTests(unittest.TestCase):
             board_matcher=lambda cards: matchers.matcher_for(
                 cards, AliasConfig.empty()
             ),
-            watcher=None,
+            trend=None,
             settings=PluginSettings(web_base_url=WEB),
             logger=logging.getLogger("test"),
         )

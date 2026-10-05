@@ -599,7 +599,7 @@ class FakeClient:
         )
 
 
-class FakeWatcher:
+class FakeTrend:
     def __init__(self, history) -> None:
         self.history = history
 
@@ -624,7 +624,7 @@ class ToolSurfaceTests(unittest.TestCase):
         self.client = FakeClient()
         self.service = self._service()
 
-    def _service(self, watcher=None) -> ToolService:
+    def _service(self, trend=None) -> ToolService:
         return ToolService(
             client=self.client,
             data=self.data,
@@ -634,7 +634,7 @@ class ToolSurfaceTests(unittest.TestCase):
             ),
             settings=PluginSettings(web_base_url=WEB),
             logger=logging.getLogger("test"),
-            watcher=watcher,
+            trend=trend,
         )
 
     def test_a_prefix_resolves_a_character_the_board_fields_many_times(self) -> None:
@@ -806,14 +806,17 @@ class ToolSurfaceTests(unittest.TestCase):
         self.assertIn("CPUa、CPUb", answer.text)
         self.assertIn("还有更多同名结果", answer.text)
 
-    def test_an_unwatched_account_says_there_is_no_rank_history(self) -> None:
-        service = self._service(watcher=FakeWatcher(None))
+    def test_an_account_without_a_trace_answers_without_one(self) -> None:
+        service = self._service(trend=FakeTrend(None))
 
         answer = run(service.account("usr_1234567890abcdef"))
 
-        self.assertIn(facts.NO_RANK_HISTORY, answer.text)
+        # Said plainly, with no advice to 关注: the trace is kept for every
+        # account a board read has seen.
+        self.assertIn(facts.NO_RANK_TREND, answer.text)
+        self.assertNotIn("关注", answer.text)
 
-    def test_a_watched_account_gets_its_rank_changes(self) -> None:
+    def test_any_account_with_a_trace_gets_its_rank_changes(self) -> None:
         history = AccountHistory(
             account_id="usr_1234567890abcdef",
             display_name="测试账号",
@@ -829,7 +832,7 @@ class ToolSurfaceTests(unittest.TestCase):
                 ),
             ),
         )
-        service = self._service(watcher=FakeWatcher(history))
+        service = self._service(trend=FakeTrend(history))
 
         answer = run(service.account("usr_1234567890abcdef"))
 

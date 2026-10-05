@@ -49,7 +49,6 @@ if astrbot is not None:
         ZmdLogsAPIError,
         ZmdLogsClientError,
     )
-    from astrbot_plugin_zmdlog.core.history import record_rankings
     from astrbot_plugin_zmdlog.core.models import (
         parse_battle_detail,
         parse_battle_export,
@@ -1738,7 +1737,6 @@ class HandlerTests(unittest.TestCase):
         watcher.watchlist_store.path = root / "watchlist.json"
         watcher.rank_snapshot_store.path = root / "rank-snapshot.json"
         watcher.board_snapshot_store.path = root / "board-snapshot.json"
-        watcher.history_store.path = root / "rank-history.json"
 
     def _hot_bosses_with_run(self, battle_id: str, nickname: str):
         payload = hot_bosses_payload()
@@ -1929,12 +1927,29 @@ class HandlerTests(unittest.TestCase):
     # --- 趋势 -----------------------------------------------------------------
 
     def _seed_history(self, name: str = "测试账号") -> None:
-        payload = public_user_rankings_payload()
-        payload["accountDisplayName"] = name
-        account = parse_public_user_rankings(payload)
-        self.plugin.watcher.rank_history, _ = record_rankings(
-            {}, account, checked_at="2026-09-01T00:00:00+00:00"
-        )
+        """The index reads a board the account is on; nobody watches it."""
+
+        payload = ranking_payload_with_rows()
+        payload["rows"][1]["accountId"] = "usr_1234567890abcdef"
+        payload["rows"][1]["accountDisplayName"] = name
+
+        async def get_boss_rankings(slug, *, metric):
+            return parse_boss_ranking(payload, metric=metric)
+
+        self.plugin.client.get_boss_rankings = get_boss_rankings
+        run(self.plugin.data.ranking_index.get(payload["bossSlug"]))
+
+    def test_trend_answers_for_an_account_nobody_watches(self) -> None:
+        (kind, reply), = self._zmdlog("zmdlog 趋势 usr_1234567890abcdef")
+        self.assertEqual(kind, "plain")
+        self.assertIn("还没有名次记录", reply)
+        self.assertNotIn("关注", reply)
+
+        self._seed_history()
+
+        self.assertEqual(self.plugin.watcher.watchlist.origins_by_account(), {})
+        (kind, result), = self._zmdlog("zmdlog 趋势 usr_1234567890abcdef")
+        self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
 
     def test_trend_renders_from_local_history_without_a_request(self) -> None:
         self._seed_history()
@@ -1975,7 +1990,7 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(kind, "plain")
         self.assertIn("还没有名次记录", reply)
 
-    def test_rank_watch_cycle_records_history_and_unfollowing_drops_it(self) -> None:
+    def test_the_watch_poll_leaves_the_trend_to_the_board_reads(self) -> None:
         self._enable_watch_storage()
         account_id = "usr_1234567890abcdef"
         self.plugin.watcher.watchlist, _ = self.plugin.watcher.watchlist.with_account(
@@ -1995,15 +2010,12 @@ class HandlerTests(unittest.TestCase):
 
         run(self.plugin.watcher.run_account_cycle())
 
-        trace = self.plugin.watcher.rank_history[account_id]
-        self.assertEqual(trace.board("dung01_group_bossrush01").points[0].rank, 2)
-        self.assertTrue(self.plugin.watcher.history_store.path.exists())
-        run(self.plugin.watcher.run_account_cycle())
-        self.assertEqual(len(trace.board("dung01_group_bossrush01").points), 1)
-
+        self.assertIsNone(self.plugin.data.rank_trend.history_for(account_id))
+        self._seed_history()
         (_, removed), = self._zmdlog("zmdlog 取关 1")
         self.assertIn("已取消关注", removed)
-        self.assertNotIn(account_id, self.plugin.watcher.rank_history)
+        # Unfollowing is no reason to forget a trace every account has.
+        self.assertIsNotNone(self.plugin.data.rank_trend.history_for(account_id))
 
     # --- 绑定 / 我的 -------------------------------------------------------------
 

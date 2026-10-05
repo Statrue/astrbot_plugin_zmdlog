@@ -1,7 +1,9 @@
 """Rank watch: the 关注 / 取关 commands, their polling loop and its files.
 
 One :class:`RankWatcher` per plugin owns the watch list, the rank and board
-baselines, the trend trace, and the loop that polls them. It is free of
+baselines, and the loop that polls them. The rank trend is not its business
+any more: it is recorded for every account from the ranking index's board
+reads (``core/history``), so the poll writes none of it. It is free of
 AstrBot: the chat an event came from, the sender's identity and the way a
 notice is delivered all arrive as parameters, so the whole machine can be
 driven from tests with fakes.
@@ -34,26 +36,18 @@ from .candidates import (
     account_choice,
 )
 from .client import (
-    MIN_ACCOUNT_SEARCH_LENGTH,
     ZmdLogsAPIError,
     ZmdLogsClient,
     ZmdLogsClientError,
     searchable_nickname,
 )
 from .datasource import ZmdLogsDataSource
-from .history import (
-    AccountHistory,
-    history_payload,
-    parse_history_payload,
-    record_rankings,
-)
 from .identifiers import PublicReferenceError, parse_account_reference
 from .logs import LogSink
 from .matcher import (
     BOARD_QUERY_TARGETS,
     MatchStatus,
     RankingMatcher,
-    fold_text,
 )
 from .messages import shorten
 from .models import HotBossCard, PublicUserRankings
@@ -96,7 +90,6 @@ from .watchlist import (
 WATCHLIST_FILE = "watchlist.json"
 RANK_SNAPSHOT_FILE = "rank-snapshot.json"
 BOARD_SNAPSHOT_FILE = "board-snapshot.json"
-RANK_HISTORY_FILE = "rank-history.json"
 _RANK_WATCH_CONCURRENCY = 2
 
 # Returns whether the chat actually received the notice. A cycle only
@@ -106,7 +99,7 @@ BoardMatcher = Callable[[tuple[HotBossCard, ...]], RankingMatcher]
 
 
 class RankWatcher:
-    """Watch lists, baselines, the trend trace and the loop that feeds them."""
+    """Watch lists, baselines and the loop that feeds them."""
 
     def __init__(
         self,
@@ -139,9 +132,6 @@ class RankWatcher:
         self.board_snapshot_store = JsonStore(
             _in(data_dir, BOARD_SNAPSHOT_FILE), label="board snapshot", warn=warn
         )
-        self.history_store = JsonStore(
-            _in(data_dir, RANK_HISTORY_FILE), label="rank history", warn=warn
-        )
         self.watchlist: WatchList = parse_watchlist(self.watchlist_store.load())
         self._file_watchlist_under_groups()
         self.rank_snapshots: dict[str, AccountSnapshot] = parse_snapshot_payload(
@@ -149,9 +139,6 @@ class RankWatcher:
         )
         self.board_snapshots: dict[str, BoardSnapshot] = (
             parse_board_snapshot_payload(self.board_snapshot_store.load())
-        )
-        self.rank_history: dict[str, AccountHistory] = parse_history_payload(
-            self.history_store.load()
         )
         self._task: asyncio.Task[None] | None = None
 
@@ -201,34 +188,6 @@ class RankWatcher:
                 raise
             except Exception:
                 self._logger.exception("ZmdLogBot board watch cycle failed")
-
-    # --- trend page reads --------------------------------------------------------
-
-    def history_for(self, account_id: str) -> AccountHistory | None:
-        return self.rank_history.get(account_id)
-
-    def history_by_name(self, query: str) -> tuple[AccountHistory, ...]:
-        """Watched accounts whose recorded nickname matches ``query``."""
-
-        stripped = query.strip()
-        if len(stripped) < MIN_ACCOUNT_SEARCH_LENGTH:
-            return ()
-        folded = fold_text(stripped)
-        entries = tuple(self.rank_history.values())
-        exact = tuple(
-            entry for entry in entries if fold_text(entry.display_name) == folded
-        )
-        if exact:
-            return exact
-        return tuple(
-            entry
-            for entry in entries
-            if folded and folded in fold_text(entry.display_name)
-        )
-
-    def last_checked(self, account_id: str) -> str | None:
-        snapshot = self.rank_snapshots.get(account_id)
-        return None if snapshot is None else snapshot.checked_at
 
     # --- 关注 / 取关 ------------------------------------------------------------
 
@@ -581,20 +540,15 @@ class RankWatcher:
                 type(exc).__name__,
             )
             return
-        checked_at = utc_now_text()
         snapshots = dict(self.rank_snapshots)
-        snapshots[account_id] = build_snapshot(account, checked_at=checked_at)
+        snapshots[account_id] = build_snapshot(account, checked_at=utc_now_text())
         self._save_rank_snapshots(snapshots)
-        # The trace starts with the ranks held at 关注 time, so the trend page
-        # has a left edge before the first move.
-        history, changed = record_rankings(
-            self.rank_history, account, checked_at=checked_at
-        )
-        if changed:
-            self._save_history(history)
 
     def _forget_rank_snapshot(self, account_id: str) -> None:
-        """Drop the baseline and trace once nobody watches the account."""
+        """Drop the baseline once nobody watches the account.
+
+        Its rank trend stays: that is every account's, watched or not.
+        """
 
         if account_id in self.watchlist.origins_by_account():
             return
@@ -602,10 +556,6 @@ class RankWatcher:
             snapshots = dict(self.rank_snapshots)
             del snapshots[account_id]
             self._save_rank_snapshots(snapshots)
-        if account_id in self.rank_history:
-            history = dict(self.rank_history)
-            del history[account_id]
-            self._save_history(history)
 
     # --- persistence -------------------------------------------------------------
 
@@ -647,10 +597,6 @@ class RankWatcher:
         self.board_snapshots = snapshots
         self.board_snapshot_store.save(board_snapshot_payload(snapshots))
 
-    def _save_history(self, history: dict[str, AccountHistory]) -> None:
-        self.rank_history = history
-        self.history_store.save(history_payload(history))
-
     # --- cycles ----------------------------------------------------------------------
 
     async def run_account_cycle(self) -> None:
@@ -672,19 +618,11 @@ class RankWatcher:
         snapshots: dict[str, AccountSnapshot] = {}
         pending: dict[str, list[tuple[str, Notice]]] = {}
         live_names: dict[str, str] = {}
-        history = self.rank_history
-        history_changed = False
         for (account_id, origins), result in zip(watched, results, strict=True):
             if isinstance(result, tuple):
                 snapshot, notice, account = result
                 snapshots[account_id] = snapshot
                 live_names[account_id] = account.account_display_name
-                history, changed = record_rankings(
-                    history,
-                    account,
-                    checked_at=snapshot.checked_at or utc_now_text(),
-                )
-                history_changed = history_changed or changed
                 if notice is not None:
                     for origin in origins:
                         pending.setdefault(origin, []).append((account_id, notice))
@@ -724,18 +662,6 @@ class RankWatcher:
                 if account_id in watching
             }
         )
-        # A 关注 while the notices were being delivered seeded its first
-        # point into the live map; this cycle's copy predates it, so merge
-        # the cycle's changes onto the live state rather than replacing it.
-        merged_history = dict(self.rank_history)
-        merged_history.update(history)
-        kept_history = {
-            account_id: entry
-            for account_id, entry in merged_history.items()
-            if account_id in watching
-        }
-        if history_changed or kept_history.keys() != self.rank_history.keys():
-            self._save_history(kept_history)
         renamed, changed = self.watchlist.with_display_names(live_names)
         if changed:
             self._save_watchlist(renamed)

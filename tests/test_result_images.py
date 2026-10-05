@@ -599,14 +599,14 @@ class DungeonBoardButtonTests(unittest.TestCase):
         )
 
 
-class FakeWatcher:
-    """The rank watch as the account page asks it: whose trend is on record."""
+class FakeTrend:
+    """The rank trend as the account page asks it: whose trace is on record."""
 
-    def __init__(self, *watched: str) -> None:
-        self.watched = set(watched)
+    def __init__(self, *traced: str) -> None:
+        self.traced = set(traced)
 
     def history_for(self, account_id):
-        if account_id not in self.watched:
+        if account_id not in self.traced:
             return None
         return SimpleNamespace(account_id=account_id, boards=("one board",))
 
@@ -636,7 +636,7 @@ class OutcomeTargetTests(unittest.TestCase):
             board_matcher=lambda cards: matchers.matcher_for(
                 cards, AliasConfig.empty()
             ),
-            watcher=FakeWatcher(ACCOUNT),
+            trend=FakeTrend(ACCOUNT),
             settings=PluginSettings(web_base_url=WEB),
             logger=logging.getLogger("test"),
         )
@@ -656,8 +656,8 @@ class OutcomeTargetTests(unittest.TestCase):
         self.assertEqual(outcome.image_scale, 1)
         self.assertEqual(outcome.target, PageTarget(PageSubject.ACCOUNT, ACCOUNT))
 
-    def test_an_account_nobody_watched_has_no_trend_to_offer(self) -> None:
-        self.queries._watcher = FakeWatcher()
+    def test_an_account_without_a_trace_has_no_trend_to_offer(self) -> None:
+        self.queries._trend = FakeTrend()
 
         outcome = self._command(RouteKind.ACCOUNT_QUERY, query=ACCOUNT)
 

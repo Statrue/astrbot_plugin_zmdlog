@@ -43,7 +43,7 @@ from .client import (
 )
 from .datasource import ZmdLogsDataSource
 from .elements import ELEMENTS, normalize_element
-from .history import window_label, window_start
+from .history import trend_window_start, window_label, window_start
 from .identifiers import (
     PublicReferenceError,
     parse_account_reference,
@@ -63,7 +63,7 @@ from .messages import shorten
 from .metrics import METRIC_DPS, is_rdps, parse_metric_text
 from .models import HotBossCard
 from .professions import PROFESSIONS, normalize_profession
-from .rank_watch import RankWatcher
+from .rank_trend import RankTrend
 from .recipes import (
     IndexSnapshot,
     find_profile_character,
@@ -143,7 +143,7 @@ class ToolService:
         board_matcher: BoardMatcher,
         settings: PluginSettings,
         logger: LogSink,
-        watcher: RankWatcher | None = None,
+        trend: RankTrend | None = None,
         summary_grace_seconds: float = SUMMARY_GRACE_SECONDS,
     ) -> None:
         self._client = client
@@ -152,9 +152,8 @@ class ToolService:
         self._board_matcher = board_matcher
         self._web_base_url = settings.web_base_url
         self._logger = logger
-        # The rank watch's trace is the only rank history there is; the
-        # account tool reads it when it has one.
-        self._watcher = watcher
+        # Every account's rank trace; the account tool reads it when it has one.
+        self._trend = trend
         self._summary_grace_seconds = summary_grace_seconds
 
     # --- boards -----------------------------------------------------------------
@@ -855,7 +854,8 @@ class ToolService:
         # Habits come from whatever the index already holds; never wait for it.
         held = tuple(entry.ranking for entry in self._data.ranking_index.entries())
         habits = account_tally(held, account_id) if held else None
-        since = window_start(span, now=datetime.now(UTC))
+        now = datetime.now(UTC)
+        since = window_start(span, now=now)
         label = window_label(span)
         parts = [
             facts.format_account(
@@ -866,19 +866,18 @@ class ToolService:
                 rows_by_battle=recipe.rows_by_battle,
             )
         ]
-        if self._watcher is not None:
-            history = self._watcher.history_for(account_id)
-            if history is not None and history.boards:
-                parts.append(
-                    facts.format_account_trend(
-                        history,
-                        since=since,
-                        window_label=label,
-                        last_checked=self._watcher.last_checked(account_id),
-                    )
+        history = None if self._trend is None else self._trend.history_for(account_id)
+        if history is not None and history.boards:
+            parts.append(
+                facts.format_account_trend(
+                    history,
+                    since=trend_window_start(span, now=now),
+                    window_label=label,
+                    last_checked=self._trend.last_checked(account_id),
                 )
-            else:
-                parts.append(facts.NO_RANK_HISTORY)
+            )
+        elif self._trend is not None:
+            parts.append(facts.NO_RANK_TREND)
         image = await self._render(recipe.draw)
         return ToolAnswer(facts.join_sections(*parts), image).noted(range_note)
 

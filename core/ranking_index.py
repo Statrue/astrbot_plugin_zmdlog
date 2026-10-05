@@ -162,14 +162,15 @@ class RankingIndex:
         logger: LogSink,
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], float] = time.time,
-        on_refresh: Callable[[BossRanking, BossRanking], None] | None = None,
+        on_refresh: Callable[[BossRanking | None, BossRanking], None] | None = None,
     ) -> None:
         # Called with (slug, metric); the ranking it returns carries the metric.
         self._fetch_ranking = fetch_ranking
         self._fetch_boards = fetch_boards
         self._logger = logger
-        # Called with (copy held, copy fetched) after every re-read of a board
-        # that was already held: the event log reads the difference.
+        # Called with (copy held, copy fetched) after every read of a board,
+        # the held copy ``None`` on its first read since start-up: the event
+        # log reads the difference, the rank trend the copy fetched.
         self._on_refresh = on_refresh
         self._clock = clock
         # Epoch seconds: what a record's battle end is compared with.
@@ -421,9 +422,11 @@ class RankingIndex:
         self._urgent.pop(key, None)
         self._retry_at.pop(key, None)
         self._note_success()
-        if previous is not None and self._on_refresh is not None:
+        if self._on_refresh is not None:
             try:
-                self._on_refresh(previous.ranking, ranking)
+                self._on_refresh(
+                    None if previous is None else previous.ranking, ranking
+                )
             except Exception as exc:
                 self._logger.warning(
                     "ZmdLogBot could not record board changes: %s",

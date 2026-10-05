@@ -13,7 +13,12 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from core.candidates import CandidateStore, CandidateView, format_candidates
+from core.candidates import (
+    MAX_CANDIDATES,
+    CandidateStore,
+    CandidateView,
+    format_candidates,
+)
 from core.matcher import AliasConfig, MatcherCache
 from core.messages import MORE_NICKNAME_HITS
 from core.models import HotBossCard
@@ -57,12 +62,12 @@ class TwoBoardData:
 
 
 class NoHistory:
-    def history_by_name(self, query):
+    def by_name(self, query):
         return ()
 
 
 class TwoHistories:
-    def history_by_name(self, query):
+    def by_name(self, query):
         return (
             SimpleNamespace(account_id="usr_a", display_name="CPU 0"),
             SimpleNamespace(account_id="usr_b", display_name="CPU 1"),
@@ -82,22 +87,22 @@ class QueryPickListTests(unittest.TestCase):
     def setUp(self) -> None:
         self.store = CandidateStore()
 
-    def _service(self, *, watcher=None) -> QueryService:
+    def _service(self, *, trend=None) -> QueryService:
         return QueryService(
             client=TwoHitClient(),
             data=TwoBoardData(),
             renderer=lambda: None,
             candidates=self.store,
             board_matcher=board_matcher_factory(),
-            watcher=watcher or NoHistory(),
+            trend=trend or NoHistory(),
             settings=PluginSettings(),
             logger=logging.getLogger("test"),
         )
 
-    def _dispatch(self, kind: RouteKind, query: str, *, watcher=None, **options):
+    def _dispatch(self, kind: RouteKind, query: str, *, trend=None, **options):
         route = RouteRequest(kind, query=query, **options)
         return run(
-            self._service(watcher=watcher).dispatch(
+            self._service(trend=trend).dispatch(
                 route, command_prefix="/", origin=GROUP, requester_key="qq:1"
             )
         )
@@ -161,8 +166,24 @@ class QueryPickListTests(unittest.TestCase):
         self._assert_carries_its_list(searched, view=CandidateView.TREND)
         self.assertEqual(searched.candidates.stats_range, "7d")
 
-        local = self._dispatch(RouteKind.TREND_QUERY, "CPU", watcher=TwoHistories())
+        local = self._dispatch(RouteKind.TREND_QUERY, "CPU", trend=TwoHistories())
         self._assert_carries_its_list(local, view=CandidateView.TREND)
+        self.assertIsNone(local.candidate_note)
+
+    def test_a_trend_nickname_matching_past_a_list_says_there_are_more(
+        self,
+    ) -> None:
+        class ManyHistories:
+            def by_name(self, query):
+                return tuple(
+                    SimpleNamespace(account_id=f"usr_{n}", display_name=f"CPU {n}")
+                    for n in range(MAX_CANDIDATES + 1)
+                )
+
+        outcome = self._dispatch(RouteKind.TREND_QUERY, "CPU", trend=ManyHistories())
+
+        self.assertEqual(len(outcome.candidates.choices), MAX_CANDIDATES)
+        self.assertEqual(outcome.candidate_note, MORE_NICKNAME_HITS)
 
     def test_the_list_carries_its_note_too(self) -> None:
         class MoreHitsClient(TwoHitClient):

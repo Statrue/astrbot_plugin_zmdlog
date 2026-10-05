@@ -1,14 +1,15 @@
-"""Rank trend of one watched account."""
+"""Rank trend of one account, from the trace every board read keeps."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from ..history import (
+    ALL_TREND_LABEL,
     AccountHistory,
     BoardHistory,
     RankPoint,
     trend_points,
-    window_start,
+    trend_window_start,
 )
 from ..timestamps import parse_timestamp
 from .common import (
@@ -75,18 +76,22 @@ def build_trend_page(
     now: datetime | None = None,
     last_checked: str | None = None,
 ) -> TrendPage:
-    """One stepped line per board from the ranks the watch cycle recorded."""
+    """One stepped line per board from the ranks the board reads recorded."""
 
     current_time = now if now is not None else datetime.now(UTC)
-    start = window_start(time_range, now=current_time)
+    start = trend_window_start(time_range, now=current_time)
+    # Each board keeps its newest point however old; nothing before the 90
+    # days kept is drawn, so the trace counts as starting there at most.
+    kept_from = trend_window_start("all", now=current_time)
     stamps = [
         stamp
         for board in history.boards
         for point in board.points
         if (stamp := parse_timestamp(point.checked_at)) is not None
     ]
-    first_seen = min(stamps) if stamps else None
-    axis_start = start if start is not None else (first_seen or current_time)
+    first_seen = max(min(stamps), kept_from) if stamps else None
+    # ``all`` starts the axis where the trace does, a window at its edge.
+    axis_start = (first_seen or current_time) if time_range == "all" else start
     rows: list[TrendRowView] = []
     for board in history.boards:
         points = trend_points(board, start=start)
@@ -100,15 +105,19 @@ def build_trend_page(
     return TrendPage(
         header=PageHeader(
             title=history.display_name,
-            subtitle="关注期间的名次变化",
+            subtitle="各榜名次的变化",
             query=query,
             matched_name=history.account_id,
             target_type="名次趋势",
-            footer_note="公开账号 · 名次通报记录的名次变化",
+            footer_note="公开账号 · 机器人每次读榜时记录的名次变化",
         ),
         account_id=history.account_id,
         account_url=public_url(web_base_url, "records", history.account_id),
-        range_label=_RANGE_LABELS.get(time_range, time_range),
+        range_label=(
+            ALL_TREND_LABEL
+            if time_range == "all"
+            else _RANGE_LABELS.get(time_range, time_range)
+        ),
         tracked_since=(
             _format_date(first_seen.isoformat()) if first_seen is not None else "—"
         ),

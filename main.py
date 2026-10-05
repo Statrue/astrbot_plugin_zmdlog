@@ -204,7 +204,7 @@ class ZmdLogBotPlugin(Star):
             renderer=self._require_renderer,
             candidates=self.candidates,
             board_matcher=board_matcher,
-            watcher=self.watcher,
+            trend=self.data.rank_trend,
             settings=settings,
             logger=logger,
             bindings=self.bindings,
@@ -216,7 +216,7 @@ class ZmdLogBotPlugin(Star):
             board_matcher=board_matcher,
             settings=settings,
             logger=logger,
-            watcher=self.watcher,
+            trend=self.data.rank_trend,
         )
         self._auto_expand_lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
@@ -1189,7 +1189,8 @@ class ZmdLogBotPlugin(Star):
     ):
         """查询终末地某个公开账号（玩家、昵称）在各首领榜单的最好成绩：名次、用时、
         DPS、阵容、战斗日期和 battleId，它的公开记录数、冠军数、常用主C 和常用阵容，
-        以及名次变化（掉了几名、最好和最差名次）——名次变化只有被本群关注过的账号才有记录。
+        以及名次变化（掉了几名、最好和最差名次，
+        从机器人读到它上榜起记录，保留 90 天）。
         账号留空则回答“哪个玩家冠军最多、谁上传最多”（玩家排名）：各公开账号的第一名、前三、前十各几个。
         角色（干员）的成绩不在这里，用 zmdlogs_character_standings。
         只查一个对象时会自动附长图，图里有完整数值，你不要复述数字，只解读；

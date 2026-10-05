@@ -1,6 +1,5 @@
 """Tests for the 0.6.0 rank trend (趋势): the history trace, page geometry, routing."""
 
-import copy
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -13,16 +12,13 @@ from core.history import (
     history_payload,
     parse_history_payload,
     prune_points,
-    record_rankings,
     trend_points,
     window_start,
 )
 from core.matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
-from core.models import parse_public_user_rankings
 from core.presentation import build_trend_page
 from core.render import TemplateRenderer
 from core.routing import RouteKind, RouteParseError, parse_zmdlog_payload
-from tests.helpers import public_user_rankings_payload
 
 NOW = datetime(2026, 9, 3, 10, 0, tzinfo=UTC)
 
@@ -31,73 +27,7 @@ def stamp(days_ago: int, hours: int = 0) -> str:
     return (NOW - timedelta(days=days_ago, hours=hours)).isoformat()
 
 
-def rankings(*entries: tuple[str, int], name: str = "CPU 0"):
-    payload = public_user_rankings_payload()
-    payload["accountId"] = "usr_watched"
-    payload["accountDisplayName"] = name
-    template = payload["rankings"][0]
-    rows = []
-    for slug, rank in entries:
-        row = copy.deepcopy(template)
-        row["bossSlug"] = slug
-        row["bossName"] = f"首领 {slug}"
-        row["dungeonName"] = f"副本 {slug}"
-        row["rank"] = rank
-        rows.append(row)
-    payload["rankings"] = rows
-    return parse_public_user_rankings(payload)
-
-
 class HistoryTraceTests(unittest.TestCase):
-    def test_points_are_recorded_only_when_a_rank_moves(self) -> None:
-        history, changed = record_rankings(
-            {}, rankings(("a", 3), ("b", 1)), checked_at=stamp(3)
-        )
-
-        self.assertTrue(changed)
-        entry = history["usr_watched"]
-        self.assertEqual(entry.display_name, "CPU 0")
-        self.assertEqual(
-            [
-                (board.boss_slug, [p.rank for p in board.points])
-                for board in entry.boards
-            ],
-            [("a", [3]), ("b", [1])],
-        )
-        self.assertEqual(entry.board("a").boss_name, "首领 a")
-
-        same, changed = record_rankings(
-            history, rankings(("a", 3), ("b", 1)), checked_at=stamp(2)
-        )
-        self.assertFalse(changed)
-        self.assertIs(same, history)
-
-        moved, changed = record_rankings(
-            history, rankings(("a", 2), ("b", 1), ("c", 7)), checked_at=stamp(1)
-        )
-        self.assertTrue(changed)
-        self.assertEqual(
-            [(p.checked_at, p.rank) for p in moved["usr_watched"].board("a").points],
-            [(stamp(3), 3), (stamp(1), 2)],
-        )
-        self.assertEqual(
-            moved["usr_watched"].board("b").points, (RankPoint(stamp(3), 1),)
-        )
-        self.assertEqual(
-            moved["usr_watched"].board("c").points, (RankPoint(stamp(1), 7),)
-        )
-        # A board missing from one response keeps its trace.
-        gone, changed = record_rankings(moved, rankings(("a", 2)), checked_at=stamp(0))
-        self.assertFalse(changed)
-        self.assertIsNotNone(gone["usr_watched"].board("b"))
-        # A renamed account changes the stored nickname without adding points.
-        renamed, changed = record_rankings(
-            moved, rankings(("a", 2), name="改名"), checked_at=stamp(0)
-        )
-        self.assertTrue(changed)
-        self.assertEqual(renamed["usr_watched"].display_name, "改名")
-        self.assertEqual(len(renamed["usr_watched"].board("a").points), 2)
-
     def test_pruning_keeps_the_newest_and_the_current_rank(self) -> None:
         points = tuple(RankPoint(stamp(200 - i), i + 1) for i in range(5)) + (
             RankPoint(stamp(100), 9),
@@ -142,7 +72,13 @@ class HistoryTraceTests(unittest.TestCase):
         self.assertEqual(trend_points(fresh, start=start), (RankPoint(stamp(2), 5),))
 
     def test_payload_round_trip_and_garbage(self) -> None:
-        history, _ = record_rankings({}, rankings(("a", 3)), checked_at=stamp(1))
+        history = {
+            "usr_watched": AccountHistory(
+                "usr_watched",
+                "CPU 0",
+                (BoardHistory("a", "首领 a", "副本 a", (RankPoint(stamp(1), 3),)),),
+            )
+        }
 
         self.assertEqual(parse_history_payload(history_payload(history)), history)
         self.assertEqual(parse_history_payload(None), {})
@@ -266,7 +202,8 @@ class TrendPageTests(unittest.TestCase):
         rodan = next(row for row in page.rows if row.boss_name.endswith("罗丹"))
         self.assertEqual(rodan.start_rank, 4)
         self.assertTrue(rodan.polyline.startswith("0.0,38.0"))
-        self.assertEqual(page.range_label, "全部时间")
+        # The trace keeps 90 days, so "all" says so.
+        self.assertEqual(page.range_label, "近 90 天")
 
     def test_a_rank_held_since_before_the_window_is_a_flat_row(self) -> None:
         old = AccountHistory(
@@ -290,6 +227,35 @@ class TrendPageTests(unittest.TestCase):
         self.assertEqual(empty.rows, ())
         self.assertEqual(empty.best_rank, "—")
         self.assertEqual(empty.tracked_since, "—")
+
+    def test_all_draws_the_90_days_kept_and_nothing_before(self) -> None:
+        # A board keeps its newest point however old; the one before that
+        # outlived the window until the daily sweep.
+        old = AccountHistory(
+            "usr_x",
+            "X",
+            (
+                BoardHistory(
+                    "a",
+                    "首领",
+                    "副本",
+                    (RankPoint(stamp(120), 5), RankPoint(stamp(10), 3)),
+                ),
+            ),
+        )
+
+        page = build_trend_page(
+            old,
+            query="q",
+            web_base_url="https://zmdlogs.com",
+            time_range="all",
+            now=NOW,
+        )
+
+        row = page.rows[0]
+        self.assertEqual((row.start_rank, row.current_rank), (5, 3))
+        self.assertTrue(row.polyline.startswith("0.0,"))
+        self.assertEqual(page.tracked_days, "90 天")
 
 
 class TrendTemplateTests(unittest.TestCase):

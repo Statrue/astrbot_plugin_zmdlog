@@ -18,12 +18,20 @@ def load_json(path: Path) -> Any | None:
         return None
 
 
-def save_json(path: Path, payload: Any) -> bool:
-    """Write ``payload`` atomically; return ``False`` instead of raising."""
+def save_json(path: Path, payload: Any, *, compact: bool = False) -> bool:
+    """Write ``payload`` atomically; return ``False`` instead of raising.
+
+    Indented for a person to read, unless ``compact``: a file of machine
+    records that runs to megabytes is nearly three times that indented.
+    """
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        encoded = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        if compact:
+            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        else:
+            encoded = json.dumps(payload, ensure_ascii=False, indent=2)
+        encoded += "\n"
         handle, temp_name = tempfile.mkstemp(
             prefix=f".{path.name}.",
             suffix=".tmp",
@@ -49,7 +57,8 @@ class JsonStore:
 
     ``path`` is ``None`` when the plugin has no data directory; loading then
     yields nothing and saving reports failure without a warning, because the
-    missing directory was already reported once at start-up.
+    missing directory was already reported once at start-up. ``compact``
+    writes the file without indentation (see :func:`save_json`).
     """
 
     def __init__(
@@ -58,10 +67,12 @@ class JsonStore:
         *,
         label: str,
         warn: Callable[[str], None],
+        compact: bool = False,
     ) -> None:
         self.path = path
         self.label = label
         self._warn = warn
+        self._compact = compact
         self._write_failed = False
 
     @property
@@ -97,7 +108,7 @@ class JsonStore:
     def save(self, payload: Any) -> bool:
         if self.path is None:
             return False
-        if save_json(self.path, payload):
+        if save_json(self.path, payload, compact=self._compact):
             self._write_failed = False
             return True
         if not self._write_failed:

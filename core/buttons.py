@@ -48,8 +48,8 @@ Beside the jump button, up to three command buttons open the same thing's
 other pages (``_SIBLINGS``), built like a pick's: the key and the view word,
 and a board's metric — a board's battle too, since 战报 reads its rank off
 the board the metric names. A page the drawing showed this thing does not
-have — an old upload's loadout, an unwatched account's trend — gets no
-button.
+have — an old upload's loadout, an account's trend before any is recorded —
+gets no button.
 
 A dungeon's podiums are the one picture with no page on the site, so no
 jump button; under it instead is a command button per board of the dungeon

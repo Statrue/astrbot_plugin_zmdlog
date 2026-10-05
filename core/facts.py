@@ -28,7 +28,7 @@ from .characters import CharacterFilterScope, row_fields
 from .contract import group_contract_tags
 from .crit import CritExpectation, coverage_percent
 from .events import CHAMPION_CHANGE, NEW_RECORD, BoardActivity, RecordEvent
-from .history import AccountHistory, trend_points, window_label
+from .history import ALL_TREND_LABEL, AccountHistory, trend_points, window_label
 from .loadout import (
     group_skill_damage,
     is_raw_item_name,
@@ -1058,10 +1058,9 @@ def format_account_tallies(
 
 # The account tool's rows: past this the page carries the rest.
 ACCOUNT_ROW_LIMIT = 20
-NO_RANK_HISTORY = (
-    "名次变化：这个账号没被任何群关注，没有名次记录；"
-    "用 /zmdlog 关注 <昵称或accountId> 可以从下一轮检查起记录。"
-)
+# An account no board read has seen yet: said, so "no movement" and "no
+# data" stay apart for the model.
+NO_RANK_TREND = "名次变化：暂无记录（从机器人读到它上榜起记录）。"
 
 
 def format_account(
@@ -1147,15 +1146,16 @@ def format_account_trend(
     last_checked: str | None = None,
     limit: int = DEFAULT_ROW_LIMIT,
 ) -> str:
-    """How a watched account's rank moved, per board, from the watch's trace.
+    """How an account's rank moved, per board, from its rank trace.
 
-    Only accounts someone 关注'd have a trace, and a point is recorded only
-    when the rank moved, so "no change" is a real observation.
+    Every account seen on a board since the trace began has one, and a
+    point is recorded only when the rank moved, so "no change" is a real
+    observation. ``since`` is the window's edge, the 90 days kept for ``all``.
     """
 
-    scope = window_label or "有记录以来"
+    scope = window_label or ALL_TREND_LABEL
     checked = f"（最近检查 {_when(last_checked)}）" if last_checked else ""
-    lines = [f"名次变化（{scope}，来自名次通报的记录）{checked}"]
+    lines = [f"名次变化（{scope}，机器人每次读榜时记录）{checked}"]
     boards = []
     for board in history.boards:
         points = trend_points(board, start=since)

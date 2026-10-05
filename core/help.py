@@ -209,7 +209,10 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                     HelpCommand(
                         command=f"{command} 趋势 <账号> [--范围 7d|14d|30d|all]",
                         answers="这个账号最近各榜名次是涨是跌？",
-                        description="只有关注过的账号有记录，默认近 30 天。",
+                        description=(
+                            "任何上过榜的账号都有，"
+                            "从机器人读到它上榜起记录，默认近 30 天。"
+                        ),
                     ),
                 ),
             ),

@@ -1,21 +1,25 @@
-"""Rank history of watched accounts: the raw material of the 趋势 page.
+"""Rank traces: the shape of the 趋势 data, and the pure work on it.
 
-The rank watch already reads every watched account each cycle; this keeps a
-compact trace of what it saw. A point is stored only when a board rank differs
-from the last stored one, so an account that never moves costs one point per
-board. Nothing here talks to the network.
+A trace is one account's rank on one board over time, a point stored only
+when the rank moved. This module holds that model, its pruning, the window
+arithmetic of the 趋势 page and the account tool, and the file format;
+:mod:`core.rank_trend` keeps every account's traces and explains what that
+costs. Nothing here talks to the network or holds state.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from .models import PublicUserRankings
 from .timestamps import parse_timestamp
 
 HISTORY_VERSION = 1
-MAX_POINTS_PER_BOARD = 120
-MAX_POINT_AGE_SECONDS = 90 * 86_400.0
+TREND_RETENTION_DAYS = 90
+MAX_POINT_AGE_SECONDS = TREND_RETENTION_DAYS * 86_400.0
+# Why 500 and not the 120 the watched-account trace had: core/rank_trend.
+MAX_POINTS_PER_BOARD = 500
+# What ``all`` means on a trace: the whole of what is kept.
+ALL_TREND_LABEL = f"近 {TREND_RETENTION_DAYS} 天"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,72 +49,6 @@ class AccountHistory:
         return None
 
 
-def record_rankings(
-    history: dict[str, AccountHistory],
-    account: PublicUserRankings,
-    *,
-    checked_at: str,
-    max_points: int = MAX_POINTS_PER_BOARD,
-    max_age_seconds: float = MAX_POINT_AGE_SECONDS,
-) -> tuple[dict[str, AccountHistory], bool]:
-    """Append the ranks that moved; return the new map and whether it changed.
-
-    A board the account is seen on for the first time starts its trace with
-    the current rank. A board that vanished from the response keeps its last
-    points: the record may be back next cycle and a gap says more than a hole.
-    """
-
-    existing = history.get(account.account_id)
-    boards = (
-        {board.boss_slug: board for board in existing.boards}
-        if existing is not None
-        else {}
-    )
-    changed = existing is None or existing.display_name != account.account_display_name
-    for entry in account.rankings:
-        board = boards.get(entry.boss_slug)
-        point = RankPoint(checked_at=checked_at, rank=entry.rank)
-        if board is None:
-            boards[entry.boss_slug] = BoardHistory(
-                boss_slug=entry.boss_slug,
-                boss_name=entry.boss_name,
-                dungeon_name=entry.dungeon_name,
-                points=(point,),
-            )
-            changed = True
-            continue
-        last = board.points[-1] if board.points else None
-        renamed = (
-            board.boss_name != entry.boss_name
-            or board.dungeon_name != entry.dungeon_name
-        )
-        moved = last is None or last.rank != entry.rank
-        if not moved and not renamed:
-            continue
-        points = board.points + ((point,) if moved else ())
-        boards[entry.boss_slug] = replace(
-            board,
-            boss_name=entry.boss_name,
-            dungeon_name=entry.dungeon_name,
-            points=prune_points(
-                points,
-                now=checked_at,
-                max_points=max_points,
-                max_age_seconds=max_age_seconds,
-            ),
-        )
-        changed = True
-    if not changed:
-        return history, False
-    updated = dict(history)
-    updated[account.account_id] = AccountHistory(
-        account_id=account.account_id,
-        display_name=account.account_display_name,
-        boards=tuple(boards.values()),
-    )
-    return updated, True
-
-
 def prune_points(
     points: tuple[RankPoint, ...],
     *,
@@ -138,6 +76,32 @@ def prune_points(
     if len(kept) > max_points:
         kept = kept[-max_points:]
     return tuple(kept)
+
+
+def append_point(
+    points: tuple[RankPoint, ...],
+    point: RankPoint,
+    *,
+    max_points: int = MAX_POINTS_PER_BOARD,
+    max_age_seconds: float = MAX_POINT_AGE_SECONDS,
+) -> tuple[RankPoint, ...]:
+    """``points`` with ``point`` appended, pruned from the old end only.
+
+    :func:`prune_points` parses every stamp; a busy board's read appends a
+    point to a couple of hundred traces, so this one stops at the first
+    point still inside the window — points are appended in time order.
+    """
+
+    kept = (*points, point)
+    start = max(0, len(kept) - max_points)
+    now = parse_timestamp(point.checked_at)
+    if now is not None:
+        while start < len(kept) - 1:
+            stamp = parse_timestamp(kept[start].checked_at)
+            if stamp is None or (now - stamp).total_seconds() <= max_age_seconds:
+                break
+            start += 1
+    return kept[start:]
 
 
 def trend_points(
@@ -181,6 +145,18 @@ def window_start(time_range: str, *, now: datetime) -> datetime | None:
     return None if days is None else now - timedelta(days=days)
 
 
+def trend_window_start(time_range: str, *, now: datetime) -> datetime:
+    """The left edge of a trace window; ``all`` is the 90 days kept.
+
+    Not :func:`window_start`'s ``None``: each board keeps its newest point
+    however old it is, so an unbounded window could start a line before
+    the 90 days the page says it shows.
+    """
+
+    start = window_start(time_range, now=now)
+    return start if start is not None else now - timedelta(days=TREND_RETENTION_DAYS)
+
+
 def parse_history_payload(payload: Any) -> dict[str, AccountHistory]:
     """Read the stored history, dropping anything malformed instead of raising."""
 
@@ -190,6 +166,9 @@ def parse_history_payload(payload: Any) -> dict[str, AccountHistory]:
     if not isinstance(accounts, dict):
         return {}
     history: dict[str, AccountHistory] = {}
+    # A read stamps every point it records with one string; sharing it again
+    # after a load keeps 145,000 points from carrying 145,000 copies.
+    stamps: dict[str, str] = {}
     for account_id, entry in accounts.items():
         if not isinstance(account_id, str) or not account_id:
             continue
@@ -214,6 +193,7 @@ def parse_history_payload(payload: Any) -> dict[str, AccountHistory]:
                     continue
                 if isinstance(rank, bool) or not isinstance(rank, int) or rank < 1:
                     continue
+                stamp = stamps.setdefault(stamp, stamp)
                 points.append(RankPoint(checked_at=stamp, rank=rank))
             if not points:
                 continue

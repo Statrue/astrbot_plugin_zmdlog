@@ -408,7 +408,7 @@ class ProfileQueryTests(unittest.TestCase):
             board_matcher=lambda cards: matchers.matcher_for(
                 cards, AliasConfig.empty()
             ),
-            watcher=SimpleNamespace(history_for=lambda account_id: None),
+            trend=SimpleNamespace(history_for=lambda account_id: None),
             settings=PluginSettings(web_base_url=WEB),
             logger=logging.getLogger("test"),
         )
@@ -903,7 +903,7 @@ class ProfileToolTests(unittest.TestCase):
                     board_matcher=lambda cards: MatcherCache().matcher_for(
                         cards, AliasConfig.empty()
                     ),
-                    watcher=SimpleNamespace(history_for=lambda account_id: None),
+                    trend=SimpleNamespace(history_for=lambda account_id: None),
                     settings=PluginSettings(web_base_url=WEB),
                     logger=logging.getLogger("test"),
                 )

@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .board_changes import board_changes
 from .cache import AsyncTTLCache, CacheState
 from .client import ZmdLogsAPIError, ZmdLogsClient, ZmdLogsClientError
 from .events import EventLog
@@ -33,12 +34,14 @@ from .models import (
     parse_hot_bosses,
 )
 from .persistence import JsonStore, load_json, save_json
+from .rank_trend import RankTrend
 from .ranking_index import (
     SLOW_SIGNAL_SECONDS,
     RankingIndex,
     account_rankings,
     rows_by_battle,
 )
+from .timestamps import utc_now_text
 
 HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
 # How long each endpoint family's answer is reused; fixed since #28, so a
@@ -51,6 +54,7 @@ BATTLE_CACHE_TTL_SECONDS = 300.0
 # keyword query never pays the cold read while the index runs.
 HOT_BOSSES_FRESH_SECONDS = SLOW_SIGNAL_SECONDS + 60.0
 RECORD_EVENTS_FILE = "record-events.json"
+RANK_HISTORY_FILE = "rank-history.json"
 _HOT_BOSSES_KEY = "all_board_top3"
 # A parsed battle carries its damage points and buff spans and measures
 # 50-130 KB, an order of magnitude more than any other cached value, so the
@@ -155,12 +159,21 @@ class ZmdLogsDataSource:
                 warn=logger.warning,
             )
         )
+        # Every account's rank on every board, as the board reads saw it move.
+        self.rank_trend = RankTrend(
+            JsonStore(
+                None if data_dir is None else data_dir / RANK_HISTORY_FILE,
+                label="rank history",
+                warn=logger.warning,
+                compact=True,
+            )
+        )
         # Every board ranking is read through the index; see ranking_index.py.
         self.ranking_index = RankingIndex(
             fetch_ranking=self._fetch_boss_ranking,
             fetch_boards=self.refresh_hot_bosses,
             logger=logger,
-            on_refresh=self.event_log.record,
+            on_refresh=self._board_read,
         )
         self._caches = (
             self.hot_boss_cache,
@@ -173,6 +186,35 @@ class ZmdLogsDataSource:
             self.equip_catalog_cache,
             self.character_type_cache,
         )
+
+    def _board_read(self, previous: BossRanking | None, current: BossRanking) -> None:
+        """Hand one read of a board to everything that records board changes.
+
+        The one place a board change is discovered (``core/board_changes``).
+        Each consumer runs on its own: one that fails is logged and the
+        other still sees the read.
+        """
+
+        if previous is not None:
+            self._record_safely(
+                "record events", self.event_log.record, previous, current
+            )
+        changes = board_changes(
+            previous,
+            current,
+            seen_at=utc_now_text(),
+            last_ranks=self.rank_trend.last_ranks(current.boss_slug),
+        )
+        if changes is not None:
+            self._record_safely("rank trend", self.rank_trend.apply, changes)
+
+    def _record_safely(self, what: str, record, *args) -> None:
+        try:
+            record(*args)
+        except Exception as exc:
+            self._logger.warning(
+                "ZmdLogBot could not record the %s: %s", what, type(exc).__name__
+            )
 
     async def list_hot_bosses(self) -> tuple[HotBossCard, ...]:
         """The board index; stale or from disk when upstream is unreachable."""
@@ -626,8 +668,9 @@ class ZmdLogsDataSource:
         return result.value
 
     async def close(self) -> None:
-        """Stop the index, cancel in-flight loads and drop every cached value."""
+        """Stop the index, save the rank trend, drop every cached value."""
 
         await self.ranking_index.stop()
+        self.rank_trend.flush()
         for cache in self._caches:
             await cache.close()
