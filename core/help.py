@@ -202,11 +202,11 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
             ),
             HelpSection(
                 title="关注",
-                summary="榜单出了新纪录第一时间知道",
+                summary="有新纪录第一时间知道",
                 commands=(
                     HelpCommand(
                         command=f"{command} 关注 [<榜单关键词> | 全部榜单]",
-                        answers="关注榜单或全部榜单，出新纪录时在这里通报",
+                        answers="关注榜单，有新纪录在这里通报；取关 撤销",
                     ),
                     HelpCommand(
                         command=f"{command} 趋势 <账号> [--范围 7d|14d|30d|all]",

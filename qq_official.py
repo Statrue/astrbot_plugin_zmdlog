@@ -20,7 +20,7 @@ the 1–10000 AstrBot draws its own from. Any exception is a failed send,
 reported by its type alone — the caller then answers the way it would on
 any other platform.
 
-A rank notice answers nothing, and is pushed from here as well
+A board notice answers nothing, and is pushed from here as well
 (``chat_to_push``). AstrBot 4.28.1 skips a push to a group its adapter has seen
 no message from since it started, and reports it sent all the same (AstrBot
 #9831): after every restart, the notices due before anyone spoke were lost.

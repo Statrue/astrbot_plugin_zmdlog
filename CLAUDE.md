@@ -126,10 +126,13 @@ rather than a decorator. All of them run through one error guard,
   the local background data-URL, or `_validate_page` fails the render.
   Decorative elements that overflow belong inside `.scene-deco`, or `#zmd-page`
   scrollWidth exceeds 1280 and validation fails.
-- **Template discipline.** Pages extend `resources/common/base.html`;
-  page-specific CSS is `{% include %}`d into `extra_styles`; a page includes its
-  own stylesheet plus the shared ones under `resources/common/`. Anything two
-  pages need lives in `base.css`. CSS files render under autoescape like the
+- **Template discipline.** Pages not yet migrated to V2 extend
+  `resources/common/base.html`; page-specific CSS is `{% include %}`d into
+  `extra_styles`; a page includes its own stylesheet plus the shared ones under
+  `resources/common/`. Anything two of them need lives in `base.css`. A V2 page
+  extends `shell/list-base.html` (540) or `shell/wide-base.html` (960) and
+  includes its own stylesheet into `styles`; the frame's shared CSS comes with
+  the base, and wide pages share the macros in `shell/wide-parts.html`. CSS files render under autoescape like the
   templates. The comic pages (帮助, and the 顶屁股通告 after it) extend
   `shell/base.html` directly and share `shell/comic.css` (included by the
   page itself) and the macros in `shell/comic.html`.
@@ -205,11 +208,12 @@ rather than a decorator. All of them run through one error guard,
   text, never a fifth tool; `core/facts.py` returns **computed** facts, never a
   raw array; and 循环 DPS or 专武收益 need a damage calculator and belong to
   `astrbot_plugin_zmdlore`, not here.
-- **Rank-watch attribution is deliberately weak, and the wording must stay
-  weak.** `watch.find_new_record_above`'s docstring explains why one board read
-  cannot prove who overtook an account. The notice says 期间上方新增纪录, never
-  超过 TA 的是. Do not "improve" this into a causal claim without a real
-  previous board state.
+- **A notice claims only what its board reads prove.** Until #53 the board
+  notice is the top-3 text notice: a new record on a watched board, and nothing
+  about whom it overtook. The account notice and its weak 期间上方新增纪录
+  wording went with account watches (#51). A notice may name who was pushed
+  down only once it diffs against a persisted previous board state, as #53's
+  will — never from one board read.
 - **Config is validated once at load** by `core/settings.load_settings`, which
   replaces every unusable value with its default and warns once, so a typo
   cannot fail every keyword query and a bad TTL or base URL cannot fail the

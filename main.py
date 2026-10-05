@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - depends on host AstrBot version
     try:
         from astrbot.core.message.components import Image, Plain
     except ImportError:
-        # Only rank notices and tool pictures need these; every query must
+        # Only board notices and tool pictures need these; every query must
         # keep working without them.
         Image = Plain = None
 
@@ -769,7 +769,7 @@ class ZmdLogBotPlugin(Star):
             )
         else:
             logger.warning(
-                "ZmdLogBot cannot build a rank notice on this AstrBot version."
+                "ZmdLogBot cannot build a board notice on this AstrBot version."
             )
             return False
         try:
@@ -779,17 +779,17 @@ class ZmdLogBotPlugin(Star):
                 delivery, timeout=_NOTICE_SEND_TIMEOUT_SECONDS
             )
         except TimeoutError:
-            logger.warning("ZmdLogBot timed out delivering a rank notice.")
+            logger.warning("ZmdLogBot timed out delivering a board notice.")
             return False
         except Exception as exc:
             logger.warning(
-                "ZmdLogBot could not deliver a rank notice: %s",
+                "ZmdLogBot could not deliver a board notice: %s",
                 type(exc).__name__,
             )
             return False
         if delivered is False:
             logger.warning(
-                "ZmdLogBot rank notice was not delivered; the chat may be gone "
+                "ZmdLogBot board notice was not delivered; the chat may be gone "
                 "or closed to pushes."
             )
             return False
@@ -817,7 +817,7 @@ class ZmdLogBotPlugin(Star):
         ):
             return True
         return await qq_official.send_text(
-            chat, notice.text, logger=logger, what="rank notice"
+            chat, notice.text, logger=logger, what="board notice"
         )
 
     @staticmethod
