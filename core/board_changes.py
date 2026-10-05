@@ -36,6 +36,9 @@ The input is the whole before/after pair even though the trend reads only
 need ``previous`` to say who pushed whom down. They extend
 :class:`BoardChanges` with their entries and :func:`board_changes` with
 keyword-only inputs; the positional pair and ``seen_at`` stay as they are.
+What one entry holds is already fixed here, by the page that draws a
+chat's batch of them (:class:`NoticeEntry`, drawn by
+``presentation.build_notice_page``).
 """
 
 from collections.abc import Mapping
@@ -77,6 +80,46 @@ class BoardChanges:
     # Every account on the board, moved or not: a rename shows up on a read
     # where the rank stays put.
     nicknames: Mapping[str, Nickname] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class PushedAccount:
+    """An account a new record moved down from inside the top N.
+
+    ``record`` is its record on the board (the row the face and name are
+    read from); ``before`` and ``after`` its rank either side of the new
+    record. ``after`` past N is the 跌出前 N mark.
+    """
+
+    record: BossRankingRow
+    before: int
+    after: int
+
+
+@dataclass(frozen=True, slots=True)
+class NoticeEntry:
+    """One new record that entered a board's top N: a 顶屁股通告 entry.
+
+    ``rank`` is the place it entered at, which is the place to print even
+    when a later record of the same read sits above it by now; ``record``
+    supplies who, the main C's face, 用时, DPS and, on a contract board,
+    the score. ``pushed`` is every account it moved down within the top N,
+    best first. ``seen_at`` is the read that found it, an ISO stamp.
+    """
+
+    boss_slug: str
+    boss_name: str
+    dungeon_name: str
+    seen_at: str
+    rank: int
+    record: BossRankingRow
+    pushed: tuple[PushedAccount, ...] = ()
+
+    @property
+    def is_champion(self) -> bool:
+        """A new #1: the board's champion changed hands."""
+
+        return self.rank == 1
 
 
 def board_changes(
