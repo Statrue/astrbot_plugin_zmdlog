@@ -37,7 +37,8 @@ _Avoid_: 精炼等级, 武器等级, 突破
 How far one fielded character is built: its level, 潜能, 精炼, skill
 levels, weapon and gear — everything the 养成 view of a battle draws. Its
 shorthand is the pair 潜能 + 精炼, written `5+6` under an avatar on
-ranking-style pages, in the 角色档案 records column and as the 养成组合
+ranking-style pages (not on the V2 board ranking, whose rows show faces,
+time and DPS only), in the 角色档案 records column and as the 养成组合
 shares on 角色档案 (`0+1`, `5+6`, …), `5+?` when the weapon is
 unrecorded — the site's own shorthand; a player reads it there first.
 _Avoid_: 练度, 培养, 配装
@@ -77,21 +78,26 @@ _Avoid_: 期望伤害, 暴击运气
 ### Page structure
 
 **摘要**:
-The page a battle query draws by default: the battle's identity, its three
-hero figures and one row per fielded character. It answers "how did this
-run go"; everything else is in a 详细视图.
+The page a battle query draws by default: the battle's identity, its hero
+figures (用时, 总 DPS, 总伤害, 阵容), 伤害构成, 暴击期望 and the DPS 曲线.
+It answers "how did this run go"; everything else is in a 详细视图.
 _Avoid_: 概览, 简版, 首页
 
 **详细视图**:
-One of the four pages a battle opens beside its 摘要 — **数据** (the full
-character table, team contribution, 技能伤害统计, 暴击期望, the 合约 tags),
-**曲线** (DPS 曲线 and BUFF 覆盖 on one time axis), **施法** (the cast
-rail) and **配装** (the loadout). A button on the QQ official bot, a typed
-command everywhere, printed as a hint line at the foot of the 摘要.
-_Avoid_: 子页, 详情页, 二级页
+One of the three pages a battle opens beside its 摘要, each its own
+command — **数据** (the full character table, team contribution, 暴击期望,
+the DPS 曲线, 技能伤害统计, the 合约 tags), **排轴** (BUFF 覆盖, then the
+cast rail) and **养成** (each character's level, 潜能, skills, weapon and
+gear). The foot of every battle page lists 摘要 and the three, the current
+one lit; on the QQ official bot they are buttons as well. A view the
+battle lacks the data for is left out of both. ADR 0003.
+_Avoid_: 子页, 详情页, 二级页, 曲线, 施法, 配装 (the views before 1.3.0)
 
 **页**:
 Ten consecutive rows of a board ranking, page 1 being 名次 1–10; asked for
-with `--page N`. Only the board ranking has pages; 阵容 and 群榜 show their
-top ten.
+with `--页 N` (`--page N`, `-p N`). The rows are the ones the filters keep,
+so page 2 of `--角色 黎风` is that filter's rows 11–20, each still showing
+its board rank. `--页 全部` draws the first thirty on one picture, with a
+strip sending the rest to the site; the picture never says a next page
+exists. Only the board ranking has pages; 阵容 counts its first ten.
 _Avoid_: 前 N 名, top
