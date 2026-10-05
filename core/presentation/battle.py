@@ -1,10 +1,11 @@
-"""A battle's pages: its 摘要, the full model 对比 reads, and the loadout.
+"""A battle's pages: its 摘要 and 排轴, and the full model 对比 reads.
 
 The 摘要 (``build_battle_summary_page``) is what 战报 draws: the record
 band and three charts, each left out when the upload lacks its data.
 ``build_battle_page`` is the whole battle as one model — every figure the
-old card drew — which 对比 builds on. 数据 is ``battle_data``'s;
-``build_battle_cast_page`` is the 排轴 view, drawn from the cast export.
+old card drew — which 对比 builds on. 数据 is ``battle_data``'s, 养成
+``build``'s; ``build_battle_cast_page`` is the 排轴 view, drawn from the
+cast export.
 """
 
 from dataclasses import dataclass, replace
@@ -19,7 +20,6 @@ from ..loadout import (
     skill_level_summary,
     stat_label,
     suit_catalog_id,
-    weapon_skill_levels,
 )
 from ..models import (
     BattleDetailSummary,
@@ -103,7 +103,6 @@ class WeaponView:
     icon_url: str | None
     refine_label: str | None
     level_label: str | None
-    skill_label: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,20 +141,6 @@ class LoadoutView:
     # Heaviest damage sources of this character, for the compact card.
     top_skills: tuple[SkillRowView, ...]
     damage_share: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class LoadoutPage:
-    header: PageHeader
-    battle_id: str
-    report_url: str
-    uploader_display_name: str
-    duration: str
-    total_dps: str
-    total_damage: str
-    battle_date: str
-    loadouts: tuple[LoadoutView, ...]
-    stat_lines_available: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -640,39 +625,6 @@ def _merged_row(group: list[BuffRowView]) -> BuffRowView:
 _MAX_CARD_SKILLS = 3
 
 
-
-def build_loadout_page(
-    battle: BattleDetailSummary,
-    *,
-    query: str,
-    web_base_url: str,
-    suits: dict[str, str] | None = None,
-) -> LoadoutPage:
-    """Every deployed character's weapon, gear lines and skill levels."""
-
-    loadouts = _build_loadouts(
-        battle,
-        web_base_url=web_base_url,
-        top_skills=_MAX_CARD_SKILLS,
-        suits=suits,
-    )
-    return LoadoutPage(
-        header=PageHeader(
-            title=battle.boss_name,
-            subtitle=battle.dungeon_name,
-            query=query,
-            matched_name=battle.battle_id,
-            target_type="战报配装",
-            footer_note="公开战报 · 上传时记录的阵容配装",
-        ),
-        **_report_facts(battle, web_base_url),
-        loadouts=loadouts,
-        stat_lines_available=any(
-            equip.stats for load in loadouts for equip in load.equips
-        ),
-    )
-
-
 def _build_crit_view(
     crit: CritExpectation | None,
     participants: tuple[BattleParticipant, ...],
@@ -818,12 +770,6 @@ def _build_loadouts(
 
 
 def _weapon_view(weapon: BattleWeapon, *, web_base_url: str | None) -> WeaponView:
-    own_level, affix_levels = weapon_skill_levels(weapon)
-    parts: list[str] = []
-    if own_level is not None:
-        parts.append(f"武器技能 {own_level}")
-    if affix_levels:
-        parts.append("词条 " + " / ".join(str(level) for level in affix_levels))
     return WeaponView(
         name=_clean_text(weapon.name) or "武器未记录",
         icon_url=_derived_asset_url(
@@ -834,7 +780,6 @@ def _weapon_view(weapon: BattleWeapon, *, web_base_url: str | None) -> WeaponVie
         ),
         refine_label=f"精炼 {weapon.refine}" if weapon.refine is not None else None,
         level_label=f"Lv.{weapon.level}" if weapon.level else None,
-        skill_label=" · ".join(parts) if parts else None,
     )
 
 

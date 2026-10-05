@@ -5,4 +5,6 @@
   --box-head: url("{{ shell.box_head }}");
   --box-page: url("{{ shell.box_page }}");
   --topo-strip: url("{{ shell.topo_strip }}");
+  --topo-card: url("{{ shell.topo_card }}");
+  --rings: url("{{ shell.rings }}");
 }

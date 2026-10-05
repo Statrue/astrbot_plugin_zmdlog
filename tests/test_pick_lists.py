@@ -125,7 +125,7 @@ class QueryPickListTests(unittest.TestCase):
     def test_board_only_views_carry_the_board_list(self) -> None:
         cases = {
             RouteKind.BATTLE_QUERY: CandidateView.BATTLE,
-            RouteKind.LOADOUT_QUERY: CandidateView.LOADOUT,
+            RouteKind.BUILD_QUERY: CandidateView.BUILD,
             RouteKind.DATA_QUERY: CandidateView.DATA,
             RouteKind.CAST_QUERY: CandidateView.CAST,
             RouteKind.COMPARE_QUERY: CandidateView.COMPARE,

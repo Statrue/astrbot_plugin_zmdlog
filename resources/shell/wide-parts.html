@@ -31,18 +31,18 @@ path('M0,6 Q0,0 6,0 H{{ w - c - 4 }} Q{{ w - c }},0 {{ w - c + 2.8 }},2.8 L{{ w 
 
 {# The potential star the game draws for 潜能 and 精炼 alike: five
    interwoven blades traced off the game's art (the paint order makes the
-   weave). ``n`` is the rank counted from 1 (潜能 + 1, or the 精炼): the
-   blades before the n-th are white, the n-th — the next to gain — yellow,
-   counter-clockwise from the upper-left one, A → B → E → D → C; at 6 (潜能
-   5, 精炼 6) every blade is white and the star aglow. #}
-{% macro refine_star(n) -%}
+   weave). ``star`` is the presentation's StarView: each blade's state in
+   the order they light, from the upper-left one counter-clockwise, A → B →
+   E → D → C — white once gained, yellow the one gained next, grey the
+   rest; a full star is all white and aglow. #}
+{% macro star(star) -%}
 {%- set blades = {'D': '70,151 246,151 282,174 106,174', 'C': '203,38 238,11 183,178 149,202', 'A': '66,1 208,103 223,144 80,42', 'B': '0,160 147,58 191,56 48,158', 'E': '95,61 150,226 138,265 84,100'} -%}
-{%- set light = ['A', 'B', 'E', 'D', 'C'] -%}
-<svg class="b-star{% if n >= 6 %} is-max{% endif %}" viewBox="-6 -6 300 288" aria-hidden="true">
+{%- set order = ['A', 'B', 'E', 'D', 'C'] -%}
+<svg class="b-star{% if star.full %} is-max{% endif %}" viewBox="-6 -6 300 288" aria-hidden="true">
   {#- the unlit blades first, so grey never lies over a lit one; then the
       lit ones, woven among themselves #}
-  {%- for key in ["D", "C", "A", "B", "E"] %}{% if n < light.index(key) + 1 %}<polygon class="is-base" points="{{ blades[key] }}"/>{% endif %}{% endfor %}
-  {%- for key in ["D", "C", "A", "B", "E"] %}{% set rank = light.index(key) + 1 %}{% if n >= rank %}<polygon class="is-{{ 'lead' if rank == n else 'lit' }}" points="{{ blades[key] }}"/>{% endif %}{% endfor %}
+  {%- for key in ["D", "C", "A", "B", "E"] %}{% set state = star.blades[order.index(key)].value %}{% if state == "base" %}<polygon class="is-base" points="{{ blades[key] }}"/>{% endif %}{% endfor %}
+  {%- for key in ["D", "C", "A", "B", "E"] %}{% set state = star.blades[order.index(key)].value %}{% if state != "base" %}<polygon class="is-{{ state }}" points="{{ blades[key] }}"/>{% endif %}{% endfor %}
 </svg>
 {%- endmacro %}
 
@@ -57,14 +57,15 @@ path('M0,6 Q0,0 6,0 H{{ w - c - 4 }} Q{{ w - c }},0 {{ w - c + 2.8 }},2.8 L{{ w 
 {%- endmacro %}
 
 {# A weapon skill's or 词条's level as the game's weapon panel draws it:
-   ``total`` capsules tilted like a slash — yellow up to ``level``, a pale
-   outline past it, and past ``cap`` (the 精炼's limit) a grey outline
-   crossed by one stroke the other way. #}
-{% macro level_pips(level, cap, total=9) -%}
-<svg class="b-pips" viewBox="0 0 {{ total * 13 + 5 }} 16" width="{{ total * 13 + 5 }}" height="16" aria-hidden="true">
-  {% for k in range(total) %}{% set x = k * 13 + 4 %}
-  {% if k < level %}<line class="is-on" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/>
-  {% elif k < cap %}<line class="is-ring" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/><line class="is-hole" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/>
+   one capsule a level, tilted like a slash — yellow when reached
+   (``on``), a pale outline when not (``off``), and past what the 精炼
+   allows (``locked``) a grey outline crossed by one stroke the other way.
+   ``pips`` is the presentation's states, one a level. #}
+{% macro level_pips(pips) -%}
+<svg class="b-pips" viewBox="0 0 {{ pips|length * 13 + 5 }} 16" width="{{ pips|length * 13 + 5 }}" height="16" aria-hidden="true">
+  {% for pip in pips %}{% set x = loop.index0 * 13 + 4 %}
+  {% if pip.value == "on" %}<line class="is-on" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/>
+  {% elif pip.value == "off" %}<line class="is-ring" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/><line class="is-hole" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/>
   {% else %}<g class="is-x"><line class="is-ring" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/><line class="is-hole" x1="{{ x }}" y1="12.5" x2="{{ x + 8 }}" y2="3.5"/><line class="is-bar" x1="{{ x - 0.5 }}" y1="3.8" x2="{{ x + 8.5 }}" y2="12.2"/></g>{% endif %}
   {% endfor %}
 </svg>

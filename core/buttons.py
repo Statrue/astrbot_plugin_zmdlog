@@ -48,7 +48,7 @@ Beside the jump button, up to three command buttons open the same thing's
 other pages (``_SIBLINGS``), built like a pick's: the key and the view word,
 and a board's metric — a board's battle too, since 战报 reads its rank off
 the board the metric names. A page the drawing showed this thing does not
-have — an old upload's loadout, an account's trend before any is recorded —
+have — an old upload's 养成, an account's trend before any is recorded —
 gets no button. A battle's pages are the ones its picture's foot lists, by
 the same names (``core/battle_views``).
 
@@ -157,8 +157,8 @@ _BOARD_WORDS = {
     CandidateView.ROSTER: "阵容",
     CandidateView.BATTLE: "战报",
     CandidateView.DATA: "数据",
-    CandidateView.LOADOUT: "配装",
     CandidateView.CAST: "排轴",
+    CandidateView.BUILD: "养成",
     CandidateView.COMPARE: "对比",
     CandidateView.WATCH_BOARD: "关注",
 }
@@ -173,8 +173,7 @@ _CHARACTER_WORDS = {
     CandidateView.CHARACTER_STATS: "角色统计",
     CandidateView.CHARACTER_STANDINGS: "角色排名",
 }
-# ... and for a battle: its V2 pages by the words core/battle_views gives
-# them, the pre-1.3.0 ones as a board's.
+# ... and for a battle: its pages by the words core/battle_views gives them.
 _BATTLE_WORDS = {
     **_BOARD_WORDS,
     **{entry.view: entry.word for entry in BATTLE_VIEWS},
@@ -188,8 +187,8 @@ _BATTLE_VIEWS = frozenset(
     {
         CandidateView.BATTLE,
         CandidateView.DATA,
-        CandidateView.LOADOUT,
         CandidateView.CAST,
+        CandidateView.BUILD,
     }
 )
 # What each page with a target offers besides its jump button: the other
@@ -200,8 +199,7 @@ _BATTLE_VIEWS = frozenset(
 #
 # A battle's V2 pages (摘要 and the 详细视图) offer exactly the others its
 # foot lists — core/battle_views decides which exist, the target which this
-# battle can draw. The pre-1.3.0 views below keep their old buttons until
-# each is replaced; they reach the V2 pages but are not reached from them.
+# battle can draw.
 _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = {
     **{
         (PageSubject.BATTLE, entry.view): tuple(
@@ -209,11 +207,6 @@ _SIBLINGS: dict[tuple[PageSubject, CandidateView], tuple[CandidateView, ...]] = 
         )
         for entry in BATTLE_VIEWS
     },
-    (PageSubject.BATTLE, CandidateView.LOADOUT): (
-        CandidateView.BATTLE,
-        CandidateView.DATA,
-        CandidateView.CAST,
-    ),
     # 战报 on a board is its first place's battle, 对比 the tapper's own
     # best record against it.
     (PageSubject.BOARD, CandidateView.RANKING): (

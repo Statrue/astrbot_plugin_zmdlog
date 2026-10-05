@@ -321,7 +321,7 @@ class ToolServiceTests(unittest.TestCase):
 
         self.assertEqual(answer.image_path, "/tmp/battle.png")
         self.assertIn("参战角色", answer.text)
-        self.assertIn("配装与养成", answer.text)
+        self.assertIn("养成：", answer.text)
         # Never the raw arrays behind those lines.
         self.assertNotIn("tsMsFromStart", answer.text)
         self.assertLess(len(answer.text), 3_000)

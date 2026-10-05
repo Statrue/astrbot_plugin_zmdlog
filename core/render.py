@@ -59,6 +59,7 @@ from .models import (
 )
 from .presentation import (
     build_account_page,
+    build_battle_build_page,
     build_battle_cast_page,
     build_battle_data_page,
     build_battle_summary_page,
@@ -69,7 +70,6 @@ from .presentation import (
     build_character_stats_page,
     build_compare_page,
     build_dungeon_top3_page,
-    build_loadout_page,
     build_player_champions_page,
     build_ranking_page,
     build_records_page,
@@ -136,6 +136,7 @@ PAGE_FRAMES: dict[str, PageFrame] = {
     "battle": WIDE_FRAME,
     "battle-data": WIDE_FRAME,
     "battle-cast": WIDE_FRAME,
+    "battle-build": WIDE_FRAME,
 }
 
 
@@ -563,25 +564,29 @@ class TemplateRenderer:
             embed_fonts=embed_fonts,
         )
 
-    def render_loadout(
+    def render_battle_build(
         self,
         battle: BattleDetailSummary,
         *,
         query: str,
         web_base_url: str,
         suits: dict[str, str] | None = None,
+        views: tuple[tuple[str, bool], ...] = (),
         embed_fonts: bool = True,
     ) -> str:
-        page = build_loadout_page(
+        """战报's 养成; ``views`` is the strip of the battle's pages in its foot."""
+
+        page = build_battle_build_page(
             battle,
             query=query,
             web_base_url=web_base_url,
             suits=suits,
+            views=views,
         )
         return self._render(
-            "loadout/loadout.html",
+            "battle/build.html",
             page,
-            "loadout",
+            "battle-build",
             embed_fonts=embed_fonts,
         )
 
@@ -917,7 +922,9 @@ class LongImageRenderer:
     render_battle_data = _captured(
         "battle-data", TemplateRenderer.render_battle_data
     )
-    render_loadout = _captured("loadout", TemplateRenderer.render_loadout)
+    render_battle_build = _captured(
+        "battle-build", TemplateRenderer.render_battle_build
+    )
     render_trend = _captured("trend", TemplateRenderer.render_trend)
     render_battle_cast = _captured(
         "battle-cast", TemplateRenderer.render_battle_cast
@@ -1515,6 +1522,8 @@ _SHELL_TEXTURES = {
     "box_page": ("box-page.svg", "image/svg+xml"),
     "topo_strip": ("topo-strip.svg", "image/svg+xml"),
     "comic_topo": ("comic-topo.svg", "image/svg+xml"),
+    "topo_card": ("topo-card.svg", "image/svg+xml"),
+    "rings": ("rings.svg", "image/svg+xml"),
 }
 # The help page's chibis, the user's art (ASSETS.md), inlined the same way
 # rather than fetched: WebP at twice the width each is drawn at, about

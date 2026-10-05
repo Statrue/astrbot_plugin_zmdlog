@@ -1,0 +1,526 @@
+/* 战报's 养成: a card per character, two a row — the name bar, the head
+   (avatar, level, 潜能), the skill levels, the weapon tile with its panel
+   and the four gear tiles. The star, the level block and the pips are the
+   shell's (wide-parts.css). */
+
+.b-loadouts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 16px;
+}
+.b-lo {
+  display: flex;
+  flex-direction: column;
+  filter: drop-shadow(0 5px 8px var(--lift-16)) drop-shadow(0 0 0.6px var(--lift-26));
+}
+
+/* ── the name bar: slot, name, profession · element, damage share ─── */
+.b-lo-who {
+  min-height: 48px;
+  gap: 12px;
+  padding: 0 22px 0 0;
+  background: var(--topo-card) right center / 240px 48px no-repeat, var(--who-bg);
+}
+.b-slot {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 9px 0 12px;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-20);
+  background: var(--block);
+  color: var(--block-ink);
+}
+.b-lo.is-lead .b-slot {
+  background: var(--yellow);
+}
+.b-lo-who strong {
+  min-width: 0;
+  font-weight: 700;
+  font-size: var(--fs-22);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.b-prof {
+  flex: none;
+  margin-left: 4px;
+  font-size: var(--fs-17);
+  color: var(--who-ink-2);
+}
+.b-lo-share {
+  margin-left: auto;
+  font-size: var(--fs-17);
+  white-space: nowrap;
+  color: var(--who-ink-2);
+}
+.b-lo-share b {
+  margin-left: 4px;
+  font-family: var(--font-num);
+  font-size: var(--fs-20);
+  color: var(--who-ink);
+}
+
+/* ── the body and its head: avatar, level, 潜能 ──────────────────── */
+.b-lo-body {
+  flex: 1;
+  padding: 16px 18px;
+  border-radius: 0 0 6px 6px;
+  background: var(--stripe-a);
+}
+.b-lo-head {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 14px;
+  min-height: 116px;
+  margin: -16px -18px 0;
+}
+.b-lo-portrait {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.b-lo-portrait .i-face,
+.b-lo-portrait .i-face.is-lead {
+  width: 88px;
+  height: 88px;
+  margin: 0;
+}
+.b-lo-portrait .i-face.is-lead::before {
+  inset: -13px;
+}
+.b-lo-portrait .i-face.is-lead::after {
+  inset: -20px;
+}
+.b-lo-side {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 18px 14px 0;
+}
+/* 潜能 as the character screen writes it: N over a slash over 5 (MAX when
+   full), in a half frame that runs under the star */
+.b-lo-pot {
+  position: relative;
+  flex: none;
+  width: 156px;
+  height: 88px;
+}
+.b-lo-pot em {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-style: normal;
+  font-size: var(--fs-13);
+  line-height: 1;
+  color: var(--muted);
+}
+.b-lo-pot-frame {
+  position: absolute;
+  left: 0;
+  top: 20px;
+  width: 70px;
+  height: 66px;
+  border: 1.5px solid var(--pot-frame);
+  border-right: 0;
+}
+.b-lo-pot-star {
+  position: absolute;
+  left: 54px;
+  top: 13px;
+  width: 84px;
+  height: 81px;
+}
+.b-lo-pot-star svg {
+  width: 100%;
+  height: 100%;
+}
+.b-lo-pot-num {
+  position: absolute;
+  left: 8px;
+  top: 25px;
+  width: 60px;
+  height: 58px;
+  color: var(--pot-ink);
+}
+.b-lo-pot-num b {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: var(--font-num);
+  font-weight: 500;
+  font-size: var(--fs-40);
+  line-height: 1;
+}
+.b-lo-pot-num i {
+  position: absolute;
+  left: 0;
+  top: 52px;
+  width: 54px;
+  height: 1.6px;
+  background: currentColor;
+  transform: rotate(-42deg);
+  transform-origin: left center;
+}
+.b-lo-pot-num small {
+  position: absolute;
+  left: 25px;
+  top: 26px;
+  font-family: var(--font-num);
+  font-weight: 500;
+  font-size: var(--fs-30);
+  line-height: 1;
+}
+.b-lo-pot.is-max .b-lo-pot-num small {
+  left: 20px;
+  top: 38px;
+  font-size: var(--fs-17);
+  letter-spacing: 0.02em;
+}
+.b-lo-pot.is-empty b {
+  color: var(--muted);
+}
+
+/* ── skill levels: four cells in game order ─────────────────────── */
+.b-lo-levels {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+.b-lo-levels div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--cell);
+}
+.b-lo-levels span {
+  font-size: var(--fs-17);
+  color: var(--ink-2);
+}
+.b-lo-levels b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-22);
+  color: var(--ink);
+}
+.b-lo-levels .is-empty b {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* a group's label: the Chinese word over a small Latin one */
+.b-lo-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 16px 0 8px;
+  padding-left: 10px;
+  border-left: 4px solid var(--yellow);
+  line-height: 1;
+}
+.b-lo-label b {
+  font-weight: 900;
+  font-size: var(--fs-17);
+  color: var(--ink);
+}
+.b-lo-label span {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-15);
+  letter-spacing: 0.08em;
+  color: var(--label-latin);
+}
+
+/* ── an item tile, after the game's gear card: the ripple lower right,
+   the icon large, a white foot with a code mark over the yellow bar ── */
+.b-item-art {
+  position: relative;
+  overflow: hidden;
+  background:
+    var(--rings) right bottom 18px / 130px 130px no-repeat,
+    linear-gradient(150deg, var(--tile-a) 0, var(--tile-b) 60%, var(--tile-c) 100%);
+  box-shadow: inset 0 -3px 0 var(--yellow);
+}
+.b-item-art > * {
+  z-index: 1;
+}
+.b-item-art img {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 78%;
+  height: 78%;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  filter: drop-shadow(0 6px 6px var(--tile-icon-shadow));
+}
+.b-item.is-empty .b-item-art {
+  background: var(--tile-empty);
+  box-shadow: inset 0 -4px 0 var(--tile-empty-edge);
+}
+.b-item.is-empty strong {
+  font-weight: 500;
+  color: var(--muted);
+}
+.b-item-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 15px;
+  padding: 0 8px;
+  background: var(--tile-foot);
+}
+/* the code mark's bars, drawn in the tile's grey through a mask */
+.b-item-code {
+  flex: none;
+  width: 34px;
+  height: 7px;
+  background: var(--tile-code);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 7' shape-rendering='crispEdges'%3E%3Cg%3E%3Crect x='0' y='0' width='9' height='3'/%3E%3Crect x='0' y='4' width='4' height='3'/%3E%3Crect x='5' y='4' width='2' height='3'/%3E%3Crect x='11' y='0' width='1' height='7'/%3E%3Crect x='13' y='0' width='2' height='7'/%3E%3Crect x='16' y='0' width='1' height='7'/%3E%3Crect x='19' y='0' width='3' height='3'/%3E%3Crect x='19' y='4' width='1' height='3'/%3E%3Crect x='23' y='0' width='1' height='3'/%3E%3Crect x='21' y='4' width='3' height='3'/%3E%3Crect x='26' y='2' width='8' height='3'/%3E%3C/g%3E%3C/svg%3E") no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 7' shape-rendering='crispEdges'%3E%3Cg%3E%3Crect x='0' y='0' width='9' height='3'/%3E%3Crect x='0' y='4' width='4' height='3'/%3E%3Crect x='5' y='4' width='2' height='3'/%3E%3Crect x='11' y='0' width='1' height='7'/%3E%3Crect x='13' y='0' width='2' height='7'/%3E%3Crect x='16' y='0' width='1' height='7'/%3E%3Crect x='19' y='0' width='3' height='3'/%3E%3Crect x='19' y='4' width='1' height='3'/%3E%3Crect x='23' y='0' width='1' height='3'/%3E%3Crect x='21' y='4' width='3' height='3'/%3E%3Crect x='26' y='2' width='8' height='3'/%3E%3C/g%3E%3C/svg%3E") no-repeat;
+}
+.b-item-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--tile-hairline);
+}
+
+/* ── the weapon: its tile, then 精炼 and the panel beside it ─────── */
+.b-item--wpn {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+}
+.b-item--wpn .b-item-art {
+  flex: none;
+  width: 150px;
+  min-height: 164px;
+}
+.b-item--wpn .b-item-art img {
+  top: 42%;
+  width: 86%;
+  height: 86%;
+}
+/* the ghost word up the tile's left side */
+.b-item-ghost {
+  position: absolute;
+  left: 4px;
+  top: 6px;
+  transform: rotate(180deg);
+  writing-mode: vertical-rl;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-20);
+  line-height: 0.95;
+  letter-spacing: 0.02em;
+  color: var(--tile-ghost);
+}
+.b-item-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  padding: 0 10px 6px;
+  line-height: 1.2;
+}
+.b-item-title strong {
+  font-weight: 900;
+  font-size: var(--fs-20);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.b-wpn-side {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.b-refine {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.b-refine-star {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 43px;
+}
+.b-refine-star svg {
+  width: 44px;
+  height: 43px;
+}
+.b-refine p {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  line-height: 1.1;
+}
+.b-refine p span {
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.b-refine p b {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-24);
+  color: var(--ink);
+}
+.b-affixes {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.b-affix-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+  font-size: var(--fs-17);
+  line-height: 1.2;
+  color: var(--ink);
+}
+.b-affix-name i {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border: 2.5px solid var(--yellow);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--affix-edge);
+}
+.b-affix-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+.b-affix-max {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-style: normal;
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-13);
+  line-height: 1.3;
+  letter-spacing: 0.06em;
+  background: var(--yellow);
+  color: var(--max-ink);
+}
+.b-affix-lv {
+  margin-left: auto;
+  padding-left: 8px;
+  border-left: 2px solid var(--axis);
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: var(--fs-20);
+  line-height: 1;
+  color: var(--ink);
+}
+.b-affix-lv.is-max {
+  color: var(--medal-ink);
+}
+
+/* ── the gear: four tiles, the part and its enhancement over the name,
+   the icon under them, four stat lines below ──────────────────────── */
+.b-items {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.b-items .b-item-art {
+  height: 150px;
+}
+.b-items .b-item-art img.b-item-icon {
+  top: auto;
+  bottom: 13px;
+  width: 80%;
+  height: 62%;
+  transform: translateX(-50%);
+  z-index: 2;
+}
+.b-item-head {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  padding: 8px 9px 0 10px;
+  line-height: 1.2;
+}
+.b-item-head p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.b-item-head em {
+  margin-right: auto;
+  font-style: normal;
+  font-size: var(--fs-15);
+  color: var(--muted);
+}
+.b-item-head strong {
+  display: block;
+  margin-top: 2px;
+  font-weight: 900;
+  font-size: var(--fs-17);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.b-item-enh {
+  padding: 1px 6px;
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-15);
+  line-height: 1.3;
+  background: var(--tile-chip);
+  color: var(--tile-chip-ink);
+  box-shadow: inset 0 0 0 1px var(--tile-chip-edge);
+}
+.b-item-stats {
+  list-style: none;
+  margin-top: 4px;
+}
+.b-item-stats li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  height: 23px;
+  font-size: var(--fs-15);
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--grid-soft);
+}
+.b-item-stats i {
+  min-width: 0;
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.b-item-stats b {
+  flex: none;
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-size: var(--fs-17);
+  color: var(--ink);
+}
+.b-item-stats .is-main i {
+  font-weight: 700;
+  color: var(--ink);
+}

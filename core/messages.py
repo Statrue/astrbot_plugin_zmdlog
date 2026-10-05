@@ -33,7 +33,7 @@ NO_PROFILE_RECORDS = "{window}没有带「{name}」的公开通关记录。"
 NO_BOARD_PROFILE_RECORDS = "{window}该榜没有带「{name}」的公开通关记录。"
 
 # Battle pages that an older upload cannot fill.
-NO_LOADOUT = "这份战报没有记录阵容配装。"
+NO_BUILD = "这份战报没有记录阵容的养成。"
 NO_SKILL_STATS = "这份战报没有技能统计数据。"
 NO_TIMELINE = "这条战斗由旧版客户端上传，没有完整施法序列，画不了排轴。"
 TIMELINE_RATE_LIMITED = "排轴读取施法序列过于频繁，请稍后再试。"

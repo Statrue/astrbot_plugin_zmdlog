@@ -7,7 +7,7 @@ from pathlib import Path
 from core.candidates import CandidateStore, CandidateView, format_candidates
 from core.matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
 from core.models import parse_battle_detail
-from core.presentation import build_compare_page, build_loadout_page
+from core.presentation import build_battle_build_page, build_compare_page
 from core.render import TemplateRenderer
 from core.routing import RouteKind, RouteParseError, parse_zmdlog_payload
 from tests.helpers import battle_detail_payload
@@ -100,7 +100,7 @@ class CompareRoutingTests(unittest.TestCase):
             (battle.kind, battle.query, battle.battle_rank, battle.metric),
             (RouteKind.BATTLE_QUERY, "罗丹", 2, "rdps"),
         )
-        self.assertEqual(parse_zmdlog_payload("配装 罗丹 --口径 rdps").metric, "rdps")
+        self.assertEqual(parse_zmdlog_payload("养成 罗丹 --口径 rdps").metric, "rdps")
         # A battle named outright is on both boards or neither; no metric.
         for payload in (
             "对比 btl_upload_aaaaaaaaaaaa btl_upload_bbbbbbbbbbbb --口径 rdps",
@@ -274,20 +274,21 @@ class ComparePageTests(unittest.TestCase):
         rows = {row.character_name: row for row in page.loadouts}
         lines = {line.label: line for line in rows["洛茜"].lines}
         # B is matched to A rather than both being sorted, so the A column
-        # still reads in the order the 配装 page shows for that battle.
-        loadout = build_loadout_page(
+        # still reads in the order the 养成 page shows for that battle.
+        build = build_battle_build_page(
             parse_battle_detail(payload), query="q", web_base_url=WEB
         )
         view = next(
-            item for item in loadout.loadouts if item.character_name == "洛茜"
+            item for item in build.characters if item.character_name == "洛茜"
+        )
+        # The A column names each piece's suit, the page the piece itself:
+        # the same two, in the same order.
+        self.assertEqual(
+            [lines["配件 1"].a, lines["配件 2"].a], ["生物辅助 · 配件", "点剑 · 配件"]
         )
         self.assertEqual(
-            [lines["配件 1"].a, lines["配件 2"].a],
-            [
-                equip.compact_label
-                for equip in view.equips
-                if equip.part_name == "配件"
-            ],
+            [tile.label for tile in view.gear if tile and tile.part_name == "配件"],
+            ["生物辅助护板", "点剑火石"],
         )
         self.assertEqual(lines["配件 1"].a, lines["配件 1"].b)
         self.assertEqual(lines["配件 2"].a, lines["配件 2"].b)

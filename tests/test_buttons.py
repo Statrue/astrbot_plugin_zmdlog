@@ -239,7 +239,7 @@ class RoundTripTests(unittest.TestCase):
             (CandidateView.ROSTER, RouteKind.ROSTER_QUERY, {"metric": "rdps"}),
             (CandidateView.BATTLE, RouteKind.BATTLE_QUERY, {"battle_rank": 3}),
             (CandidateView.BATTLE, RouteKind.BATTLE_QUERY, {}),
-            (CandidateView.LOADOUT, RouteKind.LOADOUT_QUERY, {"battle_rank": 2}),
+            (CandidateView.BUILD, RouteKind.BUILD_QUERY, {"battle_rank": 2}),
             (CandidateView.DATA, RouteKind.DATA_QUERY, {"battle_rank": 4}),
             (CandidateView.CAST, RouteKind.CAST_QUERY, {"battle_rank": 5}),
             (CandidateView.COMPARE, RouteKind.COMPARE_QUERY, {}),

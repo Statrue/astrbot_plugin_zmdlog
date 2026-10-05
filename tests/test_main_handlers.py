@@ -334,8 +334,8 @@ class FakeRenderer:
     async def render_battle(self, battle, **kwargs):
         return capture("/tmp/battle.png")
 
-    async def render_loadout(self, battle, **kwargs):
-        return capture("/tmp/loadout.png")
+    async def render_battle_build(self, battle, **kwargs):
+        return capture("/tmp/build.png")
 
     async def render_battle_data(self, battle, **kwargs):
         return capture("/tmp/data.png")
@@ -695,9 +695,9 @@ class HandlerTests(unittest.TestCase):
 
         self.assertEqual((kind, result), ("image", "/tmp/ranking.png"))
 
-    # --- 配装 / 技能 share the 战报 lookup ------------------------------------
+    # --- 养成 / 技能 share the 战报 lookup ------------------------------------
 
-    def test_loadout_and_data_commands_pick_the_ranked_battle(self) -> None:
+    def test_build_and_data_commands_pick_the_ranked_battle(self) -> None:
         fetched: list[str] = []
 
         async def ranking(boss_slug, **kwargs):
@@ -710,8 +710,8 @@ class HandlerTests(unittest.TestCase):
         self.plugin.data.get_boss_ranking = ranking
         self.plugin.data.get_battle_detail = detail
 
-        (kind, result), = self._zmdlog("zmdlog 配装 三位一体 2")
-        self.assertEqual((kind, result), ("image", "/tmp/loadout.png"))
+        (kind, result), = self._zmdlog("zmdlog 养成 三位一体 2")
+        self.assertEqual((kind, result), ("image", "/tmp/build.png"))
         self.assertEqual(fetched, ["btl_upload_000000000002"])
 
         (kind, result), = self._zmdlog("zmdlog 数据 btl_upload_abcdef123456")
@@ -737,9 +737,9 @@ class HandlerTests(unittest.TestCase):
 
         (kind, reply), = self._zmdlog("zmdlog 数据 btl_upload_abcdef123456")
         self.assertEqual((kind, reply), ("plain", "这份战报没有技能统计数据。"))
-        (kind, reply), = self._zmdlog("zmdlog 配装 btl_upload_abcdef123456")
-        self.assertEqual((kind, reply), ("plain", "这份战报没有记录阵容配装。"))
-        # The summary card itself keeps working without loadout data.
+        (kind, reply), = self._zmdlog("zmdlog 养成 btl_upload_abcdef123456")
+        self.assertEqual((kind, reply), ("plain", "这份战报没有记录阵容的养成。"))
+        # The summary card itself keeps working without a roster.
         (kind, result), = self._zmdlog("zmdlog 战报 btl_upload_abcdef123456")
         self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
 
@@ -2763,7 +2763,8 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(received[-1]["battle"].battle_id, "btl_upload_abcdef123456")
         # ...and the foot names the battle's pages, this one lit.
         self.assertEqual(
-            received[-1]["views"], (("摘要", False), ("数据", False), ("排轴", True))
+            received[-1]["views"],
+            (("摘要", False), ("数据", False), ("排轴", True), ("养成", False)),
         )
 
         async def offline(battle_id):
@@ -2842,9 +2843,14 @@ class HandlerTests(unittest.TestCase):
                 self.assertNotIn("export", received[-1])
                 self.assertEqual(
                     received[-1]["views"],
-                    (("摘要", True), ("数据", False))
+                    (("摘要", True), ("数据", False), ("养成", False))
                     if answer is old_upload
-                    else (("摘要", True), ("数据", False), ("排轴", False)),
+                    else (
+                        ("摘要", True),
+                        ("数据", False),
+                        ("排轴", False),
+                        ("养成", False),
+                    ),
                 )
 
     def test_data_draws_the_numbers_with_its_own_view_lit(self) -> None:
@@ -2870,7 +2876,8 @@ class HandlerTests(unittest.TestCase):
 
         self.assertEqual((kind, result), ("image", "/tmp/data.png"))
         self.assertEqual(
-            received[-1]["views"], (("摘要", False), ("数据", True), ("排轴", False))
+            received[-1]["views"],
+            (("摘要", False), ("数据", True), ("排轴", False), ("养成", False)),
         )
         # An upload without crit rolls has no 暴击期望 to draw.
         self.assertIsNone(received[-1]["crit"])
@@ -3102,6 +3109,42 @@ class HandlerTests(unittest.TestCase):
 
         self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
 
+    def test_build_draws_the_battles_strip_with_itself_lit(self) -> None:
+        seen: list[dict] = []
+
+        async def detail(battle_id):
+            return parse_battle_detail(battle_detail_payload())
+
+        async def render_battle_build(battle, **kwargs):
+            seen.append(kwargs)
+            return capture("/tmp/build.png")
+
+        self.plugin.data.get_battle_detail = detail
+        self.plugin.renderer.render_battle_build = render_battle_build
+
+        (kind, result), = self._zmdlog("zmdlog 养成 btl_upload_abcdef123456")
+
+        self.assertEqual((kind, result), ("image", "/tmp/build.png"))
+        self.assertEqual(
+            seen[0]["views"],
+            (("摘要", False), ("数据", False), ("排轴", False), ("养成", True)),
+        )
+
+    def test_the_old_loadout_words_are_no_commands(self) -> None:
+        drawn: list[str] = []
+
+        async def render_battle_build(battle, **kwargs):
+            drawn.append(battle.battle_id)
+            return capture("/tmp/build.png")
+
+        self.plugin.renderer.render_battle_build = render_battle_build
+        for word in ("配装", "装备"):
+            with self.subTest(word=word):
+                replies = self._zmdlog(f"zmdlog {word} btl_upload_abcdef123456")
+
+                self.assertNotIn(("image", "/tmp/build.png"), replies)
+        self.assertEqual(drawn, [])
+
     def test_the_gear_pages_are_handed_the_suit_catalog(self) -> None:
         # The catalog is what names a piece upstream left blank, so it has to
         # reach the page; an outage must still draw the page without it.
@@ -3110,9 +3153,9 @@ class HandlerTests(unittest.TestCase):
         async def detail(battle_id):
             return parse_battle_detail(battle_detail_payload())
 
-        async def render_loadout(battle, **kwargs):
+        async def render_battle_build(battle, **kwargs):
             seen.append(kwargs.get("suits"))
-            return capture("/tmp/loadout.png")
+            return capture("/tmp/build.png")
 
         wanted_suits: list[tuple] = []
 
@@ -3122,10 +3165,10 @@ class HandlerTests(unittest.TestCase):
 
         self.plugin.data.get_battle_detail = detail
         self.plugin.data.get_equip_suits = suits
-        self.plugin.renderer.render_loadout = render_loadout
+        self.plugin.renderer.render_battle_build = render_battle_build
 
-        (kind, result), = self._zmdlog("zmdlog 配装 btl_upload_abcdef123456")
-        self.assertEqual((kind, result), ("image", "/tmp/loadout.png"))
+        (kind, result), = self._zmdlog("zmdlog 养成 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/build.png"))
         self.assertEqual(seen, [{"suit_phy01": "点剑"}])
         # The page names the suits it is about to print, so a suit the
         # catalog has never heard of can ask for a re-read.
@@ -3135,8 +3178,8 @@ class HandlerTests(unittest.TestCase):
             raise ZmdLogsClientError("offline")
 
         self.plugin.data.get_equip_suits = broken
-        (kind, result), = self._zmdlog("zmdlog 配装 btl_upload_abcdef123456")
-        self.assertEqual((kind, result), ("image", "/tmp/loadout.png"))
+        (kind, result), = self._zmdlog("zmdlog 养成 btl_upload_abcdef123456")
+        self.assertEqual((kind, result), ("image", "/tmp/build.png"))
         self.assertEqual(seen[-1], {})
 
     def test_cast_explains_old_uploads_and_rate_limits(self) -> None:
@@ -3169,7 +3212,7 @@ class HandlerTests(unittest.TestCase):
 
         self.plugin.data.get_battle_detail = missing
 
-        for command in ("战报", "数据", "配装"):
+        for command in ("战报", "数据", "养成"):
             with self.subTest(command=command):
                 (kind, reply), = self._zmdlog(
                     f"zmdlog {command} btl_upload_abcdef123456"

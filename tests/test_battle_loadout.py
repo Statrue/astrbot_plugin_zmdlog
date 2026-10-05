@@ -1,4 +1,4 @@
-"""Tests for the 0.6.0 battle loadout (配装) page and the skill names pages print."""
+"""Tests for a battle's roster, its gear lines and the names its pages print."""
 
 import unittest
 from dataclasses import replace
@@ -15,7 +15,6 @@ from core.loadout import (
     skill_display_name,
     skill_level_summary,
     suit_catalog_id,
-    weapon_skill_levels,
 )
 from core.matcher import MatchChoice, MatchLevel, MatchTarget, TargetType
 from core.models import (
@@ -25,9 +24,9 @@ from core.models import (
 )
 from core.presentation import (
     _format_stat_value,
+    build_battle_build_page,
     build_battle_data_page,
     build_battle_page,
-    build_loadout_page,
 )
 from core.render import TemplateRenderer
 from core.routing import RouteKind, RouteParseError, parse_zmdlog_payload
@@ -538,9 +537,7 @@ class GearHelperTests(unittest.TestCase):
             [(level.label, level.level) for level in skill_level_summary(first)],
             [("普攻", 12), ("战技", 12), ("连携", 9), ("终结", 12)],
         )
-        self.assertEqual(weapon_skill_levels(first.weapon), (9, (9, 7)))
         self.assertEqual(skill_level_summary(second), ())
-        self.assertEqual(weapon_skill_levels(second.weapon), (None, ()))
 
 
 class LoadoutPresentationTests(unittest.TestCase):
@@ -557,7 +554,7 @@ class LoadoutPresentationTests(unittest.TestCase):
         roster["equips"][2]["itemId"] = "../not an id"
         roster["equips"][3]["iconUrl"] = "/images/equip/iconbig/explicit.png"
 
-        page = build_loadout_page(
+        page = build_battle_page(
             parse_battle_detail(payload), query="q", web_base_url="https://zmdlogs.com"
         )
         luoxi = page.loadouts[0]
@@ -577,13 +574,12 @@ class LoadoutPresentationTests(unittest.TestCase):
             other.icon_url, "https://zmdlogs.com/images/equip/iconbig/explicit.png"
         )
 
-    def test_loadout_page_formats_gear(self) -> None:
-        page = build_loadout_page(
-            self.battle, query="配装 罗丹", web_base_url="https://zmdlogs.com"
+    def test_the_battle_model_formats_gear(self) -> None:
+        # The model 对比 reads; 养成 has its own (test_battle_build).
+        page = build_battle_page(
+            self.battle, query="q", web_base_url="https://zmdlogs.com"
         )
 
-        self.assertEqual(page.header.target_type, "战报配装")
-        self.assertTrue(page.stat_lines_available)
         luoxi, kamiu = page.loadouts
         self.assertEqual(luoxi.level_label, "Lv.90")
         self.assertEqual(luoxi.potential_label, "潜能 5")
@@ -591,7 +587,6 @@ class LoadoutPresentationTests(unittest.TestCase):
         self.assertEqual(luoxi.damage_share, "88.4%")
         self.assertEqual(luoxi.weapon.refine_label, "精炼 3")
         self.assertEqual(luoxi.weapon.level_label, "Lv.90")
-        self.assertEqual(luoxi.weapon.skill_label, "武器技能 9 · 词条 9 / 7")
         self.assertEqual(
             luoxi.weapon.icon_url,
             "https://zmdlogs.com/images/weapon/icon/wpn_sword_0021.png",
@@ -634,7 +629,6 @@ class LoadoutPresentationTests(unittest.TestCase):
         self.assertEqual(kamiu.potential_label, "潜能 0")
         self.assertIsNone(kamiu.element)
         self.assertEqual(kamiu.equips, ())
-        self.assertIsNone(kamiu.weapon.skill_label)
         self.assertIsNone(kamiu.weapon.level_label)
         self.assertEqual(kamiu.weapon.refine_label, "精炼 6")
 
@@ -664,11 +658,12 @@ class LoadoutPresentationTests(unittest.TestCase):
         battle = parse_battle_detail(payload)
         web = "https://zmdlogs.com"
 
-        loadout = build_loadout_page(battle, query="q", web_base_url=web)
+        build = build_battle_build_page(battle, query="q", web_base_url=web)
         card = build_battle_page(battle, query="q", web_base_url=web)
 
+        # The piece is the fixture's 护手, second on 养成 after the 护甲.
         self.assertEqual(
-            [(line.name, line.value) for line in loadout.loadouts[0].equips[0].stats],
+            [(line.name, line.value) for line in build.characters[0].gear[1].stats],
             [
                 ("防御力", "42"),
                 ("敏捷", "84"),
@@ -683,7 +678,7 @@ class LoadoutPresentationTests(unittest.TestCase):
         )
         # The card's gear lines (and the comparison built on them) read the
         # same view; no raw spelling survives anywhere on either page.
-        for page in (loadout, card):
+        for page in (build, card):
             self.assertNotIn("attribute_type", repr(page))
             self.assertNotIn("PhySpellUp", repr(page))
 
@@ -691,9 +686,9 @@ class LoadoutPresentationTests(unittest.TestCase):
         # The same piece, once without the catalog and once with it. The
         # catalog is keyed by the id the item carries, so it answers for
         # every battle rather than only the ones a named sibling appears in.
-        page = build_loadout_page(
+        page = build_battle_page(
             self.battle,
-            query="配装 罗丹",
+            query="q",
             web_base_url="https://zmdlogs.com",
             suits={"suit_phy01": "点剑"},
         )
@@ -710,7 +705,7 @@ class LoadoutPresentationTests(unittest.TestCase):
         equip = payload["battle"]["roster"][0]["equips"][0]
         equip["itemId"] = "item_equip_t4_suit_spellburst_hand_01"
         equip["suitName"] = "长息"
-        page = build_loadout_page(
+        page = build_battle_page(
             parse_battle_detail(payload),
             query="q",
             web_base_url="https://zmdlogs.com",
@@ -726,7 +721,7 @@ class LoadoutPresentationTests(unittest.TestCase):
         equip = payload["battle"]["roster"][0]["equips"][0]
         equip["itemId"] = "item_equip_t4_parts_wuling01_hand_01"
         equip["suitName"] = "独立装备"
-        page = build_loadout_page(
+        page = build_battle_page(
             parse_battle_detail(payload),
             query="q",
             web_base_url="https://zmdlogs.com",
@@ -774,17 +769,18 @@ class LoadoutTemplateTests(unittest.TestCase):
         self.renderer = TemplateRenderer.from_plugin_root(Path(__file__).parents[1])
         self.battle = parse_battle_detail(battle_detail_payload())
 
-    def test_loadout_page_renders_gear_lines_and_icons(self) -> None:
-        html = self.renderer.render_loadout(
-            self.battle, query="配装 罗丹", web_base_url="https://zmdlogs.com"
+    def test_the_build_page_renders_gear_lines_and_icons(self) -> None:
+        html = self.renderer.render_battle_build(
+            self.battle, query="养成 罗丹", web_base_url="https://zmdlogs.com"
         )
 
         self.assertIn("点剑护手", html)
-        self.assertIn("强化 +3 / +3 / +2", html)
+        self.assertIn("+3 / +3 / +2", html)
         self.assertIn("物理伤害提升", html)
         self.assertIn("<b>14.9%</b>", html)
         self.assertIn("名称未收录", html)
-        self.assertIn("武器技能 9 · 词条 9 / 7", html)
+        self.assertIn("力量提升·大", html)
+        self.assertIn("攻击提升·大", html)
         self.assertIn(
             "https://zmdlogs.com/images/weapon/icon/wpn_sword_0021.png", html
         )
@@ -796,8 +792,8 @@ class LoadoutTemplateTests(unittest.TestCase):
         # The raw id may only appear inside the derived icon URL, never as text.
         self.assertNotIn(">item_equip_t4_suit_phy01_body_02", html)
         self.assertIn("iconbig/item_equip_t4_suit_phy01_body_02.png", html)
-        self.assertIn("本场未记录装备", html)
-        self.assertIn("潜能 0", html)
+        # 卡缪 recorded no gear: four empty places, never a blank card.
+        self.assertIn("<strong>未记录</strong>", html)
 
     def test_pages_without_loadout_data_still_render(self) -> None:
         payload = battle_detail_payload()
@@ -809,23 +805,24 @@ class LoadoutTemplateTests(unittest.TestCase):
             battle, query="q", web_base_url="https://zmdlogs.com"
         )
         self.assertIn("<strong>伤害构成</strong>", html)
-        html = self.renderer.render_loadout(
-            battle, query="q", web_base_url="https://zmdlogs.com"
-        )
-        self.assertIn("这份战报没有记录阵容", html)
 
 
 class BattleStyleRouteTests(unittest.TestCase):
-    def test_loadout_and_data_commands_share_the_battle_shape(self) -> None:
-        route = parse_zmdlog_payload("配装 罗丹 3")
-        self.assertEqual(route.kind, RouteKind.LOADOUT_QUERY)
+    def test_build_and_data_commands_share_the_battle_shape(self) -> None:
+        route = parse_zmdlog_payload("养成 罗丹 3")
+        self.assertEqual(route.kind, RouteKind.BUILD_QUERY)
         self.assertEqual(route.query, "罗丹")
         self.assertEqual(route.battle_rank, 3)
 
-        route = parse_zmdlog_payload("装备 btl_upload_abcdef123456")
-        self.assertEqual(route.kind, RouteKind.LOADOUT_QUERY)
-        self.assertEqual(route.query, "btl_upload_abcdef123456")
-        self.assertEqual(route.battle_rank, 1)
+        route = parse_zmdlog_payload("养成 罗丹 --口径 rdps")
+        self.assertEqual(route.kind, RouteKind.BUILD_QUERY)
+        self.assertEqual((route.query, route.metric), ("罗丹", "rdps"))
+
+        # 配装 and 装备 are no commands any more: an ordinary keyword.
+        for payload in ("配装 罗丹 3", "装备 btl_upload_abcdef123456"):
+            with self.subTest(payload=payload):
+                route = parse_zmdlog_payload(payload)
+                self.assertEqual(route.kind, RouteKind.SMART_QUERY)
 
         route = parse_zmdlog_payload(
             "数据 https://zmdlogs.com/battle/btl_upload_abcdef123456"
@@ -839,9 +836,9 @@ class BattleStyleRouteTests(unittest.TestCase):
         self.assertEqual(parse_zmdlog_payload("战报 罗丹").kind, RouteKind.BATTLE_QUERY)
 
     def test_missing_argument_and_options_are_rejected(self) -> None:
-        with self.assertRaisesRegex(RouteParseError, "配装 罗丹 3"):
-            parse_zmdlog_payload("配装")
-        for payload in ("数据", "配装 罗丹 --页 3", "数据 罗丹 --角色 黎风"):
+        with self.assertRaisesRegex(RouteParseError, "养成 罗丹 3"):
+            parse_zmdlog_payload("养成")
+        for payload in ("数据", "养成 罗丹 --页 3", "数据 罗丹 --角色 黎风"):
             with self.subTest(payload=payload):
                 with self.assertRaises(RouteParseError):
                     parse_zmdlog_payload(payload)
@@ -867,15 +864,15 @@ class BattleCandidateViewTests(unittest.TestCase):
         store = CandidateStore()
         choices = (self._board("a", "榜单甲"), self._board("b", "榜单乙"))
 
-        loadout = store.remember(
-            "测", choices, view=CandidateView.LOADOUT, battle_rank=2
+        build = store.remember(
+            "测", choices, view=CandidateView.BUILD, battle_rank=2
         )
         data = store.remember("测", choices, view=CandidateView.DATA)
 
-        self.assertIn("配装查询匹配到 2 个榜单", format_candidates(loadout))
+        self.assertIn("养成查询匹配到 2 个榜单", format_candidates(build))
         self.assertIn("战报数据查询匹配到 2 个榜单", format_candidates(data))
-        entry, choice = store.resolve(loadout.code, "2")
-        self.assertIs(entry.view, CandidateView.LOADOUT)
+        entry, choice = store.resolve(build.code, "2")
+        self.assertIs(entry.view, CandidateView.BUILD)
         self.assertEqual(entry.battle_rank, 2)
         self.assertEqual(choice.target.key, "b")
 

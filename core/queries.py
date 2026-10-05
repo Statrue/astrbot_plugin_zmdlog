@@ -98,22 +98,22 @@ from .render import LongImageRenderer
 from .routing import OPTION_USAGE, RouteKind, RouteRequest
 from .settings import PluginSettings
 
-# 战报 / 数据 / 配装 / 排轴 share one argument shape and one lookup; only
+# 战报 / 数据 / 排轴 / 养成 share one argument shape and one lookup; only
 # the page drawn from the battle differs.
 BATTLE_STYLE_ROUTES = frozenset(
     {
         RouteKind.BATTLE_QUERY,
         RouteKind.DATA_QUERY,
-        RouteKind.LOADOUT_QUERY,
         RouteKind.CAST_QUERY,
+        RouteKind.BUILD_QUERY,
     }
 )
 _BATTLE_VIEWS = frozenset(
     {
         CandidateView.BATTLE,
         CandidateView.DATA,
-        CandidateView.LOADOUT,
         CandidateView.CAST,
+        CandidateView.BUILD,
     }
 )
 # Pages that exist per board only: a dungeon or scope hit is flattened to a
@@ -125,8 +125,8 @@ _BOARD_ONLY_VIEWS = (
     CandidateView.ROSTER,
     CandidateView.BATTLE,
     CandidateView.DATA,
-    CandidateView.LOADOUT,
     CandidateView.CAST,
+    CandidateView.BUILD,
     CandidateView.COMPARE,
 )
 _ROUTE_VIEWS = {
@@ -134,8 +134,8 @@ _ROUTE_VIEWS = {
     RouteKind.ROSTER_QUERY: CandidateView.ROSTER,
     RouteKind.BATTLE_QUERY: CandidateView.BATTLE,
     RouteKind.DATA_QUERY: CandidateView.DATA,
-    RouteKind.LOADOUT_QUERY: CandidateView.LOADOUT,
     RouteKind.CAST_QUERY: CandidateView.CAST,
+    RouteKind.BUILD_QUERY: CandidateView.BUILD,
     RouteKind.COMPARE_QUERY: CandidateView.COMPARE,
     RouteKind.TREND_QUERY: CandidateView.TREND,
 }
@@ -1233,11 +1233,11 @@ class QueryService:
         *,
         query: str,
     ) -> Outcome:
-        """Draw the page a 战报 / 数据 / 配装 / 排轴 request asked for.
+        """Draw the page a 战报 / 数据 / 排轴 / 养成 request asked for.
 
         排轴 reads the public export, the other three the battle detail.
-        Older uploads carry no roster loadout, skill statistics or
-        cast sequence; those get a short text instead of an empty page.
+        Older uploads carry no roster, skill statistics or cast sequence;
+        those get a short text instead of an empty page.
         """
 
         renderer = self._renderer()
@@ -1282,25 +1282,35 @@ class QueryService:
                 await recipe.draw(renderer),
                 target=_battle_target(battle_id, view, recipe.battle),
             )
-        if view is CandidateView.LOADOUT:
-            # The loadout page reads no cast export, so it does not pay for one.
-            battle = await self._data.get_battle_detail(battle_id)
-            if not battle.roster:
-                return Outcome(message=messages.NO_LOADOUT)
-            rendered = await renderer.render_loadout(
-                battle,
-                query=query,
-                web_base_url=self._web_base_url,
-                suits=await self._data.equip_suits_for(battle),
-            )
-            return Outcome.image(
-                rendered, target=_battle_target(battle_id, view, battle)
-            )
+        if view is CandidateView.BUILD:
+            return await self._render_battle_build(battle_id, query=query)
         recipe = await prepare_battle(
             self._data, battle_id, query=query, web_base_url=self._web_base_url
         )
         return Outcome.image(
             await recipe.draw(renderer), target=_card_target(recipe, battle_id)
+        )
+
+    async def _render_battle_build(self, battle_id: str, *, query: str) -> Outcome:
+        """养成: the detail alone, and the suit catalog for pieces left raw.
+
+        It reads no cast export, so whether the upload has casts is not
+        known here and the strip offers 排轴 regardless; a battle with no
+        roster has no 养成 and says so.
+        """
+
+        battle = await self._data.get_battle_detail(battle_id)
+        if not battle.roster:
+            return Outcome(message=messages.NO_BUILD)
+        rendered = await self._renderer().render_battle_build(
+            battle,
+            query=query,
+            web_base_url=self._web_base_url,
+            suits=await self._data.equip_suits_for(battle),
+            views=view_strip(CandidateView.BUILD, battle),
+        )
+        return Outcome.image(
+            rendered, target=_battle_target(battle_id, CandidateView.BUILD, battle)
         )
 
     async def _render_compare_self(
@@ -1415,17 +1425,15 @@ def _battle_target(
 ) -> PageTarget:
     """The battle a page is about, less the pages its upload cannot draw.
 
-    Only what the page already read counts: without the detail the loadout
-    page and 数据 are assumed there, and only the export endpoint's own
-    refusal of an old upload rules the rail out (a rate limit passes). The
-    V2 pages answer for themselves (``core/battle_views``).
+    Only what the page already read counts: without the detail every view
+    is assumed there, and only the export endpoint's own refusal of an old
+    upload rules 排轴 out (a rate limit passes); ``core/battle_views``
+    decides each.
     """
 
-    unavailable = set(unavailable_views(battle, casts_refused=casts_refused))
-    if battle is not None and not battle.roster:
-        unavailable.add(CandidateView.LOADOUT)
+    unavailable = unavailable_views(battle, casts_refused=casts_refused)
     return PageTarget(
-        PageSubject.BATTLE, battle_id, view, unavailable=frozenset(unavailable)
+        PageSubject.BATTLE, battle_id, view, unavailable=unavailable
     )
 
 

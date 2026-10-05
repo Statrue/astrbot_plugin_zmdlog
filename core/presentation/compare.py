@@ -425,7 +425,7 @@ def _pair_accessories(
     Both accessory slots hold the same kind of piece and upstream keeps
     whatever order the client sent, so one player's pair sits in slot 2/3
     and another's in 3/2. Sorting both sides would align them but leave
-    neither matching the 配装 page a reader cross-checks against, so B is
+    neither matching the 养成 page a reader cross-checks against, so B is
     matched to A by item id instead and A is left alone.
     """
 

@@ -452,7 +452,7 @@ def format_battle(
     roster = _roster_lines(battle, suits)
     if roster:
         lines.append("")
-        lines.append("配装与养成：")
+        lines.append("养成：")
         lines.extend(roster)
     sources = _damage_sources(battle)
     if sources:
@@ -477,7 +477,7 @@ def format_battle(
             lines.extend(opening)
     elif not battle.roster:
         lines.append("")
-        lines.append("这份战报由旧版客户端上传，没有记录阵容配装。")
+        lines.append("这份战报由旧版客户端上传，没有记录阵容的养成。")
     return _joined(lines)
 
 
@@ -537,7 +537,7 @@ def format_battle_comparison(
     )
     if gear:
         lines.append("")
-        lines.append("配装差异：")
+        lines.append("养成差异：")
         lines.extend(gear)
     lines.append("")
     lines.append(

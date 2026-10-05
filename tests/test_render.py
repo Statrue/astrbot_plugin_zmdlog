@@ -24,6 +24,7 @@ from core.presentation import (
     format_duration,
     format_number,
 )
+from core.presentation.build import PipState, star_view
 from core.render import (
     FONT_ORIGIN,
     LEGACY_FRAME,
@@ -331,33 +332,118 @@ class TemplateRendererTests(unittest.TestCase):
 
     def test_the_shell_marks_a_build_as_the_game_does(self) -> None:
         macros = self.renderer.environment.from_string(
-            '{% from "shell/wide-parts.html" import refine_star, level_pips %}'
-            "{{ refine_star(n) }}|{{ level_pips(level, cap) }}"
+            '{% from "shell/wide-parts.html" import star, level_pips %}'
+            "{{ star(lit) }}|{{ level_pips(pips) }}"
         )
 
-        def star(n: int) -> tuple[int, int, int]:
-            svg = macros.render(n=n, level=1, cap=9).split("|")[0]
-            return (
+        def star(lit: int) -> tuple[str, tuple[int, int, int]]:
+            svg = macros.render(
+                lit=star_view(lit, top=5), pips=()
+            ).split("|")[0]
+            return svg, (
                 svg.count('class="is-lit"'),
                 svg.count('class="is-lead"'),
                 svg.count('class="is-base"'),
             )
 
-        # Rank k: the k-1 blades before it white, the k-th — the next to
-        # gain — yellow, the rest grey; at 6 every blade white, aglow.
-        self.assertEqual(star(1), (0, 1, 4))
-        self.assertEqual(star(3), (2, 1, 2))
-        self.assertEqual(star(5), (4, 1, 0))
-        self.assertEqual(star(6), (5, 0, 0))
-        self.assertIn('class="b-star is-max"', macros.render(n=6, level=1, cap=9))
-        self.assertNotIn("is-max", macros.render(n=5, level=1, cap=9))
+        # Each blade drawn in the state the presentation gave it; a full
+        # star glows.
+        self.assertEqual(star(0)[1], (0, 1, 4))
+        self.assertEqual(star(2)[1], (2, 1, 2))
+        self.assertEqual(star(4)[1], (4, 1, 0))
+        self.assertEqual(star(5)[1], (5, 0, 0))
+        self.assertIn('class="b-star is-max"', star(5)[0])
+        self.assertNotIn("is-max", star(4)[0])
+        # The first blade to light is the upper-left one (A), painted
+        # among the lit ones.
+        self.assertIn(
+            '<polygon class="is-lead" points="66,1 208,103 223,144 80,42"/>',
+            star(0)[0],
+        )
 
         # Level 3 of a skill capped at 5 by its 精炼: three filled, two
         # open, four crossed out.
-        pips = macros.render(n=1, level=3, cap=5).split("|")[1]
+        pips = macros.render(
+            lit=star_view(0, top=5),
+            pips=(PipState.ON,) * 3 + (PipState.OFF,) * 2 + (PipState.LOCKED,) * 4,
+        ).split("|")[1]
         self.assertEqual(pips.count('class="is-on"'), 3)
         self.assertEqual(pips.count('<g class="is-x">'), 4)
         self.assertEqual(pips.count('class="is-ring"'), 2 + 4)
+
+    def test_the_build_is_a_wide_page_of_one_card_a_character(self) -> None:
+        payload = battle_detail_payload()
+        weapon = payload["battle"]["roster"][0]["weapon"]
+        weapon["weaponRefine"] = 1
+        weapon["skills"] = [
+            {"skillKey": "wpn_sp_attr_atk_high", "level": 9},
+            {"skillKey": "sk_wpn_sword_0021", "level": 4},
+            {"skillKey": "wpn_attr_agi_high", "level": 9},
+        ]
+        html = self.renderer.render_battle_build(
+            parse_battle_detail(payload),
+            query="养成 btl_upload_abcdef123456",
+            web_base_url="https://zmdlogs.com",
+            views=(("摘要", False), ("养成", True)),
+        )
+
+        self.assertIn("--zmd-frame-width: 960;", html)
+        self.assertIn("zmd-root--battle-build", html)
+        self.assertIn(">BATTLE REPORT<", html)
+        self.assertIn('<h1 class="i-title">“碾骨之拳”罗丹</h1>', html)
+        self.assertIn("<span><b>0:20.833</b> 通关</span>", html)
+        # One card a character in roster order, the main C's slot lit.
+        self.assertEqual(html.count('<article class="b-lo'), 2)
+        self.assertIn('<article class="b-lo is-lead">', html)
+        first = html.index("<strong>洛茜</strong>")
+        second = html.index("<strong>卡缪</strong>")
+        self.assertLess(first, second)
+        self.assertIn("伤害占比 <b>88.4%</b>", html)
+        # 潜能 5 is full: N over MAX, the star aglow.
+        self.assertIn("<b>5</b><i></i><small>MAX</small>", html)
+        self.assertIn('class="b-lo-pot is-max"', html)
+        # The weapon panel: two named 词条 at MAX, then the weapon skill at
+        # its 精炼 cap with five pips crossed out.
+        luoxi = html[first:second]
+        self.assertLess(luoxi.index("敏捷提升·大"), luoxi.index("攻击提升·大"))
+        self.assertLess(luoxi.index("攻击提升·大"), luoxi.index("武器技能"))
+        self.assertEqual(luoxi.count('class="b-affix-max"'), 2)
+        self.assertIn('class="b-affix-lv is-max">4/4</b>', luoxi)
+        self.assertEqual(luoxi.count('<g class="is-x">'), 5)
+        self.assertIn("<span>精炼</span><b>1</b>", luoxi)
+        # Gear: 护甲 → 护手 → 配件, never the raw item id as a name.
+        self.assertLess(luoxi.index("<em>护甲</em>"), luoxi.index("<em>护手</em>"))
+        self.assertLess(luoxi.index("<em>护手</em>"), luoxi.index("<em>配件</em>"))
+        self.assertIn("<strong>名称未收录</strong>", luoxi)
+        self.assertNotIn(">item_equip", html)
+        self.assertNotIn("wpn_attr", html)
+        self.assertIn('<small class="b-item-enh">+3 / +3 / +2</small>', luoxi)
+        # 卡缪: no gear, no skill levels, 精炼 6 at MAX.
+        kamiu = html[second:]
+        self.assertEqual(kamiu.count('<div class="b-item is-empty">'), 4)
+        self.assertEqual(kamiu.count('<div class="is-empty"><span>'), 4)
+        self.assertIn("<span>精炼</span><b>MAX</b>", kamiu)
+        # The strip with 养成 lit.
+        self.assertIn(
+            '<span>摘要</span><i>·</i><span class="is-on">养成</span>', html
+        )
+
+    def test_a_character_with_nothing_recorded_still_draws_its_card(self) -> None:
+        payload = battle_detail_payload()
+        entry = payload["battle"]["roster"][1]
+        entry.update(characterPotential=None, characterLevel=None, weapon=None)
+
+        html = self.renderer.render_battle_build(
+            parse_battle_detail(payload), query="q", web_base_url="https://zmdlogs.com"
+        )
+        kamiu = html[html.index("<strong>卡缪</strong>"):]
+
+        # Dashes for the level and the 潜能, a dark star, an empty weapon tile.
+        self.assertIn('<div class="b-lo-level is-empty">', kamiu)
+        self.assertIn('<div class="b-lo-pot is-empty">', kamiu)
+        self.assertNotIn('class="is-lead"', kamiu[: kamiu.index("b-lo-levels")])
+        self.assertIn('<div class="b-item b-item--wpn is-empty">', kamiu)
+        self.assertNotIn("b-refine", kamiu)
 
     def test_every_font_size_is_a_scale_token(self) -> None:
         # Colours were tokens from the first commit; sizes drifted into
@@ -831,8 +917,9 @@ class LongImageValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((WIDE_FRAME.width, WIDE_FRAME.scale), (960, 2))
         self.assertEqual(page_frame("battle"), WIDE_FRAME)
         self.assertEqual(page_frame("battle-cast"), WIDE_FRAME)
+        self.assertEqual(page_frame("battle-build"), WIDE_FRAME)
         # Pages not yet on the V2 shell keep the old frame.
-        self.assertEqual(page_frame("loadout"), LEGACY_FRAME)
+        self.assertEqual(page_frame("compare"), LEGACY_FRAME)
         self.assertEqual((LEGACY_FRAME.width, LEGACY_FRAME.scale), (1280, 1))
 
     async def test_capture_failure_keeps_rendered_html_for_fallback(self) -> None:

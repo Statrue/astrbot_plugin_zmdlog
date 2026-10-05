@@ -101,6 +101,30 @@
   --pip-ring: #eceef0;
   --pip-cross: #a9aeb5;
   --pip-glow: rgba(110, 90, 0, 0.55);
+  /* 养成: the potential's half frame and figure, a 词条's ring, MAX's ink,
+     the skill-level cells and the small Latin under each label */
+  --pot-frame: rgba(44, 47, 53, 0.6);
+  --pot-ink: #2c2f35;
+  --affix-edge: rgba(30, 34, 42, 0.25);
+  --max-ink: #3a3a3c;
+  --cell: #e2e5e9;
+  --label-latin: #b3b8c0;
+  /* 养成's item tiles: the light ground and its ghost word, the empty
+     place, the white foot with its code mark and hairline, the
+     enhancement chip, the icon's shadow */
+  --tile-a: #fbfbfc;
+  --tile-b: #eceef0;
+  --tile-c: #e6e8eb;
+  --tile-ghost: rgba(160, 166, 175, 0.3);
+  --tile-empty: #e3e6ea;
+  --tile-empty-edge: #cdd1d6;
+  --tile-foot: rgba(255, 255, 255, 0.94);
+  --tile-code: #7d8390;
+  --tile-hairline: #b8bdc4;
+  --tile-chip: rgba(255, 255, 255, 0.85);
+  --tile-chip-ink: #5f6570;
+  --tile-chip-edge: #d3d7dc;
+  --tile-icon-shadow: rgba(20, 24, 32, 0.25);
   /* shadows: one ink, at the strengths the parts use */
   --shadow-6: rgba(0, 0, 0, 0.06);
   --shadow-8: rgba(0, 0, 0, 0.08);

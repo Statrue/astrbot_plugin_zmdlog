@@ -18,7 +18,6 @@ from .battle import (
     CurveKeyView,
     EquipStatView,
     EquipView,
-    LoadoutPage,
     LoadoutView,
     SkillLevelView,
     SkillRowView,
@@ -28,7 +27,6 @@ from .battle import (
     build_battle_cast_page,
     build_battle_page,
     build_battle_summary_page,
-    build_loadout_page,
 )
 from .battle_data import (
     BattleDataPage,
@@ -54,6 +52,7 @@ from .boards import (
     build_ranking_page,
     build_roster_page,
 )
+from .build import BattleBuildPage, build_battle_build_page
 from .champions import (
     ChampionUsageView,
     CharacterChampionsPage,
@@ -156,6 +155,7 @@ __all__ = [
     "AccountRankingView",
     "BattleDataPage",
     "BattleCastPage",
+    "BattleBuildPage",
     "BattlePage",
     "BattleParticipantView",
     "BattleSummaryPage",
@@ -186,7 +186,6 @@ __all__ = [
     "EquipStatView",
     "EquipView",
     "InvestmentView",
-    "LoadoutPage",
     "LoadoutView",
     "MainCharacterView",
     "PageHeader",
@@ -235,6 +234,7 @@ __all__ = [
     "build_account_page",
     "build_battle_data_page",
     "build_battle_cast_page",
+    "build_battle_build_page",
     "build_battle_page",
     "build_battle_summary_page",
     "build_buff_band_view",
@@ -245,7 +245,6 @@ __all__ = [
     "build_crit_bell",
     "build_dps_curve_view",
     "build_dungeon_top3_page",
-    "build_loadout_page",
     "build_ranking_page",
     "build_roster_page",
     "build_timeline_view",

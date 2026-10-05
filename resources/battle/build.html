@@ -1,0 +1,118 @@
+{# 战报's 养成: each fielded character's build, two cards a row. The round
+   avatar beside the level and the 潜能; the four skill levels; then the
+   weapon and the gear as item tiles of fixed height, so two cards side by
+   side line up row for row whatever the upload holds. Every mark — the
+   stars, the pips, MAX — is the presentation's (core/presentation/build). #}
+{% extends "shell/wide-base.html" %}
+{% from "shell/parts.html" import face %}
+{% from "shell/wide-parts.html" import cut, view_strip, star, level_block, level_pips %}
+
+{% block styles %}{% include "battle/build.css" %}{% endblock %}
+
+{% block giant %}BATTLE REPORT{% endblock %}
+
+{% block meta %}
+<span>{{ page.uploader_display_name }}</span>
+<span><b>{{ page.duration }}</b> 通关</span>
+<span>{{ page.battle_date }}</span>
+{% endblock %}
+
+{% block views %}{{ view_strip(page.views) }}{% endblock %}
+
+{% block content %}
+{% set col_w = ((frame.width - 48 - 16) / 2)|round(1) %}
+<section class="b-loadouts">
+  {% for character in page.characters %}
+  <article class="b-lo{% if character.lead %} is-lead{% endif %}">
+    <div class="i-layer i-layer--who b-lo-who" style="clip-path: {{ cut(col_w, 14) }};">
+      <span class="b-slot">{{ character.slot_label }}</span>
+      <strong>{{ character.character_name }}</strong>
+      <span class="b-prof">{{ character.profession }}{% if character.element %} · {{ character.element }}{% endif %}</span>
+      {% if character.damage_share %}<span class="b-lo-share">伤害占比 <b>{{ character.damage_share }}</b></span>{% endif %}
+    </div>
+    <div class="b-lo-body">
+      <div class="b-lo-head">
+        <div class="b-lo-portrait">{{ face(character, lead=character.lead) }}</div>
+        {# the level large over a grid of squares; the 潜能 as "N⁄5" (5⁄MAX
+           when full) in a half frame that runs under the potential star #}
+        <div class="b-lo-side">
+          {{ level_block(character.level) }}
+          {% set potential = character.potential %}
+          <div class="b-lo-pot{% if potential is none %} is-empty{% endif %}{% if character.potential_star.full %} is-max{% endif %}">
+            <em>潜能</em>
+            <i class="b-lo-pot-frame"></i>
+            <span class="b-lo-pot-star">{{ star(character.potential_star) }}</span>
+            <p class="b-lo-pot-num"><b>{{ potential if potential is not none else "—" }}</b><i></i><small>{{ "MAX" if character.potential_star.full else "5" }}</small></p>
+          </div>
+        </div>
+      </div>
+
+      {# always the four slots in game order; one not recorded shows a dash #}
+      <div class="b-lo-levels">
+        {% for slot in character.skill_levels %}
+        <div{% if slot.level is none %} class="is-empty"{% endif %}><span>{{ slot.label }}</span><b>{{ slot.level if slot.level is not none else "—" }}</b></div>
+        {% endfor %}
+      </div>
+
+      <p class="b-lo-label"><b>武器</b><span>WEAPON</span></p>
+      {% set weapon = character.weapon %}
+      <div class="b-item b-item--wpn{% if not weapon %} is-empty{% endif %}">
+        <div class="b-item-art">
+          <span class="b-item-ghost" aria-hidden="true">ENDFIELD<br>INDUSTRY</span>
+          {% if weapon and weapon.icon_url %}<img src="{{ weapon.icon_url }}" alt="" onerror="this.remove()">{% endif %}
+          <p class="b-item-title"><strong>{{ weapon.name if weapon else "未记录" }}</strong></p>
+          <p class="b-item-foot" aria-hidden="true"><i class="b-item-code"></i><i class="b-item-rule"></i></p>
+        </div>
+        {% if weapon %}
+        {# 精炼, then 词条 1, 词条 2 and the weapon skill as the game's weapon
+           panel draws them: a pip a level up to 9, MAX at 9 only #}
+        <div class="b-wpn-side">
+          {% if weapon.refine_star %}
+          <div class="b-refine">
+            <span class="b-refine-star">{{ star(weapon.refine_star) }}</span>
+            <p><span>精炼</span><b>{{ weapon.refine_label }}</b></p>
+          </div>
+          {% endif %}
+          <ul class="b-affixes">
+            {% for line in weapon.lines %}
+            <li{% if line.is_weapon_skill %} class="is-skill"{% endif %}>
+              <p class="b-affix-name"><i></i>{{ line.name }}</p>
+              <div class="b-affix-bar">
+                {{ level_pips(line.pips) }}
+                {% if line.maxed %}<em class="b-affix-max">MAX</em>{% endif %}
+                <b class="b-affix-lv{% if line.at_cap %} is-max{% endif %}">{{ line.level_label }}</b>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+
+      <p class="b-lo-label"><b>装备</b><span>EQUIPMENT</span></p>
+      <div class="b-items">
+        {% for tile in character.gear %}
+        <div class="b-item{% if not tile %} is-empty{% endif %}">
+          <div class="b-item-art">
+            <div class="b-item-head">
+              <p><em>{{ tile.part_name if tile else "装备" }}</em>{% if tile and tile.enhance %}<small class="b-item-enh">{{ tile.enhance }}</small>{% endif %}</p>
+              <strong>{{ tile.label if tile else "未记录" }}</strong>
+            </div>
+            {% if tile and tile.icon_url %}<img class="b-item-icon" src="{{ tile.icon_url }}" alt="" onerror="this.remove()">{% endif %}
+            <p class="b-item-foot" aria-hidden="true"><i class="b-item-code"></i><i class="b-item-rule"></i></p>
+          </div>
+          {# four lines a tile, so the tiles side by side end level #}
+          <ul class="b-item-stats">
+            {% for index in range(4) %}
+            {% set stat = tile.stats[index] if tile and index < tile.stats|length else none %}
+            <li{% if stat and stat.is_main %} class="is-main"{% endif %}>{% if stat %}<i>{{ stat.name }}</i><b>{{ stat.value }}</b>{% endif %}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}

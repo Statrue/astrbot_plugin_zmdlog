@@ -42,6 +42,49 @@ _SUIT_TOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 _WEAPON_OWN_SKILL_PREFIX = "sk_wpn_"
+# A weapon's 词条: ``wpn_attr_{stat}_{tier}`` is the base attribute,
+# ``wpn_sp_attr_{kind}_{tier}`` the second. The names are the game data
+# catalog's (``/api/game-data/weapon/{id}``, each weapon's ``skilllist``),
+# matched to the keys through the stat each one raises and checked against
+# the keys of 120 board battles (UPSTREAM.md); ``cridmg`` was on no battle
+# and no weapon the catalog could open, and is named like its siblings.
+_WEAPON_ATTR_PREFIX = "wpn_attr_"
+_WEAPON_AFFIX_KINDS = (
+    (
+        _WEAPON_ATTR_PREFIX,
+        {
+            "str": "力量",
+            "agi": "敏捷",
+            "wisd": "智识",
+            "will": "意志",
+            "main": "主能力",
+        },
+    ),
+    (
+        "wpn_sp_attr_",
+        {
+            "atk": "攻击",
+            "hp": "生命",
+            "heal": "治疗效率",
+            "crirate": "暴击率",
+            "cridmg": "暴击伤害",
+            # ``usgs``: ultimate SP gain scalar, the gear stat's own name.
+            "usgs": "终结技充能效率",
+            "phy_spell": "源石技艺强度",
+            "phydam": "物理伤害",
+            "firedam": "灼热伤害",
+            "crystdam": "寒冷伤害",
+            "electrondam": "电磁伤害",
+            "naturaldam": "自然伤害",
+            # The catalog's own word: 法术提升, though it raises 法术伤害.
+            "magicdam": "法术",
+        },
+    ),
+)
+_WEAPON_AFFIX_TIERS = {"low": "小", "mid": "中", "high": "大"}
+# The weapon's own skill has a name only the catalog's detail knows (a
+# second read per weapon); the page calls it what it is.
+_WEAPON_SKILL_LABEL = "武器技能"
 
 # Same overrides as the site's ``lib/format/skill-display.ts``.
 _SKILL_KEY_OVERRIDES = {
@@ -217,6 +260,15 @@ class CharacterSkillDamage:
 class SkillLevel:
     label: str
     level: int
+
+
+@dataclass(frozen=True, slots=True)
+class WeaponSkillLine:
+    """One line of a weapon's panel: a 词条 or the weapon's own skill."""
+
+    name: str
+    level: int
+    is_weapon_skill: bool
 
 
 def skill_display_name(
@@ -746,20 +798,51 @@ def skill_level_summary(entry: BattleRosterEntry) -> tuple[SkillLevel, ...]:
     return tuple(levels)
 
 
-def weapon_skill_levels(weapon: BattleWeapon) -> tuple[int | None, tuple[int, ...]]:
-    """The weapon's own skill level and the levels of its affixes."""
+def weapon_affix_name(skill_key: str) -> str:
+    """A weapon 词条's name from its key, as the game data catalog names it.
 
-    own: int | None = None
-    affixes: list[int] = []
+    ``wpn_attr_agi_high`` is 敏捷提升·大 and ``wpn_sp_attr_usgs_mid``
+    终结技充能效率提升·中: the stat (or effect) and the tier, both read off the
+    key. A key outside the table — a stat not seen yet, a tier word that is
+    not low / mid / high, a ``wpn_sk_*`` key the boards have never shown —
+    is 名称未收录, never the key itself.
+    """
+
+    lowered = skill_key.strip().lower()
+    for prefix, labels in _WEAPON_AFFIX_KINDS:
+        if lowered.startswith(prefix):
+            kind, _, tier = lowered[len(prefix) :].rpartition("_")
+            label = labels.get(kind)
+            tier_label = _WEAPON_AFFIX_TIERS.get(tier)
+            if label and tier_label:
+                return f"{label}提升·{tier_label}"
+            break
+    return _UNKNOWN_STAT_LABEL
+
+
+def weapon_skill_lines(weapon: BattleWeapon) -> tuple[WeaponSkillLine, ...]:
+    """The weapon's 词条 then its own skill, each with its level.
+
+    The base attribute's 词条 (``wpn_attr_``) comes first and the others in
+    upload order, as the game's weapon panel lists them; upstream itself
+    sends them in no fixed order. A skill without a level is left out.
+    """
+
+    affixes: list[tuple[bool, WeaponSkillLine]] = []
+    own: list[WeaponSkillLine] = []
     for skill in weapon.skills:
         if skill.level is None:
             continue
-        if skill.skill_key.lower().startswith(_WEAPON_OWN_SKILL_PREFIX):
-            if own is None:
-                own = skill.level
+        key = skill.skill_key.strip().lower()
+        if key.startswith(_WEAPON_OWN_SKILL_PREFIX):
+            if not own:
+                own.append(WeaponSkillLine(_WEAPON_SKILL_LABEL, skill.level, True))
             continue
-        affixes.append(skill.level)
-    return own, tuple(affixes)
+        line = WeaponSkillLine(weapon_affix_name(key), skill.level, False)
+        affixes.append((not key.startswith(_WEAPON_ATTR_PREFIX), line))
+    # Stable: the base attribute first, the rest in the order they came.
+    ordered = sorted(affixes, key=lambda pair: pair[0])
+    return (*(line for _, line in ordered), *own)
 
 
 def _looks_like_raw_key(name: str) -> bool:

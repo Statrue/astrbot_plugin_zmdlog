@@ -64,11 +64,18 @@ def _has_casts(battle: BattleDetailSummary | None, casts_refused: bool) -> bool:
     return not casts_refused
 
 
-# The strip's order. #42–#44 add 数据, 排轴 and 养成 here as each lands.
+def _has_roster(battle: BattleDetailSummary | None, casts_refused: bool) -> bool:
+    """养成 draws the roster; an upload without one has nothing to show."""
+
+    return battle is None or bool(battle.roster)
+
+
+# The strip's order.
 BATTLE_VIEWS: tuple[BattleView, ...] = (
     BattleView(CandidateView.BATTLE, "摘要", "战报", _always),
     BattleView(CandidateView.DATA, "数据", "数据", _has_skill_stats),
     BattleView(CandidateView.CAST, "排轴", "排轴", _has_casts),
+    BattleView(CandidateView.BUILD, "养成", "养成", _has_roster),
 )
 
 
