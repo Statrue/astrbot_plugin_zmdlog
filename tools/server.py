@@ -58,6 +58,7 @@ def smoke_cases(config: dict) -> list[Case]:
     character = config.get("smoke_character") or "莱万汀"
     cases = [
         Case("帮助", "zmdlog", "image"),
+        Case("帮助别名", "zmdlog 帮助", "image"),
         Case("榜单列表", "zmdlog 榜单", "plain"),
         Case("榜单", f"zmdlog {board}", "image"),
         Case("榜单第2页", f"zmdlog {board} --页 2", "image"),
