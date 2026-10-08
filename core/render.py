@@ -12,6 +12,8 @@ checks the drawn root against it.
 
 import asyncio
 import base64
+import hashlib
+import os
 import re
 import struct
 import tempfile
@@ -746,6 +748,19 @@ _PREFETCH_TIMEOUT_SECONDS = 10.0
 _ASSET_CACHE_TTL_SECONDS = 30 * 24 * 3600.0
 _ASSET_CACHE_MAX_TOTAL_BYTES = 32 * 1024 * 1024
 _ASSET_CACHE_MAX_ITEM_BYTES = 2 * 1024 * 1024
+# The disk copy holds every icon ever drawn, not only the recent ones: a
+# 角色档案 alone draws 18 that no other page does, at 1.5-3.4 s apiece.
+_ASSET_CACHE_MAX_DISK_BYTES = 64 * 1024 * 1024
+# The image types the disk copy keeps, by the suffix that records the type;
+# any other answer is kept in memory only.
+_ASSET_FILE_SUFFIXES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/avif": ".avif",
+    "image/gif": ".gif",
+}
+_ASSET_FILE_TYPES = {suffix: kind for kind, suffix in _ASSET_FILE_SUFFIXES.items()}
 
 
 @dataclass(slots=True)
@@ -757,13 +772,23 @@ class CachedAsset:
 
 
 class AssetCache:
-    """In-memory byte cache for upstream avatars fetched during capture.
+    """Byte cache for upstream images fetched during capture.
 
     Every capture runs in a fresh incognito browser context, so Chromium's own
     cache never helps: without this, each rendered page re-downloads its whole
-    avatar set from upstream. The avatar catalog is small and static, hence
-    the long TTL. Insertion-ordered eviction under a total-byte cap; anything
-    over the per-item cap is simply not stored.
+    image set from upstream. The images are static game art, hence the long
+    TTL. Insertion-ordered eviction under a total-byte cap; anything over the
+    per-item cap is simply not stored.
+
+    With a ``directory`` every image is also kept on disk, one file per URL
+    named by its SHA-256 and typed by its suffix, and expires by the file's
+    age. The memory copy is lost on every plugin reload, and upstream serves
+    a cold icon in one to three seconds, sometimes ten: without the disk copy
+    the first page after a deploy paid that for each icon it drew. The disk
+    copy is best effort — a file that cannot be written is simply not kept,
+    and a directory that cannot be read leaves the cache memory-only. Files
+    are a few KB and written atomically, so they are read and written on the
+    event loop.
     """
 
     def __init__(
@@ -772,18 +797,27 @@ class AssetCache:
         ttl_seconds: float = _ASSET_CACHE_TTL_SECONDS,
         max_total_bytes: int = _ASSET_CACHE_MAX_TOTAL_BYTES,
         max_item_bytes: int = _ASSET_CACHE_MAX_ITEM_BYTES,
+        directory: Path | None = None,
+        max_disk_bytes: int = _ASSET_CACHE_MAX_DISK_BYTES,
     ) -> None:
         self.ttl_seconds = float(ttl_seconds)
         self.max_total_bytes = int(max_total_bytes)
         self.max_item_bytes = int(max_item_bytes)
+        self.max_disk_bytes = int(max_disk_bytes)
         self._entries: OrderedDict[str, CachedAsset] = OrderedDict()
         self._total_bytes = 0
+        self.directory = directory
+        # Digest to file and size, oldest first.
+        self._files: OrderedDict[str, tuple[Path, int]] = OrderedDict()
+        self._disk_bytes = 0
+        if directory is not None:
+            self._scan()
 
     def get(self, url: str, *, now: float | None = None) -> CachedAsset | None:
         timestamp = time.monotonic() if now is None else now
         entry = self._entries.get(url)
         if entry is None:
-            return None
+            return self._load(url, timestamp)
         if entry.expires_at <= timestamp:
             self._drop(url)
             return None
@@ -801,14 +835,22 @@ class AssetCache:
         if len(body) > self.max_item_bytes:
             return
         timestamp = time.monotonic() if now is None else now
-        self._drop(url)
-        self._entries[url] = CachedAsset(
-            status=status,
-            content_type=content_type,
-            body=body,
-            expires_at=timestamp + self.ttl_seconds,
+        self._remember(
+            url,
+            CachedAsset(
+                status=status,
+                content_type=content_type,
+                body=body,
+                expires_at=timestamp + self.ttl_seconds,
+            ),
         )
-        self._total_bytes += len(body)
+        if status == 200:
+            self._store(url, content_type, body)
+
+    def _remember(self, url: str, entry: CachedAsset) -> None:
+        self._drop(url)
+        self._entries[url] = entry
+        self._total_bytes += len(entry.body)
         while self._total_bytes > self.max_total_bytes and self._entries:
             oldest = next(iter(self._entries))
             self._drop(oldest)
@@ -818,12 +860,104 @@ class AssetCache:
         if entry is not None:
             self._total_bytes -= len(entry.body)
 
+    def _scan(self) -> None:
+        """Index the files a previous process left, oldest first."""
+
+        assert self.directory is not None
+        found: list[tuple[float, str, Path, int]] = []
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            with os.scandir(self.directory) as entries:
+                for item in entries:
+                    if not item.is_file():
+                        continue
+                    path = Path(item.path)
+                    if path.suffix not in _ASSET_FILE_TYPES or len(path.stem) != 64:
+                        path.unlink(missing_ok=True)  # an interrupted write
+                        continue
+                    stat = item.stat()
+                    found.append((stat.st_mtime, path.stem, path, stat.st_size))
+        except OSError:
+            self.directory = None
+            return
+        for _, digest, path, size in sorted(found):
+            self._files[digest] = (path, size)
+            self._disk_bytes += size
+
+    def _load(self, url: str, timestamp: float) -> CachedAsset | None:
+        if self.directory is None:
+            return None
+        digest = _asset_digest(url)
+        known = self._files.get(digest)
+        if known is None:
+            return None
+        path = known[0]
+        try:
+            age = time.time() - path.stat().st_mtime
+            if age >= self.ttl_seconds:
+                self._forget_file(digest)
+                return None
+            body = path.read_bytes()
+        except OSError:
+            self._forget_file(digest)
+            return None
+        entry = CachedAsset(
+            status=200,
+            content_type=_ASSET_FILE_TYPES[path.suffix],
+            body=body,
+            expires_at=timestamp + self.ttl_seconds - age,
+        )
+        if len(body) <= self.max_item_bytes:
+            self._remember(url, entry)
+        return entry
+
+    def _store(self, url: str, content_type: str, body: bytes) -> None:
+        if self.directory is None:
+            return
+        kind = content_type.partition(";")[0].strip().casefold()
+        suffix = _ASSET_FILE_SUFFIXES.get(kind)
+        if suffix is None:
+            return
+        digest = _asset_digest(url)
+        path = self.directory / f"{digest}{suffix}"
+        partial_path = self.directory / f"{digest}.part"
+        self._forget_file(digest)
+        try:
+            partial_path.write_bytes(body)
+            os.replace(partial_path, path)
+        except OSError:
+            partial_path.unlink(missing_ok=True)
+            return
+        self._files[digest] = (path, len(body))
+        self._disk_bytes += len(body)
+        while self._disk_bytes > self.max_disk_bytes and self._files:
+            self._forget_file(next(iter(self._files)))
+
+    def _forget_file(self, digest: str) -> None:
+        known = self._files.pop(digest, None)
+        if known is None:
+            return
+        path, size = known
+        self._disk_bytes -= size
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     @property
     def total_bytes(self) -> int:
         return self._total_bytes
 
+    @property
+    def disk_bytes(self) -> int:
+        return self._disk_bytes
+
     def __len__(self) -> int:
         return len(self._entries)
+
+
+def _asset_digest(url: str) -> str:
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
 
 def _captured(
@@ -862,6 +996,7 @@ class LongImageRenderer:
         max_queued_renders: int = DEFAULT_MAX_QUEUED_RENDERS,
         output_ttl_seconds: float = DEFAULT_OUTPUT_TTL_SECONDS,
         max_output_files: int = DEFAULT_MAX_OUTPUT_FILES,
+        asset_cache_dir: Path | None = None,
     ) -> None:
         if isinstance(render_timeout_ms, bool) or not isinstance(
             render_timeout_ms,
@@ -905,7 +1040,7 @@ class LongImageRenderer:
         )
         self._queued_renders = 0
         self._output_lock = asyncio.Lock()
-        self._asset_cache = AssetCache()
+        self._asset_cache = AssetCache(directory=asset_cache_dir)
         self._created_files: set[Path] = set()
         self._active_outputs: set[Path] = set()
         self._cleanup_task: asyncio.Task[None] | None = None

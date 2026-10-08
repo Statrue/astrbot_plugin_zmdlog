@@ -48,6 +48,10 @@ HOT_BOSSES_SNAPSHOT = "hot-bosses.json"
 # How long each endpoint family's answer is reused; fixed since #28, so a
 # deployer cannot tune one into something broken.
 CHARACTER_STATS_CACHE_TTL_SECONDS = 120.0
+# A 角色档案 is a share of every record over a window of days, and upstream
+# takes one to five seconds to compute it: a new record moves its shares by
+# a fraction of a percent, so ten minutes old is still the same page.
+CHARACTER_PROFILE_CACHE_TTL_SECONDS = 600.0
 ACCOUNT_CACHE_TTL_SECONDS = 60.0
 BATTLE_CACHE_TTL_SECONDS = 300.0
 # The board list the index's signal reads stays fresh until the next signal
@@ -131,7 +135,7 @@ class ZmdLogsDataSource:
             tuple[str, str, str],
             CharacterProfile,
         ](
-            CHARACTER_STATS_CACHE_TTL_SECONDS,
+            CHARACTER_PROFILE_CACHE_TTL_SECONDS,
             max_entries=PROFILE_CACHE_MAX_ENTRIES,
         )
         self.battle_cache = AsyncTTLCache[str, BattleDetailSummary](
@@ -557,7 +561,7 @@ class ZmdLogsDataSource:
         time_range: str,
         boss_slug: str | None = None,
     ) -> CharacterProfile:
-        """One character's 角色档案, kept as long as the statistics are."""
+        """One character's 角色档案, kept ten minutes (see the TTL's comment)."""
 
         key = (character_key, time_range, boss_slug or "")
         result = await self.character_profile_cache.get_or_load(

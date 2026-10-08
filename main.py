@@ -231,6 +231,7 @@ class ZmdLogBotPlugin(Star):
                 Path(__file__).parent,
                 render_timeout_ms=settings.render_timeout_ms,
                 output_dir=self._render_output_dir(),
+                asset_cache_dir=self._asset_cache_dir(),
                 allowed_image_origins=(
                     settings.api_base_url,
                     settings.web_base_url,
@@ -1009,6 +1010,11 @@ class ZmdLogBotPlugin(Star):
         """Keep generated images under AstrBot's data dir, never the plugin dir."""
 
         return None if self.data_dir is None else self.data_dir / "render"
+
+    def _asset_cache_dir(self) -> Path | None:
+        """Upstream images kept across reloads; see ``render.AssetCache``."""
+
+        return None if self.data_dir is None else self.data_dir / "assets"
 
     async def _render_with_astrbot(self, error: RenderError) -> str | None:
         """Render the already-built page through AstrBot's own text-to-image

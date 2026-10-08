@@ -115,6 +115,73 @@ class AssetCacheTests(unittest.TestCase):
         self.assertEqual(len(cache), 1)
 
 
+class AssetDiskCacheTests(unittest.TestCase):
+    def setUp(self) -> None:
+        workspace = tempfile.TemporaryDirectory()
+        self.addCleanup(workspace.cleanup)
+        self.directory = Path(workspace.name) / "assets"
+
+    def _put(self, cache, url, body=b"icon", content_type="image/png"):
+        cache.put(url, status=200, content_type=content_type, body=body)
+
+    def test_an_image_outlives_the_process_that_fetched_it(self) -> None:
+        self._put(AssetCache(directory=self.directory), "u", b"icon", "image/webp")
+
+        cached = AssetCache(directory=self.directory).get("u")
+
+        self.assertEqual(cached.body, b"icon")
+        self.assertEqual(cached.content_type, "image/webp")
+
+    def test_a_file_expires_by_its_age(self) -> None:
+        self._put(AssetCache(directory=self.directory), "u")
+        (stored,) = self.directory.iterdir()
+        old = time.time() - 11
+        os.utime(stored, (old, old))
+
+        cache = AssetCache(directory=self.directory, ttl_seconds=10)
+
+        self.assertIsNone(cache.get("u"))
+        self.assertEqual(list(self.directory.iterdir()), [])
+        self.assertEqual(cache.disk_bytes, 0)
+
+    def test_only_image_types_are_written(self) -> None:
+        cache = AssetCache(directory=self.directory)
+        self._put(cache, "page", content_type="text/html; charset=utf-8")
+        self._put(cache, "icon", content_type="image/PNG; q=1")
+
+        self.assertEqual(len(list(self.directory.iterdir())), 1)
+        self.assertIsNone(AssetCache(directory=self.directory).get("page"))
+
+    def test_the_disk_cap_evicts_the_oldest_file(self) -> None:
+        cache = AssetCache(directory=self.directory, max_disk_bytes=8)
+        for url in ("a", "b", "c"):
+            self._put(cache, url, b"x" * 4)
+
+        fresh = AssetCache(directory=self.directory)
+        self.assertIsNone(fresh.get("a"))
+        self.assertIsNotNone(fresh.get("b"))
+        self.assertIsNotNone(fresh.get("c"))
+        self.assertEqual(fresh.disk_bytes, 8)
+
+    def test_a_rewritten_url_keeps_one_file(self) -> None:
+        cache = AssetCache(directory=self.directory)
+        self._put(cache, "u", b"old", "image/png")
+        self._put(cache, "u", b"newer", "image/jpeg")
+
+        self.assertEqual(len(list(self.directory.iterdir())), 1)
+        self.assertEqual(cache.disk_bytes, 5)
+        self.assertEqual(AssetCache(directory=self.directory).get("u").body, b"newer")
+
+    def test_an_interrupted_write_is_cleared_at_start(self) -> None:
+        self.directory.mkdir(parents=True)
+        (self.directory / f"{'0' * 64}.part").write_bytes(b"half")
+
+        cache = AssetCache(directory=self.directory)
+
+        self.assertEqual(list(self.directory.iterdir()), [])
+        self.assertEqual(cache.disk_bytes, 0)
+
+
 class TemplateRendererTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(__file__).parents[1]
