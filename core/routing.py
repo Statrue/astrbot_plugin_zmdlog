@@ -21,6 +21,9 @@ ALL_PAGES = "all"
 _MAX_PAGE_DIGITS = 3
 # A team has four slots, so more names than that can never all be in one.
 MAX_CHARACTER_FILTERS = 4
+# Besides a bare ``zmdlog``: 帮助 is what a Chinese-speaking group types, and
+# no board or dungeon is called that.
+_HELP_WORDS = frozenset({"help", "帮助"})
 
 STATS_RANGES = ("7d", "14d", "30d", "all")
 STATS_POTENTIALS = ("0", "1-5", "all")
@@ -310,7 +313,7 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
     """
 
     normalized, options = _extract_options(" ".join(payload.split()))
-    if not normalized or normalized.casefold() == "help":
+    if not normalized or normalized.casefold() in _HELP_WORDS:
         options.reject_except()
         return RouteRequest(RouteKind.HELP)
 

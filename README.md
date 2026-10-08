@@ -79,7 +79,7 @@ docker restart astrbot
 ## 🚀 快速开始
 
 ```text
-/zmdlog                  帮助页
+/zmdlog                  帮助页（也写 /zmdlog 帮助）
 /zmdlog 罗丹              罗丹榜前 10 名（关键词认别名、拼音首字母：ld）
 /zmdlog 战报 罗丹          罗丹第 1 名的战报摘要
 /zmdlog 角色排名 洛茜       带洛茜的队伍在每个榜排第几

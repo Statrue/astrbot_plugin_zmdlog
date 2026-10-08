@@ -15,6 +15,7 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(parse_zmdlog_payload("").kind, RouteKind.HELP)
         self.assertEqual(parse_zmdlog_payload("help").kind, RouteKind.HELP)
         self.assertEqual(parse_zmdlog_payload(" HELP ").kind, RouteKind.HELP)
+        self.assertEqual(parse_zmdlog_payload("帮助").kind, RouteKind.HELP)
 
     def test_board_routes_keep_their_query(self) -> None:
         dungeons = parse_zmdlog_payload("榜单")
