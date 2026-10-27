@@ -13,11 +13,11 @@ list, every other page 960 px wide, both captured at 2× (ADR 0003).
 touch AstrBot. `main.py` holds the handlers, the error ladder, event field
 access, the notice sender, the four LLM tool handlers, the lifecycle;
 `qq_official.py` holds what the plugin does on the QQ official bot because
-AstrBot cannot — its own botpy sends, the notice push, the tap patch — and is
-the file to delete once AstrBot can. Every other line of logic lives in
-`core/`, which imports no AstrBot — that is what keeps the suite runnable as
-plain unit tests. What goes on a button is decided in `core/buttons.py`, not
-in the platform module.
+AstrBot cannot — its own botpy sends, the notice push, the tap patch, reading
+who a message @-ed — and is the file to delete once AstrBot can. Every other
+line of logic lives in `core/`, which imports no AstrBot — that is what keeps
+the suite runnable as plain unit tests. What goes on a button is decided in
+`core/buttons.py`, not in the platform module.
 
 Python 3.11+ (`asyncio.timeout`, `datetime.UTC`), dependencies in
 `requirements.txt`, Chromium installed separately
@@ -381,6 +381,10 @@ when the user settled the question.
   1.5–3 s; a slow page is slow in fetch and render (#14), not in the buttons.
   The prototype that measured all of this is the branch
   `prototype/qq-official-buttons` on GitHub — a record, never to be merged.
+  For @群友 (2026-10-27, a temporary branch since deleted): an @ of a member
+  arrives as no At segment, its `<@member_openid>` stays in the text (AstrBot
+  cuts only the bot's), and the raw `mentions` entry's `member_openid` equals
+  that person's sender id — the equality an @ lookup's binding key rests on.
 - **待实测: is one person's c2c `user_openid` their group `member_openid`?**
   (#36, 2026-10-05). AstrBot's `qq_official` adapter takes a private
   message's sender from `author.user_openid` and a group message's from

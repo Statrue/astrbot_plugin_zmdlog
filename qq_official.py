@@ -12,10 +12,21 @@ Only ``qq_official`` counts. ``qq_official_webhook`` is treated like any other
 platform (the webhook adapter is not recommended, and gets no buttons), and
 ``qq_official_v2`` is a different adapter with no botpy underneath.
 
-Who a message @-ed is not in AstrBot's chain on the official bot: its
-adapters, the webhook one included, build an At for the bot alone — under
-the bot's id in a group, as ``AT_PLACEHOLDER`` in a private chat or a guild
-channel — and main reads no 群友 off either.
+Who a message @-ed is the one thing read here for all three adapters, since
+the message is the platform's whichever adapter relays it. AstrBot's chain
+does not say: its parser, shared by ``qq_official`` and
+``qq_official_webhook``, builds an At for the bot alone — under the bot's
+id in a group, as ``AT_PLACEHOLDER`` in a private chat or a guild channel —
+and cuts only the bot's own ``<@id>`` from the text. ``read_mentions``
+reads the rest off the raw message's ``mentions`` instead. Measured on
+2026-10-27, someone @-ing themselves in a group: no At for them,
+``<@member_openid>`` kept verbatim in the text, and the entry's
+``member_openid`` (``id`` the same) equal to their sender id, so an @ keys a
+person as their own message does. The platform's documentation adds
+``<@all>`` for @全体成员. Each entry also carries a ``username``, 昵称#数字,
+which is never read. ``qq_official_v2`` is read only if it lists the same
+entries; if not, its @ is refused as unreadable. Delete ``read_mentions``
+once AstrBot hands an official @ over as an At segment: main reads those.
 
 What goes into a message is decided in ``core/buttons``; this module only
 sends it, to a ``Chat``: a group or a private chat, through the ``bot`` of
@@ -95,6 +106,14 @@ from .core.logs import LogSink
 PLATFORM_NAME = "qq_official"
 # The ``qq`` of the At AstrBot adds for the bot where it has no id for it.
 AT_PLACEHOLDER = "qq_official"
+# Where a message is the platform's own, @-marks and ``mentions`` included:
+# AstrBot parses the first two with one function, and v2 relays the same.
+_MENTION_PLATFORMS = frozenset(
+    {PLATFORM_NAME, "qq_official_webhook", "qq_official_v2"}
+)
+# How the platform writes an @ of a member into the text, and @全体成员.
+_AT_MARKS = ("<@{}>", "<@!{}>")
+_AT_ALL = "<@all>"
 EXPAND_PLUGIN = "astrbot_plugin_qqoffice_expand"
 INTERACTION_INTENT = 1 << 26
 # One reply may be sent several times with one msg_id, each with its own
@@ -198,6 +217,35 @@ def chat_of(event: Any) -> Chat:
         user_openid=getattr(getattr(raw, "author", None), "user_openid", None),
         msg_id=getattr(message_obj, "message_id", None),
     )
+
+
+def read_mentions(event: Any, text: str) -> tuple[tuple[str, ...], str]:
+    """The openids of the 群友 ``event`` @-ed, and ``text`` without their @s.
+
+    Read off the raw message's ``mentions``, on the official bot's adapters
+    only: each entry's ``member_openid``, the bot's own (``is_you``) left
+    out. ``text`` loses ``<@openid>`` and ``<@!openid>`` for those, and
+    ``<@all>``; an @-mark no entry names stays, for the parser to refuse
+    rather than search. An entry's ``username`` is never read.
+    """
+
+    platform = getattr(event, "get_platform_name", None)
+    try:
+        if not callable(platform) or platform() not in _MENTION_PLATFORMS:
+            return (), text
+    except Exception:
+        return (), text
+    raw = getattr(getattr(event, "message_obj", None), "raw_message", None)
+    entries = getattr(raw, "mentions", None)
+    openids: list[str] = []
+    for entry in entries if isinstance(entries, list) else ():
+        openid = getattr(entry, "member_openid", None)
+        if getattr(entry, "is_you", False) or not openid or not isinstance(openid, str):
+            continue
+        openids.append(openid)
+        for mark in _AT_MARKS:
+            text = text.replace(mark.format(openid), " ")
+    return tuple(openids), text.replace(_AT_ALL, " ")
 
 
 def chat_to_push(context: Any, origin: str) -> Chat | None:

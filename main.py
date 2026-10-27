@@ -936,7 +936,8 @@ class ZmdLogBotPlugin(Star):
         text: pydantic v2 keeps the adapter's string, v1 makes it an int.
         aiocqhttp writes `` @名片(QQ号) `` into the text for every At but the
         bot's leading one, and each is cut by its own name and number; the
-        name is used for nothing else.
+        name is used for nothing else. The official bot's chain holds the
+        bot alone, and ``qq_official`` reads its 群友 off the raw message.
         """
 
         text = event.get_message_str() or ""
@@ -956,6 +957,8 @@ class ZmdLogBotPlugin(Star):
             text = text.replace(f"@{name}({qq})", " ", 1)
             if qq and qq != self_id and qq not in _AT_NOBODY:
                 mentioned.append(_user_key(platform_name, qq))
+        openids, text = qq_official.read_mentions(event, text)
+        mentioned.extend(_user_key(platform_name, openid) for openid in openids)
         return tuple(dict.fromkeys(key for key in mentioned if key)), text
 
     @staticmethod

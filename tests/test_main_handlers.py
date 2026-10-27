@@ -87,6 +87,28 @@ class At:
 BOT_ID = "10000"
 
 
+class Mention:
+    """One entry of the QQ official bot's raw ``mentions``, the way AstrBot
+    4.28 parses it and as measured on 2026-10-27: ``member_openid`` is the
+    id that person's own messages carry, ``id`` the same, ``is_you`` marks
+    the bot. ``username`` is 昵称#数字 and counts its reads, which the plugin
+    must never make."""
+
+    def __init__(self, openid: str, *, is_you: bool = False, bot: bool = False):
+        self.id = openid
+        self.member_openid = openid
+        self.user_openid = None
+        self.is_you = is_you
+        self.bot = bot
+        self.avatar = None
+        self.username_reads = 0
+
+    @property
+    def username(self) -> str:
+        self.username_reads += 1
+        return "小明#3021"
+
+
 class FakeResult(tuple):
     """``(kind, payload)``, compared as a plain tuple, that also records
     ``use_markdown`` the way AstrBot's MessageEventResult does."""
@@ -112,6 +134,7 @@ class FakeEvent:
         user_openid: str | None = None,
         api: "FakeBotApi | None" = None,
         at: tuple["At", ...] = (),
+        mentions: tuple["Mention", ...] = (),
     ):
         """``isolated_from`` is the adapter's own session id when 隔离对话
         rewrote ``origin`` per member, the way AstrBot's waking stage does.
@@ -122,7 +145,9 @@ class FakeEvent:
         handler that reached for one there would fail loudly.
 
         ``at`` are the chain's At segments; ``text`` must carry the words
-        the adapter writes for them, `` @名片(QQ号) `` on the wild bot."""
+        the adapter writes for them, `` @名片(QQ号) `` on the wild bot.
+        ``mentions`` are the raw message's on the official bot, whose text
+        keeps ``<@openid>`` for each."""
 
         self._text = text
         self._sender = sender
@@ -139,6 +164,7 @@ class FakeEvent:
             raw_message=SimpleNamespace(
                 group_openid=group_openid,
                 author=SimpleNamespace(user_openid=user_openid),
+                mentions=list(mentions),
             ),
         )
         if api is not None:
@@ -2776,8 +2802,11 @@ class HandlerTests(unittest.TestCase):
 
     # --- @群友 ------------------------------------------------------------------
 
-    def _bind_member(self, sender: str, *accounts: tuple[str, str]) -> None:
-        """Bind ``accounts`` (accountId, nickname) in order to ``sender``."""
+    def _bind_member(
+        self, sender: str, *accounts: tuple[str, str], **event
+    ) -> None:
+        """Bind ``accounts`` (accountId, nickname) in order to ``sender``;
+        ``event`` shapes the messages, the platform among them."""
 
         from astrbot_plugin_zmdlog.core.models import AccountSearchHit
 
@@ -2794,7 +2823,9 @@ class HandlerTests(unittest.TestCase):
         self.plugin.client.get_binding_code_account = lookup
         for _ in accounts:
             code = f"ZMD-AAAA-{next(self._codes) * 4}"
-            (_, reply), = self._zmdlog(f"zmdlog 绑定 {code}", sender=sender)
+            (_, reply), = self._zmdlog(
+                f"zmdlog 绑定 {code}", sender=sender, **event
+            )
             self.assertIn("已绑定", reply)
 
     def _account_pages(self) -> list[tuple[str, str]]:
@@ -3066,6 +3097,176 @@ class HandlerTests(unittest.TestCase):
                 (kind, reply), = run(collect(self.plugin.zmdlog(group)))
                 self.assertEqual(kind, "plain")
                 self.assertIn("认不出 @ 的是谁", reply)
+
+    # --- @群友 on the QQ official bot -------------------------------------------
+
+    def _official_at(
+        self,
+        text: str,
+        *mentions: "Mention",
+        platform: str = "qq_official",
+        sender: str = "M1",
+    ):
+        """What ``sender`` gets for ``text`` in a QQ official group.
+
+        Shaped as measured: the chain holds the bot's At alone, ``text``
+        keeps ``<@openid>`` for every 群友 in ``mentions``, and no reply may
+        have read a mention's ``username``.
+        """
+
+        replies = self._zmdlog(
+            text,
+            platform=platform,
+            origin=f"{platform}:GroupMessage:G1",
+            group_openid="G1",
+            sender=sender,
+            at=(At("qq_official"),),
+            mentions=mentions,
+        )
+        self.assertEqual([m.username_reads for m in mentions], [0] * len(mentions))
+        return replies
+
+    def test_an_at_on_the_official_bot_draws_the_primary_account(self) -> None:
+        # The webhook adapter is parsed by the same code, and the v2 one,
+        # keyed as qq_official, is read when it lists the same mentions.
+        drawn = self._account_pages()
+        for member, platform in (
+            ("FFC2E0A1", "qq_official"),
+            ("FFC2E0A2", "qq_official_webhook"),
+            ("FFC2E0A3", "qq_official_v2"),
+        ):
+            with self.subTest(platform=platform):
+                self._bind_member(
+                    member,
+                    ("usr_1234567890abcdef", "测试账号"),
+                    ("usr_abcdef1234567890", "公开账号3"),
+                    platform=platform,
+                )
+
+                (kind, result), = self._official_at(
+                    f"zmdlog 账号 <@{member}>", Mention(member), platform=platform
+                )
+
+                self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+                self.assertEqual(drawn[-1], ("usr_1234567890abcdef", "测试账号"))
+
+    def test_the_official_bot_reads_trend_and_player_ranking_too(self) -> None:
+        self._seed_history()
+        self._bind_member(
+            "FFC2E0A1", ("usr_1234567890abcdef", "测试账号"), platform="qq_official"
+        )
+        drawn = self._account_pages()
+        trends: list[tuple[str, str, str]] = []
+
+        async def render_trend(history, **kwargs):
+            trends.append((history.account_id, kwargs["query"], kwargs["time_range"]))
+            return capture("/tmp/trend.png")
+
+        self.plugin.renderer.render_trend = render_trend
+        ming = Mention("FFC2E0A1")
+
+        (kind, result), = self._official_at(
+            "zmdlog 趋势 <@FFC2E0A1> --范围 30d", ming
+        )
+        self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
+        self.assertEqual(trends, [("usr_1234567890abcdef", "测试账号", "30d")])
+        # The platform writes an @ as <@id> or <@!id>, and @全体成员 as
+        # <@all>; none of them is left for the parser to read as a name.
+        for text in (
+            "zmdlog 玩家排名 <@!FFC2E0A1>",
+            "zmdlog 账号 <@all> <@FFC2E0A1>",
+        ):
+            with self.subTest(text=text):
+                (kind, result), = self._official_at(text, ming)
+
+                self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+                self.assertEqual(drawn[-1], ("usr_1234567890abcdef", "测试账号"))
+
+    def test_the_official_bot_leaves_itself_and_everyone_out(self) -> None:
+        self._bind_member(
+            "FFC2E0A1", ("usr_1234567890abcdef", "测试账号"), platform="qq_official"
+        )
+        drawn = self._account_pages()
+        itself = Mention("B0B0B0B0", is_you=True)
+
+        # AstrBot cuts the bot's own <@id>; its entry stays in the list.
+        (kind, result), = self._official_at(
+            "zmdlog 账号 <@FFC2E0A1>", itself, Mention("FFC2E0A1")
+        )
+        self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+        self.assertEqual(drawn, [("usr_1234567890abcdef", "测试账号")])
+        for text, mentions in (
+            ("zmdlog 账号 ", (itself,)),
+            ("zmdlog 账号 <@all>", ()),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    self._official_at(text, *mentions),
+                    [("plain", "请提供 accountId 或 ZMDLogs 账号主页链接。")],
+                )
+
+    def test_the_official_bot_answers_an_at_by_the_same_rules(self) -> None:
+        self._bind_member(
+            "FFC2E0A1", ("usr_1234567890abcdef", "测试账号"), platform="qq_official"
+        )
+        self._bind_member(
+            "FFC2E0A2", ("usr_abcdef1234567890", "公开账号3"), platform="qq_official"
+        )
+        ming, hong = Mention("FFC2E0A1"), Mention("FFC2E0A2")
+        unbound = "TA 还没有绑定 ZMDLogs 账号。"
+        unread = (
+            "认不出 @ 的是谁，请在群里用 @ 选中群友，或改用昵称、accountId、主页链接。"
+        )
+        for text, mentions, expected in (
+            ("zmdlog 账号 <@FFC2E0A9>", (Mention("FFC2E0A9"),), unbound),
+            ("zmdlog 趋势 <@FFC2E0A9>", (Mention("FFC2E0A9"),), unbound),
+            # A bot has no binding.
+            ("zmdlog 账号 <@B0B0B0B1>", (Mention("B0B0B0B1", bot=True),), unbound),
+            (
+                "zmdlog 账号 <@FFC2E0A1> <@FFC2E0A2>",
+                (ming, hong),
+                "一次只能查一个群友。",
+            ),
+            (
+                "zmdlog 账号 <@FFC2E0A1> 测试账号",
+                (ming,),
+                "@群友 和昵称、accountId 只写一个。",
+            ),
+            ("zmdlog 我的 <@FFC2E0A1>", (ming,), "看别人的成绩用 账号 @TA。"),
+            # An @ the list does not name is not guessed at.
+            ("zmdlog 账号 <@FFC2E0A1>", (), unread),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    self._official_at(text, *mentions), [("plain", expected)]
+                )
+
+        # An @ of oneself is 我的, how-to-bind and all.
+        (kind, reply), = self._official_at(
+            "zmdlog 账号 <@FFC2E0A0>", Mention("FFC2E0A0"), sender="FFC2E0A0"
+        )
+        self.assertEqual(kind, "plain")
+        self.assertIn("还没有绑定账号", reply)
+
+    def test_the_official_bot_ignores_an_at_where_no_account_is_named(self) -> None:
+        queries: list[str] = []
+
+        async def ranking(boss_slug, **kwargs):
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        async def render_ranking(page_ranking, **kwargs):
+            queries.append(kwargs["query"])
+            return capture("/tmp/ranking.png")
+
+        self.plugin.data.get_boss_ranking = ranking
+        self.plugin.renderer.render_ranking = render_ranking
+
+        (kind, result), = self._official_at(
+            "zmdlog 三位一体 <@FFC2E0A1>", Mention("FFC2E0A1")
+        )
+
+        self.assertEqual((kind, result), ("image", "/tmp/ranking.png"))
+        self.assertEqual(queries, ["三位一体"])
 
     # --- 排轴 reads the export, and the detail beside it ------------------------
 

@@ -141,7 +141,7 @@ docker restart astrbot
 
 绑定码在 ZMDLogs 登录后从 账号菜单 → 机器人绑定（`/account/binding`）生成，10 分钟内有效、只能用一次。只认绑定码，不认昵称或 accountId。群聊私聊都能用。
 
-绑定后群友可以 @ 你查成绩：`账号 @你`、`趋势 @你` 画的是你的主账号，在哪个群都行，不管你在那个群用没用过机器人。不想被查就解绑，没有别的开关。
+绑定后群友可以 @ 你查成绩：`账号 @你`、`趋势 @你` 画的是你的主账号，在哪个群都行，不管你在那个群用没用过机器人。野生机器人（`aiocqhttp`）和 QQ 官方机器人（`qq_official`、`qq_official_webhook`）上都能 @。不想被查就解绑，没有别的开关。
 
 | 指令 | 说明 |
 |:---|:---|
@@ -194,7 +194,7 @@ AstrBot 内置的 `qq_official`（WebSocket 版）适配器上多出按钮，群
 不支持的组合：
 
 - **与 qqoffice_expand 不兼容**：两个插件会抢着应答同一次点击。检测到它启用时插件不装回调，按钮照旧填指令。
-- **`qq_official_webhook` 和 `qq_official_v2` 没有按钮**；`qq_official_v2` 上的绑定和关注按 `qq_official` 记。
+- **`qq_official_webhook` 和 `qq_official_v2` 没有按钮**；`qq_official_v2` 上的绑定和关注按 `qq_official` 记，@群友 要它交出被 @ 的是谁才能用。
 - **大模型工具发的图**不带按钮。
 
 ## 🤖 大模型工具
