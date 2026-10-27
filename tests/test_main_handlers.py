@@ -3036,11 +3036,11 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
 
     def test_the_official_adapters_at_segments_name_nobody(self) -> None:
-        # AstrBot puts an At there for the bot alone, in a private chat one
-        # for "qq_official": neither is a 群友, and who was @-ed is not read
-        # off the chain on those adapters.
+        # AstrBot puts an At there for the bot alone: under its id in a
+        # group, in a private chat as "qq_official" beside a self id that is
+        # not one. Neither is a 群友; nor is it on an adapter built the same.
         drawn = self._account_pages()
-        for platform in ("qq_official", "qq_official_webhook"):
+        for platform in ("qq_official", "qq_official_webhook", "qq_official_v2"):
             with self.subTest(platform=platform):
                 private = FakeEvent(
                     "zmdlog 账号 usr_1234567890abcdef",
@@ -3050,6 +3050,7 @@ class HandlerTests(unittest.TestCase):
                     user_openid="U1",
                     at=(At("qq_official"),),
                 )
+                private.message_obj.self_id = "unknown_selfid"
                 group = FakeEvent(
                     "zmdlog 账号 <@FFC2E0A1>",
                     platform=platform,

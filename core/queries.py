@@ -817,17 +817,16 @@ class QueryService:
     def _mentioned_primary(self, user_key: str) -> BoundAccount | Outcome:
         """Whom an @ of someone else names, or why it names no one."""
 
-        closed = self._bindings_closed()
-        if closed is not None:
-            return closed
-        assert self._bindings is not None
-        theirs = self._bindings.bindings_for(user_key)
+        bindings = self._binding_book()
+        if isinstance(bindings, Outcome):
+            return bindings
+        theirs = bindings.bindings_for(user_key)
         if theirs is None or theirs.primary is None:
             return Outcome(message=messages.MENTIONED_NOT_BOUND)
         return theirs.primary
 
-    def _bindings_closed(self) -> Outcome | None:
-        """The reply when there is no book to read; None when there is.
+    def _binding_book(self) -> AccountBinding | Outcome:
+        """The binding book, or the reply when there is none to read.
 
         Switched off, the book still answers for whoever is in it.
         """
@@ -837,20 +836,19 @@ class QueryService:
             not bindings.enabled and bindings.book.total_users == 0
         ):
             return Outcome(message=messages.BINDINGS_DISABLED)
-        return None
+        return bindings
 
     def _own_bindings(
         self, requester_key: str, *, command: str
     ) -> UserBindings | Outcome:
         """The sender's bindings, or the reply for why there are none."""
 
-        closed = self._bindings_closed()
-        if closed is not None:
-            return closed
-        assert self._bindings is not None
+        bindings = self._binding_book()
+        if isinstance(bindings, Outcome):
+            return bindings
         if not requester_key:
             return Outcome(message=messages.NO_SENDER)
-        mine = self._bindings.bindings_for(requester_key)
+        mine = bindings.bindings_for(requester_key)
         if mine is None:
             return to_binding_page(messages.NOT_BOUND.format(command=command))
         return mine

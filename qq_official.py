@@ -12,6 +12,11 @@ Only ``qq_official`` counts. ``qq_official_webhook`` is treated like any other
 platform (the webhook adapter is not recommended, and gets no buttons), and
 ``qq_official_v2`` is a different adapter with no botpy underneath.
 
+Who a message @-ed is not in AstrBot's chain on the official bot: its
+adapters, the webhook one included, build an At for the bot alone — under
+the bot's id in a group, as ``AT_PLACEHOLDER`` in a private chat or a guild
+channel — and main reads no 群友 off either.
+
 What goes into a message is decided in ``core/buttons``; this module only
 sends it, to a ``Chat``: a group or a private chat, through the ``bot`` of
 the adapter that received what is being answered. A reply answers a message
@@ -88,6 +93,8 @@ from .core.buttons import ButtonMessage
 from .core.logs import LogSink
 
 PLATFORM_NAME = "qq_official"
+# The ``qq`` of the At AstrBot adds for the bot where it has no id for it.
+AT_PLACEHOLDER = "qq_official"
 EXPAND_PLUGIN = "astrbot_plugin_qqoffice_expand"
 INTERACTION_INTENT = 1 << 26
 # One reply may be sent several times with one msg_id, each with its own
