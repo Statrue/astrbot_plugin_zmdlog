@@ -957,7 +957,7 @@ class ZmdLogBotPlugin(Star):
             text = text.replace(f"@{name}({qq})", " ", 1)
             if qq and qq != self_id and qq not in _AT_NOBODY:
                 mentioned.append(_user_key(platform_name, qq))
-        openids, text = qq_official.read_mentions(event, text)
+        openids, text = qq_official.read_mentions(platform_name, event, text)
         mentioned.extend(_user_key(platform_name, openid) for openid in openids)
         return tuple(dict.fromkeys(key for key in mentioned if key)), text
 

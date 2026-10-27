@@ -1,4 +1,4 @@
-"""The QQ official bot, where AstrBot cannot reach: the plugin's own botpy calls.
+"""The QQ official bot, where AstrBot cannot reach: its own botpy calls, its @s.
 
 AstrBot's built-in ``qq_official`` adapter (the WebSocket one) runs on botpy,
 and AstrBot 4.28.1 can send neither a keyboard nor a markdown message of the
@@ -8,9 +8,10 @@ itself, and everything that does so lives in this one module — when AstrBot
 grows a public button API and ships the push fix, this is the file to
 delete.
 
-Only ``qq_official`` counts. ``qq_official_webhook`` is treated like any other
-platform (the webhook adapter is not recommended, and gets no buttons), and
-``qq_official_v2`` is a different adapter with no botpy underneath.
+For sending, only ``qq_official`` counts. ``qq_official_webhook`` is treated
+like any other platform (the webhook adapter is not recommended, and gets no
+buttons), and ``qq_official_v2`` is a different adapter with no botpy
+underneath.
 
 Who a message @-ed is the one thing read here for all three adapters, since
 the message is the platform's whichever adapter relays it. AstrBot's chain
@@ -107,7 +108,8 @@ PLATFORM_NAME = "qq_official"
 # The ``qq`` of the At AstrBot adds for the bot where it has no id for it.
 AT_PLACEHOLDER = "qq_official"
 # Where a message is the platform's own, @-marks and ``mentions`` included:
-# AstrBot parses the first two with one function, and v2 relays the same.
+# AstrBot parses the first two with one function, and v2 is read in case it
+# lists the same.
 _MENTION_PLATFORMS = frozenset(
     {PLATFORM_NAME, "qq_official_webhook", "qq_official_v2"}
 )
@@ -219,28 +221,27 @@ def chat_of(event: Any) -> Chat:
     )
 
 
-def read_mentions(event: Any, text: str) -> tuple[tuple[str, ...], str]:
+def read_mentions(
+    platform_name: str, event: Any, text: str
+) -> tuple[tuple[str, ...], str]:
     """The openids of the 群友 ``event`` @-ed, and ``text`` without their @s.
 
-    Read off the raw message's ``mentions``, on the official bot's adapters
-    only: each entry's ``member_openid``, the bot's own (``is_you``) left
-    out. ``text`` loses ``<@openid>`` and ``<@!openid>`` for those, and
-    ``<@all>``; an @-mark no entry names stays, for the parser to refuse
-    rather than search. An entry's ``username`` is never read.
+    Read off the raw message's ``mentions`` when ``platform_name`` is one of
+    the official bot's adapters: each entry's ``member_openid``, the bot's
+    own (``is_you``) left out. ``text`` loses ``<@openid>`` and
+    ``<@!openid>`` for those, and ``<@all>``; an @-mark no entry names
+    stays, for the parser to refuse rather than search. An entry's
+    ``username`` is never read.
     """
 
-    platform = getattr(event, "get_platform_name", None)
-    try:
-        if not callable(platform) or platform() not in _MENTION_PLATFORMS:
-            return (), text
-    except Exception:
+    if platform_name not in _MENTION_PLATFORMS:
         return (), text
     raw = getattr(getattr(event, "message_obj", None), "raw_message", None)
     entries = getattr(raw, "mentions", None)
     openids: list[str] = []
     for entry in entries if isinstance(entries, list) else ():
         openid = getattr(entry, "member_openid", None)
-        if getattr(entry, "is_you", False) or not openid or not isinstance(openid, str):
+        if getattr(entry, "is_you", False) or not isinstance(openid, str) or not openid:
             continue
         openids.append(openid)
         for mark in _AT_MARKS:

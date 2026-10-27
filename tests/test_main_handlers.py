@@ -2803,10 +2803,10 @@ class HandlerTests(unittest.TestCase):
     # --- @群友 ------------------------------------------------------------------
 
     def _bind_member(
-        self, sender: str, *accounts: tuple[str, str], **event
+        self, sender: str, *accounts: tuple[str, str], **extra
     ) -> None:
         """Bind ``accounts`` (accountId, nickname) in order to ``sender``;
-        ``event`` shapes the messages, the platform among them."""
+        ``extra`` shapes the messages, the platform among them."""
 
         from astrbot_plugin_zmdlog.core.models import AccountSearchHit
 
@@ -2824,7 +2824,7 @@ class HandlerTests(unittest.TestCase):
         for _ in accounts:
             code = f"ZMD-AAAA-{next(self._codes) * 4}"
             (_, reply), = self._zmdlog(
-                f"zmdlog 绑定 {code}", sender=sender, **event
+                f"zmdlog 绑定 {code}", sender=sender, **extra
             )
             self.assertIn("已绑定", reply)
 
@@ -3109,20 +3109,25 @@ class HandlerTests(unittest.TestCase):
     ):
         """What ``sender`` gets for ``text`` in a QQ official group.
 
-        Shaped as measured: the chain holds the bot's At alone, ``text``
-        keeps ``<@openid>`` for every 群友 in ``mentions``, and no reply may
-        have read a mention's ``username``.
+        Shaped as measured and as AstrBot parses it: the chain holds the
+        bot's At alone, under its ``is_you`` entry's id if it has one and
+        as ``qq_official`` if not, and that is the self id; ``text`` keeps
+        ``<@openid>`` for every 群友 in ``mentions``. No reply may have read
+        a mention's ``username``.
         """
 
-        replies = self._zmdlog(
+        bot = next((m.id for m in mentions if m.is_you), "qq_official")
+        event = FakeEvent(
             text,
             platform=platform,
             origin=f"{platform}:GroupMessage:G1",
             group_openid="G1",
             sender=sender,
-            at=(At("qq_official"),),
+            at=(At(bot),),
             mentions=mentions,
         )
+        event.message_obj.self_id = bot
+        replies = run(collect(self.plugin.zmdlog(event)))
         self.assertEqual([m.username_reads for m in mentions], [0] * len(mentions))
         return replies
 
