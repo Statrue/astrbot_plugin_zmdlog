@@ -49,6 +49,27 @@ A ZMDLogs account whose records are public — the only kind the bot can
 read, so every account it names is one.
 _Avoid_: 玩家账号, 用户
 
+### Accounts
+
+**账号引用**:
+The ways a command names one 公开账号: its nickname, its accountId, its
+主页链接, or an @ of a 群友 who has bound it. `账号`, `趋势` and
+`玩家排名 <…>` take every form; `我的` and `对比 … 我` take none, they
+are the sender's own.
+_Avoid_: 账号参数, 账号标识, 账号名
+
+**群友**:
+Anyone in a group chat, as named by @-mentioning them. An @ of a 群友
+stands for their 主账号 when they have bound one, in any group, whether or
+not they have used the bot there.
+_Avoid_: 群成员, 本群成员, 成员
+
+**主账号**:
+The one of a user's bound accounts that stands for them: what `我的` draws
+bare, what `对比 … 我` compares, what an @ of them names. The first in
+their list; `主账号 <序号>` moves another to the front.
+_Avoid_: 默认账号, 首选账号, 第一个账号
+
 ### Boards
 
 **全部榜单**:

@@ -303,6 +303,13 @@ class QueryService:
         if route.kind is RouteKind.DUNGEON_LIST:
             return await self._dungeon_list(origin=origin)
 
+        if route.mentioned is not None:
+            return await self._render_mentioned(
+                route,
+                requester_key=requester_key,
+                command=f"{command_prefix}zmdlog",
+            )
+
         if route.kind is RouteKind.ACCOUNT_QUERY:
             account_id = self._account_reference(route.query)
             if account_id is not None:
@@ -780,19 +787,70 @@ class QueryService:
         query = "我的" if not selector.strip() else f"我的 {selector.strip()}"
         return await self._render_account(account.account_id, query=query)
 
-    def _own_bindings(
-        self, requester_key: str, *, command: str
-    ) -> UserBindings | Outcome:
-        """The sender's bindings, or the reply for why there are none."""
+    async def _render_mentioned(
+        self, route: RouteRequest, *, requester_key: str, command: str
+    ) -> Outcome:
+        """账号 / 趋势 @群友: that 群友's 主账号, drawn as its accountId draws.
+
+        Gated by the binding alone (ADR 0004), and nothing is recorded. An @
+        of oneself is 我的, how-to-bind reply and all. The page echoes the
+        主账号's nickname, so no QQ name is ever printed.
+        """
+
+        assert route.mentioned is not None
+        if route.mentioned == requester_key:
+            account = self._primary_account(requester_key, command=command)
+        else:
+            account = self._mentioned_primary(route.mentioned)
+        if isinstance(account, Outcome):
+            return account
+        if route.kind is RouteKind.TREND_QUERY:
+            return await self._render_trend(
+                account.account_id,
+                query=account.display_name,
+                time_range=route.stats_range,
+            )
+        return await self._render_account(
+            account.account_id, query=account.display_name
+        )
+
+    def _mentioned_primary(self, user_key: str) -> BoundAccount | Outcome:
+        """Whom an @ of someone else names, or why it names no one."""
+
+        closed = self._bindings_closed()
+        if closed is not None:
+            return closed
+        assert self._bindings is not None
+        theirs = self._bindings.bindings_for(user_key)
+        if theirs is None or theirs.primary is None:
+            return Outcome(message=messages.MENTIONED_NOT_BOUND)
+        return theirs.primary
+
+    def _bindings_closed(self) -> Outcome | None:
+        """The reply when there is no book to read; None when there is.
+
+        Switched off, the book still answers for whoever is in it.
+        """
 
         bindings = self._bindings
         if bindings is None or (
             not bindings.enabled and bindings.book.total_users == 0
         ):
             return Outcome(message=messages.BINDINGS_DISABLED)
+        return None
+
+    def _own_bindings(
+        self, requester_key: str, *, command: str
+    ) -> UserBindings | Outcome:
+        """The sender's bindings, or the reply for why there are none."""
+
+        closed = self._bindings_closed()
+        if closed is not None:
+            return closed
+        assert self._bindings is not None
         if not requester_key:
             return Outcome(message=messages.NO_SENDER)
-        mine = bindings.bindings_for(requester_key)
+        mine = self._bindings.bindings_for(requester_key)
         if mine is None:
             return to_binding_page(messages.NOT_BOUND.format(command=command))
         return mine

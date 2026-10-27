@@ -75,6 +75,8 @@ HOW_TO_GET_A_CODE = (
     "10 分钟内发送 {command} 绑定 ZMD-XXXX-XXXX。"
 )
 NOT_BOUND = "你还没有绑定账号。" + HOW_TO_GET_A_CODE
+# 账号 @群友 of someone with no binding: the how-to is for them, not the asker.
+MENTIONED_NOT_BOUND = "TA 还没有绑定 ZMDLogs 账号。"
 BIND_CODE_NEEDED = "绑定只认绑定码，不认昵称或 accountId。" + HOW_TO_GET_A_CODE
 BIND_CODE_INVALID = "绑定码无效或已过期，请到 ZMDLogs 重新生成。"
 BIND_CODE_USED = "这个绑定码已经用过了，请重新生成一个。"

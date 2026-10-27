@@ -101,6 +101,9 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
 
     command = f"{command_prefix}zmdlog"
     battle_argument = "<battleId、链接或榜单关键词 [名次]>"
+    # Every form of 账号引用: an @ of a 群友 stands for their 主账号. The word
+    # joiner keeps a wrapping pill from leaving the @ alone at a line's end.
+    account_argument = "<昵称、accountId、主页链接或@\u2060群友>"
     return HelpPage(
         header=PageHeader(
             title="终末地·藕粉铺子 指令帮助",
@@ -177,7 +180,7 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                 summary="具体某个人、某一场",
                 commands=(
                     HelpCommand(
-                        command=f"{command} 账号 <昵称、accountId或主页链接>",
+                        command=f"{command} 账号 {account_argument}",
                         answers="查询一个账号各首领的最好成绩",
                     ),
                     HelpCommand(
@@ -209,7 +212,10 @@ def build_help_page(command_prefix: str, *, official: bool = False) -> HelpPage:
                         answers="关注榜单，有新纪录在这里通报；取关 撤销",
                     ),
                     HelpCommand(
-                        command=f"{command} 趋势 <账号> [--范围 7d|14d|30d|all]",
+                        command=(
+                            f"{command} 趋势 {account_argument} "
+                            "[--范围 7d|14d|30d|all]"
+                        ),
                         answers="查看一个账号各榜名次的涨跌，默认近 7 天",
                     ),
                 ),

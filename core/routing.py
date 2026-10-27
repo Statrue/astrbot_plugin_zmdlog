@@ -290,6 +290,9 @@ class RouteRequest:
     compare_self: bool = False
     # 角色档案 only: the board keyword ``--榜单`` cut the profile to.
     board_query: str | None = None
+    # 账号 / 趋势 / 玩家排名 @群友: the platform user key of whoever was
+    # @-ed, in place of a typed 账号引用.
+    mentioned: str | None = None
 
     @property
     def names_requester(self) -> bool:
@@ -304,12 +307,18 @@ def ranking_page_count(row_count: int) -> int:
     return max(1, -(-row_count // RANKING_PAGE_SIZE))
 
 
-def parse_zmdlog_payload(payload: str) -> RouteRequest:
+def parse_zmdlog_payload(
+    payload: str, mentioned: tuple[str, ...] = ()
+) -> RouteRequest:
     """Resolve the text following ``zmdlog`` into a stable route.
 
     This layer only decides which feature owns the request. Matching boards,
     dungeons and scopes belongs to the matcher, and nicknames to the account
     search, never to the command handler.
+
+    ``mentioned`` are the user keys of the 群友 the message @-ed, the bot
+    and @全体成员 left out, and ``payload`` is the text without the @s'
+    words. Only the commands that take a 账号引用 read them.
     """
 
     normalized, options = _extract_options(" ".join(payload.split()))
@@ -334,6 +343,9 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
 
     if command in {"账号", "账户"}:
         options.reject_except()
+        mention = _account_mention(remainder, mentioned)
+        if mention is not None:
+            return RouteRequest(RouteKind.ACCOUNT_QUERY, mentioned=mention)
         if not separator or not remainder:
             raise RouteParseError("请提供 accountId 或 ZMDLogs 账号主页链接。")
         return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder)
@@ -362,7 +374,8 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
 
     if command in {"趋势", "名次趋势"}:
         options.reject_except("range")
-        if not separator or not remainder:
+        mention = _account_mention(remainder, mentioned)
+        if mention is None and (not separator or not remainder):
             raise RouteParseError(
                 "请提供公开昵称、accountId 或 ZMDLogs 账号主页链接，例如：趋势 CPU 0。"
             )
@@ -374,6 +387,7 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
                 if "range" in options.present
                 else DEFAULT_TREND_RANGE
             ),
+            mentioned=mention,
         )
 
     if command in {"新纪录", "新记录", "最近纪录"}:
@@ -398,13 +412,14 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         # The same shape as 角色排名: bare is the board of everyone, a name
         # is that one player, which is what 账号 draws.
         options.reject_except("range", "metric")
-        if remainder:
+        mention = _account_mention(remainder, mentioned)
+        if remainder or mention is not None:
             if "range" in options.present or "metric" in options.present:
                 raise RouteParseError(
                     "--范围 和 --口径 只在不带昵称的玩家排名里用，"
                     "例如：玩家排名 --范围 7d。"
                 )
-            return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder)
+            return RouteRequest(RouteKind.ACCOUNT_QUERY, remainder, mentioned=mention)
         return RouteRequest(
             RouteKind.PLAYER_CHAMPIONS,
             stats_range=options.stats_range,
@@ -517,6 +532,8 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
 
     if command == "我的":
         options.reject_except()
+        if mentioned:
+            raise RouteParseError("看别人的成绩用 账号 @TA。")
         return RouteRequest(RouteKind.MY_ACCOUNT, remainder)
 
     options.reject_except("page", "character", "element", "metric")
@@ -528,6 +545,28 @@ def parse_zmdlog_payload(payload: str) -> RouteRequest:
         element_filter=options.element_filter,
         metric=options.metric,
     )
+
+
+def _account_mention(remainder: str, mentioned: tuple[str, ...]) -> str | None:
+    """The 群友 an @ names in place of a typed 账号引用; None for no @.
+
+    One @ and no other words, options aside. Text that opens like an @ but
+    came with nobody @-ed — typed by hand, or the official bot's
+    ``<@openid>`` from an adapter that does not say whose — is refused
+    rather than searched for as a nickname.
+    """
+
+    if len(mentioned) > 1:
+        raise RouteParseError("一次只能查一个群友。")
+    if mentioned:
+        if remainder:
+            raise RouteParseError("@群友 和昵称、accountId 只写一个。")
+        return mentioned[0]
+    if remainder.startswith(("@", "<@")):
+        raise RouteParseError(
+            "认不出 @ 的是谁，请在群里用 @ 选中群友，或改用昵称、accountId、主页链接。"
+        )
+    return None
 
 
 def _extract_options(payload: str) -> tuple[str, RouteOptions]:

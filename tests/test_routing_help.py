@@ -149,7 +149,7 @@ class HelpTests(unittest.TestCase):
                     "!zmdlog 角色档案 <角色名> [--榜单 榜单关键词] "
                     "[--范围 7d|14d|30d|all]"
                 ),
-                "!zmdlog 账号 <昵称、accountId或主页链接>",
+                "!zmdlog 账号 <昵称、accountId、主页链接或@\u2060群友>",
                 (
                     "!zmdlog 战报 | 数据 | 排轴 | 养成 "
                     "<battleId、链接或榜单关键词 [名次]> [--口径 rdps]"
@@ -157,7 +157,10 @@ class HelpTests(unittest.TestCase):
                 "!zmdlog 对比 <榜单关键词 [名次 名次] 或 两个battleId> [--口径 rdps]",
                 "!zmdlog 对比 <榜单关键词> 我 [名次] [--口径 rdps]",
                 "!zmdlog 关注 [<榜单关键词> | 全部]",
-                "!zmdlog 趋势 <账号> [--范围 7d|14d|30d|all]",
+                (
+                    "!zmdlog 趋势 <昵称、accountId、主页链接或@\u2060群友> "
+                    "[--范围 7d|14d|30d|all]"
+                ),
                 "!zmdlog 绑定 <绑定码>",
                 "!zmdlog 我的 [序号或昵称]",
                 "!zmdlog 别名 [添加 <榜单或副本> <别名…> | 删除 <别名>]",

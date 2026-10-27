@@ -110,6 +110,14 @@ _CJK_DIGITS = {
 _CJK_NUMBER_RE = re.compile(r"([一二两三四五六七八九])?(十)?([一二三四五六七八九])?")
 _PLUGIN_DATA_NAME = "astrbot_plugin_zmdlog"
 _USER_KEY_ALIASES = {"qq_official_v2": qq_official.PLATFORM_NAME}
+# An @ arrives as one of these, matched by class name as Reply is. ``qq`` is
+# the person's id, or ``all`` for @全体成员, which names no 群友.
+_AT_COMPONENTS = frozenset({"At", "AtAll"})
+_AT_ALL = "all"
+# AstrBot's QQ official adapters (the webhook one parses with the same code)
+# build an At for the bot alone — in a private chat one naming nobody,
+# ``qq="qq_official"`` — so their chains never say who was @-ed.
+_AT_UNREAD_PLATFORMS = frozenset({qq_official.PLATFORM_NAME, "qq_official_webhook"})
 _BATTLE_LINK_FILTER = (
     r"https?://[^\s<>\"']+/(?:battle|share|axis)/btl_[A-Za-z0-9_-]+"
 )
@@ -318,7 +326,8 @@ class ZmdLogBotPlugin(Star):
     async def zmdlog(self, event: AstrMessageEvent):
         """查询 ZMDLogs 公开榜单。"""
 
-        payload = self._extract_payload(event.get_message_str())
+        mentioned, text = self._event_mentions(event)
+        payload = self._extract_payload(text)
         quoted_code = self._quoted_candidate_code(event)
         if quoted_code is not None and parse_selection(payload) is not None:
             async for result in self._reply_with_candidate(
@@ -329,7 +338,7 @@ class ZmdLogBotPlugin(Star):
                 yield result
             return
 
-        route = _parse_route(payload)
+        route = _parse_route(payload, mentioned)
         if isinstance(route, str):
             yield self._text_result(event, route)
             return
@@ -922,6 +931,38 @@ class ZmdLogBotPlugin(Star):
         return _user_key(platform_name, sender_id)
 
     @staticmethod
+    def _event_mentions(event: AstrMessageEvent) -> tuple[tuple[str, ...], str]:
+        """The 群友 ``event`` @-ed, as user keys, and its text without the @s.
+
+        Read off the chain's At segments, leaving out the bot itself and
+        @全体成员, and keyed the way the sender is. ``qq`` is compared as
+        text: pydantic v2 keeps the adapter's string, v1 makes it an int.
+        aiocqhttp writes `` @名片(QQ号) `` into the text for every At but the
+        bot's leading one, and each is cut by its own name and number.
+        """
+
+        text = event.get_message_str() or ""
+        try:
+            platform_name = event.get_platform_name()
+            self_id = str(event.get_self_id() or "")
+        except Exception:
+            return (), text
+        if platform_name in _AT_UNREAD_PLATFORMS:
+            return (), text
+        chain = getattr(getattr(event, "message_obj", None), "message", None) or ()
+        mentioned: list[str] = []
+        for component in chain:
+            if type(component).__name__ not in _AT_COMPONENTS:
+                continue
+            qq = getattr(component, "qq", None)
+            qq = "" if qq is None else str(qq)
+            name = getattr(component, "name", None) or ""
+            text = text.replace(f"@{name}({qq})", " ", 1)
+            if qq and qq not in (_AT_ALL, self_id):
+                mentioned.append(_user_key(platform_name, qq))
+        return tuple(dict.fromkeys(key for key in mentioned if key)), text
+
+    @staticmethod
     def _event_is_admin(event: AstrMessageEvent) -> bool:
         checker = getattr(event, "is_admin", None)
         try:
@@ -1362,11 +1403,13 @@ class ZmdLogBotPlugin(Star):
         logger.info("ZmdLogBot plugin terminated.")
 
 
-def _parse_route(payload: str) -> RouteRequest | str:
+def _parse_route(
+    payload: str, mentioned: tuple[str, ...] = ()
+) -> RouteRequest | str:
     """``payload`` routed, or the short text a user gets when it cannot be."""
 
     try:
-        return parse_zmdlog_payload(payload)
+        return parse_zmdlog_payload(payload, mentioned)
     except RouteParseError as exc:
         return str(exc)
     except ValueError:

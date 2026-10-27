@@ -75,6 +75,18 @@ class Reply:
         self.message_str = text
 
 
+class At:
+    """Stands in for AstrBot's At component, matched by class name: the
+    aiocqhttp shape, whose ``qq`` is a string or an int by pydantic version."""
+
+    def __init__(self, qq: "str | int", name: str = "") -> None:
+        self.qq = qq
+        self.name = name
+
+
+BOT_ID = "10000"
+
+
 class FakeResult(tuple):
     """``(kind, payload)``, compared as a plain tuple, that also records
     ``use_markdown`` the way AstrBot's MessageEventResult does."""
@@ -99,6 +111,7 @@ class FakeEvent:
         group_openid: str | None = None,
         user_openid: str | None = None,
         api: "FakeBotApi | None" = None,
+        at: tuple["At", ...] = (),
     ):
         """``isolated_from`` is the adapter's own session id when 隔离对话
         rewrote ``origin`` per member, the way AstrBot's waking stage does.
@@ -106,16 +119,21 @@ class FakeEvent:
         ``group_openid`` / ``user_openid`` shape the raw botpy message of a
         QQ official group or private chat, and ``api`` stands in for the
         adapter's ``bot.api``; a wild-bot event has no ``bot`` at all, so a
-        handler that reached for one there would fail loudly."""
+        handler that reached for one there would fail loudly.
+
+        ``at`` are the chain's At segments; ``text`` must carry the words
+        the adapter writes for them, `` @名片(QQ号) `` on the wild bot."""
 
         self._text = text
         self._sender = sender
         self._platform = platform
         self.unified_msg_origin = origin
         chain = [Reply(quoted)] if quoted is not None else []
+        chain.extend(at)
         self.message_obj = SimpleNamespace(
             message_str=text,
             message=chain,
+            self_id=BOT_ID,
             session_id=isolated_from or "",
             message_id="msg-1",
             raw_message=SimpleNamespace(
@@ -157,6 +175,9 @@ class FakeEvent:
 
     def get_sender_id(self) -> str:
         return self._sender
+
+    def get_self_id(self) -> str:
+        return self.message_obj.self_id
 
     def get_extra(self, key: str, default=None):
         return self._extras.get(key, default)
@@ -2752,6 +2773,298 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual((kind, reply), ("plain", "ZMDLogs 暂时不可用，请稍后重试。"))
         (kind, reply), = self._zmdlog("zmdlog 绑定 测试账号")
         self.assertIn("绑定只认绑定码", reply)
+
+    # --- @群友 ------------------------------------------------------------------
+
+    def _bind_member(self, sender: str, *accounts: tuple[str, str]) -> None:
+        """Bind ``accounts`` (accountId, nickname) in order to ``sender``."""
+
+        from astrbot_plugin_zmdlog.core.models import AccountSearchHit
+
+        if self.plugin.bindings.store.path is None:
+            self._enable_binding_storage()
+        if not hasattr(self, "_codes"):
+            # Every code is redeemed once, so each bind takes a fresh one.
+            self._codes = iter("ABCDEFGHJKLMNPQRSTUVWXYZ")
+        pending = iter(accounts)
+
+        async def lookup(code):
+            return AccountSearchHit(*next(pending))
+
+        self.plugin.client.get_binding_code_account = lookup
+        for _ in accounts:
+            code = f"ZMD-AAAA-{next(self._codes) * 4}"
+            (_, reply), = self._zmdlog(f"zmdlog 绑定 {code}", sender=sender)
+            self.assertIn("已绑定", reply)
+
+    def _account_pages(self) -> list[tuple[str, str]]:
+        """(accountId read, query echoed) of every account page drawn."""
+
+        drawn: list[tuple[str, str]] = []
+        requested: list[str] = []
+
+        async def account(account_id):
+            requested.append(account_id)
+            return parse_public_user_rankings(public_user_rankings_payload())
+
+        async def render_account(page_account, **kwargs):
+            drawn.append((requested[-1], kwargs["query"]))
+            return capture("/tmp/account.png")
+
+        self.plugin.data.get_public_user_rankings = account
+        self.plugin.renderer.render_account = render_account
+        return drawn
+
+    def test_an_at_of_a_bound_member_draws_their_primary_account(self) -> None:
+        self._bind_member("222", ("usr_1234567890abcdef", "测试账号"))
+        drawn = self._account_pages()
+
+        (kind, result), = self._zmdlog(
+            "zmdlog 账号 @小明(222) ", at=(At("222", "小明"),)
+        )
+
+        self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+        # Drawn as the accountId draws it; the page prints the ZMDLogs
+        # nickname, never the QQ card.
+        self.assertEqual(drawn, [("usr_1234567890abcdef", "测试账号")])
+
+    def test_the_bot_and_the_type_of_qq_do_not_change_who_is_meant(self) -> None:
+        self._bind_member("222", ("usr_1234567890abcdef", "测试账号"))
+        drawn = self._account_pages()
+        bot = At(BOT_ID, "藕粉")
+        for text, at in (
+            # pydantic v1 makes the adapter's "222" an int.
+            ("zmdlog 账号 @小明(222) ", (At(222, "小明"),)),
+            # The bot's leading At stays in the chain but not in the text.
+            ("zmdlog 账号 @小明(222) ", (bot, At("222", "小明"))),
+            # An At of the bot further on is in the text as well.
+            ("zmdlog 账号 @小明(222)  @藕粉(10000) ", (bot, At("222", "小明"), bot)),
+        ):
+            with self.subTest(at=at):
+                (kind, result), = self._zmdlog(text, at=at)
+
+                self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+                self.assertEqual(drawn[-1], ("usr_1234567890abcdef", "测试账号"))
+
+    def test_an_at_names_only_the_primary_of_several_accounts(self) -> None:
+        self._bind_member(
+            "222",
+            ("usr_1234567890abcdef", "测试账号"),
+            ("usr_abcdef1234567890", "公开账号3"),
+        )
+        drawn = self._account_pages()
+        at = (At("222", "小明"),)
+
+        self._zmdlog("zmdlog 账号 @小明(222) ", at=at)
+        (_, reply), = self._zmdlog("zmdlog 主账号 2", sender="222")
+        self.assertIn("主账号已改为 公开账号3", reply)
+        self._zmdlog("zmdlog 账号 @小明(222) ", at=at)
+
+        self.assertEqual(
+            drawn,
+            [
+                ("usr_1234567890abcdef", "测试账号"),
+                ("usr_abcdef1234567890", "公开账号3"),
+            ],
+        )
+
+    def test_an_at_of_someone_unbound_says_so_and_nothing_more(self) -> None:
+        # The how-to-bind is for the one @-ed, not for whoever asked.
+        self._bind_member("333", ("usr_1234567890abcdef", "测试账号"))
+        at = (At("222", "小红"),)
+
+        for text in ("zmdlog 账号 @小红(222) ", "zmdlog 趋势 @小红(222) "):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    self._zmdlog(text, at=at),
+                    [("plain", "TA 还没有绑定 ZMDLogs 账号。")],
+                )
+
+    def test_an_at_of_oneself_is_answered_as_my_own_account(self) -> None:
+        self._enable_binding_storage()
+        at = (At("111", "我自己"),)
+
+        (kind, reply), = self._zmdlog("zmdlog 账号 @我自己(111) ", at=at)
+        self.assertEqual(kind, "plain")
+        self.assertIn("还没有绑定账号", reply)
+        self.assertIn("zmdlog 绑定 ZMD-XXXX-XXXX", reply)
+
+        self._bind_member("111", ("usr_1234567890abcdef", "测试账号"))
+        drawn = self._account_pages()
+        (kind, result), = self._zmdlog("zmdlog 账号 @我自己(111) ", at=at)
+        self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+        self.assertEqual(drawn, [("usr_1234567890abcdef", "测试账号")])
+
+    def test_trend_and_player_ranking_take_an_at_as_an_account(self) -> None:
+        self._seed_history()
+        self._bind_member("222", ("usr_1234567890abcdef", "测试账号"))
+        drawn = self._account_pages()
+        trends: list[tuple[str, str, str]] = []
+
+        async def render_trend(history, **kwargs):
+            trends.append((history.account_id, kwargs["query"], kwargs["time_range"]))
+            return capture("/tmp/trend.png")
+
+        self.plugin.renderer.render_trend = render_trend
+        at = (At("222", "小明"),)
+
+        (kind, result), = self._zmdlog("zmdlog 趋势 @小明(222) ", at=at)
+        self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
+        (kind, result), = self._zmdlog(
+            "zmdlog 名次趋势 @小明(222) --范围 30d", at=at
+        )
+        self.assertEqual((kind, result), ("image", "/tmp/trend.png"))
+        self.assertEqual(
+            trends,
+            [
+                ("usr_1234567890abcdef", "测试账号", "7d"),
+                ("usr_1234567890abcdef", "测试账号", "30d"),
+            ],
+        )
+
+        # 玩家排名 <昵称> is the account page, so 玩家排名 @群友 is too.
+        for command in ("玩家排名", "玩家榜", "玩家冠军榜", "账户"):
+            with self.subTest(command=command):
+                (kind, result), = self._zmdlog(f"zmdlog {command} @小明(222) ", at=at)
+
+                self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+                self.assertEqual(drawn[-1], ("usr_1234567890abcdef", "测试账号"))
+
+    def test_an_at_written_wrong_is_answered_with_what_to_write(self) -> None:
+        self._bind_member("222", ("usr_1234567890abcdef", "测试账号"))
+        self._bind_member("333", ("usr_abcdef1234567890", "公开账号3"))
+        ming, hong = At("222", "小明"), At("333", "小红")
+        unread = (
+            "认不出 @ 的是谁，请在群里用 @ 选中群友，或改用昵称、accountId、主页链接。"
+        )
+        one = "一次只能查一个群友。"
+        for text, at, expected in (
+            ("zmdlog 账号 @小明(222)  @小红(333) ", (ming, hong), one),
+            ("zmdlog 趋势 @小明(222)  @小红(333) ", (ming, hong), one),
+            (
+                "zmdlog 账号 @小明(222) 测试账号",
+                (ming,),
+                "@群友 和昵称、accountId 只写一个。",
+            ),
+            (
+                "zmdlog 玩家排名 usr_1234567890abcdef @小明(222) ",
+                (ming,),
+                "@群友 和昵称、accountId 只写一个。",
+            ),
+            ("zmdlog 我的 @小明(222) ", (ming,), "看别人的成绩用 账号 @TA。"),
+            # Typed by hand, or from an adapter that says nobody was @-ed.
+            ("zmdlog 账号 @张三", (), unread),
+            ("zmdlog 趋势 @张三 --范围 30d", (), unread),
+            ("zmdlog 玩家排名 <@FFC2E0A1>", (), unread),
+            # @全体成员 is no 群友: as if no account were written.
+            (
+                "zmdlog 账号 ",
+                (At("all", "全体成员"),),
+                "请提供 accountId 或 ZMDLogs 账号主页链接。",
+            ),
+            (
+                "zmdlog 玩家排名 @小明(222) --范围 7d",
+                (ming,),
+                (
+                    "--范围 和 --口径 只在不带昵称的玩家排名里用，"
+                    "例如：玩家排名 --范围 7d。"
+                ),
+            ),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(self._zmdlog(text, at=at), [("plain", expected)])
+
+    def test_an_at_with_bindings_switched_off_reads_whoever_is_bound(self) -> None:
+        # As 我的 does: switched off, the book still answers for its people.
+        at = (At("222", "小明"),)
+        self.plugin.bindings.enabled = False
+
+        self.assertEqual(
+            self._zmdlog("zmdlog 账号 @小明(222) ", at=at),
+            [("plain", "本机器人未开启账号绑定功能。")],
+        )
+
+        self.plugin.bindings.enabled = True
+        self._bind_member("222", ("usr_1234567890abcdef", "测试账号"))
+        self.plugin.bindings.enabled = False
+        drawn = self._account_pages()
+        (kind, result), = self._zmdlog("zmdlog 账号 @小明(222) ", at=at)
+        self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+        self.assertEqual(drawn, [("usr_1234567890abcdef", "测试账号")])
+        self.assertEqual(
+            self._zmdlog("zmdlog 账号 @小红(333) ", at=(At("333", "小红"),)),
+            [("plain", "TA 还没有绑定 ZMDLogs 账号。")],
+        )
+
+    def test_an_at_is_ignored_where_no_account_is_named(self) -> None:
+        queries: list[str] = []
+
+        async def ranking(boss_slug, **kwargs):
+            return parse_boss_ranking(ranking_payload_with_rows())
+
+        async def render_ranking(page_ranking, **kwargs):
+            queries.append(kwargs["query"])
+            return capture("/tmp/ranking.png")
+
+        async def detail(battle_id):
+            return parse_battle_detail(battle_detail_payload())
+
+        self.plugin.data.get_boss_ranking = ranking
+        self.plugin.data.get_battle_detail = detail
+        self.plugin.renderer.render_ranking = render_ranking
+        at = (At("222", "小明"),)
+
+        (kind, result), = self._zmdlog("zmdlog 三位一体 @小明(222) ", at=at)
+        self.assertEqual((kind, result), ("image", "/tmp/ranking.png"))
+        self.assertEqual(queries, ["三位一体"])
+        (kind, result), = self._zmdlog("zmdlog 战报 三位一体 @小明(222) ", at=at)
+        self.assertEqual((kind, result), ("image", "/tmp/battle.png"))
+
+    def test_an_at_records_nothing(self) -> None:
+        self._bind_member("222", ("usr_1234567890abcdef", "测试账号"))
+        self._account_pages()
+        path = self.plugin.bindings.store.path
+        before = (path.read_bytes(), path.stat().st_mtime_ns)
+
+        for text, at in (
+            ("zmdlog 账号 @小明(222) ", (At("222", "小明"),)),
+            ("zmdlog 账号 @小红(333) ", (At("333", "小红"),)),
+            ("zmdlog 账号 @我(111) ", (At("111", "我"),)),
+        ):
+            self._zmdlog(text, at=at)
+
+        self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
+
+    def test_the_official_adapters_at_segments_name_nobody(self) -> None:
+        # AstrBot puts an At there for the bot alone, in a private chat one
+        # for "qq_official": neither is a 群友, and who was @-ed is not read
+        # off the chain on those adapters.
+        drawn = self._account_pages()
+        for platform in ("qq_official", "qq_official_webhook"):
+            with self.subTest(platform=platform):
+                private = FakeEvent(
+                    "zmdlog 账号 usr_1234567890abcdef",
+                    platform=platform,
+                    origin=f"{platform}:FriendMessage:U1",
+                    sender="U1",
+                    user_openid="U1",
+                    at=(At("qq_official"),),
+                )
+                group = FakeEvent(
+                    "zmdlog 账号 <@FFC2E0A1>",
+                    platform=platform,
+                    origin=f"{platform}:GroupMessage:G1",
+                    sender="U1",
+                    group_openid="G1",
+                    at=(At(BOT_ID, "藕粉"),),
+                )
+
+                (kind, result), = run(collect(self.plugin.zmdlog(private)))
+                self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+                self.assertEqual(drawn[-1][0], "usr_1234567890abcdef")
+                (kind, reply), = run(collect(self.plugin.zmdlog(group)))
+                self.assertEqual(kind, "plain")
+                self.assertIn("认不出 @ 的是谁", reply)
 
     # --- 排轴 reads the export, and the detail beside it ------------------------
 
