@@ -2859,6 +2859,28 @@ class HandlerTests(unittest.TestCase):
         # nickname, never the QQ card.
         self.assertEqual(drawn, [("usr_1234567890abcdef", "测试账号")])
 
+    def test_a_bare_at_is_an_account_query(self) -> None:
+        # zmdlog <昵称> already finds an account, so zmdlog @群友 is 账号 @群友;
+        # it answered with the help page while the @ was ignored there.
+        self._bind_member("222", ("usr_1234567890abcdef", "测试账号"))
+        drawn = self._account_pages()
+        ming, hong = At("222", "小明"), At("333", "小红")
+
+        (kind, result), = self._zmdlog("zmdlog @小明(222) ", at=(ming,))
+
+        self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+        self.assertEqual(drawn, [("usr_1234567890abcdef", "测试账号")])
+        unread = (
+            "认不出 @ 的是谁，请在群里用 @ 选中群友，或改用昵称、accountId、主页链接。"
+        )
+        for text, at, expected in (
+            ("zmdlog @小红(333) ", (hong,), "TA 还没有绑定 ZMDLogs 账号。"),
+            ("zmdlog @小明(222)  @小红(333) ", (ming, hong), "一次只能查一个群友。"),
+            ("zmdlog @张三", (), unread),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(self._zmdlog(text, at=at), [("plain", expected)])
+
     def test_the_bot_and_the_type_of_qq_do_not_change_who_is_meant(self) -> None:
         self._bind_member("222", ("usr_1234567890abcdef", "测试账号"))
         drawn = self._account_pages()
@@ -3154,6 +3176,21 @@ class HandlerTests(unittest.TestCase):
 
                 self.assertEqual((kind, result), ("image", "/tmp/account.png"))
                 self.assertEqual(drawn[-1], ("usr_1234567890abcdef", "测试账号"))
+
+    def test_a_bare_at_is_an_account_query_on_the_official_bot(self) -> None:
+        self._bind_member(
+            "FFC2E0A1", ("usr_1234567890abcdef", "测试账号"), platform="qq_official"
+        )
+        drawn = self._account_pages()
+
+        (kind, result), = self._official_at("/zmdlog <@FFC2E0A1>", Mention("FFC2E0A1"))
+
+        self.assertEqual((kind, result), ("image", "/tmp/account.png"))
+        self.assertEqual(drawn, [("usr_1234567890abcdef", "测试账号")])
+        # An @ the list does not name is still not searched for.
+        (kind, reply), = self._official_at("zmdlog <@FFC2E0A9>")
+        self.assertEqual(kind, "plain")
+        self.assertIn("认不出 @ 的是谁", reply)
 
     def test_the_official_bot_reads_trend_and_player_ranking_too(self) -> None:
         self._seed_history()

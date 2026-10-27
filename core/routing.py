@@ -318,10 +318,18 @@ def parse_zmdlog_payload(
 
     ``mentioned`` are the user keys of the 群友 the message @-ed, the bot
     and @全体成员 left out, and ``payload`` is the text without the @s'
-    words. Only the commands that take a 账号引用 read them.
+    words. Only the commands that take a 账号引用 read them, and a bare @.
     """
 
     normalized, options = _extract_options(" ".join(payload.split()))
+    # A bare keyword already finds an account by its nickname, so a bare @
+    # is 账号 @, and is refused the way 账号 refuses it.
+    if (mentioned and not normalized) or normalized.startswith(("@", "<@")):
+        options.reject_except()
+        return RouteRequest(
+            RouteKind.ACCOUNT_QUERY,
+            mentioned=_account_mention(normalized, mentioned),
+        )
     if not normalized or normalized.casefold() in _HELP_WORDS:
         options.reject_except()
         return RouteRequest(RouteKind.HELP)

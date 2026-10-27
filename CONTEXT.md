@@ -54,8 +54,9 @@ _Avoid_: 玩家账号, 用户
 **账号引用**:
 The ways a command names one 公开账号: its nickname, its accountId, its
 主页链接, or an @ of a 群友 who has bound it. `账号`, `趋势` and
-`玩家排名 <…>` take every form; `我的` and `对比 … 我` take none, they
-are the sender's own.
+`玩家排名 <…>` take every form; a bare `zmdlog <…>` takes a nickname
+when no board matches, and an @ alone; `我的` and `对比 … 我` take
+none, they are the sender's own.
 _Avoid_: 账号参数, 账号标识, 账号名
 
 **群友**:
